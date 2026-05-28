@@ -1,0 +1,14 @@
+# pak.syntax — nagelfar syntax database for the Pak Tcl compiler.
+#
+# Loaded via:  nagelfar -s tcl/tools/pak.syntax ...
+#
+# Our own pak::* procs are learned by nagelfar from the source files directly
+# (they are checked on the same command line), so they need no entries here.
+# This DB only declares EXTERNAL commands nagelfar can't see — currently just
+# tcllib's struct::record ensemble. Add new third-party deps here as they are
+# introduced, so the lint stays free of "Unknown command" noise without blanket
+# message filters.
+#
+# Token legend: x=any arg  x*=zero-or-more  n=varName  s=subcommand  l=list
+
+set ::syntax(struct::record) {s x*}

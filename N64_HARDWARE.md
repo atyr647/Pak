@@ -32,24 +32,31 @@ alignment, cache coherency, exhaustive match) — the rest is documented here.
 display.init(resolution, bit_depth, num_buffers, gamma, filters)
 ```
 
-| Arg | Type | Valid Values | Notes |
+**Pass the raw integer value for each argument.** The `RESOLUTION_*`,
+`DEPTH_*`, `GAMMA_*`, and `FILTERS_*` names below are libdragon C macros,
+listed here for reference — Pak does not predefine them as identifiers, so
+writing them bare (e.g. `display.init(RESOLUTION_320x240, …)`) fails with
+`E010 unknown name`. Use the integers, as every canonical example does.
+
+| Arg | Type | Value (libdragon name) | Notes |
 |-----|------|-------------|-------|
-| `resolution` | `u32` | see below | Screen resolution |
-| `bit_depth` | `u32` | `DEPTH_16_BPP`, `DEPTH_32_BPP` | 16 bpp = faster fill; 32 bpp = true color |
+| `resolution` | `u32` | see resolution table below | Screen resolution |
+| `bit_depth` | `u32` | `2` (`DEPTH_16_BPP`), `4` (`DEPTH_32_BPP`) | 16 bpp = faster fill; 32 bpp = true color |
 | `num_buffers` | `i32` | `2` or `3` | 2 = double-buffer, 3 = triple-buffer (smoother) |
-| `gamma` | `u32` | `GAMMA_NONE`, `GAMMA_CORRECT`, `GAMMA_CORRECT_DITHER` | Usually `GAMMA_NONE` |
-| `filters` | `u32` | `FILTERS_DISABLED`, `FILTERS_RESAMPLE`, `FILTERS_RESAMPLE_ANTIALIAS` | `FILTERS_RESAMPLE` = bilinear scale |
+| `gamma` | `u32` | `0` (`GAMMA_NONE`), `1` (`GAMMA_CORRECT`), `3` (`GAMMA_CORRECT_DITHER`) | Usually `0` |
+| `filters` | `u32` | `0` (`FILTERS_DISABLED`), `1` (`FILTERS_RESAMPLE`), `3` (`FILTERS_RESAMPLE_ANTIALIAS`) | `1` = bilinear scale |
 
-**Resolution constants:**
+**Resolution values:**
 
-| Constant | Width × Height | Use Case |
-|----------|---------------|----------|
-| `RESOLUTION_320x240` | 320 × 240 | Most common; good performance |
-| `RESOLUTION_256x240` | 256 × 240 | Wider aspect, less fill |
-| `RESOLUTION_512x240` | 512 × 240 | Interlaced, high-res horizontal |
-| `RESOLUTION_640x480` | 640 × 480 | Interlaced high-res; very slow to fill |
-| `RESOLUTION_512x480` | 512 × 480 | Interlaced |
-| `RESOLUTION_256x480` | 256 × 480 | Interlaced |
+| Value | libdragon name | Width × Height | Use Case |
+|-------|----------------|---------------|----------|
+| `0` | `RESOLUTION_320x240` | 320 × 240 | Most common; good performance |
+| `1` | `RESOLUTION_640x480` | 640 × 480 | Interlaced high-res; very slow to fill |
+| `2` | `RESOLUTION_256x240` | 256 × 240 | Wider aspect, less fill |
+| `3` | `RESOLUTION_512x240` | 512 × 240 | Interlaced, high-res horizontal |
+
+`512x480` and `256x480` exist in libdragon as further interlaced modes; pass
+the corresponding integer from your libdragon headers if you need them.
 
 **Typical game setup:**
 ```pak
@@ -395,10 +402,11 @@ entry {
     -- 7. Rumble (optional, after controller)
     rumble.init()
 
-    -- 8. Game-specific init
-    -- ...
+    -- 8. Game-specific init (load assets, build state, etc.)
 
-    loop { ... }
+    loop {
+        -- main game loop body
+    }
 }
 ```
 

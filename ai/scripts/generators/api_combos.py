@@ -40,8 +40,10 @@ def gen_api_combos() -> list[dict]:
         "let raw_x: i32 = pad.stick_x as i32  -- -128 to 127\n"
         "let raw_y: i32 = pad.stick_y as i32  -- -128 to 127\n\n"
         "-- apply dead zone\nconst DEAD_ZONE: i32 = 10\n"
-        "let dx: i32 = if raw_x > DEAD_ZONE or raw_x < -DEAD_ZONE { raw_x } else { 0 }\n"
-        "let dy: i32 = if raw_y > DEAD_ZONE or raw_y < -DEAD_ZONE { raw_y } else { 0 }\n```")
+        "let dx: i32 = 0\n"
+        "if raw_x > DEAD_ZONE or raw_x < -DEAD_ZONE { dx = raw_x }\n"
+        "let dy: i32 = 0\n"
+        "if raw_y > DEAD_ZONE or raw_y < -DEAD_ZONE { dy = raw_y }\n```")
     add("How do I handle multiplayer input in Pak?",
         "```pak\ncontroller.poll()  -- poll once updates all ports\n"
         "let p1 = controller.read(0)\nlet p2 = controller.read(1)\n"

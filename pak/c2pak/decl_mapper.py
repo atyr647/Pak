@@ -22,6 +22,19 @@ from .expr_mapper import ExprMapper
 from .stmt_mapper import StmtMapper
 
 
+def method_pak_name(c_name: str, struct_name: str) -> str:
+    """Pak method name for a C function emitted into ``impl struct_name``.
+
+    Strips the conventional ``{struct}_`` prefix (case-insensitive), e.g.
+    ``player_init`` → ``init``. The single source of truth for this mapping so
+    impl definitions and rewritten call sites always agree.
+    """
+    prefix = struct_name.lower() + '_'
+    if c_name.lower().startswith(prefix):
+        return c_name[len(prefix):]
+    return c_name
+
+
 class DeclMapper:
     """Converts C declaration AST nodes to Pak source strings."""
 
@@ -194,10 +207,7 @@ class DeclMapper:
         """Emit a function signature line (fn name(params) -> ret)."""
         name = sig.name
         if method_of:
-            # Strip struct prefix: player_init → init
-            prefix = method_of.lower() + '_'
-            if name.lower().startswith(prefix):
-                name = name[len(prefix):]
+            name = method_pak_name(name, method_of)
 
         if self.enable_slice_transform:
             params = self._emit_params_with_slices(sig.params, method_of=method_of)

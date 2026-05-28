@@ -42,16 +42,11 @@ from . import ast
 # ── Known N64 module names and their approximate argument counts ──────────────
 # Value is (min_args, max_args) or None for variadic / unchecked.
 
-_KNOWN_MODULES: Dict[str, Optional[Tuple[int, int]]] = {
-    # n64.*
-    'display': None, 'controller': None, 'rdpq': None, 'sprite': None,
-    'timer': None, 'audio': None, 'debug': None, 'dma': None,
-    'cache': None, 'eeprom': None, 'rumble': None, 'cpak': None, 'tpak': None,
-    # t3d.*
-    't3d': None,
-    # std
-    'std': None,
-}
+# Derived from codegen.MODULE_API so the set of importable modules always
+# matches what codegen can actually lower. Adding an API to codegen makes it
+# importable here automatically; nothing can drift out of sync.
+from .codegen import MODULE_NAMES as _CODEGEN_MODULE_NAMES
+_KNOWN_MODULES: Set[str] = set(_CODEGEN_MODULE_NAMES) | {'std'}
 
 # (module, fn) → (min_args, max_args); None means variadic/unchecked
 _API_ARITY: Dict[Tuple[str, str], Optional[Tuple[int, int]]] = {

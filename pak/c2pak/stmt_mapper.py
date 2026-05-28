@@ -150,7 +150,15 @@ class StmtMapper:
         if decl.is_const:
             keyword = 'const'
 
-        if decl.init is not None:
+        if isinstance(decl.init, CTernary) and keyword != 'const':
+            # `T x = c ? a : b` → declare with the else value, then `if c { x = a }`
+            t = decl.init
+            cond = self._emit_expr_as_bool(t.cond)
+            lines.append(self._pad(
+                f'{keyword} {decl.name}: {pak_type} = {self._emit_expr(t.otherwise)}'))
+            lines.append(self._pad(
+                f'if {cond} {{ {decl.name} = {self._emit_expr(t.then)} }}'))
+        elif decl.init is not None:
             init_str = self._emit_init(decl.init, decl.typ)
             # Apply self-rename if needed
             if self._self_rename and self._self_rename in init_str:
@@ -224,6 +232,18 @@ class StmtMapper:
             target = self._emit_expr(expr.expr)
             op = '+=' if expr.op == '++' else '-='
             lines.append(self._pad(f'{target} {op} 1'))
+            return
+
+        # Assignment of a ternary: `x = c ? a : b` → `if c { x = a } else { x = b }`.
+        # An if/else statement (not a pre-assign) keeps the condition evaluated
+        # before the target is touched — important when c or a reference x.
+        if isinstance(expr, CAssign) and expr.op == '=' and isinstance(expr.value, CTernary):
+            t = expr.value
+            target = self._emit_expr(expr.target)
+            cond = self._emit_expr_as_bool(t.cond)
+            then_v = self._emit_expr(t.then)
+            else_v = self._emit_expr(t.otherwise)
+            lines.append(self._pad(f'if {cond} {{ {target} = {then_v} }} else {{ {target} = {else_v} }}'))
             return
 
         # Check for assignment
@@ -533,6 +553,12 @@ class StmtMapper:
     def _emit_return(self, stmt: CReturn, lines: List[str]):
         if stmt.value is None:
             lines.append(self._pad('return'))
+        elif isinstance(stmt.value, CTernary):
+            # Pak has no ternary/if-expression, so split into statements.
+            t = stmt.value
+            cond = self._emit_expr_as_bool(t.cond)
+            lines.append(self._pad(f'if {cond} {{ return {self._emit_expr(t.then)} }}'))
+            lines.append(self._pad(f'return {self._emit_expr(t.otherwise)}'))
         else:
             val = self._emit_expr(stmt.value)
             lines.append(self._pad(f'return {val}'))

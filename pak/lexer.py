@@ -84,6 +84,7 @@ class TT(Enum):
     SEMICOLON = auto() # ;
     DOT = auto()       # .
     DOTDOT = auto()    # ..
+    ELLIPSIS = auto()  # ...
     ARROW = auto()     # ->
     FAT_ARROW = auto() # =>
     EQ = auto()        # =
@@ -321,10 +322,14 @@ class Lexer:
                 if ch == '0' and self.pos < len(self.source) and self.peek().lower() == 'x':
                     num.append(self.advance())  # x
                     is_hex = True
+                    hex_digits = 0
                     while self.pos < len(self.source) and (self.peek() in '0123456789abcdefABCDEF_'):
                         c = self.advance()
                         if c != '_':
                             num.append(c)
+                            hex_digits += 1
+                    if hex_digits == 0:
+                        self.error(f"Malformed hex literal '{''.join(num)}': expected at least one hex digit after '0x'")
                 elif not is_float:
                     while self.pos < len(self.source) and (self.peek().isdigit() or self.peek() == '.'):
                         c = self.peek()
@@ -403,7 +408,10 @@ class Lexer:
                     tok(TT.PERCENT)
             elif ch == '.':
                 if self.match('.'):
-                    tok(TT.DOTDOT, '..')
+                    if self.match('.'):
+                        tok(TT.ELLIPSIS, '...')
+                    else:
+                        tok(TT.DOTDOT, '..')
                 else:
                     tok(TT.DOT)
             elif ch == '=':

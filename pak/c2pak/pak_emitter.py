@@ -29,7 +29,7 @@ from .c_ast import (
 from .type_mapper import TypeMapper
 from .expr_mapper import ExprMapper
 from .stmt_mapper import StmtMapper
-from .decl_mapper import DeclMapper, _strip_prefix, _detect_enum_prefix
+from .decl_mapper import DeclMapper, _strip_prefix, _detect_enum_prefix, method_pak_name
 from .idiom_detector import IdiomDetector, TaggedUnionInfo, MethodGroup
 from .c_preprocess import SimpleMacro
 from .n64_api import C_TO_PAK_API, get_use_statements
@@ -102,6 +102,10 @@ class PakEmitter:
         for mg in method_groups:
             for m in mg.methods:
                 method_func_names.add(m.sig.name)
+                # Teach the expr mapper to rewrite calls to these functions
+                # into method syntax, so call sites resolve to the impl symbol.
+                self.em.method_map[m.sig.name] = (
+                    mg.struct_name, method_pak_name(m.sig.name, mg.struct_name))
 
         # Phase 3: Emit macro-derived constants
         macro_lines = self._emit_macro_consts(c_file.macros)

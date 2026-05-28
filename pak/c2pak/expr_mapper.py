@@ -29,6 +29,10 @@ class ExprMapper:
 
     def __init__(self, type_mapper: TypeMapper):
         self.tm = type_mapper
+        # C function name → (struct_name, pak_method_name) for functions that
+        # are emitted as impl methods. Call sites to these must use method
+        # syntax so the symbol matches the impl definition ({Struct}_{method}).
+        self.method_map: dict = {}
 
     def emit(self, expr: CExpr, parens: bool = False) -> str:
         """Convert *expr* to a Pak source string.
@@ -192,6 +196,20 @@ class ExprMapper:
     # ── Function calls ────────────────────────────────────────────────────────
 
     def _emit_call(self, expr: CCall) -> str:
+        # Functions detected as methods are emitted inside an impl block, so a
+        # C call `vec2_init(&v, a, b)` must become `v.init(a, b)` — otherwise it
+        # references a free `vec2_init` symbol that the impl never defines.
+        if isinstance(expr.func, CId) and expr.func.name in self.method_map and expr.args:
+            _struct, method = self.method_map[expr.func.name]
+            recv = self._emit(expr.args[0])
+            # Pak method calls take the receiver's address implicitly, so drop a
+            # leading address-of (`&v` or `&mut v`) produced for the C pointer arg.
+            for pre in ('&mut ', '&'):
+                if recv.startswith(pre):
+                    recv = recv[len(pre):]
+                    break
+            rest = ', '.join(self._emit(a) for a in expr.args[1:])
+            return f'{recv}.{method}({rest})'
         func = self._emit(expr.func)
         args = ', '.join(self._emit(a) for a in expr.args)
         return f'{func}({args})'

@@ -54,6 +54,13 @@ def assert_not_contains(pak_source: str, *patterns: str):
         assert p not in pak_source, f'Did not expect {p!r} in output:\n{pak_source}'
 
 
+def assert_parses(pak_source: str):
+    """Assert the transpiled output is syntactically valid Pak."""
+    from pak.lexer import Lexer
+    from pak.parser import Parser
+    Parser(Lexer(pak_source).tokenize()).parse()  # raises LexError/ParseError on failure
+
+
 # ── Phase 0: Scaffolding / smoke tests ───────────────────────────────────────
 
 class TestPhase0Scaffolding:
@@ -278,9 +285,31 @@ class TestPhase2Statements:
         assert_contains(result, 'as f32')
 
     def test_ternary(self):
-        result = transpile('int abs(int x) { return x < 0 ? -x : x; }\n')
-        assert_contains(result, 'if x < 0')
-        assert_contains(result, 'else')
+        # Pak has no ternary/if-expression: a return-ternary must lower to
+        # `if cond { return a }` / `return b` and the result must be valid Pak.
+        result = transpile('int iabs(int x) { return x < 0 ? -x : x; }\n')
+        assert_contains(result, 'if x < 0', 'return')
+        assert_not_contains(result, 'return if ', '= if ')
+        assert_parses(result)
+
+    def test_ternary_in_assignment(self):
+        # `x = c ? a : b` must lower to a plain if/else statement that keeps the
+        # condition evaluated against the original value of x.
+        result = transpile(
+            'int pick(int a, int b) { int m = 0; m = a > b ? a : b; return m; }\n')
+        assert_not_contains(result, '= if ')
+        assert_parses(result)
+
+    def test_method_call_uses_method_syntax(self):
+        # A detected method group must rewrite call sites to method syntax so
+        # the call symbol matches the impl definition ({Struct}_{method}).
+        result = transpile(
+            'typedef struct { int x; } P;\n'
+            'void p_set(P *p, int v) { p->x = v; }\n'
+            'void run(P *p) { p_set(p, 5); }\n')
+        assert_contains(result, 'impl P', '.set(5)')
+        assert_not_contains(result, 'p_set(')
+        assert_parses(result)
 
     def test_do_while(self):
         result = transpile(

@@ -342,12 +342,18 @@ Declares C functions for FFI:
 extern "C" {
     fn c_function_name(arg: i32) -> i32
     fn another(ptr: *u8, len: u32)
+    -- trailing `...` declares a C-style variadic function (e.g. printf-family)
+    fn rdpq_text_printf(x: i32, y: i32, font: i32, fmt: *c_char, ...) -> i32
     static some_global: i32
 }
 
 -- extern constant (C macro or extern value)
 extern const SCREEN_WIDTH: i32
 ```
+
+The `...` marker is only meaningful for `extern` declarations — it tells the
+compiler the C function accepts extra trailing arguments. Pak itself has no
+`va_arg` mechanism, so you cannot write a variadic Pak function body.
 
 ---
 

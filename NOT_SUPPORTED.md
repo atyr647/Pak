@@ -79,6 +79,19 @@ fn foo() -> void { ... }
 fn foo() { ... }
 ```
 
+### No If-Expressions
+`if` is a statement, not an expression. You cannot assign the result of an
+`if`/`else` to a variable. Declare the variable with a default and assign in
+the branch instead (locals are mutable by default).
+```
+-- WRONG:
+let color: u32 = if selected { RED } else { GRAY }
+
+-- CORRECT:
+let color: u32 = GRAY
+if selected { color = RED }
+```
+
 ### No `class` Keyword
 Use `struct` with an `impl` block for methods.
 ```

@@ -15,6 +15,18 @@ use n64.controller
 use n64.rdpq
 use n64.timer
 
+struct GameState {
+    score: i32
+}
+
+fn update(gs: *GameState, input: joypad_status_t) {
+    -- advance game state from input
+}
+
+fn render(gs: *GameState) {
+    -- draw the current state
+}
+
 entry {
     -- 1. Initialize subsystems
     -- display.init(resolution, bit_depth, num_buffers, gamma, filters)
@@ -23,6 +35,8 @@ entry {
     controller.init()
     rdpq.init()
     timer.init()
+
+    let state: GameState = GameState { score: 0 }
 
     -- 2. Main game loop
     loop {

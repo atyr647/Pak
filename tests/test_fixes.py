@@ -357,3 +357,55 @@ class TestDmaCheckerArgs:
             }
         """)
         assert 'E201' in errors, f"E201 must fire when cache.writeback is missing; got: {errors}"
+
+
+class TestMalformedHexLiteral:
+    """lexer.py: `0x` with no hex digits must raise a clean LexError (E001),
+    not crash the parser with an uncaught ValueError."""
+
+    def test_bare_0x_is_lex_error(self):
+        with pytest.raises(LexError):
+            Lexer("entry { let x: u8 = 0xPA }").tokenize()
+
+    def test_0x_at_eof_is_lex_error(self):
+        with pytest.raises(LexError):
+            Lexer("let x = 0x").tokenize()
+
+    def test_valid_hex_still_lexes(self):
+        parse_ok("entry { let x: u32 = 0xFF00 }")
+
+    def test_hex_underscores_still_lex(self):
+        parse_ok("entry { let x: u32 = 0xDE_AD_BE_EF }")
+
+
+class TestVariadicExtern:
+    """parser/codegen: a trailing `...` declares a C-style variadic extern."""
+
+    SRC = """
+        extern "C" {
+            fn rdpq_text_printf(x: i32, y: i32, font: i32, fmt: *c_char, ...) -> i32
+        }
+        entry {
+            rdpq_text_printf(10, 20, 1, "score %d", 42)
+            rdpq_text_printf(10, 40, 1, "ready")
+        }
+    """
+
+    def test_variadic_extern_parses(self):
+        prog = parse_ok(self.SRC)
+        from pak import ast as _ast
+        fns = []
+        for d in prog.decls:
+            if isinstance(d, _ast.ExternBlock):
+                fns.extend(m for m in d.decls if isinstance(m, _ast.FnDecl))
+        assert fns and fns[0].variadic is True
+        assert len(fns[0].params) == 4
+
+    def test_variadic_extern_typechecks(self):
+        # Extra trailing args beyond the fixed params must not error.
+        assert not tc_error_codes(self.SRC)
+
+    def test_variadic_extern_codegen_emits_ellipsis(self):
+        from tests.test_compiler import codegen
+        c = codegen(self.SRC)
+        assert "char * fmt, ...);" in c

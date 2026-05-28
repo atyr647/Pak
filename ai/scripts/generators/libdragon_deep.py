@@ -172,7 +172,8 @@ def gen_libdragon_deep() -> list[dict]:
         "    let handle: i32 = dfs_open(path)\n"
         "    if handle < 0 { return -1 }\n"
         "    let size: i32 = dfs_size(handle)\n"
-        "    let to_read: i32 = if size < max_size { size } else { max_size }\n"
+        "    let to_read: i32 = max_size\n"
+        "    if size < max_size { to_read = size }\n"
         "    dfs_read(dst, 1, to_read, handle)\n"
         "    dfs_close(handle)\n"
         "    return to_read\n}\n```")

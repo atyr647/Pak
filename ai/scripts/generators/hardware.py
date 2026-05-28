@@ -216,7 +216,8 @@ def gen_hardware() -> list[dict]:
     add("What is the analog stick dead zone on N64?",
         "The analog stick has slight drift at rest. Apply a dead zone of ~10:\n\n"
         "```pak\nconst DEAD_ZONE: i32 = 10\n\nlet raw_x: i32 = pad.stick_x as i32\n"
-        "let dx: i32 = if raw_x > DEAD_ZONE or raw_x < -DEAD_ZONE { raw_x } else { 0 }\n```")
+        "let dx: i32 = 0\n"
+        "if raw_x > DEAD_ZONE or raw_x < -DEAD_ZONE { dx = raw_x }\n```")
 
     add("What is the difference between held, pressed, and released in Pak?",
         "- `pad.held.a`: true every frame while A is held down\n"

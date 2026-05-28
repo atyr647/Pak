@@ -503,6 +503,12 @@ MODULE_API: dict = {
 }
 
 
+# Canonical set of module namespaces that codegen can lower. This is the single
+# source of truth for "which modules exist"; the checker and typechecker derive
+# their module sets from this so the three can never drift apart.
+MODULE_NAMES = {mod for (mod, _fn) in MODULE_API}
+
+
 def _addr(args, i):
     """Return &args[i] if not already a pointer expression."""
     if i < len(args):
@@ -2311,7 +2317,11 @@ class Codegen:
                 params.append(self.gen_array_decl(p.name, p.type))
             else:
                 params.append(f'{self.gen_type(p.type)} {p.name}')
-        param_str = ', '.join(params) if params else 'void'
+        if getattr(fn, 'variadic', False):
+            params.append('...')
+            param_str = ', '.join(params)
+        else:
+            param_str = ', '.join(params) if params else 'void'
 
         # Annotations → C attributes
         attrs = []

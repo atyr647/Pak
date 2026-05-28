@@ -29,10 +29,9 @@ fn fill_audio() {
         if i >= SAMPLES_PER_FRAME * 2 { break }
 
         let t: i32 = sample_counter + i / 2
-        let sample: i16 = if (t % period) < (period / 2) {
-            volume as i16
-        } else {
-            -(volume as i16)
+        let sample: i16 = -(volume as i16)
+        if (t % period) < (period / 2) {
+            sample = volume as i16
         }
 
         buf[i] = sample         -- left
