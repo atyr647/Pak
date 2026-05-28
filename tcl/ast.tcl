@@ -24,6 +24,10 @@ foreach _r [struct::record show records] {
 }
 unset -nocomplain _r
 
+# Construct an AST node. Scalar field values are auto-wrapped per the field's
+# kind in ::pak::FKIND, so call sites read like the Python parser
+# (`name $x` rather than `name [pak::Lit $x]`). Kinds with kind `n` are passed
+# through unchanged and must already be tagged values (a node, seq, lit, or nil).
 proc pak::N {kind args} {
     if {![dict exists $::pak::SCHEMA $kind]} {
         return -code error "pak::N: unknown AST kind '$kind'"
@@ -33,7 +37,25 @@ proc pak::N {kind args} {
     if {$got ne $want} {
         return -code error "pak::N $kind: fields {$got} != schema {$want}"
     }
-    return [list node $kind $args]
+    set kinds [dict get $::pak::FKIND $kind]
+    set fields [dict create]
+    foreach {f v} $args {
+        dict set fields $f [pak::wrap [dict get $kinds $f] $v]
+    }
+    return [list node $kind $fields]
+}
+
+# Wrap a raw field value according to its kind (see gen_schema.py header).
+proc pak::wrap {k v} {
+    switch -- $k {
+        s - i   { return [list lit $v] }
+        f       { return [list fnum $v] }
+        b       { return [list bool [expr {$v ? 1 : 0}]] }
+        L       { return [list seq $v] }
+        Ls      { set o {}; foreach e $v { lappend o [list lit $e] }; return [list seq $o] }
+        n       { return $v }
+        default { return -code error "pak::wrap: bad kind '$k'" }
+    }
 }
 
 # Schema-checked field read for nodes (use instead of raw dict get in walkers).

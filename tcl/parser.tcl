@@ -3,6 +3,10 @@
 # Builds the tagged-value AST from tcl/ast.tcl. Validated for structural parity
 # against the Python parser via tcl/tools/ast_parity.sh. Constructs not yet
 # ported raise a parse error (the harness then reports that file as unported).
+#
+# Field values handed to pak::N are auto-wrapped per the AST schema, so the
+# constructor calls read like the Python ones (`name $x`, not `name [pak::Lit
+# $x]`). See tcl/ast.tcl / tcl/tools/gen_schema.py for the wrap kinds.
 
 set _here [file dirname [file normalize [info script]]]
 source [file join $_here lexer.tcl]
@@ -36,28 +40,41 @@ oo::class create pak::Parser {
         if {[my check {*}$args]} { return [my advance] }
         return ""
     }
+    # accept: consume the next token if it is one of $args; return 1/0. Replaces
+    # the `[my match X] ne ""` idiom so call sites mirror Python's `if match(X):`.
+    method accept {args} { return [expr {[my match {*}$args] ne ""}] }
     method expect {tt} {
         if {[my check $tt]} { return [my advance] }
         set t [my peek]
         return -code error "PARSEERROR\t[dict get $t line]\t[dict get $t col]\tExpected $tt (got [dict get $t type])"
+    }
+    # value-returning variants (mirror Python's `self.expect(...).value`)
+    method advancev {}   { return [dict get [my advance] value] }
+    method expectv {tt}  { return [dict get [my expect $tt] value] }
+    method namev {}      { return [dict get [my expect_name] value] }
+    # collect a run of leading annotations as a plain list of @-strings
+    method anns {} {
+        set a {}
+        while {[my check ANNOTATION]} { lappend a [my advancev] }
+        return $a
     }
 
     # ── entry ─────────────────────────────────────────────────────────────────
     method parse {} {
         set decls {}
         while {![my check EOF]} {
-            while {[my match SEMICOLON] ne ""} {}
+            while {[my accept SEMICOLON]} {}
             if {[my check EOF]} break
             lappend decls [my parse_top_level]
         }
-        return [pak::N Program decls [pak::Seq $decls]]
+        return [pak::N Program decls $decls]
     }
 
     method parse_top_level {} {
         set anns {}
         set cfg ""
         while {[my check ANNOTATION]} {
-            set a [dict get [my advance] value]
+            set a [my advancev]
             if {[string match "@cfg(*" $a]} { set cfg $a } else { lappend anns $a }
         }
         set t [my ptype]
@@ -82,7 +99,7 @@ oo::class create pak::Parser {
                 set cond [my parse_expr]; my expect RPAREN
                 set then [my parse_decl_block]
                 set elseb [pak::Nil]
-                if {[my match ELSE] ne ""} { set elseb [my parse_decl_block] }
+                if {[my accept ELSE]} { set elseb [my parse_decl_block] }
                 set decl [pak::N ComptimeIf condition $cond then $then else_branch $elseb]
             }
             default {
@@ -94,7 +111,7 @@ oo::class create pak::Parser {
             set fs [string trim [string range $cfg 5 end-1]]
             set neg 0
             if {[string match "not(*" $fs]} { set neg 1; set fs [string trim [string range $fs 4 end-1]] }
-            set decl [pak::N CfgBlock feature [pak::Lit $fs] negated [pak::Bool $neg] decl $decl]
+            set decl [pak::N CfgBlock feature $fs negated $neg decl $decl]
         }
         return $decl
     }
@@ -115,7 +132,7 @@ oo::class create pak::Parser {
         my advance
         set res {}
         while {![my check GT] && ![my check EOF]} {
-            lappend res [dict get [my expect IDENT] value]
+            lappend res [my expectv IDENT]
             my match COMMA
         }
         my expect GT
@@ -126,77 +143,71 @@ oo::class create pak::Parser {
         my expect USE
         set path [my parse_dotted_name]
         set alias [pak::Nil]
-        if {[my match AS] ne ""} { set alias [pak::Lit [dict get [my expect IDENT] value]] }
-        return [pak::N UseDecl path [pak::Lit $path] alias $alias]
+        if {[my accept AS]} { set alias [pak::Lit [my expectv IDENT]] }
+        return [pak::N UseDecl path $path alias $alias]
     }
     method parse_dotted_name {} {
-        set parts [list [dict get [my expect IDENT] value]]
+        set parts [list [my expectv IDENT]]
         while {[my check DOT]} {
             my advance
-            lappend parts [dict get [my expect IDENT] value]
+            lappend parts [my expectv IDENT]
         }
         return [join $parts "."]
     }
 
     method parse_const {} {
         my expect CONST
-        set name [dict get [my expect IDENT] value]
+        set name [my expectv IDENT]
         set typ [pak::Nil]
-        if {[my match COLON] ne ""} { set typ [my parse_type] }
+        if {[my accept COLON]} { set typ [my parse_type] }
         my expect EQ
         set val [my parse_expr]
         my match SEMICOLON
-        return [pak::N ConstDecl name [pak::Lit $name] type $typ value $val]
+        return [pak::N ConstDecl name $name type $typ value $val]
     }
     method parse_static {anns} {
         my expect STATIC
-        set name [dict get [my expect IDENT] value]
+        set name [my expectv IDENT]
         set typ [pak::Nil]
-        if {[my match COLON] ne ""} { set typ [my parse_type] }
+        if {[my accept COLON]} { set typ [my parse_type] }
         set val [pak::Nil]
-        if {[my match EQ] ne ""} { set val [my parse_expr] }
-        return [pak::N StaticDecl annotations [my ann_seq $anns] name [pak::Lit $name] type $typ value $val]
+        if {[my accept EQ]} { set val [my parse_expr] }
+        return [pak::N StaticDecl annotations $anns name $name type $typ value $val]
     }
     method parse_let {anns} {
         my expect LET
         set mutable [pak::Nil]
-        if {[my match MUT] ne ""} { set mutable [pak::Lit mut] }
-        set name [dict get [my expect IDENT] value]
+        if {[my accept MUT]} { set mutable [pak::Lit mut] }
+        set name [my expectv IDENT]
         set typ [pak::Nil]
-        if {[my match COLON] ne ""} { set typ [my parse_type] }
+        if {[my accept COLON]} { set typ [my parse_type] }
         set val [pak::Nil]
-        if {[my match EQ] ne ""} { set val [my parse_expr] }
-        return [pak::N LetDecl name [pak::Lit $name] type $typ value $val mutable $mutable annotations [my ann_seq $anns]]
-    }
-
-    method ann_seq {anns} {
-        set items {}
-        foreach a $anns { lappend items [pak::Lit $a] }
-        return [pak::Seq $items]
+        if {[my accept EQ]} { set val [my parse_expr] }
+        return [pak::N LetDecl name $name type $typ value $val mutable $mutable annotations $anns]
     }
 
     method parse_fn {anns} {
         my expect FN
-        set name [dict get [my expect IDENT] value]
+        set name [my expectv IDENT]
         set tparams [my parse_generic_params]
         my expect LPAREN
         set params {}
         set variadic 0
         while {![my check RPAREN] && ![my check EOF]} {
-            if {[my match ELLIPSIS] ne ""} { set variadic 1; break }
+            if {[my accept ELLIPSIS]} { set variadic 1; break }
             set mut 0
-            if {[my match MUT] ne ""} { set mut 1 }
-            if {[my check SELF]} { set pname [dict get [my advance] value] } else { set pname [dict get [my expect IDENT] value] }
+            if {[my accept MUT]} { set mut 1 }
+            if {[my check SELF]} { set pname [my advancev] } else { set pname [my expectv IDENT] }
             my expect COLON
             set ptype [my parse_type]
             set dv [pak::Nil]
-            if {[my match EQ] ne ""} { set dv [my parse_expr] }
-            lappend params [pak::N Param name [pak::Lit $pname] type $ptype mutable [pak::Bool $mut] default_value $dv]
+            if {[my accept EQ]} { set dv [my parse_expr] }
+            lappend params [pak::N Param name $pname type $ptype mutable $mut default_value $dv]
             my match COMMA
         }
         my expect RPAREN
         set ret [pak::Nil]
-        if {[my match ARROW] ne ""} { set ret [my parse_type] }
+        if {[my accept ARROW]} { set ret [my parse_type] }
         set body [pak::Nil]
         if {[my check LBRACE]} { set body [my parse_block] }
         set is_method 0
@@ -219,11 +230,9 @@ oo::class create pak::Parser {
                 }
             }
         }
-        set tpseq {}
-        foreach tp $tparams { lappend tpseq [pak::Lit $tp] }
-        return [pak::N FnDecl name [pak::Lit $name] params [pak::Seq $params] ret_type $ret \
-            body $body type_params [pak::Seq $tpseq] annotations [my ann_seq $anns] \
-            is_method [pak::Bool $is_method] self_type $self_type variadic [pak::Bool $variadic]]
+        return [pak::N FnDecl name $name params $params ret_type $ret \
+            body $body type_params $tparams annotations $anns \
+            is_method $is_method self_type $self_type variadic $variadic]
     }
 
     method parse_entry {} {
@@ -235,18 +244,17 @@ oo::class create pak::Parser {
         my expect EXTERN
         if {[my check CONST]} {
             my advance
-            set name [dict get [my expect IDENT] value]
+            set name [my expectv IDENT]
             my expect COLON
             set typ [my parse_type]
             my match SEMICOLON
-            return [pak::N ExternConst name [pak::Lit $name] type $typ]
+            return [pak::N ExternConst name $name type $typ]
         }
-        set abi [dict get [my expect STRING] value]
+        set abi [my expectv STRING]
         my expect LBRACE
         set decls {}
         while {![my check RBRACE] && ![my check EOF]} {
-            set ann {}
-            while {[my check ANNOTATION]} { lappend ann [dict get [my advance] value] }
+            set ann [my anns]
             if {[my check FN]} {
                 lappend decls [my parse_fn $ann]
             } elseif {[my check STATIC]} {
@@ -256,91 +264,90 @@ oo::class create pak::Parser {
             }
         }
         my expect RBRACE
-        return [pak::N ExternBlock abi [pak::Lit $abi] decls [pak::Seq $decls]]
+        return [pak::N ExternBlock abi $abi decls $decls]
     }
 
     method parse_decl_block {} {
         my expect LBRACE
         set decls {}
         while {![my check RBRACE] && ![my check EOF]} {
-            while {[my match SEMICOLON] ne ""} {}
+            while {[my accept SEMICOLON]} {}
             if {[my check RBRACE] || [my check EOF]} break
             lappend decls [my parse_top_level]
         }
         my expect RBRACE
-        return [pak::N Block stmts [pak::Seq $decls]]
+        return [pak::N Block stmts $decls]
     }
 
     method parse_asset {} {
         my expect ASSET
-        set name [dict get [my expect IDENT] value]
+        set name [my expectv IDENT]
         set atype [pak::Nil]
-        if {[my match COLON] ne ""} { set atype [pak::Lit [dict get [my expect IDENT] value]] }
+        if {[my accept COLON]} { set atype [pak::Lit [my expectv IDENT]] }
         my expect FROM
-        set path [dict get [my expect STRING] value]
-        return [pak::N AssetDecl name [pak::Lit $name] asset_type $atype path [pak::Lit $path]]
+        set path [my expectv STRING]
+        return [pak::N AssetDecl name $name asset_type $atype path $path]
     }
     method parse_module {} {
         my expect MODULE
-        return [pak::N ModuleDecl path [pak::Lit [my parse_dotted_name]]]
+        return [pak::N ModuleDecl path [my parse_dotted_name]]
     }
 
     method parse_struct {anns} {
         my expect STRUCT
-        set name [dict get [my expect IDENT] value]
+        set name [my expectv IDENT]
         set tparams [my parse_generic_params]
         my expect LBRACE
         set fields {}
         while {![my check RBRACE] && ![my check EOF]} {
-            set fann {}
-            while {[my check ANNOTATION]} { lappend fann [dict get [my advance] value] }
-            set fname [dict get [my expect IDENT] value]
+            set fann [my anns]
+            set fname [my expectv IDENT]
             my expect COLON
             set ftype [my parse_type]
             set bw [pak::Nil]
             if {[my check COLON]} {
                 set save $pos
                 my advance
-                if {[my check INT]} { set bw [pak::Lit [pak::intval [dict get [my advance] value]]] } else { set pos $save }
+                if {[my check INT]} { set bw [pak::Lit [pak::intval [my advancev]]] } else { set pos $save }
             }
             set dv [pak::Nil]
-            if {[my match EQ] ne ""} { set dv [my parse_expr] }
+            if {[my accept EQ]} { set dv [my parse_expr] }
             my match COMMA
-            lappend fields [pak::N StructField name [pak::Lit $fname] type $ftype \
-                annotations [my ann_seq $fann] default_value $dv bit_width $bw]
+            lappend fields [pak::N StructField name $fname type $ftype \
+                annotations $fann default_value $dv bit_width $bw]
         }
         my expect RBRACE
-        return [pak::N StructDecl name [pak::Lit $name] fields [pak::Seq $fields] \
-            type_params [my tp_seq $tparams] annotations [my ann_seq $anns]]
+        return [pak::N StructDecl name $name fields $fields \
+            type_params $tparams annotations $anns]
     }
 
     method parse_enum {anns} {
         my expect ENUM
-        set name [dict get [my expect IDENT] value]
+        set name [my expectv IDENT]
         set base [pak::Nil]
-        if {[my match COLON] ne ""} { set base [pak::Lit [dict get [my expect IDENT] value]] }
+        if {[my accept COLON]} { set base [pak::Lit [my expectv IDENT]] }
         my expect LBRACE
         set variants {}
         while {![my check RBRACE] && ![my check EOF]} {
-            set vname [dict get [my expect_name] value]
+            set vname [my namev]
             set val [pak::Nil]
-            if {[my match EQ] ne ""} { set val [my parse_expr] }
+            if {[my accept EQ]} { set val [my parse_expr] }
             my match COMMA
-            lappend variants [pak::N EnumVariant name [pak::Lit $vname] value $val]
+            lappend variants [pak::N EnumVariant name $vname value $val]
         }
         my expect RBRACE
-        return [pak::N EnumDecl name [pak::Lit $name] base_type $base variants [pak::Seq $variants] annotations [my ann_seq $anns]]
+        return [pak::N EnumDecl name $name base_type $base variants $variants annotations $anns]
     }
 
     method parse_variant {anns} {
         my expect VARIANT
-        set name [dict get [my expect IDENT] value]
+        set name [my expectv IDENT]
         my expect LBRACE
         set cases {}
         while {![my check RBRACE] && ![my check EOF]} {
-            set cname [dict get [my expect_name] value]
+            set cname [my namev]
             set cfields {}
-            if {[my match LPAREN] ne ""} {
+            if {[my accept LPAREN]} {
                 while {![my check RPAREN] && ![my check EOF]} {
                     lappend cfields [my parse_type]
                     my match COMMA
@@ -349,7 +356,7 @@ oo::class create pak::Parser {
             } elseif {[my check LBRACE]} {
                 my advance
                 while {![my check RBRACE] && ![my check EOF]} {
-                    set fn [dict get [my expect IDENT] value]
+                    set fn [my expectv IDENT]
                     my expect COLON
                     set ft [my parse_type]
                     my match COMMA
@@ -358,10 +365,10 @@ oo::class create pak::Parser {
                 my expect RBRACE
             }
             my match COMMA
-            lappend cases [pak::N VariantCase name [pak::Lit $cname] fields [pak::Seq $cfields]]
+            lappend cases [pak::N VariantCase name $cname fields $cfields]
         }
         my expect RBRACE
-        return [pak::N VariantDecl name [pak::Lit $name] cases [pak::Seq $cases] annotations [my ann_seq $anns]]
+        return [pak::N VariantDecl name $name cases $cases annotations $anns]
     }
 
     method method_fixup {m type_name} {
@@ -374,100 +381,90 @@ oo::class create pak::Parser {
 
     method parse_impl {} {
         my expect IMPL
-        set type_name [dict get [my expect IDENT] value]
+        set type_name [my expectv IDENT]
         set tparams [my parse_generic_params]
-        if {[my match FOR] ne ""} {
-            set trait [dict get [my expect IDENT] value]
+        if {[my accept FOR]} {
+            set trait [my expectv IDENT]
             my expect LBRACE
             set methods {}
             while {![my check RBRACE] && ![my check EOF]} {
-                set ann {}
-                while {[my check ANNOTATION]} { lappend ann [dict get [my advance] value] }
+                set ann [my anns]
                 if {[my check FN]} { lappend methods [my method_fixup [my parse_fn $ann] $type_name] } else { my advance }
             }
             my expect RBRACE
-            return [pak::N ImplTraitBlock type_name [pak::Lit $type_name] trait_name [pak::Lit $trait] \
-                methods [pak::Seq $methods] type_params [my tp_seq $tparams]]
+            return [pak::N ImplTraitBlock type_name $type_name trait_name $trait \
+                methods $methods type_params $tparams]
         }
         my expect LBRACE
         set methods {}
         while {![my check RBRACE] && ![my check EOF]} {
-            set ann {}
-            while {[my check ANNOTATION]} { lappend ann [dict get [my advance] value] }
+            set ann [my anns]
             if {[my check FN]} { lappend methods [my method_fixup [my parse_fn $ann] $type_name] } else { my advance }
         }
         my expect RBRACE
-        return [pak::N ImplBlock type_name [pak::Lit $type_name] type_params [my tp_seq $tparams] methods [pak::Seq $methods]]
+        return [pak::N ImplBlock type_name $type_name type_params $tparams methods $methods]
     }
 
     method parse_trait {anns} {
         my expect TRAIT
-        set name [dict get [my expect IDENT] value]
+        set name [my expectv IDENT]
         my expect LBRACE
         set methods {}
         while {![my check RBRACE] && ![my check EOF]} {
-            set ann {}
-            while {[my check ANNOTATION]} { lappend ann [dict get [my advance] value] }
+            set ann [my anns]
             if {[my check FN]} { lappend methods [my parse_fn $ann] } else { my advance }
         }
         my expect RBRACE
-        return [pak::N TraitDecl name [pak::Lit $name] methods [pak::Seq $methods] annotations [my ann_seq $anns]]
+        return [pak::N TraitDecl name $name methods $methods annotations $anns]
     }
 
     method parse_union {anns} {
         my expect UNION
-        set name [dict get [my expect IDENT] value]
+        set name [my expectv IDENT]
         my expect LBRACE
         set fields {}
         while {![my check RBRACE] && ![my check EOF]} {
-            set ann {}
-            while {[my check ANNOTATION]} { lappend ann [dict get [my advance] value] }
+            set ann [my anns]
             if {[my check FN]} break
             if {[my check IDENT]} {
-                set fn [dict get [my advance] value]
+                set fn [my advancev]
                 my expect COLON
                 set ft [my parse_type]
-                lappend fields [pak::N StructField name [pak::Lit $fn] type $ft \
-                    annotations [my ann_seq $ann] default_value [pak::Nil] bit_width [pak::Nil]]
+                lappend fields [pak::N StructField name $fn type $ft \
+                    annotations $ann default_value [pak::Nil] bit_width [pak::Nil]]
             }
-            if {[my match COMMA] eq ""} { my match SEMICOLON }
+            if {![my accept COMMA]} { my match SEMICOLON }
         }
         my expect RBRACE
-        return [pak::N UnionDecl name [pak::Lit $name] fields [pak::Seq $fields] annotations [my ann_seq $anns]]
-    }
-
-    method tp_seq {tparams} {
-        set items {}
-        foreach tp $tparams { lappend items [pak::Lit $tp] }
-        return [pak::Seq $items]
+        return [pak::N UnionDecl name $name fields $fields annotations $anns]
     }
 
     # ── types ─────────────────────────────────────────────────────────────────
     method parse_type {} {
         if {[my check LPAREN]} {
             my advance
-            if {[my check RPAREN]} { my advance; return [pak::N TypeTuple elements [pak::Seq {}]] }
+            if {[my check RPAREN]} { my advance; return [pak::N TypeTuple elements {}] }
             set first [my parse_type]
             if {[my check COMMA]} {
                 set els [list $first]
-                while {[my match COMMA] ne ""} {
+                while {[my accept COMMA]} {
                     if {[my check RPAREN]} break
                     lappend els [my parse_type]
                 }
                 my expect RPAREN
-                return [pak::N TypeTuple elements [pak::Seq $els]]
+                return [pak::N TypeTuple elements $els]
             }
             my expect RPAREN
             return $first
         }
         if {[my check DYN]} {
             my advance
-            return [pak::N TypeDynTrait name [pak::Lit [dict get [my expect IDENT] value]]]
+            return [pak::N TypeDynTrait name [my expectv IDENT]]
         }
-        if {[my match QUESTION] ne ""} {
+        if {[my accept QUESTION]} {
             if {[my check STAR]} {
                 my advance
-                return [pak::N TypePointer inner [my parse_type] nullable [pak::Bool 1] mutable [pak::Bool 0]]
+                return [pak::N TypePointer inner [my parse_type] nullable 1 mutable 0]
             }
             return [pak::N TypeOption inner [my parse_type]]
         }
@@ -475,10 +472,10 @@ oo::class create pak::Parser {
             my advance
             return [pak::N TypeVolatile inner [my parse_type]]
         }
-        if {[my match STAR] ne ""} {
-            set vol 0; if {[my match VOLATILE] ne ""} { set vol 1 }
-            set mut 0; if {[my match MUT] ne ""} { set mut 1 }
-            set ptr [pak::N TypePointer inner [my parse_type] nullable [pak::Bool 0] mutable [pak::Bool $mut]]
+        if {[my accept STAR]} {
+            set vol 0; if {[my accept VOLATILE]} { set vol 1 }
+            set mut 0; if {[my accept MUT]} { set mut 1 }
+            set ptr [pak::N TypePointer inner [my parse_type] nullable 0 mutable $mut]
             if {$vol} { return [pak::N TypeVolatile inner $ptr] }
             return $ptr
         }
@@ -486,8 +483,8 @@ oo::class create pak::Parser {
             my advance
             if {[my check RBRACKET]} {
                 my advance
-                set mut 0; if {[my match MUT] ne ""} { set mut 1 }
-                return [pak::N TypeSlice inner [my parse_type] mutable [pak::Bool $mut]]
+                set mut 0; if {[my accept MUT]} { set mut 1 }
+                return [pak::N TypeSlice inner [my parse_type] mutable $mut]
             }
             set save $pos
             if {![catch {
@@ -514,11 +511,11 @@ oo::class create pak::Parser {
             }
             my expect RPAREN
             set ret [pak::Nil]
-            if {[my match ARROW] ne ""} { set ret [my parse_type] }
-            return [pak::N TypeFn params [pak::Seq $params] ret $ret]
+            if {[my accept ARROW]} { set ret [my parse_type] }
+            return [pak::N TypeFn params $params ret $ret]
         }
-        set name [dict get [my expect IDENT] value]
-        while {[my check DOT]} { my advance; append name "." [dict get [my expect IDENT] value] }
+        set name [my expectv IDENT]
+        while {[my check DOT]} { my advance; append name "." [my expectv IDENT] }
         if {$name eq "Result" && [my check LPAREN]} {
             my advance
             set ok [my parse_type]; my expect COMMA; set err [my parse_type]; my expect RPAREN
@@ -533,23 +530,23 @@ oo::class create pak::Parser {
             set args {}
             while {![my check RPAREN] && ![my check EOF]} {
                 if {[my check INT]} {
-                    set r [dict get [my advance] value]
-                    lappend args [pak::N IntLit value [pak::Lit [pak::intval $r]] raw [pak::Lit $r]]
+                    set r [my advancev]
+                    lappend args [pak::N IntLit value [pak::intval $r] raw $r]
                 } else {
                     lappend args [my parse_type]
                 }
                 my match COMMA
             }
             my expect RPAREN
-            return [pak::N TypeGeneric name [pak::Lit $name] args [pak::Seq $args]]
+            return [pak::N TypeGeneric name $name args $args]
         }
         if {[my check LT]} {
             set targs [my try_type_args]
             if {$targs ne "NONE"} {
-                return [pak::N TypeGeneric name [pak::Lit $name] args [pak::Seq $targs]]
+                return [pak::N TypeGeneric name $name args $targs]
             }
         }
-        return [pak::N TypeName name [pak::Lit $name]]
+        return [pak::N TypeName name $name]
     }
 
     method try_type_args {} {
@@ -589,17 +586,16 @@ oo::class create pak::Parser {
         my expect LBRACE
         set stmts {}
         while {![my check RBRACE] && ![my check EOF]} {
-            while {[my match SEMICOLON] ne ""} {}
+            while {[my accept SEMICOLON]} {}
             if {[my check RBRACE] || [my check EOF]} break
             lappend stmts [my parse_stmt]
         }
         my expect RBRACE
-        return [pak::N Block stmts [pak::Seq $stmts]]
+        return [pak::N Block stmts $stmts]
     }
 
     method parse_stmt {} {
-        set anns {}
-        while {[my check ANNOTATION]} { lappend anns [dict get [my advance] value] }
+        set anns [my anns]
         set t [my ptype]
         switch -- $t {
             LET     { return [my parse_let $anns] }
@@ -623,7 +619,7 @@ oo::class create pak::Parser {
             ENUM     { return [my parse_enum $anns] }
             VARIANT  { return [my parse_variant $anns] }
             ASM      { return [my parse_asm_stmt] }
-            GOTO     { my advance; return [pak::N GotoStmt label [pak::Lit [dict get [my expect IDENT] value]]] }
+            GOTO     { my advance; return [pak::N GotoStmt label [my expectv IDENT]] }
             DO {
                 my advance
                 set body [my parse_block]
@@ -636,14 +632,14 @@ oo::class create pak::Parser {
                 set cond [my parse_expr]; my expect RPAREN
                 set then [my parse_block]
                 set elseb [pak::Nil]
-                if {[my match ELSE] ne ""} { set elseb [my parse_block] }
+                if {[my accept ELSE]} { set elseb [my parse_block] }
                 return [pak::N ComptimeIf condition $cond then $then else_branch $elseb]
             }
             default {
                 if {$t eq "IDENT" && [my ptype 1] eq "COLON" && [my ptype 2] ne "COLON"} {
-                    set ln [dict get [my advance] value]
+                    set ln [my advancev]
                     my advance
-                    return [pak::N LabelStmt name [pak::Lit $ln]]
+                    return [pak::N LabelStmt name $ln]
                 }
                 return [pak::N ExprStmt expr [my parse_expr]]
             }
@@ -653,12 +649,12 @@ oo::class create pak::Parser {
     method parse_if {} {
         my expect IF
         set cond [my parse_expr]
-        if {[my match ARROW] ne ""} {
-            set binding [dict get [my expect IDENT] value]
+        if {[my accept ARROW]} {
+            set binding [my expectv IDENT]
             set then [my parse_block]
             set elseb [pak::Nil]
-            if {[my match ELSE] ne ""} { set elseb [my parse_block] }
-            return [pak::N NullCheckStmt expr $cond binding [pak::Lit $binding] then $then else_branch $elseb]
+            if {[my accept ELSE]} { set elseb [my parse_block] }
+            return [pak::N NullCheckStmt expr $cond binding $binding then $then else_branch $elseb]
         }
         set then [my parse_block]
         set elifs {}
@@ -684,22 +680,22 @@ oo::class create pak::Parser {
                 }
             }
         }
-        return [pak::N IfStmt condition $cond then $then elif_branches [pak::Seq $elifs] else_branch $elseb]
+        return [pak::N IfStmt condition $cond then $then elif_branches $elifs else_branch $elseb]
     }
 
     method parse_for {} {
         my expect FOR
-        set first [dict get [my expect IDENT] value]
+        set first [my expectv IDENT]
         set index [pak::Nil]
         set binding $first
-        if {[my match COMMA] ne ""} {
+        if {[my accept COMMA]} {
             set index [pak::Lit $first]
-            set binding [dict get [my expect IDENT] value]
+            set binding [my expectv IDENT]
         }
         my expect IN
         set iter [my parse_expr]
         set body [my parse_block]
-        return [pak::N ForStmt index $index binding [pak::Lit $binding] iterable $iter body $body]
+        return [pak::N ForStmt index $index binding $binding iterable $iter body $body]
     }
 
     method parse_match {} {
@@ -712,7 +708,7 @@ oo::class create pak::Parser {
             my match COMMA
         }
         my expect RBRACE
-        return [pak::N MatchStmt expr $expr arms [pak::Seq $arms]]
+        return [pak::N MatchStmt expr $expr arms $arms]
     }
 
     method parse_match_arm {} {
@@ -721,7 +717,7 @@ oo::class create pak::Parser {
         if {[my check LBRACE]} {
             set body [my parse_block]
         } else {
-            set body [pak::N Block stmts [pak::Seq [list [my parse_stmt]]]]
+            set body [pak::N Block stmts [list [my parse_stmt]]]
         }
         return [pak::N MatchArm pattern $pat guard [pak::Nil] body $body]
     }
@@ -729,49 +725,49 @@ oo::class create pak::Parser {
     method parse_pattern {} {
         if {[my check DOT]} {
             my advance
-            set name [dict get [my expect_name] value]
+            set name [my namev]
             if {[my check LPAREN]} {
                 my advance
                 set args {}
                 while {![my check RPAREN]} {
                     if {[my check IDENT]} {
-                        lappend args [pak::N Ident name [pak::Lit [dict get [my advance] value]] type_args [pak::Seq {}]]
+                        lappend args [pak::N Ident name [my advancev] type_args {}]
                     } elseif {[my check UNDERSCORE]} {
                         my advance
-                        lappend args [pak::N Ident name [pak::Lit "_"] type_args [pak::Seq {}]]
+                        lappend args [pak::N Ident name "_" type_args {}]
                     }
                     if {[my check COMMA]} { my advance }
                 }
                 my expect RPAREN
-                return [pak::N Call func [pak::N EnumVariantAccess name [pak::Lit $name]] args [pak::Seq $args] type_args [pak::Seq {}]]
+                return [pak::N Call func [pak::N EnumVariantAccess name $name] args $args type_args {}]
             }
-            return [pak::N EnumVariantAccess name [pak::Lit $name]]
+            return [pak::N EnumVariantAccess name $name]
         } elseif {[my check UNDERSCORE]} {
             my advance
-            return [pak::N Ident name [pak::Lit "_"] type_args [pak::Seq {}]]
+            return [pak::N Ident name "_" type_args {}]
         } elseif {[my check INT]} {
-            set r [dict get [my advance] value]
-            return [pak::N IntLit value [pak::Lit [pak::intval $r]] raw [pak::Lit $r]]
+            set r [my advancev]
+            return [pak::N IntLit value [pak::intval $r] raw $r]
         } elseif {[my check STRING]} {
-            return [pak::N StringLit value [pak::Lit [dict get [my advance] value]]]
+            return [pak::N StringLit value [my advancev]]
         } elseif {[my check IDENT]} {
-            set name [dict get [my advance] value]
+            set name [my advancev]
             if {[my check DOT]} {
                 my advance
-                set variant [dict get [my expect IDENT] value]
+                set variant [my expectv IDENT]
                 set binding [pak::Nil]
                 if {[my check LPAREN]} {
                     my advance
-                    if {![my check RPAREN]} { set binding [pak::Lit [dict get [my expect IDENT] value]] }
+                    if {![my check RPAREN]} { set binding [pak::Lit [my expectv IDENT]] }
                     my expect RPAREN
                 }
-                return [pak::N DotAccess obj [pak::N Ident name [pak::Lit $name] type_args [pak::Seq {}]] field [pak::Lit $variant] binding $binding]
+                return [pak::N DotAccess obj [pak::N Ident name $name type_args {}] field $variant binding $binding]
             }
-            return [pak::N Ident name [pak::Lit $name] type_args [pak::Seq {}]]
+            return [pak::N Ident name $name type_args {}]
         } elseif {[my check TRUE]} {
-            my advance; return [pak::N BoolLit value [pak::Bool 1]]
+            my advance; return [pak::N BoolLit value 1]
         } elseif {[my check FALSE]} {
-            my advance; return [pak::N BoolLit value [pak::Bool 0]]
+            my advance; return [pak::N BoolLit value 0]
         } else {
             return [my parse_expr]
         }
@@ -779,12 +775,12 @@ oo::class create pak::Parser {
 
     method parse_asm_stmt {} {
         my expect ASM
-        set vol 0; if {[my match VOLATILE] ne ""} { set vol 1 }
+        set vol 0; if {[my accept VOLATILE]} { set vol 1 }
         my expect LBRACE
         set lines {}
         while {![my check RBRACE] && ![my check EOF]} {
             if {[my check STRING]} {
-                lappend lines [pak::Lit [dict get [my advance] value]]
+                lappend lines [my advancev]
             } elseif {[my check SEMICOLON]} {
                 my advance
             } else {
@@ -792,7 +788,7 @@ oo::class create pak::Parser {
             }
         }
         my expect RBRACE
-        return [pak::N AsmStmt lines [pak::Seq $lines] volatile [pak::Bool $vol]]
+        return [pak::N AsmStmt lines $lines volatile $vol]
     }
 
     # ── expressions (precedence) ─────────────────────────────────────────────────
@@ -803,12 +799,12 @@ oo::class create pak::Parser {
         if {[my check EQ]} {
             my advance
             set right [my parse_assign]
-            return [pak::N Assign target $left value $right op [pak::Lit "="]]
+            return [pak::N Assign target $left value $right op "="]
         }
         foreach {tt opstr} {PLUS_EQ += MINUS_EQ -= STAR_EQ *= SLASH_EQ /= PERCENT_EQ %= SHL_EQ <<= SHR_EQ >>= AMP_EQ &= PIPE_EQ |= CARET_EQ ^=} {
-            if {[my match $tt] ne ""} {
+            if {[my accept $tt]} {
                 set right [my parse_assign]
-                return [pak::N Assign target $left value $right op [pak::Lit $opstr]]
+                return [pak::N Assign target $left value $right op $opstr]
             }
         }
         return $left
@@ -816,14 +812,14 @@ oo::class create pak::Parser {
 
     method parse_catch {} {
         set expr [my parse_or]
-        if {[my match CATCH] ne ""} {
+        if {[my accept CATCH]} {
             set binding [pak::Nil]
             if {[my check PIPE]} {
                 my advance
-                set binding [pak::Lit [dict get [my expect IDENT] value]]
+                set binding [pak::Lit [my expectv IDENT]]
                 my expect PIPE
             } elseif {[my check IDENT] && [my ptype 1] eq "LBRACE"} {
-                set binding [pak::Lit [dict get [my advance] value]]
+                set binding [pak::Lit [my advancev]]
             }
             set handler [my parse_block]
             return [pak::N CatchExpr expr $expr binding $binding handler $handler]
@@ -837,7 +833,7 @@ oo::class create pak::Parser {
             set op [dict get $types [my ptype]]
             my advance
             set right [my $next]
-            set left [pak::N BinaryOp op [pak::Lit $op] left $left right $right]
+            set left [pak::N BinaryOp op $op left $left right $right]
         }
         return $left
     }
@@ -854,22 +850,22 @@ oo::class create pak::Parser {
     method parse_mul {} { return [my binop_chain parse_unary {STAR * SLASH / PERCENT %}] }
 
     method parse_unary {} {
-        if {[my match BANG] ne "" || ([my check NOT] && [my advance] ne "")} {
-            return [pak::N UnaryOp op [pak::Lit "!"] operand [my parse_unary]]
+        if {[my accept BANG] || [my accept NOT]} {
+            return [pak::N UnaryOp op "!" operand [my parse_unary]]
         }
-        if {[my match MINUS] ne ""} { return [pak::N UnaryOp op [pak::Lit "-"] operand [my parse_unary]] }
-        if {[my match AMP] ne ""} {
+        if {[my accept MINUS]} { return [pak::N UnaryOp op "-" operand [my parse_unary]] }
+        if {[my accept AMP]} {
             set mut 0
-            if {[my match MUT] ne ""} { set mut 1 }
-            return [pak::N AddrOf expr [my parse_unary] mutable [pak::Bool $mut]]
+            if {[my accept MUT]} { set mut 1 }
+            return [pak::N AddrOf expr [my parse_unary] mutable $mut]
         }
-        if {[my match STAR] ne ""} { return [pak::N Deref expr [my parse_unary]] }
+        if {[my accept STAR]} { return [pak::N Deref expr [my parse_unary]] }
         return [my parse_cast]
     }
 
     method parse_cast {} {
         set expr [my parse_postfix]
-        if {[my match AS] ne ""} {
+        if {[my accept AS]} {
             return [pak::N Cast expr $expr type [my parse_type]]
         }
         return $expr
@@ -882,36 +878,36 @@ oo::class create pak::Parser {
                 if {[my ptype 1] eq "IDENT" && [my ptype 2] eq "FAT_ARROW"} break
                 my advance
                 if {[my check INT]} {
-                    set idx [dict get [my advance] value]
-                    set expr [pak::N TupleAccess obj $expr index [pak::Lit [pak::intval $idx]]]
+                    set idx [my advancev]
+                    set expr [pak::N TupleAccess obj $expr index [pak::intval $idx]]
                 } else {
-                    set fld [dict get [my expect_name] value]
-                    set expr [pak::N DotAccess obj $expr field [pak::Lit $fld] binding [pak::Nil]]
+                    set fld [my namev]
+                    set expr [pak::N DotAccess obj $expr field $fld binding [pak::Nil]]
                 }
             } elseif {[my check LPAREN]} {
                 my advance
                 set args {}
                 while {![my check RPAREN] && ![my check EOF]} {
                     if {[my check IDENT] && [my ptype 1] eq "COLON"} {
-                        set an [dict get [my advance] value]
+                        set an [my advancev]
                         my advance
                         set av [my parse_expr]
-                        lappend args [pak::N NamedArg name [pak::Lit $an] value $av]
+                        lappend args [pak::N NamedArg name $an value $av]
                     } else {
                         lappend args [my parse_expr]
                     }
                     my match COMMA
                 }
                 my expect RPAREN
-                set targs [pak::Seq {}]
+                set targs {}
                 if {[lindex $expr 0] eq "node" && [lindex $expr 1] eq "Ident"} {
-                    set targs [dict get [lindex $expr 2] type_args]
+                    set targs [lindex [dict get [lindex $expr 2] type_args] 1]
                     # consume: rebuild ident with empty type_args
                     set f [lindex $expr 2]
                     dict set f type_args [pak::Seq {}]
                     set expr [list node Ident $f]
                 }
-                set expr [pak::N Call func $expr args [pak::Seq $args] type_args $targs]
+                set expr [pak::N Call func $expr args $args type_args $targs]
             } elseif {[my check LBRACKET]} {
                 my advance
                 set idx [my parse_expr]
@@ -938,8 +934,8 @@ oo::class create pak::Parser {
         set t [my ptype]
         switch -- $t {
             INT {
-                set raw [dict get [my advance] value]
-                set lit [pak::N IntLit value [pak::Lit [pak::intval $raw]] raw [pak::Lit $raw]]
+                set raw [my advancev]
+                set lit [pak::N IntLit value [pak::intval $raw] raw $raw]
                 if {[my check DOTDOT]} {
                     my advance
                     set end [pak::Nil]
@@ -949,19 +945,19 @@ oo::class create pak::Parser {
                 return $lit
             }
             FLOAT {
-                set raw [dict get [my advance] value]
-                return [pak::N FloatLit value [pak::Fnum $raw] raw [pak::Lit ""]]
+                set raw [my advancev]
+                return [pak::N FloatLit value $raw raw ""]
             }
             STRING {
-                set v [dict get [my advance] value]
+                set v [my advancev]
                 return [my string_or_fmt $v]
             }
-            TRUE  { my advance; return [pak::N BoolLit value [pak::Bool 1]] }
-            FALSE { my advance; return [pak::N BoolLit value [pak::Bool 0]] }
+            TRUE  { my advance; return [pak::N BoolLit value 1] }
+            FALSE { my advance; return [pak::N BoolLit value 0] }
             NONE  { my advance; return [pak::N NoneLit] }
             UNDEFINED { my advance; return [pak::N UndefinedLit] }
-            UNDERSCORE { my advance; return [pak::N Ident name [pak::Lit "_"] type_args [pak::Seq {}]] }
-            SELF  { my advance; return [pak::N Ident name [pak::Lit "self"] type_args [pak::Seq {}]] }
+            UNDERSCORE { my advance; return [pak::N Ident name "_" type_args {}] }
+            SELF  { my advance; return [pak::N Ident name "self" type_args {}] }
             OK    { my advance; my expect LPAREN; set v [my parse_expr]; my expect RPAREN; return [pak::N OkExpr value $v] }
             ERR   { my advance; my expect LPAREN; set v [my parse_expr]; my expect RPAREN; return [pak::N ErrExpr value $v] }
             ALIGNOF {
@@ -980,17 +976,17 @@ oo::class create pak::Parser {
             }
             OFFSETOF {
                 my advance; my expect LPAREN
-                set tn [dict get [my expect IDENT] value]
+                set tn [my expectv IDENT]
                 my expect COMMA
-                set fn [dict get [my expect IDENT] value]
+                set fn [my expectv IDENT]
                 my expect RPAREN
-                return [pak::N OffsetOf type_name [pak::Lit $tn] field [pak::Lit $fn]]
+                return [pak::N OffsetOf type_name $tn field $fn]
             }
             ALLOC {
                 my advance; my expect LPAREN
                 set tn [my parse_type]
                 set count [pak::Nil]; set alc [pak::Nil]
-                if {[my match COMMA] ne ""} {
+                if {[my accept COMMA]} {
                     if {!([my check IDENT] && [my pval] eq "using")} { set count [my parse_expr] }
                 }
                 if {[my check IDENT] && [my pval] eq "using"} { my advance; set alc [my parse_expr] }
@@ -1009,81 +1005,81 @@ oo::class create pak::Parser {
                 my advance; my expect LPAREN
                 set params {}
                 while {![my check RPAREN] && ![my check EOF]} {
-                    set mut 0; if {[my match MUT] ne ""} { set mut 1 }
-                    set pname [dict get [my advance] value]
+                    set mut 0; if {[my accept MUT]} { set mut 1 }
+                    set pname [my advancev]
                     my expect COLON
                     set ptype [my parse_type]
-                    lappend params [pak::N Param name [pak::Lit $pname] type $ptype mutable [pak::Bool $mut] default_value [pak::Nil]]
+                    lappend params [pak::N Param name $pname type $ptype mutable $mut default_value [pak::Nil]]
                     my match COMMA
                 }
                 my expect RPAREN
                 set ret [pak::Nil]
-                if {[my match ARROW] ne ""} { set ret [my parse_type] }
+                if {[my accept ARROW]} { set ret [my parse_type] }
                 set body [my parse_block]
-                return [pak::N Closure params [pak::Seq $params] ret_type $ret body $body]
+                return [pak::N Closure params $params ret_type $ret body $body]
             }
             ASM {
                 my advance; my expect LPAREN
-                set tmpl [dict get [my expect STRING] value]
+                set tmpl [my expectv STRING]
                 set outs {}; set ins {}; set clob {}
-                if {[my match COLON] ne ""} {
+                if {[my accept COLON]} {
                     while {[my check STRING]} {
-                        set con [dict get [my advance] value]
+                        set con [my advancev]
                         my expect LPAREN; set e [my parse_expr]; my expect RPAREN
                         lappend outs [pak::Seq [list [pak::Lit $con] $e]]
                         my match COMMA
                     }
                 }
-                if {[my match COLON] ne ""} {
+                if {[my accept COLON]} {
                     while {[my check STRING]} {
-                        set con [dict get [my advance] value]
+                        set con [my advancev]
                         my expect LPAREN; set e [my parse_expr]; my expect RPAREN
                         lappend ins [pak::Seq [list [pak::Lit $con] $e]]
                         my match COMMA
                     }
                 }
-                if {[my match COLON] ne ""} {
-                    while {[my check STRING]} { lappend clob [pak::Lit [dict get [my advance] value]]; my match COMMA }
+                if {[my accept COLON]} {
+                    while {[my check STRING]} { lappend clob [my advancev]; my match COMMA }
                 }
                 my expect RPAREN
-                return [pak::N AsmExpr template [pak::Lit $tmpl] outputs [pak::Seq $outs] inputs [pak::Seq $ins] clobbers [pak::Seq $clob] volatile [pak::Bool 1]]
+                return [pak::N AsmExpr template $tmpl outputs $outs inputs $ins clobbers $clob volatile 1]
             }
-            DOT   { my advance; return [pak::N EnumVariantAccess name [pak::Lit [dict get [my expect IDENT] value]]] }
+            DOT   { my advance; return [pak::N EnumVariantAccess name [my expectv IDENT]] }
             LPAREN {
                 my advance
-                if {[my check RPAREN]} { my advance; return [pak::N TupleLit elements [pak::Seq {}]] }
+                if {[my check RPAREN]} { my advance; return [pak::N TupleLit elements {}] }
                 set first [my parse_expr]
                 if {[my check COMMA]} {
                     set els [list $first]
-                    while {[my match COMMA] ne ""} {
+                    while {[my accept COMMA]} {
                         if {[my check RPAREN]} break
                         lappend els [my parse_expr]
                     }
                     my expect RPAREN
-                    return [pak::N TupleLit elements [pak::Seq $els]]
+                    return [pak::N TupleLit elements $els]
                 }
                 my expect RPAREN
                 return $first
             }
             LBRACKET {
                 my advance
-                if {[my check RBRACKET]} { my advance; return [pak::N ArrayLit elements [pak::Seq {}] repeat [pak::Nil]] }
+                if {[my check RBRACKET]} { my advance; return [pak::N ArrayLit elements {} repeat [pak::Nil]] }
                 set first [my parse_expr]
-                if {[my match SEMICOLON] ne ""} {
+                if {[my accept SEMICOLON]} {
                     set cnt [my parse_expr]
                     my expect RBRACKET
-                    return [pak::N ArrayLit elements [pak::Seq [list $first]] repeat $cnt]
+                    return [pak::N ArrayLit elements [list $first] repeat $cnt]
                 }
                 set els [list $first]
-                while {[my match COMMA] ne ""} {
+                while {[my accept COMMA]} {
                     if {[my check RBRACKET]} break
                     lappend els [my parse_expr]
                 }
                 my expect RBRACKET
-                return [pak::N ArrayLit elements [pak::Seq $els] repeat [pak::Nil]]
+                return [pak::N ArrayLit elements $els repeat [pak::Nil]]
             }
             IDENT {
-                set name [dict get [my advance] value]
+                set name [my advancev]
                 set targs {}
                 if {[my check LT]} {
                     set save $pos
@@ -1093,28 +1089,26 @@ oo::class create pak::Parser {
                     my advance
                     set fields {}
                     while {![my check RBRACE] && ![my check EOF]} {
-                        set fn [dict get [my expect IDENT] value]
+                        set fn [my expectv IDENT]
                         my expect COLON
                         set fv [my parse_expr]
                         lappend fields [pak::Seq [list [pak::Lit $fn] $fv]]
                         my match COMMA
                     }
                     my expect RBRACE
-                    return [pak::N StructLit type_name [pak::Lit $name] fields [pak::Seq $fields]]
+                    return [pak::N StructLit type_name $name fields $fields]
                 }
                 if {[my check DOTDOT] && [llength $targs] == 0} {
                     my advance
                     set end [pak::Nil]
                     if {![my check RBRACE] && ![my check COMMA] && ![my check RPAREN]} { set end [my parse_primary] }
-                    return [pak::N RangeExpr start [pak::N Ident name [pak::Lit $name] type_args [pak::Seq {}]] end $end]
+                    return [pak::N RangeExpr start [pak::N Ident name $name type_args {}] end $end]
                 }
-                set taseq [pak::Seq {}]
+                set taseq {}
                 if {[llength $targs] > 0 && [my check LPAREN]} {
-                    set items {}
-                    foreach tp $targs { lappend items [pak::Lit $tp] }
-                    set taseq [pak::Seq $items]
+                    foreach tp $targs { lappend taseq [pak::Lit $tp] }
                 }
-                return [pak::N Ident name [pak::Lit $name] type_args $taseq]
+                return [pak::N Ident name $name type_args $taseq]
             }
             default {
                 set tk [my peek]
@@ -1137,12 +1131,12 @@ oo::class create pak::Parser {
     method string_or_fmt {raw} {
         # Plain string fast-path (matches pak/parser._parse_string_or_fmtstr when no braces).
         if {[string first "\{" $raw] < 0 && [string first "\}" $raw] < 0} {
-            return [pak::N StringLit value [pak::Lit $raw]]
+            return [pak::N StringLit value $raw]
         }
         # Escaped-only braces -> plain string with {{->{ }}->}
         set escaped [string map [list "\{\{" "" "\}\}" ""] $raw]
         if {[string first "\{" $escaped] < 0} {
-            return [pak::N StringLit value [pak::Lit [string map [list "\{\{" "\{" "\}\}" "\}"] $raw]]]
+            return [pak::N StringLit value [string map [list "\{\{" "\{" "\}\}" "\}"] $raw]]
         }
         # Interpolation (FmtStr) not yet ported.
         return -code error "PARSEERROR\t0\t0\tFmtStr interpolation not yet ported"
