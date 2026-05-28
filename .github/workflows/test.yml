@@ -120,7 +120,8 @@ jobs:
           python3 tcl/tools/gen_schema.py
           python3 tcl/tools/gen_check_tables.py
           python3 tcl/tools/gen_tc_tables.py
-          git diff --exit-code tcl/ast_schema.tcl tcl/check_tables.tcl tcl/tc_tables.tcl \
+          python3 tcl/tools/gen_cg_tables.py
+          git diff --exit-code tcl/ast_schema.tcl tcl/check_tables.tcl tcl/tc_tables.tcl tcl/cg_tables.tcl \
             || { echo "Generated Tcl mirrors are stale — run the gen_*.py scripts and commit."; exit 1; }
 
       - name: Lexer parity (Tcl vs Python oracle)
@@ -134,6 +135,13 @@ jobs:
 
       - name: Typechecker diagnostic parity (Tcl vs Python oracle)
         run: bash tcl/tools/tc_parity.sh
+
+      # Codegen is ported incrementally; this asserts the files already lowered
+      # stay byte-identical to the golden C (and that none regress to wrong
+      # output). The committed snapshots are the oracle — they are re-verified
+      # against `pak explain` in the test job, so no pak install is needed here.
+      - name: Codegen C parity (ported subset, Tcl vs golden C)
+        run: bash tcl/tools/cg_parity.sh
 
       - name: Static-lint Tcl sources (nagelfar)
         run: bash tcl/tools/lint.sh

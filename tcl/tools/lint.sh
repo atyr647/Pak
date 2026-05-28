@@ -2,10 +2,12 @@
 # Static-check the Tcl compiler sources with nagelfar.
 #
 # Files are checked together (ast.tcl first) so cross-file proc definitions
-# resolve. External commands are declared in pak.syntax (a nagelfar DB). Two
+# resolve. External commands are declared in pak.syntax (a nagelfar DB). Three
 # benign message classes are still filtered:
 #   - "... which is also a variable"  : intentional dict-key string literals
 #   - "Non static subcommand"         : dynamic method dispatch (my $var)
+#   - "Unescaped close brace"         : literal '}' inside emitted-C strings in
+#                                       codegen.tcl (a C generator prints braces)
 # Exits non-zero on any error-severity (": E ") finding.
 #
 # NOTE on the DB flags: nagelfar loads its built-in syntax database (which
@@ -20,11 +22,11 @@ REPO="$(cd "$HERE/../.." && pwd)"
 cd "$REPO"
 NAGELFAR="$HERE/vendor/nagelfar/nagelfar.tcl"
 
-# ast_schema.tcl, check_tables.tcl and tc_tables.tcl are generated and skipped.
-FILES="tcl/ast.tcl tcl/ast_visit.tcl tcl/lexer.tcl tcl/parser.tcl tcl/checker.tcl tcl/typechecker.tcl"
+# ast_schema/check_tables/tc_tables/cg_tables are generated and skipped.
+FILES="tcl/ast.tcl tcl/ast_visit.tcl tcl/lexer.tcl tcl/parser.tcl tcl/checker.tcl tcl/typechecker.tcl tcl/codegen.tcl"
 
 out="$(tclsh "$NAGELFAR" -s _ -s "$HERE/pak.syntax" $FILES 2>&1 \
-  | grep -vE 'which is also a variable|Non static subcommand')"
+  | grep -vE 'which is also a variable|Non static subcommand|Unescaped close brace')"
 echo "$out"
 
 # The base DB ships per-Tcl-version variants (syntaxdb86/87/90). Defaulting to
