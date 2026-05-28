@@ -1,0 +1,109 @@
+-- audio_player.pak
+-- Audio synthesis demo: generates tones with controller-selectable frequency.
+-- Demonstrates: audio subsystem, buffer fill, none check, interleaved stereo.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+use n64.audio
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const SAMPLE_RATE: i32 = 44100
+const SAMPLES_PER_FRAME: i32 = 735
+
+static frequency: i32 = 440
+static volume: i32 = 4000
+static sample_counter: i32 = 0
+
+fn fill_audio() {
+    let buf: *i16 = audio.get_buffer()
+    if buf == none { return }
+
+    -- generate square wave at current frequency
+    let period: i32 = SAMPLE_RATE / frequency
+
+    let i: i32 = 0
+    loop {
+        if i >= SAMPLES_PER_FRAME * 2 { break }
+
+        let t: i32 = sample_counter + i / 2
+        let sample: i16 = if (t % period) < (period / 2) {
+            volume as i16
+        } else {
+            -(volume as i16)
+        }
+
+        buf[i] = sample         -- left
+        buf[i + 1] = sample     -- right (mono duplicate)
+        i = i + 2
+    }
+
+    sample_counter = sample_counter + SAMPLES_PER_FRAME
+}
+
+fn update_controls() {
+    controller.poll()
+    let pad = controller.read(0)
+
+    -- change frequency with d-pad
+    if pad.pressed.up {
+        frequency = frequency + 110
+        if frequency > 2000 { frequency = 2000 }
+    }
+    if pad.pressed.down {
+        frequency = frequency - 110
+        if frequency < 110 { frequency = 110 }
+    }
+
+    -- change volume with C buttons
+    if pad.held.c_up {
+        volume = volume + 100
+        if volume > 16000 { volume = 16000 }
+    }
+    if pad.held.c_down {
+        volume = volume - 100
+        if volume < 0 { volume = 0 }
+    }
+}
+
+fn render_ui() {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    rdpq.set_mode_fill(0x222222FF)
+    rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+
+    -- visualize frequency as bar width
+    let bar_w: i32 = frequency / 8
+    if bar_w > SCREEN_W - 20 { bar_w = SCREEN_W - 20 }
+
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(0x00FF88FF)
+    rdpq.fill_rectangle(10, 100, 10 + bar_w, 140)
+
+    -- visualize volume as bar height
+    let bar_h: i32 = volume / 100
+    if bar_h > 200 { bar_h = 200 }
+
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(0xFF8800FF)
+    rdpq.fill_rectangle(140, 200 - bar_h, 180, 200)
+
+    rdpq.detach_show()
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+    audio.init(SAMPLE_RATE, 4)
+
+    loop {
+        update_controls()
+        fill_audio()
+        render_ui()
+    }
+}

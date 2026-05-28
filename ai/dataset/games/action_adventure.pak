@@ -1,0 +1,840 @@
+-- action_adventure.pak
+-- Complete 3D action-adventure game combining: 3D rendering, physics, enemy AI,
+-- inventory, audio, save/load, dialog, HUD, state machine, weapon system.
+-- Demonstrates: Perfect Dark / Zelda style architecture on N64.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+use n64.audio
+use n64.mixer
+use n64.eeprom
+use t3d
+
+extern "C" {
+    fn rdpq_mode_push()
+    fn rdpq_mode_pop()
+    fn rdpq_text_printf(x: i32, y: i32, font: i32, fmt: *c_char, ...) -> i32
+    fn wav64_open(wav: *wav64_t, path: *c_char)
+    fn wav64_play(wav: *wav64_t, channel: i32)
+    fn xm64player_open(xm: *xm64player_t, path: *c_char)
+    fn xm64player_play(xm: *xm64player_t, first_channel: i32)
+    fn xm64player_set_vol(xm: *xm64player_t, vol: f32)
+    fn xm64player_stop(xm: *xm64player_t)
+}
+
+-- ============================================================
+-- Constants
+-- ============================================================
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const MAX_ENEMIES: i32 = 12
+const MAX_ITEMS: i32 = 8
+const MAX_BULLETS: i32 = 16
+const SAVE_MAGIC: u32 = 0x41415641   -- 'AAVA'
+const GRAVITY: f32 = -25.0
+const JUMP_FORCE: f32 = 13.0
+const MOVE_SPEED: f32 = 9.0
+const CAM_DISTANCE: f32 = 14.0
+
+-- ============================================================
+-- Types
+-- ============================================================
+enum GameState { boot, title, gameplay, pause, dialog, game_over, credits }
+enum EnemyState { idle, patrol, alert, chase, attack, hurt, dead }
+enum ItemType { none_item, health_potion, key, sword, shield, bomb }
+
+struct SaveData {
+    magic: u32
+    checksum: u32
+    level: u8
+    lives: u8
+    score: i32
+    flags: u32      -- bitfield: unlocked doors, collected items
+    pad: [u8; 48]   -- pad to 64 bytes = 8 EEPROM blocks
+}
+
+struct Player {
+    x: f32
+    y: f32
+    z: f32
+    vx: f32
+    vy: f32
+    vz: f32
+    rot_y: f32
+    grounded: bool
+    hp: i32
+    max_hp: i32
+    lives: i32
+    score: i32
+    ammo: i32
+    has_sword: bool
+    has_shield: bool
+    invincible_timer: f32
+    fire_cooldown: f32
+}
+
+struct Enemy {
+    active: bool
+    x: f32
+    y: f32
+    z: f32
+    rot_y: f32
+    hp: i32
+    max_hp: i32
+    state: EnemyState
+    state_timer: f32
+    patrol_x: f32
+    patrol_z: f32
+    attack_damage: i32
+    drop_item: ItemType
+}
+
+struct PickupItem {
+    active: bool
+    item: ItemType
+    x: f32
+    y: f32
+    z: f32
+    spin: f32
+}
+
+struct Bullet {
+    active: bool
+    x: f32
+    y: f32
+    z: f32
+    dx: f32
+    dz: f32
+    life: f32
+}
+
+struct DialogBox {
+    active: bool
+    text: [c_char; 96]
+    len: i32
+    shown: i32
+    timer: f32
+}
+
+-- ============================================================
+-- Globals
+-- ============================================================
+static game_state: GameState = GameState.boot
+static next_state: GameState = GameState.boot
+
+static player: Player = undefined
+static enemies: [Enemy; 12] = undefined
+static items: [PickupItem; 8] = undefined
+static bullets: [Bullet; 16] = undefined
+static dialog: DialogBox = undefined
+
+static viewport: T3DViewport = undefined
+static player_skel: T3DSkeleton = undefined
+static player_anim_idle: T3DAnim = undefined
+static player_anim_run: T3DAnim = undefined
+static player_model: *T3DModel = none
+static enemy_model: *T3DModel = none
+static level_model: *T3DModel = none
+
+static sfx_jump: wav64_t = undefined
+static sfx_hit: wav64_t = undefined
+static sfx_pickup: wav64_t = undefined
+static sfx_shoot: wav64_t = undefined
+static music: xm64player_t = undefined
+
+static is_moving: bool = false
+
+-- ============================================================
+-- Save / Load
+-- ============================================================
+fn save_checksum(s: *SaveData) -> u32 {
+    let old: u32 = s.checksum
+    s.checksum = 0
+    let sum: u32 = 0
+    let ptr: *u8 = s as *u8
+    let i: i32 = 0
+    loop {
+        if i >= sizeof(SaveData) as i32 { break }
+        sum = sum + (ptr[i] as u32)
+        i = i + 1
+    }
+    s.checksum = old
+    return sum
+}
+
+fn save_game() -> bool {
+    if not eeprom.present() { return false }
+    let data: SaveData = undefined
+    data.magic = SAVE_MAGIC
+    data.level = 1 as u8
+    data.lives = player.lives as u8
+    data.score = player.score
+    data.flags = 0
+    if player.has_sword { data.flags = data.flags | 1 }
+    if player.has_shield { data.flags = data.flags | 2 }
+    data.checksum = save_checksum(&data)
+    let ptr: *u8 = &data as *u8
+    let b: i32 = 0
+    loop {
+        if b >= 8 { break }
+        eeprom.write(b, &ptr[b * 8])
+        b = b + 1
+    }
+    return true
+}
+
+fn load_game() -> bool {
+    if not eeprom.present() { return false }
+    let data: SaveData = undefined
+    let ptr: *u8 = &data as *u8
+    let b: i32 = 0
+    loop {
+        if b >= 8 { break }
+        eeprom.read(b, &ptr[b * 8])
+        b = b + 1
+    }
+    if data.magic != SAVE_MAGIC { return false }
+    let expected: u32 = save_checksum(&data)
+    if expected != data.checksum { return false }
+    player.lives = data.lives as i32
+    player.score = data.score
+    player.has_sword = (data.flags & 1) != 0
+    player.has_shield = (data.flags & 2) != 0
+    return true
+}
+
+-- ============================================================
+-- Player
+-- ============================================================
+fn init_player() {
+    player.x = 0.0
+    player.y = 2.0
+    player.z = 0.0
+    player.vx = 0.0
+    player.vy = 0.0
+    player.vz = 0.0
+    player.rot_y = 0.0
+    player.grounded = true
+    player.hp = 100
+    player.max_hp = 100
+    player.lives = 3
+    player.score = 0
+    player.ammo = 20
+    player.has_sword = false
+    player.has_shield = false
+    player.invincible_timer = 0.0
+    player.fire_cooldown = 0.0
+}
+
+fn player_update(dt: f32, pad: *controller_data) {
+    -- movement
+    let sx: i32 = pad.stick_x as i32
+    let sy: i32 = pad.stick_y as i32
+    is_moving = false
+
+    if sx > 12 or sx < -12 {
+        player.vx = (sx as f32) / 80.0 * MOVE_SPEED
+        is_moving = true
+    } else {
+        player.vx = player.vx * 0.8
+    }
+    if sy > 12 or sy < -12 {
+        player.vz = (sy as f32) / 80.0 * MOVE_SPEED
+        is_moving = true
+    } else {
+        player.vz = player.vz * 0.8
+    }
+
+    -- face movement direction (simplified)
+    if is_moving {
+        player.rot_y = player.rot_y * 0.8 + 0.2
+    }
+
+    -- jump
+    if pad.pressed.a and player.grounded {
+        player.vy = JUMP_FORCE
+        player.grounded = false
+        if not mixer.ch_playing(4) {
+            wav64_play(&sfx_jump, 4)
+        }
+    }
+
+    -- shoot
+    player.fire_cooldown = player.fire_cooldown - dt
+    if player.fire_cooldown < 0.0 { player.fire_cooldown = 0.0 }
+
+    if pad.pressed.z and player.ammo > 0 and player.fire_cooldown <= 0.0 {
+        spawn_bullet(player.x, player.y, player.z, player.vz + 30.0)
+        player.ammo = player.ammo - 1
+        player.fire_cooldown = 0.25
+        if not mixer.ch_playing(5) {
+            wav64_play(&sfx_shoot, 5)
+        }
+    }
+
+    -- gravity + integrate
+    player.vy = player.vy + GRAVITY * dt
+    player.x = player.x + player.vx * dt
+    player.y = player.y + player.vy * dt
+    player.z = player.z + player.vz * dt
+
+    -- floor
+    if player.y < 2.0 {
+        player.y = 2.0
+        player.vy = 0.0
+        player.grounded = true
+    }
+
+    -- invincibility frames
+    if player.invincible_timer > 0.0 {
+        player.invincible_timer = player.invincible_timer - dt
+    }
+
+    -- death
+    if player.hp <= 0 {
+        player.lives = player.lives - 1
+        if player.lives <= 0 {
+            next_state = GameState.game_over
+        } else {
+            init_player()
+        }
+    }
+
+    -- pause
+    if pad.pressed.start {
+        next_state = GameState.pause
+    }
+}
+
+-- ============================================================
+-- Enemies
+-- ============================================================
+fn init_enemies() {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_ENEMIES { break }
+        enemies[i].active = false
+        i = i + 1
+    }
+
+    -- spawn some enemies
+    enemies[0].active = true
+    enemies[0].x = 15.0
+    enemies[0].y = 0.0
+    enemies[0].z = 15.0
+    enemies[0].hp = 30
+    enemies[0].max_hp = 30
+    enemies[0].state = EnemyState.patrol
+    enemies[0].patrol_x = 20.0
+    enemies[0].patrol_z = 10.0
+    enemies[0].attack_damage = 15
+    enemies[0].drop_item = ItemType.health_potion
+
+    enemies[1].active = true
+    enemies[1].x = -20.0
+    enemies[1].y = 0.0
+    enemies[1].z = 30.0
+    enemies[1].hp = 50
+    enemies[1].max_hp = 50
+    enemies[1].state = EnemyState.idle
+    enemies[1].patrol_x = -15.0
+    enemies[1].patrol_z = 25.0
+    enemies[1].attack_damage = 20
+    enemies[1].drop_item = ItemType.sword
+}
+
+fn enemy_update(e: *Enemy, dt: f32) {
+    let dx: f32 = player.x - e.x
+    let dz: f32 = player.z - e.z
+    let dist_sq: f32 = dx * dx + dz * dz
+    e.state_timer = e.state_timer + dt
+
+    match e.state {
+        EnemyState.idle => {
+            if dist_sq < 1600.0 {  -- 40 units
+                e.state = EnemyState.alert
+                e.state_timer = 0.0
+            }
+        }
+        EnemyState.alert => {
+            if e.state_timer > 0.5 {
+                e.state = EnemyState.chase
+                e.state_timer = 0.0
+            }
+        }
+        EnemyState.patrol => {
+            let pdx: f32 = e.patrol_x - e.x
+            let pdz: f32 = e.patrol_z - e.z
+            e.x = e.x + pdx * 0.015 * dt * 60.0
+            e.z = e.z + pdz * 0.015 * dt * 60.0
+            if dist_sq < 900.0 { e.state = EnemyState.chase }
+            if pdx * pdx + pdz * pdz < 2.0 {
+                -- reverse patrol
+                let tmp: f32 = e.patrol_x
+                e.patrol_x = e.x
+                e.x = tmp
+            }
+        }
+        EnemyState.chase => {
+            e.x = e.x + dx * 0.025 * dt * 60.0
+            e.z = e.z + dz * 0.025 * dt * 60.0
+            if dist_sq < 25.0 and e.state_timer > 1.0 {  -- 5 units
+                e.state = EnemyState.attack
+                e.state_timer = 0.0
+            }
+            if dist_sq > 3600.0 { e.state = EnemyState.patrol }
+        }
+        EnemyState.attack => {
+            if e.state_timer > 0.6 {
+                if player.invincible_timer <= 0.0 {
+                    player.hp = player.hp - e.attack_damage
+                    player.invincible_timer = 1.5
+                    if not mixer.ch_playing(6) {
+                        wav64_play(&sfx_hit, 6)
+                    }
+                }
+                e.state = EnemyState.chase
+                e.state_timer = 0.0
+            }
+        }
+        EnemyState.hurt => {
+            if e.state_timer > 0.3 {
+                e.state = EnemyState.chase
+                e.state_timer = 0.0
+            }
+        }
+        EnemyState.dead => { }
+    }
+
+    if e.hp <= 0 and e.state != EnemyState.dead {
+        e.state = EnemyState.dead
+        player.score = player.score + 100
+        spawn_item(e.drop_item, e.x, e.y, e.z)
+    }
+}
+
+fn enemies_update(dt: f32) {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_ENEMIES { break }
+        if enemies[i].active and enemies[i].state != EnemyState.dead {
+            enemy_update(&enemies[i], dt)
+        }
+        i = i + 1
+    }
+}
+
+-- ============================================================
+-- Items
+-- ============================================================
+fn init_items() {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_ITEMS { break }
+        items[i].active = false
+        i = i + 1
+    }
+}
+
+fn spawn_item(itype: ItemType, x: f32, y: f32, z: f32) {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_ITEMS { break }
+        if not items[i].active {
+            items[i].active = true
+            items[i].item = itype
+            items[i].x = x
+            items[i].y = y + 1.0
+            items[i].z = z
+            items[i].spin = 0.0
+            return
+        }
+        i = i + 1
+    }
+}
+
+fn items_update(dt: f32) {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_ITEMS { break }
+        if items[i].active {
+            items[i].spin = items[i].spin + dt * 2.5
+
+            let dx: f32 = player.x - items[i].x
+            let dy: f32 = player.y - items[i].y
+            let dz: f32 = player.z - items[i].z
+            if dx * dx + dy * dy + dz * dz < 4.0 {
+                -- collect item
+                match items[i].item {
+                    ItemType.health_potion => {
+                        player.hp = player.hp + 30
+                        if player.hp > player.max_hp { player.hp = player.max_hp }
+                    }
+                    ItemType.sword => { player.has_sword = true }
+                    ItemType.shield => { player.has_shield = true }
+                    ItemType.bomb => { player.ammo = player.ammo + 5 }
+                    ItemType.key => { player.score = player.score + 500 }
+                    ItemType.none_item => { }
+                }
+                items[i].active = false
+                if not mixer.ch_playing(3) {
+                    wav64_play(&sfx_pickup, 3)
+                }
+                player.score = player.score + 50
+            }
+        }
+        i = i + 1
+    }
+}
+
+-- ============================================================
+-- Bullets
+-- ============================================================
+fn init_bullets() {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_BULLETS { break }
+        bullets[i].active = false
+        i = i + 1
+    }
+}
+
+fn spawn_bullet(x: f32, y: f32, z: f32, dz: f32) {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_BULLETS { break }
+        if not bullets[i].active {
+            bullets[i].active = true
+            bullets[i].x = x
+            bullets[i].y = y
+            bullets[i].z = z
+            bullets[i].dx = 0.0
+            bullets[i].dz = dz
+            bullets[i].life = 1.5
+            return
+        }
+        i = i + 1
+    }
+}
+
+fn bullets_update(dt: f32) {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_BULLETS { break }
+        if bullets[i].active {
+            bullets[i].x = bullets[i].x + bullets[i].dx * dt
+            bullets[i].z = bullets[i].z + bullets[i].dz * dt
+            bullets[i].life = bullets[i].life - dt
+            if bullets[i].life <= 0.0 {
+                bullets[i].active = false
+            } else {
+                -- check enemy hits
+                let j: i32 = 0
+                loop {
+                    if j >= MAX_ENEMIES { break }
+                    if enemies[j].active and enemies[j].state != EnemyState.dead {
+                        let bdx: f32 = bullets[i].x - enemies[j].x
+                        let bdz: f32 = bullets[i].z - enemies[j].z
+                        if bdx * bdx + bdz * bdz < 4.0 {
+                            enemies[j].hp = enemies[j].hp - 15
+                            enemies[j].state = EnemyState.hurt
+                            enemies[j].state_timer = 0.0
+                            bullets[i].active = false
+                        }
+                    }
+                    j = j + 1
+                }
+            }
+        }
+        i = i + 1
+    }
+}
+
+-- ============================================================
+-- Dialog
+-- ============================================================
+fn dialog_show(text: *c_char, len: i32) {
+    let i: i32 = 0
+    loop {
+        if i >= len or i >= 95 { break }
+        dialog.text[i] = text[i]
+        i = i + 1
+    }
+    dialog.text[i] = 0 as c_char
+    dialog.len = i
+    dialog.shown = 0
+    dialog.timer = 0.0
+    dialog.active = true
+    next_state = GameState.dialog
+}
+
+fn dialog_update(dt: f32, a_pressed: bool) {
+    if not dialog.active { return }
+    dialog.timer = dialog.timer + 15.0 * dt
+    dialog.shown = dialog.timer as i32
+    if dialog.shown > dialog.len { dialog.shown = dialog.len }
+    if a_pressed {
+        if dialog.shown < dialog.len {
+            dialog.shown = dialog.len
+        } else {
+            dialog.active = false
+            next_state = GameState.gameplay
+        }
+    }
+}
+
+-- ============================================================
+-- HUD
+-- ============================================================
+fn render_hud() {
+    rdpq_mode_push()
+    rdpq.set_mode_standard()
+
+    -- HP bar background
+    rdpq.set_mode_fill(0x300000FF)
+    rdpq.fill_rectangle(8, 8, 108, 18)
+
+    -- HP bar fill
+    let hp_w: i32 = (player.hp * 100) / player.max_hp
+    if hp_w < 0 { hp_w = 0 }
+    rdpq.set_mode_fill(0xFF2222FF)
+    rdpq.fill_rectangle(8, 8, 8 + hp_w, 18)
+
+    -- lives display
+    let l: i32 = 0
+    loop {
+        if l >= player.lives { break }
+        rdpq.set_mode_fill(0xFFFF00FF)
+        rdpq.fill_rectangle(8 + l * 12, 22, 16 + l * 12, 30)
+        l = l + 1
+    }
+
+    -- sword/shield indicators
+    if player.has_sword {
+        rdpq.set_mode_fill(0xAAAAAFFF)
+        rdpq.fill_rectangle(280, 8, 294, 22)
+    }
+    if player.has_shield {
+        rdpq.set_mode_fill(0x2255AAFF)
+        rdpq.fill_rectangle(295, 8, 309, 22)
+    }
+
+    -- ammo
+    rdpq_text_printf(270, 225, 1, "%d", player.ammo)
+
+    -- score
+    rdpq_text_printf(110, 8, 1, "%06d", player.score)
+
+    -- crosshair
+    rdpq.set_mode_fill(0xFFFFFFFF)
+    rdpq.fill_rectangle(157, 118, 163, 122)
+
+    rdpq_mode_pop()
+}
+
+-- ============================================================
+-- Rendering
+-- ============================================================
+fn render_gameplay() {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    -- 3D scene
+    t3d.frame_start()
+    t3d.viewport_attach(&viewport)
+
+    t3d.light_set_ambient(45, 45, 60)
+    t3d.light_set_directional(0, 255, 240, 200, -0.5, -1.0, 0.4)
+    t3d.light_set_count(1)
+
+    if level_model != none { t3d.model_draw(level_model) }
+
+    if player_model != none {
+        t3d.skeleton_draw(&player_skel, player_model)
+    }
+
+    if enemy_model != none {
+        let i: i32 = 0
+        loop {
+            if i >= MAX_ENEMIES { break }
+            if enemies[i].active and enemies[i].state != EnemyState.dead {
+                t3d.model_draw(enemy_model)
+            }
+            i = i + 1
+        }
+    }
+
+    t3d.frame_end()
+
+    render_hud()
+    rdpq.detach_show()
+}
+
+fn render_pause() {
+    -- re-render game underneath
+    render_gameplay()
+    -- dim overlay
+    rdpq.set_mode_fill(0x00000080)
+    rdpq.fill_rectangle(80, 80, 240, 160)
+    -- "PAUSED" text area
+    rdpq.set_mode_fill(0xFFFFFFFF)
+    rdpq.fill_rectangle(130, 95, 190, 105)
+}
+
+fn render_game_over() {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+    rdpq.set_mode_fill(0x100010FF)
+    rdpq.fill_rectangle(0, 0, 320, 240)
+    rdpq.set_mode_fill(0xFF0000FF)
+    rdpq.fill_rectangle(100, 100, 220, 120)
+    rdpq.detach_show()
+}
+
+-- ============================================================
+-- State Machine
+-- ============================================================
+fn state_enter(s: GameState) {
+    match s {
+        GameState.gameplay => {
+            xm64player_play(&music, 0)
+        }
+        GameState.pause => {
+            xm64player_set_vol(&music, 0.3)
+        }
+        GameState.game_over => {
+            xm64player_stop(&music)
+        }
+        _ => { }
+    }
+}
+
+fn state_exit(s: GameState) {
+    match s {
+        GameState.pause => {
+            xm64player_set_vol(&music, 1.0)
+        }
+        _ => { }
+    }
+}
+
+-- ============================================================
+-- Entry Point
+-- ============================================================
+entry {
+    -- hardware init (order matters)
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+    audio.init(44100, 3)
+    mixer.init(16)
+    t3d.init()
+
+    -- viewport
+    viewport = t3d.viewport_create()
+    t3d.viewport_set_projection(&viewport, 68.0, 1.0, 120.0)
+
+    -- load models (from DragonFS)
+    -- player_model = t3d.model_load("models/hero.t3dm")
+    -- enemy_model = t3d.model_load("models/enemy.t3dm")
+    -- level_model = t3d.model_load("models/level01.t3dm")
+
+    -- animations (comment out if no model loaded)
+    -- player_skel = t3d.skeleton_create(player_model)
+    -- player_anim_idle = t3d.anim_create(player_model, "idle")
+    -- player_anim_run = t3d.anim_create(player_model, "run")
+    -- t3d.anim_attach(&player_anim_idle, &player_skel)
+    -- t3d.anim_set_playing(&player_anim_idle, true)
+    -- t3d.anim_set_looping(&player_anim_idle, true)
+
+    -- load audio
+    wav64_open(&sfx_jump, "rom:/sfx/jump.wav64")
+    wav64_open(&sfx_hit, "rom:/sfx/hit.wav64")
+    wav64_open(&sfx_pickup, "rom:/sfx/pickup.wav64")
+    wav64_open(&sfx_shoot, "rom:/sfx/shoot.wav64")
+    xm64player_open(&music, "rom:/music/adventure.xm64")
+
+    -- init game
+    init_player()
+    init_enemies()
+    init_items()
+    init_bullets()
+    dialog.active = false
+
+    -- try to load save
+    load_game()
+
+    game_state = GameState.gameplay
+    next_state = GameState.gameplay
+    state_enter(GameState.gameplay)
+
+    -- main loop
+    loop {
+        let dt: f32 = timer.delta()
+        if dt > 0.033 { dt = 0.033 }
+
+        -- audio fill first
+        let abuf = audio.get_buffer()
+        if abuf != none {
+            mixer.poll(*abuf)
+        }
+
+        -- handle state transitions
+        if next_state != game_state {
+            state_exit(game_state)
+            state_enter(next_state)
+            game_state = next_state
+        }
+
+        -- input
+        controller.poll()
+        let pad = controller.read(0)
+
+        -- update + render by state
+        match game_state {
+            GameState.gameplay => {
+                player_update(dt, &pad)
+                enemies_update(dt)
+                items_update(dt)
+                bullets_update(dt)
+
+                -- animation update
+                -- if is_moving {
+                --     t3d.anim_update(&player_anim_run, dt)
+                -- } else {
+                --     t3d.anim_update(&player_anim_idle, dt)
+                -- }
+                -- t3d.skeleton_update(&player_skel)
+
+                render_gameplay()
+            }
+            GameState.pause => {
+                if pad.pressed.start or pad.pressed.b {
+                    next_state = GameState.gameplay
+                }
+                render_pause()
+            }
+            GameState.dialog => {
+                dialog_update(dt, pad.pressed.a)
+                render_gameplay()
+                -- draw dialog box over scene
+                rdpq.set_mode_fill(0x000060FF)
+                rdpq.fill_rectangle(10, 155, 310, 230)
+            }
+            GameState.game_over => {
+                if pad.pressed.start {
+                    init_player()
+                    init_enemies()
+                    init_items()
+                    init_bullets()
+                    next_state = GameState.gameplay
+                }
+                render_game_over()
+            }
+            _ => { }
+        }
+    }
+}

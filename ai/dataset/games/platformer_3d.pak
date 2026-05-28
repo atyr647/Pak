@@ -1,0 +1,302 @@
+-- platformer_3d.pak
+-- 3D platformer: player movement, jumping, collectibles, enemies, camera.
+-- Demonstrates: 3D physics, third-person camera, score, lives, platforms.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+use t3d
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const MAX_PLATFORMS: i32 = 16
+const MAX_COINS: i32 = 20
+const GRAVITY: f32 = -25.0
+const JUMP_FORCE: f32 = 12.0
+const MOVE_SPEED: f32 = 8.0
+const CAM_DIST: f32 = 15.0
+
+struct Player3D {
+    x: f32
+    y: f32
+    z: f32
+    vx: f32
+    vy: f32
+    vz: f32
+    rot_y: f32
+    grounded: bool
+    lives: i32
+    coins: i32
+    jump_held: bool
+}
+
+struct Platform {
+    active: bool
+    x: f32
+    y: f32
+    z: f32
+    w: f32
+    h: f32
+    d: f32
+}
+
+struct Coin {
+    active: bool
+    x: f32
+    y: f32
+    z: f32
+    spin: f32
+}
+
+struct Camera3D {
+    x: f32
+    y: f32
+    z: f32
+    yaw: f32
+}
+
+static player: Player3D = undefined
+static platforms: [Platform; 16] = undefined
+static coins: [Coin; 20] = undefined
+static cam: Camera3D = undefined
+static score: i32 = 0
+
+fn init_player() {
+    player.x = 0.0
+    player.y = 5.0
+    player.z = 0.0
+    player.vx = 0.0
+    player.vy = 0.0
+    player.vz = 0.0
+    player.rot_y = 0.0
+    player.grounded = false
+    player.lives = 3
+    player.coins = 0
+    player.jump_held = false
+}
+
+fn init_platforms() {
+    -- ground platform
+    platforms[0].active = true
+    platforms[0].x = 0.0
+    platforms[0].y = -1.0
+    platforms[0].z = 0.0
+    platforms[0].w = 30.0
+    platforms[0].h = 2.0
+    platforms[0].d = 30.0
+
+    -- floating platforms
+    let i: i32 = 1
+    loop {
+        if i >= 8 { break }
+        platforms[i].active = true
+        platforms[i].x = (i as f32) * 8.0 - 20.0
+        platforms[i].y = (i as f32) * 3.0
+        platforms[i].z = 15.0 + (i as f32) * 5.0
+        platforms[i].w = 4.0
+        platforms[i].h = 1.0
+        platforms[i].d = 4.0
+        i = i + 1
+    }
+}
+
+fn init_coins() {
+    let i: i32 = 0
+    loop {
+        if i >= 10 { break }
+        coins[i].active = true
+        coins[i].x = (i as f32) * 6.0 - 27.0
+        coins[i].y = 2.0 + (i as f32) * 3.0
+        coins[i].z = 10.0 + (i as f32) * 4.0
+        coins[i].spin = 0.0
+        i = i + 1
+    }
+}
+
+fn init_camera() {
+    cam.x = 0.0
+    cam.y = 8.0
+    cam.z = -CAM_DIST
+    cam.yaw = 0.0
+}
+
+fn check_platform_collision() {
+    player.grounded = false
+    let i: i32 = 0
+    loop {
+        if i >= MAX_PLATFORMS { break }
+        if platforms[i].active {
+            let hw: f32 = platforms[i].w / 2.0
+            let hd: f32 = platforms[i].d / 2.0
+            let top: f32 = platforms[i].y + platforms[i].h / 2.0
+
+            -- check if player is above and within platform bounds
+            if player.x > platforms[i].x - hw and player.x < platforms[i].x + hw {
+                if player.z > platforms[i].z - hd and player.z < platforms[i].z + hd {
+                    if player.y <= top + 0.5 and player.y >= top - 1.0 and player.vy <= 0.0 {
+                        player.y = top + 0.5
+                        player.vy = 0.0
+                        player.grounded = true
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+}
+
+fn check_coin_collection() {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_COINS { break }
+        if coins[i].active {
+            let dx: f32 = player.x - coins[i].x
+            let dy: f32 = player.y - coins[i].y
+            let dz: f32 = player.z - coins[i].z
+            if dx * dx + dy * dy + dz * dz < 4.0 {
+                coins[i].active = false
+                player.coins = player.coins + 1
+                score = score + 10
+            }
+        }
+        i = i + 1
+    }
+}
+
+fn update_player(dt: f32, pad: *controller_data) {
+    -- movement relative to camera
+    let sx: i32 = pad.stick_x as i32
+    let sy: i32 = pad.stick_y as i32
+
+    if sx > 10 or sx < -10 {
+        player.vx = (sx as f32) / 80.0 * MOVE_SPEED
+    } else {
+        player.vx = player.vx * 0.85
+    }
+
+    if sy > 10 or sy < -10 {
+        player.vz = (sy as f32) / 80.0 * MOVE_SPEED
+    } else {
+        player.vz = player.vz * 0.85
+    }
+
+    -- jump
+    if pad.pressed.a and player.grounded {
+        player.vy = JUMP_FORCE
+        player.grounded = false
+        player.jump_held = true
+    }
+
+    -- variable jump height
+    if not pad.held.a and player.jump_held and player.vy > 0.0 {
+        player.vy = player.vy * 0.5
+        player.jump_held = false
+    }
+
+    -- gravity
+    player.vy = player.vy + GRAVITY * dt
+
+    -- integrate
+    player.x = player.x + player.vx * dt
+    player.y = player.y + player.vy * dt
+    player.z = player.z + player.vz * dt
+
+    -- platform collision
+    check_platform_collision()
+
+    -- fall death
+    if player.y < -20.0 {
+        player.lives = player.lives - 1
+        init_player()
+    }
+
+    -- face movement direction
+    if player.vx * player.vx + player.vz * player.vz > 1.0 {
+        -- simplified rotation
+    }
+}
+
+fn update_camera(dt: f32, pad: *controller_data) {
+    -- rotate camera with C buttons
+    if pad.held.c_left { cam.yaw = cam.yaw + 2.0 * dt }
+    if pad.held.c_right { cam.yaw = cam.yaw - 2.0 * dt }
+
+    -- follow player
+    cam.x = player.x
+    cam.y = player.y + 5.0
+    cam.z = player.z - CAM_DIST
+}
+
+fn update_coins(dt: f32) {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_COINS { break }
+        if coins[i].active {
+            coins[i].spin = coins[i].spin + dt * 3.0
+        }
+        i = i + 1
+    }
+}
+
+fn draw_hud() {
+    -- lives
+    let l: i32 = 0
+    loop {
+        if l >= player.lives { break }
+        rdpq.set_mode_fill(0xFF0000FF)
+        rdpq.fill_rectangle(10 + l * 14, 10, 20 + l * 14, 20)
+        l = l + 1
+    }
+
+    -- coins
+    rdpq.set_mode_fill(0xFFFF00FF)
+    rdpq.fill_rectangle(280, 10, 290, 20)
+
+    -- score display area
+    rdpq.set_mode_fill(0xFFFFFFFF)
+    rdpq.fill_rectangle(120, 10, 200, 20)
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+    t3d.init()
+
+    let vp: T3DViewport = t3d.viewport_create()
+    t3d.viewport_set_projection(&vp, 60.0, 1.0, 150.0)
+
+    t3d.light_set_ambient(60, 60, 80)
+    t3d.light_set_directional(0, 255, 255, 220, -0.3, -1.0, 0.5)
+    t3d.light_set_count(1)
+
+    init_player()
+    init_platforms()
+    init_coins()
+    init_camera()
+
+    loop {
+        let dt: f32 = timer.delta()
+
+        controller.poll()
+        let pad = controller.read(0)
+
+        update_player(dt, &pad)
+        update_camera(dt, &pad)
+        update_coins(dt)
+        check_coin_collection()
+
+        let fb = display.get()
+        rdpq.attach_clear(fb)
+
+        t3d.frame_start()
+        t3d.viewport_attach(&vp)
+        -- 3D models would be drawn here
+        t3d.frame_end()
+
+        draw_hud()
+        rdpq.detach_show()
+    }
+}

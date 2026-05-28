@@ -1,0 +1,197 @@
+-- breakout.pak
+-- Breakout/Arkanoid: paddle, ball, destructible bricks.
+-- Demonstrates: 2D array as flat buffer, collision detection, game phases.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const PADDLE_W: i32 = 48
+const PADDLE_H: i32 = 8
+const PADDLE_Y: i32 = 220
+const BALL_SIZE: i32 = 6
+const BRICK_COLS: i32 = 10
+const BRICK_ROWS: i32 = 5
+const BRICK_W: i32 = 30
+const BRICK_H: i32 = 10
+const BRICK_GAP: i32 = 2
+const BRICK_OFFSET_X: i32 = 5
+const BRICK_OFFSET_Y: i32 = 20
+const MAX_BRICKS: i32 = 50
+const PADDLE_SPEED: i32 = 5
+
+const COLOR_BG: u32 = 0x000022FF
+const COLOR_PADDLE: u32 = 0xCCCCCCFF
+const COLOR_BALL: u32 = 0xFFFFFFFF
+
+struct Ball {
+    x: i32
+    y: i32
+    vx: i32
+    vy: i32
+}
+
+struct Game {
+    paddle_x: i32
+    ball: Ball
+    bricks: [50]bool
+    bricks_left: i32
+    score: i32
+    lives: i32
+}
+
+fn brick_color(row: i32) -> u32 {
+    if row == 0 { return 0xFF0000FF }
+    if row == 1 { return 0xFF8800FF }
+    if row == 2 { return 0xFFFF00FF }
+    if row == 3 { return 0x00FF00FF }
+    return 0x0088FFFF
+}
+
+fn init_game(gs: *Game) {
+    gs.paddle_x = SCREEN_W / 2 - PADDLE_W / 2
+    gs.ball.x = SCREEN_W / 2
+    gs.ball.y = PADDLE_Y - 20
+    gs.ball.vx = 2
+    gs.ball.vy = -2
+    gs.bricks_left = BRICK_COLS * BRICK_ROWS
+    gs.score = 0
+    gs.lives = 3
+
+    for i in 0..MAX_BRICKS {
+        gs.bricks[i] = true
+    }
+}
+
+fn reset_ball(gs: *Game) {
+    gs.ball.x = gs.paddle_x + PADDLE_W / 2
+    gs.ball.y = PADDLE_Y - 20
+    gs.ball.vx = 2
+    gs.ball.vy = -2
+}
+
+fn update(gs: *Game) {
+    controller.poll()
+    let pad = controller.read(0)
+
+    -- paddle movement
+    if pad.held.left {
+        gs.paddle_x = gs.paddle_x - PADDLE_SPEED
+    }
+    if pad.held.right {
+        gs.paddle_x = gs.paddle_x + PADDLE_SPEED
+    }
+    if gs.paddle_x < 0 { gs.paddle_x = 0 }
+    if gs.paddle_x > SCREEN_W - PADDLE_W { gs.paddle_x = SCREEN_W - PADDLE_W }
+
+    -- move ball
+    gs.ball.x = gs.ball.x + gs.ball.vx
+    gs.ball.y = gs.ball.y + gs.ball.vy
+
+    -- bounce off walls
+    if gs.ball.x <= 0 {
+        gs.ball.x = 0
+        gs.ball.vx = -gs.ball.vx
+    }
+    if gs.ball.x >= SCREEN_W - BALL_SIZE {
+        gs.ball.x = SCREEN_W - BALL_SIZE
+        gs.ball.vx = -gs.ball.vx
+    }
+    if gs.ball.y <= 0 {
+        gs.ball.y = 0
+        gs.ball.vy = -gs.ball.vy
+    }
+
+    -- ball fell below screen
+    if gs.ball.y >= SCREEN_H {
+        gs.lives = gs.lives - 1
+        if gs.lives > 0 {
+            reset_ball(gs)
+        }
+    }
+
+    -- bounce off paddle
+    if gs.ball.vy > 0 {
+        if gs.ball.y + BALL_SIZE >= PADDLE_Y and gs.ball.y + BALL_SIZE <= PADDLE_Y + PADDLE_H {
+            if gs.ball.x + BALL_SIZE >= gs.paddle_x and gs.ball.x <= gs.paddle_x + PADDLE_W {
+                gs.ball.y = PADDLE_Y - BALL_SIZE
+                gs.ball.vy = -gs.ball.vy
+            }
+        }
+    }
+
+    -- brick collision
+    for row in 0..BRICK_ROWS {
+        for col in 0..BRICK_COLS {
+            let idx: i32 = row * BRICK_COLS + col
+            if not gs.bricks[idx] { continue }
+
+            let bx: i32 = BRICK_OFFSET_X + col * (BRICK_W + BRICK_GAP)
+            let by: i32 = BRICK_OFFSET_Y + row * (BRICK_H + BRICK_GAP)
+
+            if gs.ball.x + BALL_SIZE >= bx and gs.ball.x <= bx + BRICK_W {
+                if gs.ball.y + BALL_SIZE >= by and gs.ball.y <= by + BRICK_H {
+                    gs.bricks[idx] = false
+                    gs.ball.vy = -gs.ball.vy
+                    gs.score = gs.score + 10
+                    gs.bricks_left = gs.bricks_left - 1
+                }
+            }
+        }
+    }
+}
+
+fn render(gs: *Game) {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    rdpq.set_mode_fill(COLOR_BG)
+    rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+
+    -- bricks
+    for row in 0..BRICK_ROWS {
+        for col in 0..BRICK_COLS {
+            let idx: i32 = row * BRICK_COLS + col
+            if not gs.bricks[idx] { continue }
+
+            let bx: i32 = BRICK_OFFSET_X + col * (BRICK_W + BRICK_GAP)
+            let by: i32 = BRICK_OFFSET_Y + row * (BRICK_H + BRICK_GAP)
+
+            rdpq.sync_pipe()
+            rdpq.set_mode_fill(brick_color(row))
+            rdpq.fill_rectangle(bx, by, bx + BRICK_W, by + BRICK_H)
+        }
+    }
+
+    -- paddle
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(COLOR_PADDLE)
+    rdpq.fill_rectangle(gs.paddle_x, PADDLE_Y, gs.paddle_x + PADDLE_W, PADDLE_Y + PADDLE_H)
+
+    -- ball
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(COLOR_BALL)
+    rdpq.fill_rectangle(gs.ball.x, gs.ball.y, gs.ball.x + BALL_SIZE, gs.ball.y + BALL_SIZE)
+
+    rdpq.detach_show()
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+
+    let mut gs: Game = undefined
+    init_game(&gs)
+
+    loop {
+        if gs.lives > 0 and gs.bricks_left > 0 {
+            update(&gs)
+        }
+        render(&gs)
+    }
+}

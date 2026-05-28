@@ -1,0 +1,12 @@
+# Model weights and training artifacts (too large for git)
+model_output/checkpoints/
+model_output/pak_coder_lora/
+model_output/*.gguf
+model_output/**/*.gguf
+model_output/**/*.bin
+model_output/**/*.safetensors
+!model_output/.gitkeep
+
+# Python
+__pycache__/
+*.pyc

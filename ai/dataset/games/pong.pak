@@ -1,0 +1,157 @@
+-- pong.pak
+-- Simple Pong game: two paddles, a ball, score tracking.
+-- Demonstrates: game loop, controller input, collision, state management.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const PADDLE_W: i32 = 8
+const PADDLE_H: i32 = 40
+const BALL_SIZE: i32 = 8
+const PADDLE_SPEED: i32 = 4
+const BALL_SPEED: i32 = 3
+
+const COLOR_BG: u32 = 0x000000FF
+const COLOR_PADDLE: u32 = 0xFFFFFFFF
+const COLOR_BALL: u32 = 0xFF0000FF
+
+struct Paddle {
+    x: i32
+    y: i32
+}
+
+struct Ball {
+    x: i32
+    y: i32
+    vx: i32
+    vy: i32
+}
+
+struct GameState {
+    p1: Paddle
+    p2: Paddle
+    ball: Ball
+    score1: i32
+    score2: i32
+}
+
+fn reset_ball(gs: *GameState) {
+    gs.ball.x = SCREEN_W / 2 - BALL_SIZE / 2
+    gs.ball.y = SCREEN_H / 2 - BALL_SIZE / 2
+    gs.ball.vx = BALL_SPEED
+    gs.ball.vy = BALL_SPEED
+}
+
+fn update(gs: *GameState) {
+    controller.poll()
+    let p1_input = controller.read(0)
+
+    -- player 1 controls (left paddle)
+    if p1_input.held.up {
+        gs.p1.y = gs.p1.y - PADDLE_SPEED
+    }
+    if p1_input.held.down {
+        gs.p1.y = gs.p1.y + PADDLE_SPEED
+    }
+
+    -- clamp paddles
+    if gs.p1.y < 0 { gs.p1.y = 0 }
+    if gs.p1.y > SCREEN_H - PADDLE_H { gs.p1.y = SCREEN_H - PADDLE_H }
+
+    -- simple AI for player 2 (right paddle)
+    if gs.ball.y > gs.p2.y + PADDLE_H / 2 {
+        gs.p2.y = gs.p2.y + PADDLE_SPEED - 1
+    }
+    if gs.ball.y < gs.p2.y + PADDLE_H / 2 {
+        gs.p2.y = gs.p2.y - PADDLE_SPEED + 1
+    }
+    if gs.p2.y < 0 { gs.p2.y = 0 }
+    if gs.p2.y > SCREEN_H - PADDLE_H { gs.p2.y = SCREEN_H - PADDLE_H }
+
+    -- move ball
+    gs.ball.x = gs.ball.x + gs.ball.vx
+    gs.ball.y = gs.ball.y + gs.ball.vy
+
+    -- bounce off top/bottom
+    if gs.ball.y <= 0 {
+        gs.ball.y = 0
+        gs.ball.vy = -gs.ball.vy
+    }
+    if gs.ball.y >= SCREEN_H - BALL_SIZE {
+        gs.ball.y = SCREEN_H - BALL_SIZE
+        gs.ball.vy = -gs.ball.vy
+    }
+
+    -- bounce off left paddle
+    if gs.ball.x <= gs.p1.x + PADDLE_W {
+        if gs.ball.y + BALL_SIZE >= gs.p1.y and gs.ball.y <= gs.p1.y + PADDLE_H {
+            gs.ball.x = gs.p1.x + PADDLE_W
+            gs.ball.vx = -gs.ball.vx
+        }
+    }
+
+    -- bounce off right paddle
+    if gs.ball.x + BALL_SIZE >= gs.p2.x {
+        if gs.ball.y + BALL_SIZE >= gs.p2.y and gs.ball.y <= gs.p2.y + PADDLE_H {
+            gs.ball.x = gs.p2.x - BALL_SIZE
+            gs.ball.vx = -gs.ball.vx
+        }
+    }
+
+    -- score
+    if gs.ball.x < 0 {
+        gs.score2 = gs.score2 + 1
+        reset_ball(gs)
+    }
+    if gs.ball.x > SCREEN_W {
+        gs.score1 = gs.score1 + 1
+        reset_ball(gs)
+    }
+}
+
+fn render(gs: *GameState) {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    -- background
+    rdpq.set_mode_fill(COLOR_BG)
+    rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+
+    -- paddles
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(COLOR_PADDLE)
+    rdpq.fill_rectangle(gs.p1.x, gs.p1.y, gs.p1.x + PADDLE_W, gs.p1.y + PADDLE_H)
+    rdpq.fill_rectangle(gs.p2.x, gs.p2.y, gs.p2.x + PADDLE_W, gs.p2.y + PADDLE_H)
+
+    -- ball
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(COLOR_BALL)
+    rdpq.fill_rectangle(gs.ball.x, gs.ball.y, gs.ball.x + BALL_SIZE, gs.ball.y + BALL_SIZE)
+
+    rdpq.detach_show()
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+
+    let mut gs = GameState {
+        p1: Paddle { x: 16, y: SCREEN_H / 2 - PADDLE_H / 2 },
+        p2: Paddle { x: SCREEN_W - 24, y: SCREEN_H / 2 - PADDLE_H / 2 },
+        ball: Ball { x: 0, y: 0, vx: 0, vy: 0 },
+        score1: 0,
+        score2: 0,
+    }
+    reset_ball(&gs)
+
+    loop {
+        update(&gs)
+        render(&gs)
+    }
+}

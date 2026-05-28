@@ -1,0 +1,86 @@
+-- starfield.pak
+-- Animated starfield effect with parallax layers.
+-- Demonstrates: static arrays, simple pseudo-random, fill rects, frame timing.
+
+use n64.display
+use n64.rdpq
+use n64.timer
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const NUM_STARS: i32 = 64
+const COLOR_BG: u32 = 0x000000FF
+
+struct Star {
+    x: i32
+    y: i32
+    speed: i32
+    brightness: u32
+}
+
+static stars: [64]Star = undefined
+static seed: i32 = 42
+
+fn rand_next() -> i32 {
+    seed = seed * 1103515245 + 12345
+    let val = (seed / 65536) % 32768
+    if val < 0 { return -val }
+    return val
+}
+
+fn init_stars() {
+    for i in 0..NUM_STARS {
+        stars[i].x = rand_next() % SCREEN_W
+        stars[i].y = rand_next() % SCREEN_H
+        stars[i].speed = (rand_next() % 3) + 1
+
+        if stars[i].speed == 1 {
+            stars[i].brightness = 0x444444FF
+        } elif stars[i].speed == 2 {
+            stars[i].brightness = 0x888888FF
+        } else {
+            stars[i].brightness = 0xFFFFFFFF
+        }
+    }
+}
+
+fn update_stars() {
+    for i in 0..NUM_STARS {
+        stars[i].x = stars[i].x - stars[i].speed
+        if stars[i].x < 0 {
+            stars[i].x = SCREEN_W - 1
+            stars[i].y = rand_next() % SCREEN_H
+        }
+    }
+}
+
+fn render_stars() {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    rdpq.set_mode_fill(COLOR_BG)
+    rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+
+    for i in 0..NUM_STARS {
+        let s = stars[i]
+        rdpq.sync_pipe()
+        rdpq.set_mode_fill(s.brightness)
+        let size: i32 = s.speed
+        rdpq.fill_rectangle(s.x, s.y, s.x + size, s.y + size)
+    }
+
+    rdpq.detach_show()
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    timer.init()
+
+    init_stars()
+
+    loop {
+        update_stars()
+        render_stars()
+    }
+}

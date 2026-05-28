@@ -1,0 +1,196 @@
+-- shooter.pak
+-- Top-down shooter: player fires projectiles at enemies.
+-- Demonstrates: object pools, static arrays, struct methods, game loop.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const MAX_BULLETS: i32 = 16
+const MAX_ENEMIES: i32 = 8
+const PLAYER_SIZE: i32 = 12
+const BULLET_SIZE: i32 = 4
+const ENEMY_SIZE: i32 = 10
+const PLAYER_SPEED: i32 = 3
+const BULLET_SPEED: i32 = 6
+const ENEMY_SPEED: i32 = 1
+
+const COLOR_BG: u32 = 0x111111FF
+const COLOR_PLAYER: u32 = 0x00AAFFFF
+const COLOR_BULLET: u32 = 0xFFFF00FF
+const COLOR_ENEMY: u32 = 0xFF4444FF
+
+struct Entity {
+    x: i32
+    y: i32
+    active: bool
+}
+
+struct Game {
+    player: Entity
+    bullets: [16]Entity
+    enemies: [8]Entity
+    score: i32
+    spawn_timer: i32
+    seed: i32
+}
+
+fn game_rand(gs: *Game) -> i32 {
+    gs.seed = gs.seed * 1103515245 + 12345
+    let val = (gs.seed / 65536) % 32768
+    if val < 0 { return -val }
+    return val
+}
+
+fn init_game(gs: *Game) {
+    gs.player = Entity { x: SCREEN_W / 2, y: SCREEN_H - 30, active: true }
+    gs.score = 0
+    gs.spawn_timer = 0
+    gs.seed = 9999
+
+    for i in 0..MAX_BULLETS {
+        gs.bullets[i].active = false
+    }
+    for i in 0..MAX_ENEMIES {
+        gs.enemies[i].active = false
+    }
+}
+
+fn spawn_bullet(gs: *Game) {
+    for i in 0..MAX_BULLETS {
+        if not gs.bullets[i].active {
+            gs.bullets[i].x = gs.player.x + PLAYER_SIZE / 2 - BULLET_SIZE / 2
+            gs.bullets[i].y = gs.player.y - BULLET_SIZE
+            gs.bullets[i].active = true
+            return
+        }
+    }
+}
+
+fn spawn_enemy(gs: *Game) {
+    for i in 0..MAX_ENEMIES {
+        if not gs.enemies[i].active {
+            gs.enemies[i].x = game_rand(gs) % (SCREEN_W - ENEMY_SIZE)
+            gs.enemies[i].y = -ENEMY_SIZE
+            gs.enemies[i].active = true
+            return
+        }
+    }
+}
+
+fn update(gs: *Game) {
+    controller.poll()
+    let pad = controller.read(0)
+
+    -- player movement
+    if pad.held.left and gs.player.x > 0 {
+        gs.player.x = gs.player.x - PLAYER_SPEED
+    }
+    if pad.held.right and gs.player.x < SCREEN_W - PLAYER_SIZE {
+        gs.player.x = gs.player.x + PLAYER_SPEED
+    }
+    if pad.held.up and gs.player.y > 0 {
+        gs.player.y = gs.player.y - PLAYER_SPEED
+    }
+    if pad.held.down and gs.player.y < SCREEN_H - PLAYER_SIZE {
+        gs.player.y = gs.player.y + PLAYER_SPEED
+    }
+
+    -- fire
+    if pad.pressed.a {
+        spawn_bullet(gs)
+    }
+
+    -- spawn enemies
+    gs.spawn_timer = gs.spawn_timer + 1
+    if gs.spawn_timer >= 30 {
+        gs.spawn_timer = 0
+        spawn_enemy(gs)
+    }
+
+    -- update bullets
+    for i in 0..MAX_BULLETS {
+        if not gs.bullets[i].active { continue }
+        gs.bullets[i].y = gs.bullets[i].y - BULLET_SPEED
+        if gs.bullets[i].y < -BULLET_SIZE {
+            gs.bullets[i].active = false
+        }
+    }
+
+    -- update enemies
+    for i in 0..MAX_ENEMIES {
+        if not gs.enemies[i].active { continue }
+        gs.enemies[i].y = gs.enemies[i].y + ENEMY_SPEED
+        if gs.enemies[i].y > SCREEN_H {
+            gs.enemies[i].active = false
+        }
+    }
+
+    -- bullet-enemy collision
+    for b in 0..MAX_BULLETS {
+        if not gs.bullets[b].active { continue }
+        for e in 0..MAX_ENEMIES {
+            if not gs.enemies[e].active { continue }
+            if gs.bullets[b].x + BULLET_SIZE >= gs.enemies[e].x {
+                if gs.bullets[b].x <= gs.enemies[e].x + ENEMY_SIZE {
+                    if gs.bullets[b].y + BULLET_SIZE >= gs.enemies[e].y {
+                        if gs.bullets[b].y <= gs.enemies[e].y + ENEMY_SIZE {
+                            gs.bullets[b].active = false
+                            gs.enemies[e].active = false
+                            gs.score = gs.score + 10
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn render(gs: *Game) {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    rdpq.set_mode_fill(COLOR_BG)
+    rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+
+    -- player
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(COLOR_PLAYER)
+    rdpq.fill_rectangle(gs.player.x, gs.player.y, gs.player.x + PLAYER_SIZE, gs.player.y + PLAYER_SIZE)
+
+    -- bullets
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(COLOR_BULLET)
+    for i in 0..MAX_BULLETS {
+        if not gs.bullets[i].active { continue }
+        rdpq.fill_rectangle(gs.bullets[i].x, gs.bullets[i].y, gs.bullets[i].x + BULLET_SIZE, gs.bullets[i].y + BULLET_SIZE)
+    }
+
+    -- enemies
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(COLOR_ENEMY)
+    for i in 0..MAX_ENEMIES {
+        if not gs.enemies[i].active { continue }
+        rdpq.fill_rectangle(gs.enemies[i].x, gs.enemies[i].y, gs.enemies[i].x + ENEMY_SIZE, gs.enemies[i].y + ENEMY_SIZE)
+    }
+
+    rdpq.detach_show()
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+
+    let mut gs: Game = undefined
+    init_game(&gs)
+
+    loop {
+        update(&gs)
+        render(&gs)
+    }
+}

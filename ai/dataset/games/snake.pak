@@ -1,0 +1,217 @@
+-- snake.pak
+-- Classic Snake game: growing snake, food pickup, game over on self-collision.
+-- Demonstrates: arrays as grid, enum direction, game state, wrapping movement.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const TILE_SIZE: i32 = 8
+const GRID_W: i32 = 40
+const GRID_H: i32 = 30
+const MAX_SNAKE: i32 = 256
+const MOVE_DELAY: i32 = 6
+
+const COLOR_BG: u32 = 0x1A1A2EFF
+const COLOR_SNAKE: u32 = 0x00FF00FF
+const COLOR_FOOD: u32 = 0xFF0000FF
+const COLOR_HEAD: u32 = 0x00FF88FF
+
+enum Direction: u8 {
+    up
+    down
+    left
+    right
+}
+
+struct Pos {
+    x: i32
+    y: i32
+}
+
+struct Snake {
+    body: [256]Pos
+    length: i32
+    dir: Direction
+}
+
+struct Game {
+    snake: Snake
+    food: Pos
+    score: i32
+    alive: bool
+    tick: i32
+    seed: i32
+}
+
+fn simple_rand(gs: *Game) -> i32 {
+    gs.seed = gs.seed * 1103515245 + 12345
+    let val = gs.seed / 65536
+    if val < 0 { return -val }
+    return val
+}
+
+fn place_food(gs: *Game) {
+    gs.food.x = simple_rand(gs) % GRID_W
+    gs.food.y = simple_rand(gs) % GRID_H
+}
+
+fn init_game(gs: *Game) {
+    gs.snake.length = 3
+    gs.snake.dir = Direction.right
+    gs.snake.body[0] = Pos { x: GRID_W / 2, y: GRID_H / 2 }
+    gs.snake.body[1] = Pos { x: GRID_W / 2 - 1, y: GRID_H / 2 }
+    gs.snake.body[2] = Pos { x: GRID_W / 2 - 2, y: GRID_H / 2 }
+    gs.score = 0
+    gs.alive = true
+    gs.tick = 0
+    gs.seed = 12345
+    place_food(gs)
+}
+
+fn update(gs: *Game) {
+    if not gs.alive { return }
+
+    controller.poll()
+    let pad = controller.read(0)
+
+    -- change direction (prevent 180-degree turn)
+    match gs.snake.dir {
+        .up => {
+            if pad.pressed.left { gs.snake.dir = Direction.left }
+            if pad.pressed.right { gs.snake.dir = Direction.right }
+            if pad.pressed.down { gs.snake.dir = Direction.down }
+        }
+        .down => {
+            if pad.pressed.left { gs.snake.dir = Direction.left }
+            if pad.pressed.right { gs.snake.dir = Direction.right }
+            if pad.pressed.up { gs.snake.dir = Direction.up }
+        }
+        .left => {
+            if pad.pressed.up { gs.snake.dir = Direction.up }
+            if pad.pressed.down { gs.snake.dir = Direction.down }
+            if pad.pressed.right { gs.snake.dir = Direction.right }
+        }
+        .right => {
+            if pad.pressed.up { gs.snake.dir = Direction.up }
+            if pad.pressed.down { gs.snake.dir = Direction.down }
+            if pad.pressed.left { gs.snake.dir = Direction.left }
+        }
+    }
+
+    gs.tick = gs.tick + 1
+    if gs.tick < MOVE_DELAY { return }
+    gs.tick = 0
+
+    -- compute new head position
+    let head = gs.snake.body[0]
+    let mut new_x: i32 = head.x
+    let mut new_y: i32 = head.y
+
+    match gs.snake.dir {
+        .up    => { new_y = new_y - 1 }
+        .down  => { new_y = new_y + 1 }
+        .left  => { new_x = new_x - 1 }
+        .right => { new_x = new_x + 1 }
+    }
+
+    -- wrap around
+    if new_x < 0 { new_x = GRID_W - 1 }
+    if new_x >= GRID_W { new_x = 0 }
+    if new_y < 0 { new_y = GRID_H - 1 }
+    if new_y >= GRID_H { new_y = 0 }
+
+    -- check self-collision
+    for i in 0..gs.snake.length {
+        if gs.snake.body[i].x == new_x and gs.snake.body[i].y == new_y {
+            gs.alive = false
+            return
+        }
+    }
+
+    -- check food
+    let ate: bool = new_x == gs.food.x and new_y == gs.food.y
+    if ate {
+        gs.score = gs.score + 1
+        if gs.snake.length < MAX_SNAKE - 1 {
+            gs.snake.length = gs.snake.length + 1
+        }
+        place_food(gs)
+    }
+
+    -- shift body backwards
+    let mut i: i32 = gs.snake.length - 1
+    loop {
+        if i <= 0 { break }
+        gs.snake.body[i] = gs.snake.body[i - 1]
+        i = i - 1
+    }
+
+    -- place new head
+    gs.snake.body[0] = Pos { x: new_x, y: new_y }
+}
+
+fn render(gs: *Game) {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    -- background
+    rdpq.set_mode_fill(COLOR_BG)
+    rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+
+    -- food
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(COLOR_FOOD)
+    rdpq.fill_rectangle(
+        gs.food.x * TILE_SIZE, gs.food.y * TILE_SIZE,
+        gs.food.x * TILE_SIZE + TILE_SIZE, gs.food.y * TILE_SIZE + TILE_SIZE
+    )
+
+    -- snake body
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(COLOR_SNAKE)
+    for i in 1..gs.snake.length {
+        let seg = gs.snake.body[i]
+        rdpq.fill_rectangle(
+            seg.x * TILE_SIZE, seg.y * TILE_SIZE,
+            seg.x * TILE_SIZE + TILE_SIZE, seg.y * TILE_SIZE + TILE_SIZE
+        )
+    }
+
+    -- snake head
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(COLOR_HEAD)
+    let h = gs.snake.body[0]
+    rdpq.fill_rectangle(
+        h.x * TILE_SIZE, h.y * TILE_SIZE,
+        h.x * TILE_SIZE + TILE_SIZE, h.y * TILE_SIZE + TILE_SIZE
+    )
+
+    rdpq.detach_show()
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+
+    let mut gs: Game = undefined
+    init_game(&gs)
+
+    loop {
+        update(&gs)
+        render(&gs)
+
+        if not gs.alive {
+            controller.poll()
+            let pad = controller.read(0)
+            if pad.pressed.start {
+                init_game(&gs)
+            }
+        }
+    }
+}

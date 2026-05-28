@@ -1,0 +1,436 @@
+-- rpg_battle.pak
+-- Turn-based RPG battle system: party, enemies, menus, attacks, items.
+-- Demonstrates: state machine, inventory, stats, turn order, battle UI.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const MAX_PARTY: i32 = 4
+const MAX_FOES: i32 = 4
+const MAX_ITEMS: i32 = 10
+
+enum BattlePhase { select_action, select_target, execute, enemy_turn, victory, defeat }
+enum ActionType { attack_action, magic_action, item_action, defend_action }
+
+struct Stats {
+    hp: i32
+    max_hp: i32
+    mp: i32
+    max_mp: i32
+    atk: i32
+    def: i32
+    spd: i32
+}
+
+struct PartyMember {
+    active: bool
+    name: *c_char
+    stats: Stats
+    defending: bool
+}
+
+struct Foe {
+    active: bool
+    name: *c_char
+    stats: Stats
+    x: i32
+    y: i32
+}
+
+struct BattleItem {
+    name: *c_char
+    heal_amount: i32
+    count: i32
+}
+
+struct BattleState {
+    phase: BattlePhase
+    current_actor: i32
+    selected_action: ActionType
+    cursor: i32
+    target: i32
+    party: [PartyMember; 4]
+    foes: [Foe; 4]
+    items: [BattleItem; 10]
+    item_count: i32
+    party_count: i32
+    foe_count: i32
+    message_timer: f32
+}
+
+static battle: BattleState = undefined
+
+fn init_party() {
+    battle.party_count = 3
+
+    battle.party[0].active = true
+    battle.party[0].name = "Warrior"
+    battle.party[0].stats.hp = 100
+    battle.party[0].stats.max_hp = 100
+    battle.party[0].stats.mp = 20
+    battle.party[0].stats.max_mp = 20
+    battle.party[0].stats.atk = 15
+    battle.party[0].stats.def = 10
+    battle.party[0].stats.spd = 8
+    battle.party[0].defending = false
+
+    battle.party[1].active = true
+    battle.party[1].name = "Mage"
+    battle.party[1].stats.hp = 60
+    battle.party[1].stats.max_hp = 60
+    battle.party[1].stats.mp = 80
+    battle.party[1].stats.max_mp = 80
+    battle.party[1].stats.atk = 8
+    battle.party[1].stats.def = 5
+    battle.party[1].stats.spd = 10
+    battle.party[1].defending = false
+
+    battle.party[2].active = true
+    battle.party[2].name = "Healer"
+    battle.party[2].stats.hp = 70
+    battle.party[2].stats.max_hp = 70
+    battle.party[2].stats.mp = 60
+    battle.party[2].stats.max_mp = 60
+    battle.party[2].stats.atk = 6
+    battle.party[2].stats.def = 8
+    battle.party[2].stats.spd = 7
+    battle.party[2].defending = false
+}
+
+fn init_foes() {
+    battle.foe_count = 3
+
+    battle.foes[0].active = true
+    battle.foes[0].name = "Goblin"
+    battle.foes[0].stats.hp = 40
+    battle.foes[0].stats.max_hp = 40
+    battle.foes[0].stats.atk = 10
+    battle.foes[0].stats.def = 5
+    battle.foes[0].stats.spd = 9
+    battle.foes[0].x = 200
+    battle.foes[0].y = 60
+
+    battle.foes[1].active = true
+    battle.foes[1].name = "Orc"
+    battle.foes[1].stats.hp = 80
+    battle.foes[1].stats.max_hp = 80
+    battle.foes[1].stats.atk = 14
+    battle.foes[1].stats.def = 8
+    battle.foes[1].stats.spd = 5
+    battle.foes[1].x = 220
+    battle.foes[1].y = 100
+
+    battle.foes[2].active = true
+    battle.foes[2].name = "Slime"
+    battle.foes[2].stats.hp = 25
+    battle.foes[2].stats.max_hp = 25
+    battle.foes[2].stats.atk = 6
+    battle.foes[2].stats.def = 3
+    battle.foes[2].stats.spd = 12
+    battle.foes[2].x = 240
+    battle.foes[2].y = 140
+}
+
+fn init_items() {
+    battle.item_count = 2
+    battle.items[0].name = "Potion"
+    battle.items[0].heal_amount = 30
+    battle.items[0].count = 5
+    battle.items[1].name = "Hi-Potion"
+    battle.items[1].heal_amount = 80
+    battle.items[1].count = 2
+}
+
+fn calc_damage(atk: i32, def: i32) -> i32 {
+    let dmg: i32 = atk * 2 - def
+    if dmg < 1 { dmg = 1 }
+    return dmg
+}
+
+fn do_attack(actor_atk: i32, target: *Stats, target_def: bool) {
+    let def_val: i32 = target.def
+    if target_def { def_val = def_val * 2 }
+    let dmg: i32 = calc_damage(actor_atk, def_val)
+    target.hp = target.hp - dmg
+    if target.hp < 0 { target.hp = 0 }
+}
+
+fn do_magic(actor_mp: *i32, target: *Stats, power: i32) {
+    if *actor_mp >= 10 {
+        *actor_mp = *actor_mp - 10
+        let dmg: i32 = power * 3
+        target.hp = target.hp - dmg
+        if target.hp < 0 { target.hp = 0 }
+    }
+}
+
+fn do_heal(target: *Stats, amount: i32) {
+    target.hp = target.hp + amount
+    if target.hp > target.max_hp { target.hp = target.max_hp }
+}
+
+fn count_alive_foes() -> i32 {
+    let count: i32 = 0
+    let i: i32 = 0
+    loop {
+        if i >= battle.foe_count { break }
+        if battle.foes[i].active and battle.foes[i].stats.hp > 0 {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}
+
+fn count_alive_party() -> i32 {
+    let count: i32 = 0
+    let i: i32 = 0
+    loop {
+        if i >= battle.party_count { break }
+        if battle.party[i].active and battle.party[i].stats.hp > 0 {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}
+
+fn update_select_action(pad: *controller_data) {
+    if pad.pressed.d_up {
+        battle.cursor = battle.cursor - 1
+        if battle.cursor < 0 { battle.cursor = 3 }
+    }
+    if pad.pressed.d_down {
+        battle.cursor = battle.cursor + 1
+        if battle.cursor > 3 { battle.cursor = 0 }
+    }
+
+    if pad.pressed.a {
+        match battle.cursor {
+            0 => { battle.selected_action = ActionType.attack_action }
+            1 => { battle.selected_action = ActionType.magic_action }
+            2 => { battle.selected_action = ActionType.item_action }
+            3 => { battle.selected_action = ActionType.defend_action }
+            _ => { }
+        }
+
+        if battle.selected_action == ActionType.defend_action {
+            battle.party[battle.current_actor].defending = true
+            advance_turn()
+        } else {
+            battle.phase = BattlePhase.select_target
+            battle.target = 0
+        }
+    }
+}
+
+fn update_select_target(pad: *controller_data) {
+    if pad.pressed.d_up {
+        battle.target = battle.target - 1
+        if battle.target < 0 { battle.target = battle.foe_count - 1 }
+    }
+    if pad.pressed.d_down {
+        battle.target = battle.target + 1
+        if battle.target >= battle.foe_count { battle.target = 0 }
+    }
+
+    if pad.pressed.a {
+        battle.phase = BattlePhase.execute
+        battle.message_timer = 1.0
+    }
+    if pad.pressed.b {
+        battle.phase = BattlePhase.select_action
+    }
+}
+
+fn execute_action() {
+    let actor: *PartyMember = &battle.party[battle.current_actor]
+
+    match battle.selected_action {
+        ActionType.attack_action => {
+            do_attack(actor.stats.atk, &battle.foes[battle.target].stats, false)
+        }
+        ActionType.magic_action => {
+            do_magic(&actor.stats.mp, &battle.foes[battle.target].stats,
+                     actor.stats.atk)
+        }
+        ActionType.item_action => {
+            if battle.item_count > 0 and battle.items[0].count > 0 {
+                do_heal(&actor.stats, battle.items[0].heal_amount)
+                battle.items[0].count = battle.items[0].count - 1
+            }
+        }
+        ActionType.defend_action => {
+            actor.defending = true
+        }
+    }
+
+    -- check for victory
+    if count_alive_foes() <= 0 {
+        battle.phase = BattlePhase.victory
+        return
+    }
+
+    advance_turn()
+}
+
+fn advance_turn() {
+    battle.current_actor = battle.current_actor + 1
+    if battle.current_actor >= battle.party_count {
+        battle.phase = BattlePhase.enemy_turn
+        battle.current_actor = 0
+        battle.message_timer = 1.0
+    } else {
+        battle.phase = BattlePhase.select_action
+        battle.cursor = 0
+    }
+}
+
+fn do_enemy_turns() {
+    let i: i32 = 0
+    loop {
+        if i >= battle.foe_count { break }
+        if battle.foes[i].active and battle.foes[i].stats.hp > 0 {
+            -- find a living party member to attack
+            let t: i32 = 0
+            loop {
+                if t >= battle.party_count { break }
+                if battle.party[t].stats.hp > 0 {
+                    do_attack(battle.foes[i].stats.atk, &battle.party[t].stats,
+                              battle.party[t].defending)
+                    break
+                }
+                t = t + 1
+            }
+        }
+        i = i + 1
+    }
+
+    -- reset defending
+    let j: i32 = 0
+    loop {
+        if j >= battle.party_count { break }
+        battle.party[j].defending = false
+        j = j + 1
+    }
+
+    if count_alive_party() <= 0 {
+        battle.phase = BattlePhase.defeat
+    } else {
+        battle.phase = BattlePhase.select_action
+        battle.current_actor = 0
+        battle.cursor = 0
+    }
+}
+
+fn draw_battle_ui() {
+    -- action menu
+    if battle.phase == BattlePhase.select_action {
+        rdpq.set_mode_fill(0x000080FF)
+        rdpq.fill_rectangle(10, 160, 120, 230)
+
+        -- cursor indicator
+        let cy: i32 = 165 + battle.cursor * 16
+        rdpq.set_mode_fill(0xFFFFFFFF)
+        rdpq.fill_rectangle(15, cy, 20, cy + 10)
+    }
+
+    -- party HP bars
+    let i: i32 = 0
+    loop {
+        if i >= battle.party_count { break }
+        let by: i32 = 165 + i * 20
+        -- HP bar background
+        rdpq.set_mode_fill(0x400000FF)
+        rdpq.fill_rectangle(140, by, 240, by + 12)
+        -- HP bar fill
+        let fill: i32 = (battle.party[i].stats.hp * 100) / battle.party[i].stats.max_hp
+        rdpq.set_mode_fill(0x00FF00FF)
+        rdpq.fill_rectangle(140, by, 140 + fill, by + 12)
+        i = i + 1
+    }
+
+    -- enemy indicators
+    let j: i32 = 0
+    loop {
+        if j >= battle.foe_count { break }
+        if battle.foes[j].stats.hp > 0 {
+            rdpq.set_mode_fill(0xFF0000FF)
+            rdpq.fill_rectangle(battle.foes[j].x, battle.foes[j].y,
+                                battle.foes[j].x + 20, battle.foes[j].y + 20)
+        }
+        j = j + 1
+    }
+
+    -- target cursor
+    if battle.phase == BattlePhase.select_target {
+        let tx: i32 = battle.foes[battle.target].x - 5
+        let ty: i32 = battle.foes[battle.target].y - 10
+        rdpq.set_mode_fill(0xFFFF00FF)
+        rdpq.fill_rectangle(tx, ty, tx + 30, ty + 5)
+    }
+
+    -- victory/defeat
+    if battle.phase == BattlePhase.victory {
+        rdpq.set_mode_fill(0x00FF00FF)
+        rdpq.fill_rectangle(100, 100, 220, 130)
+    }
+    if battle.phase == BattlePhase.defeat {
+        rdpq.set_mode_fill(0xFF0000FF)
+        rdpq.fill_rectangle(100, 100, 220, 130)
+    }
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+
+    battle.phase = BattlePhase.select_action
+    battle.current_actor = 0
+    battle.cursor = 0
+    battle.message_timer = 0.0
+
+    init_party()
+    init_foes()
+    init_items()
+
+    loop {
+        let dt: f32 = timer.delta()
+
+        controller.poll()
+        let pad = controller.read(0)
+
+        match battle.phase {
+            BattlePhase.select_action => { update_select_action(&pad) }
+            BattlePhase.select_target => { update_select_target(&pad) }
+            BattlePhase.execute => {
+                battle.message_timer = battle.message_timer - dt
+                if battle.message_timer <= 0.0 {
+                    execute_action()
+                }
+            }
+            BattlePhase.enemy_turn => {
+                battle.message_timer = battle.message_timer - dt
+                if battle.message_timer <= 0.0 {
+                    do_enemy_turns()
+                }
+            }
+            BattlePhase.victory => { }
+            BattlePhase.defeat => { }
+        }
+
+        let fb = display.get()
+        rdpq.attach_clear(fb)
+        rdpq.set_mode_standard()
+
+        draw_battle_ui()
+
+        rdpq.detach_show()
+    }
+}

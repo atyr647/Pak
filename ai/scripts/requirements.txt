@@ -1,0 +1,13 @@
+# Fine-tuning dependencies for Pak N64 AI
+#
+# For AMD 7900XT (ROCm), install PyTorch first:
+#   pip install torch --index-url https://download.pytorch.org/whl/rocm6.0
+#
+# Then install these:
+unsloth>=2024.1
+transformers>=4.40.0
+datasets>=2.16.0
+peft>=0.8.0
+accelerate>=0.27.0
+bitsandbytes>=0.43.0
+trl>=0.8.0

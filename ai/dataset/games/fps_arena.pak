@@ -1,0 +1,300 @@
+-- fps_arena.pak
+-- First-person shooter arena: movement, shooting, enemies, health, ammo.
+-- Demonstrates: FPS camera, projectiles, enemy AI, HUD, weapon system.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+use t3d
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const MAX_BULLETS: i32 = 16
+const MAX_ENEMIES: i32 = 8
+const MOVE_SPEED: f32 = 10.0
+const LOOK_SPEED: f32 = 2.0
+const BULLET_SPEED: f32 = 40.0
+const GRAVITY: f32 = -20.0
+
+struct Player {
+    x: f32
+    y: f32
+    z: f32
+    yaw: f32
+    pitch: f32
+    vy: f32
+    grounded: bool
+    health: i32
+    ammo: i32
+    fire_cooldown: f32
+}
+
+struct Bullet {
+    active: bool
+    x: f32
+    y: f32
+    z: f32
+    dx: f32
+    dy: f32
+    dz: f32
+    life: f32
+}
+
+enum EnemyState { idle, chase, attack, dead }
+
+struct Enemy {
+    active: bool
+    x: f32
+    y: f32
+    z: f32
+    hp: i32
+    state: EnemyState
+    timer: f32
+}
+
+static player: Player = undefined
+static bullets: [Bullet; 16] = undefined
+static enemies: [Enemy; 8] = undefined
+static score: i32 = 0
+
+fn init_player() {
+    player.x = 0.0
+    player.y = 2.0
+    player.z = 0.0
+    player.yaw = 0.0
+    player.pitch = 0.0
+    player.vy = 0.0
+    player.grounded = true
+    player.health = 100
+    player.ammo = 50
+    player.fire_cooldown = 0.0
+}
+
+fn init_enemies() {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_ENEMIES { break }
+        enemies[i].active = true
+        enemies[i].x = (i as f32) * 10.0 - 35.0
+        enemies[i].y = 0.0
+        enemies[i].z = 20.0 + (i as f32) * 5.0
+        enemies[i].hp = 3
+        enemies[i].state = EnemyState.idle
+        enemies[i].timer = 0.0
+        i = i + 1
+    }
+}
+
+fn init_bullets() {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_BULLETS { break }
+        bullets[i].active = false
+        i = i + 1
+    }
+}
+
+fn update_player(dt: f32, pad: *controller_data) {
+    -- look with C buttons
+    if pad.held.c_left { player.yaw = player.yaw + LOOK_SPEED * dt }
+    if pad.held.c_right { player.yaw = player.yaw - LOOK_SPEED * dt }
+    if pad.held.c_up { player.pitch = player.pitch + LOOK_SPEED * dt }
+    if pad.held.c_down { player.pitch = player.pitch - LOOK_SPEED * dt }
+
+    if player.pitch > 1.0 { player.pitch = 1.0 }
+    if player.pitch < -1.0 { player.pitch = -1.0 }
+
+    -- move with analog stick
+    let sx: i32 = pad.stick_x as i32
+    let sy: i32 = pad.stick_y as i32
+    let fx: f32 = (sx as f32) / 80.0
+    let fy: f32 = (sy as f32) / 80.0
+
+    player.x = player.x + fx * MOVE_SPEED * dt
+    player.z = player.z + fy * MOVE_SPEED * dt
+
+    -- gravity and jump
+    player.vy = player.vy + GRAVITY * dt
+    player.y = player.y + player.vy * dt
+    if player.y < 2.0 {
+        player.y = 2.0
+        player.vy = 0.0
+        player.grounded = true
+    }
+
+    if pad.pressed.a and player.grounded {
+        player.vy = 10.0
+        player.grounded = false
+    }
+
+    -- fire
+    player.fire_cooldown = player.fire_cooldown - dt
+    if player.fire_cooldown < 0.0 { player.fire_cooldown = 0.0 }
+
+    if pad.pressed.z and player.fire_cooldown <= 0.0 and player.ammo > 0 {
+        fire_bullet()
+        player.ammo = player.ammo - 1
+        player.fire_cooldown = 0.2
+    }
+}
+
+fn fire_bullet() {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_BULLETS { break }
+        if not bullets[i].active {
+            bullets[i].active = true
+            bullets[i].x = player.x
+            bullets[i].y = player.y
+            bullets[i].z = player.z
+            -- fire in facing direction (simplified)
+            bullets[i].dx = 0.0
+            bullets[i].dy = 0.0
+            bullets[i].dz = BULLET_SPEED
+            bullets[i].life = 2.0
+            return
+        }
+        i = i + 1
+    }
+}
+
+fn update_bullets(dt: f32) {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_BULLETS { break }
+        if bullets[i].active {
+            bullets[i].x = bullets[i].x + bullets[i].dx * dt
+            bullets[i].y = bullets[i].y + bullets[i].dy * dt
+            bullets[i].z = bullets[i].z + bullets[i].dz * dt
+            bullets[i].life = bullets[i].life - dt
+            if bullets[i].life <= 0.0 { bullets[i].active = false }
+
+            -- check enemy hits
+            let j: i32 = 0
+            loop {
+                if j >= MAX_ENEMIES { break }
+                if enemies[j].active and enemies[j].state != EnemyState.dead {
+                    let dx: f32 = bullets[i].x - enemies[j].x
+                    let dz: f32 = bullets[i].z - enemies[j].z
+                    if dx * dx + dz * dz < 4.0 {
+                        enemies[j].hp = enemies[j].hp - 1
+                        bullets[i].active = false
+                        if enemies[j].hp <= 0 {
+                            enemies[j].state = EnemyState.dead
+                            score = score + 100
+                        }
+                    }
+                }
+                j = j + 1
+            }
+        }
+        i = i + 1
+    }
+}
+
+fn update_enemies(dt: f32) {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_ENEMIES { break }
+        if enemies[i].active and enemies[i].state != EnemyState.dead {
+            let dx: f32 = player.x - enemies[i].x
+            let dz: f32 = player.z - enemies[i].z
+            let dist_sq: f32 = dx * dx + dz * dz
+            enemies[i].timer = enemies[i].timer + dt
+
+            match enemies[i].state {
+                EnemyState.idle => {
+                    if dist_sq < 900.0 {
+                        enemies[i].state = EnemyState.chase
+                    }
+                }
+                EnemyState.chase => {
+                    enemies[i].x = enemies[i].x + dx * 0.02 * dt * 60.0
+                    enemies[i].z = enemies[i].z + dz * 0.02 * dt * 60.0
+                    if dist_sq < 16.0 {
+                        enemies[i].state = EnemyState.attack
+                        enemies[i].timer = 0.0
+                    }
+                    if dist_sq > 2500.0 {
+                        enemies[i].state = EnemyState.idle
+                    }
+                }
+                EnemyState.attack => {
+                    if enemies[i].timer > 1.0 {
+                        player.health = player.health - 10
+                        enemies[i].timer = 0.0
+                        enemies[i].state = EnemyState.chase
+                    }
+                }
+                EnemyState.dead => { }
+            }
+        }
+        i = i + 1
+    }
+}
+
+fn draw_hud() {
+    -- health bar
+    rdpq.set_mode_fill(0x400000FF)
+    rdpq.fill_rectangle(10, 10, 110, 20)
+    let bar_w: i32 = player.health
+    if bar_w < 0 { bar_w = 0 }
+    rdpq.set_mode_fill(0xFF0000FF)
+    rdpq.fill_rectangle(10, 10, 10 + bar_w, 20)
+
+    -- ammo indicator (small boxes)
+    let a: i32 = 0
+    loop {
+        if a >= player.ammo or a >= 20 { break }
+        rdpq.set_mode_fill(0xFFFF00FF)
+        rdpq.fill_rectangle(250 + (a % 10) * 6, 10 + (a / 10) * 6,
+                            254 + (a % 10) * 6, 14 + (a / 10) * 6)
+        a = a + 1
+    }
+
+    -- crosshair
+    rdpq.set_mode_fill(0xFFFFFFFF)
+    rdpq.fill_rectangle(158, 118, 162, 122)
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+    t3d.init()
+
+    let vp: T3DViewport = t3d.viewport_create()
+    t3d.viewport_set_projection(&vp, 70.0, 1.0, 100.0)
+
+    t3d.light_set_ambient(40, 40, 50)
+    t3d.light_set_directional(0, 255, 240, 200, -0.5, -1.0, 0.3)
+    t3d.light_set_count(1)
+
+    init_player()
+    init_enemies()
+    init_bullets()
+
+    loop {
+        let dt: f32 = timer.delta()
+
+        controller.poll()
+        let pad = controller.read(0)
+
+        update_player(dt, &pad)
+        update_bullets(dt)
+        update_enemies(dt)
+
+        let fb = display.get()
+        rdpq.attach_clear(fb)
+
+        t3d.frame_start()
+        t3d.viewport_attach(&vp)
+        -- 3D scene would be drawn here
+        t3d.frame_end()
+
+        draw_hud()
+        rdpq.detach_show()
+    }
+}

@@ -1,0 +1,109 @@
+-- t3d_scene.pak
+-- 3D scene with tiny3d: model loading, viewport, lighting, animation, camera.
+-- Demonstrates: full t3d pipeline, matrix transforms, skeleton animation.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+use t3d
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+
+struct Camera {
+    x: f32
+    y: f32
+    z: f32
+    rot_y: f32
+}
+
+impl Camera {
+    fn init(self: *Camera) {
+        self.x = 0.0
+        self.y = 5.0
+        self.z = -15.0
+        self.rot_y = 0.0
+    }
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+    t3d.init()
+
+    -- create viewport and projection
+    let vp: T3DViewport = t3d.viewport_create()
+    t3d.viewport_set_projection(&vp, 70.0, 1.0, 100.0)
+
+    -- load model
+    let model: *T3DModel = t3d.model_load("models/character.t3dm")
+
+    -- create skeleton and animation
+    let skel: T3DSkeleton = t3d.skeleton_create(model)
+    let anim: T3DAnim = t3d.anim_create(model, "idle")
+    t3d.anim_attach(&anim, &skel)
+    t3d.anim_set_playing(&anim, true)
+    t3d.anim_set_looping(&anim, true)
+    t3d.anim_set_speed(&anim, 1.0)
+
+    -- setup lighting
+    t3d.light_set_ambient(40, 40, 60)
+    t3d.light_set_directional(0, 255, 240, 200, -0.5, -1.0, 0.5)
+    t3d.light_set_count(1)
+
+    -- camera
+    let mut cam: Camera = undefined
+    cam.init()
+
+    -- model transform
+    let model_mat: T3DMat4 = undefined
+    t3d.mat4_identity(&model_mat)
+
+    let mut angle: f32 = 0.0
+
+    loop {
+        let dt: f32 = timer.delta()
+
+        -- input
+        controller.poll()
+        let pad = controller.read(0)
+
+        -- rotate model with analog stick
+        let raw_x: i32 = pad.stick_x as i32
+        if raw_x > 10 or raw_x < -10 {
+            angle = angle + (raw_x as f32) * dt * 0.05
+        }
+
+        -- camera zoom with C buttons
+        if pad.held.c_up {
+            cam.z = cam.z + 10.0 * dt
+        }
+        if pad.held.c_down {
+            cam.z = cam.z - 10.0 * dt
+        }
+
+        -- update animation
+        t3d.anim_update(&anim, dt)
+        t3d.skeleton_update(&skel)
+
+        -- build model matrix
+        t3d.mat4_identity(&model_mat)
+        t3d.mat4_rotate_y(&model_mat, angle)
+
+        -- render
+        let fb = display.get()
+        rdpq.attach_clear(fb)
+
+        t3d.frame_start()
+        t3d.viewport_attach(&vp)
+
+        t3d.skeleton_draw(&skel, model)
+
+        t3d.frame_end()
+
+        rdpq.detach_show()
+    }
+}

@@ -1,0 +1,553 @@
+-- racing.pak
+-- N64 racing game: car physics, lap timing, AI opponents, 3D track, HUD.
+-- Demonstrates: vehicle physics, fixed-point math, opponent AI, race states.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+use n64.audio
+use n64.mixer
+use t3d
+
+extern "C" {
+    fn rdpq_mode_push()
+    fn rdpq_mode_pop()
+    fn rdpq_text_printf(x: i32, y: i32, font: i32, fmt: *c_char, ...) -> i32
+    fn wav64_open(wav: *wav64_t, path: *c_char)
+    fn wav64_play(wav: *wav64_t, channel: i32)
+    fn xm64player_open(xm: *xm64player_t, path: *c_char)
+    fn xm64player_play(xm: *xm64player_t, first_ch: i32)
+}
+
+-- ============================================================
+-- Constants
+-- ============================================================
+const MAX_CARS: i32 = 4
+const MAX_WAYPOINTS: i32 = 16
+const MAX_LAPS: i32 = 3
+const TRACK_WIDTH: f32 = 12.0
+
+const CAR_ACCEL: f32 = 18.0
+const CAR_BRAKE: f32 = 30.0
+const CAR_MAX_SPEED: f32 = 45.0
+const CAR_STEER: f32 = 2.2
+const CAR_FRICTION: f32 = 0.97
+const GRAVITY: f32 = -20.0
+
+-- ============================================================
+-- Types
+-- ============================================================
+enum RaceState { countdown, racing, finished, results }
+enum CarState { racing_car, spinning, off_track }
+
+struct Waypoint {
+    x: f32
+    z: f32
+    width: f32  -- track width at this waypoint
+}
+
+struct RaceTime {
+    total_ms: i32
+    lap_ms: i32
+    best_lap_ms: i32
+}
+
+struct Car {
+    active: bool
+    is_player: bool
+    x: f32
+    y: f32
+    z: f32
+    vx: f32
+    vy: f32
+    vz: f32
+    speed: f32
+    heading: f32    -- direction in radians
+    angular_vel: f32
+    grounded: bool
+    lap: i32
+    next_wp: i32    -- next waypoint index
+    wp_progress: f32
+    race_pos: i32
+    times: RaceTime
+    car_state: CarState
+    spin_timer: f32
+    turbo: f32
+    turbo_cooldown: f32
+    place_display: i32
+}
+
+-- ============================================================
+-- Globals
+-- ============================================================
+static race_state: RaceState = RaceState.countdown
+static countdown_timer: f32 = 3.0
+static race_time_ms: i32 = 0
+
+static cars: [Car; 4] = undefined
+static waypoints: [Waypoint; 16] = undefined
+static waypoint_count: i32 = 0
+
+static viewport: T3DViewport = undefined
+static track_model: *T3DModel = none
+static car_models: [*T3DModel; 4] = undefined
+
+static sfx_engine: wav64_t = undefined
+static sfx_crash: wav64_t = undefined
+static sfx_checkpoint: wav64_t = undefined
+static music: xm64player_t = undefined
+
+-- ============================================================
+-- Track Setup
+-- ============================================================
+fn init_waypoints() {
+    -- simple oval track
+    waypoints[0].x = 0.0
+    waypoints[0].z = -60.0
+    waypoints[0].width = TRACK_WIDTH
+
+    waypoints[1].x = 40.0
+    waypoints[1].z = -50.0
+    waypoints[1].width = TRACK_WIDTH
+
+    waypoints[2].x = 60.0
+    waypoints[2].z = -20.0
+    waypoints[2].width = TRACK_WIDTH
+
+    waypoints[3].x = 60.0
+    waypoints[3].z = 20.0
+    waypoints[3].width = TRACK_WIDTH
+
+    waypoints[4].x = 40.0
+    waypoints[4].z = 50.0
+    waypoints[4].width = TRACK_WIDTH
+
+    waypoints[5].x = 0.0
+    waypoints[5].z = 60.0
+    waypoints[5].width = TRACK_WIDTH
+
+    waypoints[6].x = -40.0
+    waypoints[6].z = 50.0
+    waypoints[6].width = TRACK_WIDTH
+
+    waypoints[7].x = -60.0
+    waypoints[7].z = 20.0
+    waypoints[7].width = TRACK_WIDTH
+
+    waypoints[8].x = -60.0
+    waypoints[8].z = -20.0
+    waypoints[8].width = TRACK_WIDTH
+
+    waypoints[9].x = -40.0
+    waypoints[9].z = -50.0
+    waypoints[9].width = TRACK_WIDTH
+
+    waypoint_count = 10
+}
+
+fn init_cars() {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_CARS { break }
+        cars[i].active = true
+        cars[i].is_player = i == 0
+        -- staggered starting positions
+        cars[i].x = (i as f32) * 4.0 - 6.0
+        cars[i].y = 1.0
+        cars[i].z = -55.0
+        cars[i].vx = 0.0
+        cars[i].vy = 0.0
+        cars[i].vz = 0.0
+        cars[i].speed = 0.0
+        cars[i].heading = 0.0
+        cars[i].angular_vel = 0.0
+        cars[i].grounded = true
+        cars[i].lap = 0
+        cars[i].next_wp = 0
+        cars[i].wp_progress = 0.0
+        cars[i].race_pos = i + 1
+        cars[i].car_state = CarState.racing_car
+        cars[i].spin_timer = 0.0
+        cars[i].turbo = 1.0
+        cars[i].turbo_cooldown = 0.0
+        cars[i].times.total_ms = 0
+        cars[i].times.lap_ms = 0
+        cars[i].times.best_lap_ms = 999999
+        cars[i].place_display = i + 1
+        i = i + 1
+    }
+}
+
+-- ============================================================
+-- Player Input
+-- ============================================================
+fn player_car_input(car: *Car, dt: f32, pad: *controller_data) {
+    if car.car_state == CarState.spinning { return }
+
+    let throttle: f32 = 0.0
+    let brake_val: f32 = 0.0
+    let steer: f32 = 0.0
+
+    -- analog stick for steering
+    let sx: i32 = pad.stick_x as i32
+    if sx > 10 { steer = (sx as f32 - 10.0) / 70.0 }
+    elif sx < -10 { steer = (sx as f32 + 10.0) / 70.0 }
+
+    -- A = accelerate, B = brake
+    if pad.held.a { throttle = 1.0 }
+    if pad.held.b { brake_val = 1.0 }
+
+    -- Z = turbo
+    if pad.pressed.z and car.turbo >= 0.3 and car.turbo_cooldown <= 0.0 {
+        car.speed = car.speed + 15.0
+        car.turbo = car.turbo - 0.3
+        car.turbo_cooldown = 2.0
+    }
+
+    apply_car_physics(car, throttle, brake_val, steer, dt)
+}
+
+-- ============================================================
+-- Car Physics
+-- ============================================================
+fn apply_car_physics(car: *Car, throttle: f32, brake_val: f32,
+                      steer: f32, dt: f32) {
+    -- steering (speed-sensitive)
+    let steer_factor: f32 = 1.0 - car.speed / (CAR_MAX_SPEED * 2.0)
+    if steer_factor < 0.3 { steer_factor = 0.3 }
+    car.heading = car.heading + steer * CAR_STEER * steer_factor * dt
+
+    -- acceleration
+    if throttle > 0.0 {
+        car.speed = car.speed + CAR_ACCEL * throttle * dt
+    }
+
+    -- braking
+    if brake_val > 0.0 {
+        car.speed = car.speed - CAR_BRAKE * brake_val * dt
+        if car.speed < 0.0 { car.speed = 0.0 }
+    }
+
+    -- friction
+    car.speed = car.speed * (CAR_FRICTION + (1.0 - CAR_FRICTION) * 0.0)
+    let friction_frame: f32 = 1.0 - (1.0 - CAR_FRICTION) * dt * 60.0
+    car.speed = car.speed * friction_frame
+
+    -- clamp speed
+    if car.speed > CAR_MAX_SPEED { car.speed = CAR_MAX_SPEED }
+    if car.speed < 0.0 { car.speed = 0.0 }
+
+    -- movement along heading
+    car.vx = car.heading * car.speed * dt  -- simplified
+    car.vz = car.speed * dt
+
+    car.x = car.x + car.vx
+    car.z = car.z + car.vz
+
+    -- turbo recharge
+    car.turbo_cooldown = car.turbo_cooldown - dt
+    if car.turbo_cooldown < 0.0 { car.turbo_cooldown = 0.0 }
+    if car.turbo < 1.0 and car.turbo_cooldown <= 0.0 {
+        car.turbo = car.turbo + 0.1 * dt
+        if car.turbo > 1.0 { car.turbo = 1.0 }
+    }
+}
+
+-- ============================================================
+-- AI Cars
+-- ============================================================
+fn ai_car_update(car: *Car, dt: f32) {
+    if car.car_state == CarState.spinning {
+        car.spin_timer = car.spin_timer - dt
+        if car.spin_timer <= 0.0 {
+            car.car_state = CarState.racing_car
+        }
+        return
+    }
+
+    -- steer toward next waypoint
+    let wp: *Waypoint = &waypoints[car.next_wp]
+    let dx: f32 = wp.x - car.x
+    let dz: f32 = wp.z - car.z
+    let dist_sq: f32 = dx * dx + dz * dz
+
+    -- check if we reached this waypoint
+    if dist_sq < 100.0 {
+        car.next_wp = car.next_wp + 1
+        if car.next_wp >= waypoint_count {
+            car.next_wp = 0
+            car.lap = car.lap + 1
+        }
+    }
+
+    -- compute steering toward waypoint (simplified)
+    let target_heading: f32 = dx / 50.0  -- very simplified
+    let steer: f32 = target_heading - car.heading
+    if steer > 1.0 { steer = 1.0 }
+    if steer < -1.0 { steer = -1.0 }
+
+    -- AI always at ~80% throttle
+    let throttle: f32 = 0.8
+    apply_car_physics(car, throttle, 0.0, steer, dt)
+}
+
+-- ============================================================
+-- Waypoint Progress
+-- ============================================================
+fn update_waypoint_progress(car: *Car) {
+    let wp: *Waypoint = &waypoints[car.next_wp]
+    let dx: f32 = wp.x - car.x
+    let dz: f32 = wp.z - car.z
+    car.wp_progress = car.lap as f32 * (waypoint_count as f32) +
+                      (car.next_wp as f32)
+}
+
+fn sort_race_positions() {
+    -- simple bubble sort by wp_progress (descending)
+    let i: i32 = 0
+    loop {
+        if i >= MAX_CARS { break }
+        update_waypoint_progress(&cars[i])
+        i = i + 1
+    }
+    -- assign positions based on progress
+    let pos: i32 = 1
+    let i2: i32 = 0
+    loop {
+        if i2 >= MAX_CARS { break }
+        cars[i2].place_display = pos
+        pos = pos + 1
+        i2 = i2 + 1
+    }
+}
+
+-- ============================================================
+-- Timing
+-- ============================================================
+fn update_race_time(dt: f32) {
+    let dt_ms: i32 = (dt * 1000.0) as i32
+    race_time_ms = race_time_ms + dt_ms
+
+    let i: i32 = 0
+    loop {
+        if i >= MAX_CARS { break }
+        if cars[i].active {
+            cars[i].times.total_ms = cars[i].times.total_ms + dt_ms
+            cars[i].times.lap_ms = cars[i].times.lap_ms + dt_ms
+        }
+        i = i + 1
+    }
+}
+
+fn format_time(ms: i32, buf: *c_char) {
+    let secs: i32 = ms / 1000
+    let frac: i32 = (ms % 1000) / 10
+    let mins: i32 = secs / 60
+    secs = secs % 60
+    -- simplified: just store numeric value for display
+}
+
+-- ============================================================
+-- HUD
+-- ============================================================
+fn render_hud() {
+    rdpq_mode_push()
+    rdpq.set_mode_standard()
+
+    let player: *Car = &cars[0]
+
+    -- speed bar
+    rdpq.set_mode_fill(0x002200FF)
+    rdpq.fill_rectangle(8, 210, 108, 220)
+    let speed_pct: i32 = (player.speed * 100 as f32 / CAR_MAX_SPEED) as i32
+    if speed_pct > 100 { speed_pct = 100 }
+    rdpq.set_mode_fill(0x00FF44FF)
+    rdpq.fill_rectangle(8, 210, 8 + speed_pct, 220)
+
+    -- turbo bar
+    rdpq.set_mode_fill(0x220000FF)
+    rdpq.fill_rectangle(8, 222, 108, 230)
+    let turbo_pct: i32 = (player.turbo * 100.0) as i32
+    rdpq.set_mode_fill(0xFF8800FF)
+    rdpq.fill_rectangle(8, 222, 8 + turbo_pct, 230)
+
+    -- lap counter
+    rdpq_text_printf(140, 8, 1, "LAP %d/%d", player.lap + 1, MAX_LAPS)
+
+    -- position
+    rdpq_text_printf(260, 8, 1, "P%d", player.place_display)
+
+    -- lap time
+    let secs: i32 = player.times.lap_ms / 1000
+    let frac: i32 = (player.times.lap_ms % 1000) / 100
+    rdpq_text_printf(8, 8, 1, "%d.%d", secs, frac)
+
+    -- best lap
+    if player.times.best_lap_ms < 999999 {
+        let bsecs: i32 = player.times.best_lap_ms / 1000
+        let bfrac: i32 = (player.times.best_lap_ms % 1000) / 100
+        rdpq_text_printf(8, 20, 1, "BEST %d.%d", bsecs, bfrac)
+    }
+
+    -- countdown
+    if race_state == RaceState.countdown {
+        rdpq.set_mode_fill(0xFF000088)
+        rdpq.fill_rectangle(130, 100, 190, 140)
+        let cd: i32 = countdown_timer as i32 + 1
+        rdpq_text_printf(155, 110, 1, "%d", cd)
+    }
+
+    rdpq_mode_pop()
+}
+
+-- ============================================================
+-- Render
+-- ============================================================
+fn render_race() {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    t3d.frame_start()
+    t3d.viewport_attach(&viewport)
+
+    t3d.light_set_ambient(80, 80, 100)
+    t3d.light_set_directional(0, 255, 245, 220, -0.4, -1.0, 0.2)
+    t3d.light_set_count(1)
+
+    if track_model != none { t3d.model_draw(track_model) }
+
+    let i: i32 = 0
+    loop {
+        if i >= MAX_CARS { break }
+        if cars[i].active and car_models[i] != none {
+            t3d.model_draw(car_models[i])
+        }
+        i = i + 1
+    }
+
+    t3d.frame_end()
+
+    render_hud()
+    rdpq.detach_show()
+}
+
+fn render_results() {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    rdpq.set_mode_fill(0x000033FF)
+    rdpq.fill_rectangle(0, 0, 320, 240)
+
+    -- results table
+    rdpq.set_mode_fill(0xFFFFFFFF)
+    rdpq.fill_rectangle(60, 30, 260, 50)
+
+    let i: i32 = 0
+    loop {
+        if i >= MAX_CARS { break }
+        let y: i32 = 60 + i * 30
+        rdpq_text_printf(70, y, 1, "P%d", cars[i].place_display)
+        let secs: i32 = cars[i].times.total_ms / 1000
+        rdpq_text_printf(180, y, 1, "%d.%d s", secs,
+                         (cars[i].times.total_ms % 1000) / 100)
+        i = i + 1
+    }
+
+    rdpq.detach_show()
+}
+
+-- ============================================================
+-- Entry Point
+-- ============================================================
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+    audio.init(44100, 3)
+    mixer.init(8)
+    t3d.init()
+
+    viewport = t3d.viewport_create()
+    t3d.viewport_set_projection(&viewport, 75.0, 1.0, 200.0)
+
+    -- track_model = t3d.model_load("models/track.t3dm")
+    -- car_models[0] = t3d.model_load("models/car_red.t3dm")
+    -- car_models[1] = t3d.model_load("models/car_blue.t3dm")
+    -- car_models[2] = t3d.model_load("models/car_green.t3dm")
+    -- car_models[3] = t3d.model_load("models/car_yellow.t3dm")
+
+    wav64_open(&sfx_engine, "rom:/sfx/engine.wav64")
+    wav64_open(&sfx_crash, "rom:/sfx/crash.wav64")
+    wav64_open(&sfx_checkpoint, "rom:/sfx/checkpoint.wav64")
+    xm64player_open(&music, "rom:/music/race.xm64")
+    xm64player_play(&music, 0)
+
+    init_waypoints()
+    init_cars()
+
+    race_state = RaceState.countdown
+    countdown_timer = 3.0
+
+    loop {
+        let dt: f32 = timer.delta()
+        if dt > 0.033 { dt = 0.033 }
+
+        let abuf = audio.get_buffer()
+        if abuf != none { mixer.poll(*abuf) }
+
+        controller.poll()
+        let pad = controller.read(0)
+
+        match race_state {
+            RaceState.countdown => {
+                countdown_timer = countdown_timer - dt
+                if countdown_timer <= 0.0 {
+                    race_state = RaceState.racing
+                }
+                render_race()
+            }
+            RaceState.racing => {
+                update_race_time(dt)
+
+                -- player car
+                player_car_input(&cars[0], dt, &pad)
+
+                -- AI cars
+                let i: i32 = 1
+                loop {
+                    if i >= MAX_CARS { break }
+                    ai_car_update(&cars[i], dt)
+                    i = i + 1
+                }
+
+                -- check lap completion for player
+                if cars[0].lap >= MAX_LAPS {
+                    race_state = RaceState.finished
+                }
+
+                sort_race_positions()
+                render_race()
+            }
+            RaceState.finished => {
+                -- brief delay then show results
+                countdown_timer = countdown_timer + dt
+                if countdown_timer > 2.0 {
+                    race_state = RaceState.results
+                }
+                render_race()
+            }
+            RaceState.results => {
+                if pad.pressed.start or pad.pressed.a {
+                    -- restart
+                    init_cars()
+                    race_time_ms = 0
+                    race_state = RaceState.countdown
+                    countdown_timer = 3.0
+                }
+                render_results()
+            }
+        }
+    }
+}

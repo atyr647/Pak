@@ -1,0 +1,167 @@
+-- save_system.pak
+-- Complete save/load system with EEPROM, rumble feedback, and UI.
+-- Demonstrates: eeprom, rumble, multi-block save, presence detection.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+use n64.eeprom
+use n64.rumble
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const SAVE_MAGIC_0: u8 = 0xPA
+const SAVE_MAGIC_1: u8 = 0x4B
+
+struct SaveData {
+    high_score: i32
+    level: u8
+    lives: u8
+    unlocked: u8
+    checksum: u8
+}
+
+@aligned(8)
+static save_buf: [8]u8 = undefined
+
+static save_available: bool = false
+static current_score: i32 = 0
+static current_level: u8 = 1
+static high_score: i32 = 0
+
+fn compute_checksum() -> u8 {
+    let sum: i32 = save_buf[0] as i32 + save_buf[1] as i32
+                 + save_buf[2] as i32 + save_buf[3] as i32
+                 + save_buf[4] as i32 + save_buf[5] as i32
+                 + save_buf[6] as i32
+    return (sum % 256) as u8
+}
+
+fn save_game() {
+    if not save_available { return }
+
+    save_buf[0] = SAVE_MAGIC_0
+    save_buf[1] = SAVE_MAGIC_1
+    save_buf[2] = (high_score >> 24) as u8
+    save_buf[3] = (high_score >> 16) as u8
+    save_buf[4] = (high_score >> 8) as u8
+    save_buf[5] = high_score as u8
+    save_buf[6] = current_level
+    save_buf[7] = compute_checksum()
+
+    eeprom.write(0, &save_buf[0])
+
+    -- rumble feedback on save
+    rumble.start(0)
+}
+
+fn load_game() -> bool {
+    if not save_available { return false }
+
+    eeprom.read(0, &save_buf[0])
+
+    -- validate magic
+    if save_buf[0] != SAVE_MAGIC_0 { return false }
+    if save_buf[1] != SAVE_MAGIC_1 { return false }
+
+    -- validate checksum
+    let expected = compute_checksum()
+    if save_buf[7] != expected { return false }
+
+    -- unpack
+    high_score = (save_buf[2] as i32 << 24)
+               | (save_buf[3] as i32 << 16)
+               | (save_buf[4] as i32 << 8)
+               | save_buf[5] as i32
+    current_level = save_buf[6]
+
+    return true
+}
+
+fn update() {
+    controller.poll()
+    let pad = controller.read(0)
+
+    -- simulate scoring
+    if pad.pressed.a {
+        current_score = current_score + 100
+        if current_score > high_score {
+            high_score = current_score
+        }
+    }
+
+    -- level up
+    if pad.pressed.b {
+        current_level = current_level + 1
+    }
+
+    -- save with start
+    if pad.pressed.start {
+        save_game()
+    }
+
+    -- stop rumble after a short time
+    if pad.released.start {
+        rumble.stop(0)
+    }
+}
+
+fn render() {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    rdpq.set_mode_fill(0x222244FF)
+    rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+
+    -- show score as bar
+    let bar_w: i32 = current_score / 10
+    if bar_w > 300 { bar_w = 300 }
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(0x00FF00FF)
+    rdpq.fill_rectangle(10, 30, 10 + bar_w, 50)
+
+    -- show high score
+    let hs_w: i32 = high_score / 10
+    if hs_w > 300 { hs_w = 300 }
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(0xFFFF00FF)
+    rdpq.fill_rectangle(10, 60, 10 + hs_w, 80)
+
+    -- save indicator
+    if save_available {
+        rdpq.sync_pipe()
+        rdpq.set_mode_fill(0x00FF00FF)
+        rdpq.fill_rectangle(290, 10, 310, 20)
+    } else {
+        rdpq.sync_pipe()
+        rdpq.set_mode_fill(0xFF0000FF)
+        rdpq.fill_rectangle(290, 10, 310, 20)
+    }
+
+    rdpq.detach_show()
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+    rumble.init()
+
+    -- detect save hardware
+    save_available = eeprom.present()
+
+    if save_available {
+        let loaded = load_game()
+        if not loaded {
+            high_score = 0
+            current_level = 1
+        }
+    }
+
+    loop {
+        update()
+        render()
+    }
+}

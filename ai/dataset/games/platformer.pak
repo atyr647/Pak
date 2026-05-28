@@ -1,0 +1,196 @@
+-- platformer.pak
+-- Basic platformer: gravity, jumping, platform collision, scrolling.
+-- Demonstrates: fixed-point physics, struct methods, game phases, analog stick.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const GRAVITY: fix16.16 = 0.5
+const JUMP_FORCE: fix16.16 = -8.0
+const MOVE_SPEED: fix16.16 = 3.0
+const MAX_FALL: fix16.16 = 10.0
+const PLAYER_W: i32 = 12
+const PLAYER_H: i32 = 16
+const MAX_PLATFORMS: i32 = 8
+const DEAD_ZONE: i32 = 10
+
+const COLOR_SKY: u32 = 0x4488CCFF
+const COLOR_PLAYER: u32 = 0xFF4444FF
+const COLOR_PLATFORM: u32 = 0x44AA44FF
+const COLOR_GROUND: u32 = 0x885522FF
+
+struct Player {
+    x: fix16.16
+    y: fix16.16
+    vy: fix16.16
+    on_ground: bool
+    facing_right: bool
+}
+
+struct Platform {
+    x: i32
+    y: i32
+    w: i32
+    active: bool
+}
+
+struct Game {
+    player: Player
+    platforms: [8]Platform
+    camera_x: fix16.16
+    score: i32
+}
+
+impl Player {
+    fn init(self: *Player) {
+        self.x = 40.0 as fix16.16
+        self.y = 180.0 as fix16.16
+        self.vy = 0.0 as fix16.16
+        self.on_ground = false
+        self.facing_right = true
+    }
+
+    fn apply_gravity(self: *Player) {
+        self.vy = self.vy + GRAVITY
+        if self.vy > MAX_FALL {
+            self.vy = MAX_FALL
+        }
+        self.y = self.y + self.vy
+    }
+
+    fn jump(self: *Player) {
+        if self.on_ground {
+            self.vy = JUMP_FORCE
+            self.on_ground = false
+        }
+    }
+}
+
+fn init_platforms(gs: *Game) {
+    gs.platforms[0] = Platform { x: 0, y: 224, w: 320, active: true }
+    gs.platforms[1] = Platform { x: 50, y: 180, w: 60, active: true }
+    gs.platforms[2] = Platform { x: 150, y: 150, w: 60, active: true }
+    gs.platforms[3] = Platform { x: 240, y: 120, w: 60, active: true }
+    gs.platforms[4] = Platform { x: 80, y: 100, w: 50, active: true }
+    gs.platforms[5] = Platform { x: 180, y: 70, w: 50, active: true }
+    gs.platforms[6] = Platform { x: 0, y: 0, w: 0, active: false }
+    gs.platforms[7] = Platform { x: 0, y: 0, w: 0, active: false }
+}
+
+fn check_platform_collision(gs: *Game) {
+    let px: i32 = gs.player.x as i32
+    let py: i32 = gs.player.y as i32
+    gs.player.on_ground = false
+
+    for i in 0..MAX_PLATFORMS {
+        if not gs.platforms[i].active { continue }
+
+        let plat = gs.platforms[i]
+        -- only check when falling
+        if gs.player.vy < 0.0 as fix16.16 { continue }
+
+        if px + PLAYER_W > plat.x and px < plat.x + plat.w {
+            if py + PLAYER_H >= plat.y and py + PLAYER_H <= plat.y + 8 {
+                gs.player.y = (plat.y - PLAYER_H) as fix16.16
+                gs.player.vy = 0.0 as fix16.16
+                gs.player.on_ground = true
+            }
+        }
+    }
+}
+
+fn update(gs: *Game) {
+    controller.poll()
+    let pad = controller.read(0)
+
+    -- horizontal movement with analog stick
+    let raw_x: i32 = pad.stick_x as i32
+    if raw_x > DEAD_ZONE {
+        gs.player.x = gs.player.x + MOVE_SPEED
+        gs.player.facing_right = true
+    }
+    if raw_x < -DEAD_ZONE {
+        gs.player.x = gs.player.x - MOVE_SPEED
+        gs.player.facing_right = false
+    }
+
+    -- d-pad fallback
+    if pad.held.right {
+        gs.player.x = gs.player.x + MOVE_SPEED
+        gs.player.facing_right = true
+    }
+    if pad.held.left {
+        gs.player.x = gs.player.x - MOVE_SPEED
+        gs.player.facing_right = false
+    }
+
+    -- jump with A button
+    if pad.pressed.a {
+        gs.player.jump()
+    }
+
+    gs.player.apply_gravity()
+    check_platform_collision(gs)
+
+    -- respawn if fell off screen
+    if gs.player.y as i32 > SCREEN_H + 32 {
+        gs.player.init()
+    }
+}
+
+fn render(gs: *Game) {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    -- sky
+    rdpq.set_mode_fill(COLOR_SKY)
+    rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+
+    -- platforms
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(COLOR_PLATFORM)
+    for i in 0..MAX_PLATFORMS {
+        if not gs.platforms[i].active { continue }
+        let plat = gs.platforms[i]
+        if i == 0 {
+            rdpq.sync_pipe()
+            rdpq.set_mode_fill(COLOR_GROUND)
+            rdpq.fill_rectangle(plat.x, plat.y, plat.x + plat.w, plat.y + 16)
+            rdpq.sync_pipe()
+            rdpq.set_mode_fill(COLOR_PLATFORM)
+        } else {
+            rdpq.fill_rectangle(plat.x, plat.y, plat.x + plat.w, plat.y + 8)
+        }
+    }
+
+    -- player
+    let px: i32 = gs.player.x as i32
+    let py: i32 = gs.player.y as i32
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(COLOR_PLAYER)
+    rdpq.fill_rectangle(px, py, px + PLAYER_W, py + PLAYER_H)
+
+    rdpq.detach_show()
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+
+    let mut gs: Game = undefined
+    gs.player.init()
+    gs.camera_x = 0.0 as fix16.16
+    gs.score = 0
+    init_platforms(&gs)
+
+    loop {
+        update(&gs)
+        render(&gs)
+    }
+}

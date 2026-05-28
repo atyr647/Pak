@@ -1,0 +1,93 @@
+-- dma_loader.pak
+-- DMA data loading with multiple buffers and display.
+-- Demonstrates: full DMA pipeline, @aligned, cache ops, ROM addresses.
+
+use n64.display
+use n64.rdpq
+use n64.dma
+use n64.cache
+use n64.debug
+
+const DATA_SIZE: i32 = 4096
+const HEADER_SIZE: i32 = 256
+const ROM_DATA_START: u32 = 0x10040000
+
+@aligned(16)
+static header_buf: [256]u8 = undefined
+
+@aligned(16)
+static level_buf: [4096]u8 = undefined
+
+@aligned(16)
+static tile_buf: [2048]u8 = undefined
+
+fn load_header() {
+    cache.writeback(&header_buf[0], 256)
+    dma.read(&header_buf[0], ROM_DATA_START, 256)
+    dma.wait()
+    cache.invalidate(&header_buf[0], 256)
+}
+
+fn load_level(offset: u32) {
+    cache.writeback(&level_buf[0], 4096)
+    dma.read(&level_buf[0], ROM_DATA_START + offset, 4096)
+    dma.wait()
+    cache.invalidate(&level_buf[0], 4096)
+}
+
+fn load_tiles(offset: u32) {
+    cache.writeback(&tile_buf[0], 2048)
+    dma.read(&tile_buf[0], ROM_DATA_START + offset, 2048)
+    dma.wait()
+    cache.invalidate(&tile_buf[0], 2048)
+}
+
+fn parse_header() -> i32 {
+    -- read level count from first 4 bytes (big-endian)
+    let count: i32 = (header_buf[0] as i32 << 24)
+                   | (header_buf[1] as i32 << 16)
+                   | (header_buf[2] as i32 << 8)
+                   | header_buf[3] as i32
+    return count
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+
+    debug.log("loading header from ROM...")
+    load_header()
+    let num_levels: i32 = parse_header()
+    debug.log("header loaded")
+
+    -- load level data at offset 256 from data start
+    load_level(256)
+    debug.log("level loaded")
+
+    -- load tile data at offset 4352 from data start
+    load_tiles(4352)
+    debug.log("tiles loaded")
+
+    -- render something to confirm data loaded
+    loop {
+        let fb = display.get()
+        rdpq.attach_clear(fb)
+
+        rdpq.set_mode_fill(0x002200FF)
+        rdpq.fill_rectangle(0, 0, 320, 240)
+
+        -- draw tiles from loaded data as colored blocks
+        for i in 0..64 {
+            let tile_val: i32 = tile_buf[i] as i32
+            if tile_val > 0 {
+                let tx: i32 = (i % 8) * 40
+                let ty: i32 = (i / 8) * 30
+                rdpq.sync_pipe()
+                rdpq.set_mode_fill(0x448844FF)
+                rdpq.fill_rectangle(tx, ty, tx + 38, ty + 28)
+            }
+        }
+
+        rdpq.detach_show()
+    }
+}
