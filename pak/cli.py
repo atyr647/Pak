@@ -542,8 +542,8 @@ use n64.controller
 use n64.rdpq
 
 entry {{
-    -- Initialize display: 320x240, 16bpp, triple-buffered
-    display.init(RESOLUTION_320x240, DEPTH_16_BPP, 3, GAMMA_NONE, FILTERS_RESAMPLE)
+    -- Initialize display: 0=320x240, 2=16bpp, 3=triple-buffer, 0=GAMMA_NONE, 1=FILTERS_RESAMPLE
+    display.init(0, 2, 3, 0, 1)
 
     loop {{
         let input = controller.read(0)

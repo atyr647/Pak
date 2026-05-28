@@ -13,8 +13,8 @@ Merges:
 Output: ai/dataset/full_dataset.jsonl
 
 Usage:
-    python3 ai/scripts/expand_dataset.py
-    python3 ai/scripts/expand_dataset.py --validate   # also run pak check on outputs
+    python3 ai/scripts/expand_dataset.py               # validates + writes (gated)
+    python3 ai/scripts/expand_dataset.py --no-validate # skip the pak check gate
     python3 ai/scripts/expand_dataset.py --stats       # just print stats, no write
 """
 
@@ -76,9 +76,50 @@ def deduplicate(pairs: list[dict]) -> list[dict]:
     return unique
 
 
+from pak_validation import code_units, unit_failure
+
+
+def validate_outputs(pairs: list[dict]) -> list[dict]:
+    """Run `pak check` on every Pak code unit (see pak_validation.code_units):
+    raw complete programs must fully pass; raw decls-only snippets must pass
+    except the missing entry block; complete programs inside ```pak blocks must
+    at least parse. Returns failing pairs (each with an added ``error`` key)."""
+    import subprocess
+    import tempfile
+
+    pak_validator = REPO_ROOT / "tools" / "validate_pak.sh"
+    if not pak_validator.exists():
+        print("  validate_pak.sh not found, skipping validation")
+        return []
+
+    failures, checked = [], 0
+    for p in pairs:
+        for code, kind in code_units(p["output"], p.get("category", "")):
+            checked += 1
+            with tempfile.NamedTemporaryFile(suffix=".pak", mode="w", delete=False) as f:
+                f.write(code)
+                tmp = f.name
+            try:
+                result = subprocess.run(
+                    [str(pak_validator), tmp],
+                    capture_output=True, text=True, timeout=15,
+                )
+                errtext = (result.stdout + result.stderr).strip()
+                fail = unit_failure(kind, result.returncode, errtext)
+            except Exception as e:  # noqa: BLE001 — validator robustness
+                fail = f"validator error: {e}"
+            finally:
+                Path(tmp).unlink(missing_ok=True)
+            if fail:
+                failures.append({**p, "error": fail})
+
+    print(f"  Validated {checked} Pak code unit(s); {len(failures)} failed.")
+    return failures
+
+
 def main():
     stats_only = "--stats" in sys.argv
-    validate = "--validate" in sys.argv
+    skip_validation = "--no-validate" in sys.argv
 
     print("=" * 60)
     print("Pak AI — Full Dataset Builder")
@@ -143,47 +184,19 @@ def main():
         print("\n[--stats] Stats only, no file written.")
         return
 
-    # Validation
-    if validate:
-        print("\nValidating Pak outputs...")
-        import subprocess
-        import tempfile
-        import re
-
-        pak_validator = REPO_ROOT / "tools" / "validate_pak.sh"
-        if not pak_validator.exists():
-            print("  validate_pak.sh not found, skipping validation")
-        else:
-            passed = failed = skipped = 0
-            for p in all_pairs:
-                output = p["output"]
-                # Skip non-code outputs
-                if "```" in output[:20] or output.startswith("In Pak") or "|" in output[:30]:
-                    skipped += 1
-                    continue
-                if not any(kw in output for kw in ["entry {", "fn ", "struct ", "enum "]):
-                    skipped += 1
-                    continue
-
-                with tempfile.NamedTemporaryFile(suffix=".pak", mode="w", delete=False) as f:
-                    f.write(output)
-                    f.flush()
-                    try:
-                        result = subprocess.run(
-                            [str(pak_validator), f.name],
-                            capture_output=True, text=True, timeout=10
-                        )
-                        if result.returncode == 0:
-                            passed += 1
-                        else:
-                            failed += 1
-                            print(f"  FAIL: {p['instruction'][:60]}...")
-                    except Exception:
-                        skipped += 1
-                    finally:
-                        Path(f.name).unlink(missing_ok=True)
-
-            print(f"  Passed: {passed}, Failed: {failed}, Skipped: {skipped}")
+    # Validation gate — the dataset must never ship code that fails `pak check`.
+    if not skip_validation:
+        print("\nValidating Pak outputs with pak check...")
+        failures = validate_outputs(all_pairs)
+        if failures:
+            print(f"\nERROR: {len(failures)} complete-program output(s) failed validation:")
+            for fp in failures:
+                first = next((l for l in fp["error"].splitlines() if "error" in l.lower()),
+                             fp["error"][:120])
+                print(f"  FAIL [{fp.get('source', '?')}]: {fp['instruction'][:70]}")
+                print(f"        {first[:160]}")
+            print("\nRefusing to write dataset. Fix the generators above and re-run.")
+            sys.exit(1)
 
     # Write output
     DATASET_DIR.mkdir(parents=True, exist_ok=True)

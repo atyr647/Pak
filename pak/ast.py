@@ -605,6 +605,7 @@ class FnDecl:
     annotations: List[str] = field(default_factory=list)
     is_method: bool = False
     self_type: Optional[str] = None
+    variadic: bool = False   # trailing `...` (C-style variadic; extern only)
     line: int = 0
     col: int = 0
 

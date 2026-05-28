@@ -37,9 +37,9 @@ def gen_patterns() -> list[dict]:
         "            let tile = get_tile(col, row)\n            if tile == 0 { continue }\n\n"
         "            let px: i32 = col * TILE_SIZE\n            let py: i32 = row * TILE_SIZE\n\n"
         "            -- different colors per tile type\n"
-        "            let color: u32 = if tile == 1 { 0x448844FF }\n"
-        "                elif tile == 2 { 0x886644FF }\n"
-        "                else { 0x888888FF }\n\n"
+        "            let color: u32 = 0x888888FF\n"
+        "            if tile == 1 { color = 0x448844FF }\n"
+        "            elif tile == 2 { color = 0x886644FF }\n\n"
         "            rdpq.sync_pipe()\n            rdpq.set_mode_fill(color)\n"
         "            rdpq.fill_rectangle(px, py, px + TILE_SIZE, py + TILE_SIZE)\n        }\n    }\n}\n```")
 
@@ -209,7 +209,7 @@ def gen_patterns() -> list[dict]:
     add("Write a capped delta-time physics update in Pak.",
         "```pak\nuse n64.timer\n\nconst MAX_DT: f32 = 0.05  -- cap at 1/20s\n\n"
         "fn physics_update(gs: *GameState) {\n    let raw_dt: f32 = timer.delta()\n"
-        "    let dt: f32 = if raw_dt > MAX_DT { MAX_DT } else { raw_dt }\n"
+        "    let dt: f32 = raw_dt\n    if raw_dt > MAX_DT { dt = MAX_DT }\n"
         "    let dt_fixed: fix16.16 = dt as fix16.16\n\n"
         "    -- use dt_fixed for all physics:\n"
         "    gs.player.x = gs.player.x + gs.player.vx * dt_fixed\n"
@@ -240,7 +240,7 @@ def gen_patterns() -> list[dict]:
         "fn render_scrolling_bg() {\n    scroll_y = (scroll_y + 1) % SCREEN_H\n\n"
         "    -- draw two-color alternating stripes that scroll\n"
         "    for row in 0..16 {\n        let y: i32 = (row * 16 - scroll_y + SCREEN_H) % SCREEN_H\n"
-        "        let color: u32 = if row % 2 == 0 { 0x222244FF } else { 0x333366FF }\n"
+        "        let color: u32 = 0x333366FF\n        if row % 2 == 0 { color = 0x222244FF }\n"
         "        rdpq.sync_pipe()\n        rdpq.set_mode_fill(color)\n"
         "        rdpq.fill_rectangle(0, y, SCREEN_W, y + 16)\n    }\n}\n```")
 

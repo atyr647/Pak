@@ -13,8 +13,8 @@ Extracts training pairs from:
 Output: ai/dataset/seed_dataset.jsonl  (instruction/output pairs)
 
 Usage:
-    python3 ai/scripts/prepare_data.py
-    python3 ai/scripts/prepare_data.py --validate  # also run pak check on outputs
+    python3 ai/scripts/prepare_data.py               # validates + writes (gated)
+    python3 ai/scripts/prepare_data.py --no-validate # skip the pak check gate
 """
 
 import json
@@ -355,8 +355,10 @@ entry {
         let raw_x: i32 = pad.stick_x as i32
         let raw_y: i32 = pad.stick_y as i32
 
-        let dx: i32 = if raw_x > DEAD_ZONE or raw_x < -DEAD_ZONE { raw_x / 16 } else { 0 }
-        let dy: i32 = if raw_y > DEAD_ZONE or raw_y < -DEAD_ZONE { -(raw_y / 16) } else { 0 }
+        let dx: i32 = 0
+        if raw_x > DEAD_ZONE or raw_x < -DEAD_ZONE { dx = raw_x / 16 }
+        let dy: i32 = 0
+        if raw_y > DEAD_ZONE or raw_y < -DEAD_ZONE { dy = -(raw_y / 16) }
 
         x = x + dx
         y = y + dy
@@ -682,47 +684,54 @@ entry {
     ]
 
 
-def validate_pak_outputs(pairs: list[dict]) -> tuple[int, int]:
-    """Optionally validate Pak code blocks with pak check."""
+from pak_validation import code_units, unit_failure  # noqa: E402
+
+
+def validate_pak_outputs(pairs: list[dict]) -> list[dict]:
+    """Run `pak check` on every Pak code unit in the dataset.
+
+    Validation tiers (see pak_validation.code_units):
+      - raw complete program  → must fully pass `pak check`
+      - raw decls-only snippet → must pass except the missing entry block (E103)
+      - fenced complete program → must parse (no E001/E002); illustrative
+        skeletons may reference helpers defined elsewhere, so semantics are
+        tolerated
+      - isolated fenced fragments and negative examples → never validated
+
+    Returns the list of failing pairs (each with an added ``error`` key).
+    """
     pak_bin = REPO_ROOT / "tools" / "validate_pak.sh"
     if not pak_bin.exists():
         print("NOTE: validate_pak.sh not found, skipping validation")
-        return 0, 0
+        return []
 
-    passed, failed = 0, 0
+    failures, checked = [], 0
     for pair in pairs:
-        output = pair["output"]
-        # Only validate if it looks like a full Pak program (not markdown)
-        if "```" in output or output.startswith("In Pak") or "|" in output[:50]:
-            continue
-
-        if "entry {" in output or "fn " in output or "struct " in output:
-            # Write to temp file and validate
+        for code, kind in code_units(pair["output"], pair.get("category", "")):
+            checked += 1
             tmp = REPO_ROOT / ".tmp_validate.pak"
-            tmp.write_text(output, encoding="utf-8")
+            tmp.write_text(code, encoding="utf-8")
             try:
                 result = subprocess.run(
                     [str(pak_bin), str(tmp)],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
+                    capture_output=True, text=True, timeout=15,
                 )
-                if result.returncode == 0:
-                    passed += 1
-                else:
-                    failed += 1
-                    print(f"  FAIL [{pair['source']}]: {pair['instruction'][:60]}...")
-                    print(f"        {result.stderr.strip()[:200]}")
-            except (subprocess.TimeoutExpired, FileNotFoundError):
-                pass
+                errtext = (result.stdout + result.stderr).strip()
+                fail = unit_failure(kind, result.returncode, errtext)
+            except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+                fail = f"validator error: {e}"
             finally:
                 tmp.unlink(missing_ok=True)
+            if fail:
+                failures.append({**pair, "error": fail})
 
-    return passed, failed
+    print(f"  Validated {checked} Pak code unit(s); {len(failures)} failed.")
+    return failures
 
 
 def main():
-    validate = "--validate" in sys.argv
+    # Validation runs by default and gates the write. Pass --no-validate to skip.
+    skip_validation = "--no-validate" in sys.argv
 
     print("=== Pak AI Training Data Generator ===\n")
 
@@ -754,11 +763,19 @@ def main():
     for cat, count in sorted(categories.items()):
         print(f"  {cat}: {count}")
 
-    # Validation
-    if validate:
+    # Validation gate — the dataset must never ship code that fails `pak check`.
+    if not skip_validation:
         print("\nValidating Pak outputs with pak check...")
-        passed, failed = validate_pak_outputs(all_pairs)
-        print(f"  Passed: {passed}, Failed: {failed}")
+        failures = validate_pak_outputs(all_pairs)
+        if failures:
+            print(f"\nERROR: {len(failures)} complete-program output(s) failed validation:")
+            for fp in failures:
+                first = next((l for l in fp["error"].splitlines() if "error" in l.lower()),
+                             fp["error"][:120])
+                print(f"  FAIL [{fp.get('source', '?')}]: {fp['instruction'][:70]}")
+                print(f"        {first[:160]}")
+            print("\nRefusing to write dataset. Fix the sources above and re-run.")
+            sys.exit(1)
 
     # Write output
     DATASET_DIR.mkdir(parents=True, exist_ok=True)
@@ -780,7 +797,7 @@ def main():
         f"  1. Run this script to generate the seed\n"
         f"  2. Manually write additional task-specific pairs\n"
         f"  3. Generate synthetic variations (rephrase, combine features)\n"
-        f"  4. Validate ALL Pak code with: python3 {__file__} --validate\n"
+        f"  Every complete-program output is gated by pak check on each run.\n"
     )
 
 

@@ -11,8 +11,8 @@ use n64.rumble
 
 const SCREEN_W: i32 = 320
 const SCREEN_H: i32 = 240
-const SAVE_MAGIC_0: u8 = 0xPA
-const SAVE_MAGIC_1: u8 = 0x4B
+const SAVE_MAGIC_0: u8 = 0x50  -- 'P'
+const SAVE_MAGIC_1: u8 = 0x4B  -- 'K'
 
 struct SaveData {
     high_score: i32

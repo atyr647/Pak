@@ -15,7 +15,7 @@ Special handling:
 Usage::
 
     rt = N64Runtime()
-    # Call n64.display.init(RESOLUTION_320x240, DEPTH_16_BPP, 2, GAMMA_NONE, FILTERS_RESAMPLE)
+    # Call n64.display.init(0, 2, 2, 0, 1)  -- 320x240, 16bpp, double-buffer, no gamma, resample
     rt.emit_call(em, ra, 'display', 'init',
                  arg_regs=['$a0', '$a1', '$a2', '$a3', '$t0'],
                  arg_locs=classify_args(['u32','u32','i32','u32','u32']))

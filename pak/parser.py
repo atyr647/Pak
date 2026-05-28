@@ -315,7 +315,12 @@ class Parser:
         type_params = self._parse_generic_params()
         self.expect(TT.LPAREN)
         params = []
+        variadic = False
         while not self.check(TT.RPAREN) and not self.check(TT.EOF):
+            # C-style variadic marker `...` — must be the final parameter.
+            if self.match(TT.ELLIPSIS):
+                variadic = True
+                break
             mut = bool(self.match(TT.MUT))
             # Accept 'self' keyword or IDENT as param name
             if self.check(TT.SELF):
@@ -349,7 +354,8 @@ class Parser:
                 self_type = ptype.name
         return ast.FnDecl(name=name, params=params, ret_type=ret_type, body=body,
                           type_params=type_params, annotations=annotations or [],
-                          is_method=is_method, self_type=self_type, line=line, col=col)
+                          is_method=is_method, self_type=self_type, variadic=variadic,
+                          line=line, col=col)
 
     def parse_entry(self) -> ast.EntryBlock:
         line, col = self.loc()

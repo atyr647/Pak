@@ -543,7 +543,8 @@ fn double(x: i32) -> i32 {
 
 entry {
     -- Initialize N64 subsystems
-    display.init(RESOLUTION_320x240, DEPTH_16_BPP, 3, GAMMA_NONE, FILTERS_RESAMPLE)
+    -- 0=320x240, 2=16bpp, 3=triple-buffer, 0=GAMMA_NONE, 1=FILTERS_RESAMPLE
+    display.init(0, 2, 3, 0, 1)
     debug.init_isviewer()
 
     -- Run edge case tests at startup
@@ -565,10 +566,10 @@ entry {
     -- Load level
     let level_result = load_map(1)
     match level_result {
-        ok(lvl) => {
+        .ok(lvl) => {
             debug.log_value("Loaded level: ", lvl)
         }
-        err(e) => {
+        .err(e) => {
             debug.log("Failed to load level")
         }
     }

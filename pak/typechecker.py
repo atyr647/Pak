@@ -172,21 +172,11 @@ def fixpoint_shift(typ) -> int:
 
 # ── Type checker ──────────────────────────────────────────────────────────────
 
-# Module names that are not variables (don't trigger "unknown variable" errors)
-# Matches every module key used in codegen.MODULE_API
-MODULE_NAMESPACES = {
-    # n64 subsystems
-    'display', 'controller', 'joypad', 'rdpq', 'rdpq_tex', 'rdpq_font', 'rdpq_mode',
-    'sprite', 'surface', 'audio', 'mixer', 'xm64', 'wav64', 'timer', 'dma', 'cache',
-    'debug', 'math', 'mem', 'vi', 'rsp', 'eeprom', 'backup', 'sram', 'flashram',
-    'rtc', 'cpak', 'tpak', 'rumble', 'mouse', 'vru', 'disk', 'system', 'exception',
-    # Tiny3D
-    't3d',
-    # Pak runtime helpers
-    'str', 'arena',
-    # Generic namespace prefix
-    'n64',
-}
+# Module names that are not variables (don't trigger "unknown variable" errors).
+# Derived from codegen.MODULE_API (via MODULE_NAMES) plus the generic 'n64'
+# prefix, so this can never drift out of sync with what codegen can lower.
+from .codegen import MODULE_NAMES as _CODEGEN_MODULE_NAMES
+MODULE_NAMESPACES = set(_CODEGEN_MODULE_NAMES) | {'n64'}
 
 # C types that are always available (from includes)
 BUILTIN_TYPES = {
@@ -714,6 +704,16 @@ class TypeChecker:
             return  # external or unknown
         n_args = len(call.args)
         n_params = len(params)
+        fn = self.env.fns.get(name)
+        if fn is not None and getattr(fn, 'variadic', False):
+            # Variadic function: the declared params are the minimum; extra
+            # trailing args are passed through to C as varargs.
+            if n_args < n_params:
+                self.err('E012',
+                         f"function '{name}' takes at least {n_params} argument(s), got {n_args}",
+                         call,
+                         hint=f"Expected: {name}({', '.join(p.name + ': ' + _type_str(p.type) for p in params)}, ...)")
+            return
         if n_args != n_params:
             self.err('E012',
                      f"function '{name}' takes {n_params} argument(s), got {n_args}",

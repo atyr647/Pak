@@ -103,7 +103,7 @@ fn_decl = [ annotations ] "fn" IDENT [ generic_params ]
           [ "->" type ]
           ( block | (* no body — declaration only *) ) ;
 
-param_list = param { "," param } [ "," ] ;
+param_list = param { "," param } [ "," ] [ "..." ] ;   (* trailing "..." = C variadic; extern only *)
 
 param = [ "mut" ] name_or_keyword ":" type [ "=" expr ] ;
 
