@@ -1,0 +1,4 @@
+-- E107: duplicate top-level name
+fn dup() { }
+fn dup() { }
+entry { }

@@ -20,8 +20,8 @@ REPO="$(cd "$HERE/../.." && pwd)"
 cd "$REPO"
 NAGELFAR="$HERE/vendor/nagelfar/nagelfar.tcl"
 
-# ast_schema.tcl is generated (89 struct::record lines) and intentionally skipped.
-FILES="tcl/ast.tcl tcl/ast_visit.tcl tcl/lexer.tcl tcl/parser.tcl"
+# ast_schema.tcl and check_tables.tcl are generated and intentionally skipped.
+FILES="tcl/ast.tcl tcl/ast_visit.tcl tcl/lexer.tcl tcl/parser.tcl tcl/checker.tcl"
 
 out="$(tclsh "$NAGELFAR" -s _ -s "$HERE/pak.syntax" $FILES 2>&1 \
   | grep -vE 'which is also a variable|Non static subcommand')"

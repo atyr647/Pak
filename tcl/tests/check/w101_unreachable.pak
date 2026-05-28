@@ -1,0 +1,6 @@
+-- W101: statement after return
+fn f() -> i32 {
+    return 1
+    let x: i32 = 2
+}
+entry { }

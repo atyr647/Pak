@@ -6,6 +6,10 @@
 
 namespace eval pak {}
 
+# Include guard (reachable via multiple consumers; see ast.tcl).
+if {[info exists ::pak::_lexer_loaded]} { return }
+set ::pak::_lexer_loaded 1
+
 # keyword text → token type name (mirrors pak/lexer.py KEYWORDS)
 set ::pak::KEYWORDS {
     use USE        asset ASSET     from FROM       entry ENTRY

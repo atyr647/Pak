@@ -1,0 +1,4 @@
+-- W103: unknown @cfg feature
+@cfg(BOGUS_FEATURE)
+fn gated() { }
+entry { }

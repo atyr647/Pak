@@ -14,6 +14,11 @@ source [file join $_here ast.tcl]
 
 namespace eval pak {}
 
+# Include guard (reachable via multiple consumers; see ast.tcl). Placed after the
+# leaf sources above so they still load; prevents redefining pak::Parser.
+if {[info exists ::pak::_parser_loaded]} { return }
+set ::pak::_parser_loaded 1
+
 oo::class create pak::Parser {
     variable toks pos
 

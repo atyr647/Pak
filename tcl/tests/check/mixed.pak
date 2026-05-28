@@ -1,0 +1,10 @@
+-- Multiple diagnostics; tests error-then-warning ordering.
+use n64.bogus
+fn dup() { }
+fn dup() { }
+@cfg(NOPE)
+fn g() -> i32 {
+    return 0
+    let y: i32 = 1
+}
+entry { }

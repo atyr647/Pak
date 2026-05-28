@@ -13,6 +13,11 @@
 
 namespace eval pak {}
 
+# Include guard: ast.tcl is reachable via both parser.tcl and checker.tcl, and
+# re-sourcing would re-run `struct::record define` (which errors on redefine).
+if {[info exists ::pak::_ast_loaded]} { return }
+set ::pak::_ast_loaded 1
+
 # Node schema mirrors pak/ast.py (generated). struct::record holds the field
 # set per kind; pak::N validates construction and pak::nfield validates reads,
 # turning stringly-typed field-name slips into immediate, located errors.
@@ -74,6 +79,18 @@ proc pak::Lit {s}        { return [list lit $s] }
 proc pak::Fnum {x}       { return [list fnum $x] }
 proc pak::Bool {b}       { return [list bool [expr {$b ? 1 : 0}]] }
 proc pak::Nil {}         { return [list nil] }
+
+# ── Tagged-value accessors for AST consumers (checker, typechecker, codegen) ──
+# These unwrap the tagged representation so walkers read like Python attribute
+# access. kindof returns "" for non-nodes (nil/lit/...), which makes a node-kind
+# switch fall through cleanly the same way Python's isinstance chain does.
+proc pak::kindof {tv} { expr {[lindex $tv 0] eq "node" ? [lindex $tv 1] : ""} }
+proc pak::sval   {tv} { return [lindex $tv 1] }   ;# {lit X}/{bool X}/{fnum X} -> X
+proc pak::items  {tv} { return [lindex $tv 1] }   ;# {seq L} -> L (Tcl list of tvs)
+proc pak::isnil  {tv} { expr {[lindex $tv 0] eq "nil"} }
+# Field read returning the unwrapped scalar / list, for the common cases.
+proc pak::fval  {node field} { return [lindex [pak::nfield $node $field] 1] }
+proc pak::flist {node field} { return [lindex [pak::nfield $node $field] 1] }
 
 # int literal value: decimal text matching Python int(raw[,16]) -> str.
 proc pak::intval {raw} {

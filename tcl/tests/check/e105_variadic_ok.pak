@@ -1,0 +1,5 @@
+-- No E105: debug.log is variadic (>=1)
+use n64.debug
+entry {
+    n64.debug.log("a", "b", "c")
+}
