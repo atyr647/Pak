@@ -1,0 +1,6 @@
+-- E011: unknown struct field via known-typed variable
+struct Point { x: i32, y: i32 }
+fn f(p: Point) {
+    let z: i32 = p.w
+}
+entry { }

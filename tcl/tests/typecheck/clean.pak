@@ -1,0 +1,9 @@
+-- No diagnostics expected.
+struct Player { hp: i32, x: f32 }
+fn heal(p: *Player, amount: i32) {
+    p.hp = p.hp + amount
+}
+entry {
+    let mut player: Player = Player { hp: 100, x: 0.0 }
+    heal(&player, 10)
+}

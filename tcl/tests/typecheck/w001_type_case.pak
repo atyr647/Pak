@@ -1,0 +1,3 @@
+-- W001: type not PascalCase
+struct lowerStruct { x: i32 }
+entry { }

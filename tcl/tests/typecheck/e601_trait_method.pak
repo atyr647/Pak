@@ -1,0 +1,9 @@
+-- E601: impl declares a method not in the trait
+trait Drawable {
+    fn draw(self: *Drawable)
+}
+impl Sprite for Drawable {
+    fn draw(self: *Sprite) { }
+    fn extra(self: *Sprite) { }
+}
+entry { }

@@ -119,7 +119,8 @@ jobs:
         run: |
           python3 tcl/tools/gen_schema.py
           python3 tcl/tools/gen_check_tables.py
-          git diff --exit-code tcl/ast_schema.tcl tcl/check_tables.tcl \
+          python3 tcl/tools/gen_tc_tables.py
+          git diff --exit-code tcl/ast_schema.tcl tcl/check_tables.tcl tcl/tc_tables.tcl \
             || { echo "Generated Tcl mirrors are stale — run the gen_*.py scripts and commit."; exit 1; }
 
       - name: Lexer parity (Tcl vs Python oracle)
@@ -130,6 +131,9 @@ jobs:
 
       - name: Checker diagnostic parity (Tcl vs Python oracle)
         run: bash tcl/tools/check_parity.sh
+
+      - name: Typechecker diagnostic parity (Tcl vs Python oracle)
+        run: bash tcl/tools/tc_parity.sh
 
       - name: Static-lint Tcl sources (nagelfar)
         run: bash tcl/tools/lint.sh
