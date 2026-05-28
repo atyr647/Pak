@@ -61,8 +61,11 @@ def main() -> None:
     src = Path(path).read_text(encoding="utf-8")
     try:
         prog = parse(src, path)
-    except (ParseError, LexError) as e:
-        print(f"PARSEERROR\t{e}")
+    except ParseError as e:
+        print(f"PARSEERROR\t{e.token.line}\t{e.token.col}")
+        return
+    except LexError as e:
+        print(f"PARSEERROR\t{e.line}\t{e.col}")
         return
     print(ser(prog))
 
