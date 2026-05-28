@@ -13,6 +13,9 @@ import subprocess
 from pathlib import Path
 import pytest
 
+# Drives the installed `pak` CLI; skipped cleanly if it is not on PATH.
+pytestmark = pytest.mark.requires_pak
+
 CANONICAL_DIR = Path(__file__).parent.parent / "examples" / "canonical"
 
 
