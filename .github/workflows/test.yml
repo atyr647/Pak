@@ -121,7 +121,8 @@ jobs:
           python3 tcl/tools/gen_check_tables.py
           python3 tcl/tools/gen_tc_tables.py
           python3 tcl/tools/gen_cg_tables.py
-          git diff --exit-code tcl/ast_schema.tcl tcl/check_tables.tcl tcl/tc_tables.tcl tcl/cg_tables.tcl \
+          python3 tcl/tools/gen_mips_tables.py
+          git diff --exit-code tcl/ast_schema.tcl tcl/check_tables.tcl tcl/tc_tables.tcl tcl/cg_tables.tcl tcl/mips_tables.tcl \
             || { echo "Generated Tcl mirrors are stale — run the gen_*.py scripts and commit."; exit 1; }
 
       - name: Lexer parity (Tcl vs Python oracle)
@@ -142,6 +143,12 @@ jobs:
       # against `pak explain` in the test job, so no pak install is needed here.
       - name: Codegen C parity (ported subset, Tcl vs golden C)
         run: bash tcl/tools/cg_parity.sh
+
+      # MIPS backend is ported incrementally (unoptimized output); this asserts
+      # the files already lowered stay byte-identical to the Python oracle
+      # (MipsCodegen optimize=False) and that none regress to wrong assembly.
+      - name: MIPS assembly parity (ported subset, Tcl vs Python oracle)
+        run: bash tcl/tools/mips_parity.sh
 
       - name: Static-lint Tcl sources (nagelfar)
         run: bash tcl/tools/lint.sh

@@ -22,8 +22,8 @@ REPO="$(cd "$HERE/../.." && pwd)"
 cd "$REPO"
 NAGELFAR="$HERE/vendor/nagelfar/nagelfar.tcl"
 
-# ast_schema/check_tables/tc_tables/cg_tables are generated and skipped.
-FILES="tcl/ast.tcl tcl/ast_visit.tcl tcl/lexer.tcl tcl/parser.tcl tcl/checker.tcl tcl/typechecker.tcl tcl/codegen.tcl"
+# ast_schema/check_tables/tc_tables/cg_tables/mips_tables are generated and skipped.
+FILES="tcl/ast.tcl tcl/ast_visit.tcl tcl/lexer.tcl tcl/parser.tcl tcl/checker.tcl tcl/typechecker.tcl tcl/codegen.tcl tcl/mips_codegen.tcl"
 
 out="$(tclsh "$NAGELFAR" -s _ -s "$HERE/pak.syntax" $FILES 2>&1 \
   | grep -vE 'which is also a variable|Non static subcommand|Unescaped close brace')"
