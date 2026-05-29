@@ -101,6 +101,8 @@ oo::class create pak::Emitter {
     method sge {d s1 s2}  { my instr "sge" "$d," "$s1," $s2 }
     method seq {d s1 s2}  { my instr "seq" "$d," "$s1," $s2 }
     method sne {d s1 s2}  { my instr "sne" "$d," "$s1," $s2 }
+    method sltu {d s1 s2} { my instr "sltu" "$d," "$s1," $s2 }
+    method sltiu {d s imm} { my instr "sltiu" "$d," "$s," $imm }
     # branches
     method beqz {r lbl}   { my instr "beqz" "$r," $lbl }
     method bnez {r lbl}   { my instr "bnez" "$r," $lbl }
@@ -854,6 +856,7 @@ oo::class create pak::MipsCodegen {
         my emit_expr [pak::nfield $expr operand] $operand
         switch -- [pak::fval $expr op] {
             -  { $em subu $dst {$zero} $operand }
+            !  { $em sltiu $dst $operand 1 }
             ~  { $em not_ $dst $operand }
             default { pak::mips_unported "unop:[pak::fval $expr op]" }
         }
@@ -971,7 +974,10 @@ oo::class create pak::MipsCodegen {
             if {$i < 4} {
                 my emit_expr $arg [lindex $::pak::ARG_GPRS $i]
             } else {
-                pak::mips_unported "marshal:stack-arg"
+                set tmp [$ra alloc_temp]
+                my emit_expr $arg $tmp
+                $em sw $tmp [expr {($i - 4) * 4 + 16}] {$sp}
+                $ra free_temp $tmp
             }
             incr i
         }
