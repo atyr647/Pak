@@ -254,6 +254,11 @@ proc pak::mips_layout {type_tv} {
             pak::mips_unported "layout:$n"
         }
         TypePointer { return [dict create size 4 align 4 is_float 0 is_signed 0 is_ptr 1] }
+        TypeOption {
+            set inner [pak::mips_layout [pak::nfield $type_tv inner]]
+            if {[dict get $inner is_ptr]} { return [dict create size 4 align 4 is_float 0 is_signed 0 is_ptr 1] }
+            pak::mips_unported "layout:option-nonptr"
+        }
         default { pak::mips_unported "layout:[pak::kindof $type_tv]" }
     }
 }
@@ -661,6 +666,36 @@ oo::class create pak::MipsCodegen {
             Ident     { my emit_ident_load [pak::fval $expr name] $dst }
             BinaryOp  { my emit_binop $expr $dst }
             UnaryOp   { my emit_unop $expr $dst }
+            Deref {
+                set ptr [$ra alloc_temp]
+                my emit_expr [pak::nfield $expr expr] $ptr
+                $em lw $dst 0 $ptr
+                $ra free_temp $ptr
+            }
+            AddrOf { my emit_addr_of $expr $dst }
+            AllocExpr {
+                set inner [pak::mips_layout [pak::nfield $expr type_node]]
+                $em li {$a0} [dict get $inner size]
+                set count [pak::nfield $expr count]
+                if {![pak::isnil $count]} {
+                    set cnt [$ra alloc_temp]
+                    my emit_expr $count $cnt
+                    $em mul {$a0} {$a0} $cnt
+                    $ra free_temp $cnt
+                }
+                $em jal __pak_alloc
+                $em nop
+                $em move $dst {$v0}
+            }
+            FreeExpr {
+                set ptr [$ra alloc_temp]
+                my emit_expr [pak::nfield $expr ptr] $ptr
+                $em move {$a0} $ptr
+                $ra free_temp $ptr
+                $em jal __pak_free
+                $em nop
+                $em move $dst {$zero}
+            }
             Assign {
                 set val [$ra alloc_temp]
                 my emit_expr [pak::nfield $expr value] $val
@@ -682,6 +717,26 @@ oo::class create pak::MipsCodegen {
         }
         $em la {$t9} $name
         $em lw $dst 0 {$t9}
+    }
+
+    method emit_addr_of {expr dst} {
+        set inner [pak::nfield $expr expr]
+        if {[pak::kindof $inner] eq "Ident"} {
+            set local [my lookup_local [pak::fval $inner name]]
+            if {$local ne ""} {
+                $em addiu $dst {$sp} [lindex $local 0]
+                return
+            }
+            $em la $dst [pak::fval $inner name]
+        } else {
+            set layout [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0]
+            set off [my declare_local __addrof $layout]
+            set tmp [$ra alloc_temp]
+            my emit_expr $inner $tmp
+            $em sw $tmp $off {$sp}
+            $ra free_temp $tmp
+            $em addiu $dst {$sp} $off
+        }
     }
 
     method emit_binop {expr dst} {
@@ -755,7 +810,8 @@ oo::class create pak::MipsCodegen {
                 $em sw $val_reg 0 $ptr
                 $ra free_temp $ptr
             }
-            default { pak::mips_unported "assign-target:[pak::kindof $target]" }
+            DotAccess - IndexAccess { pak::mips_unported "assign-target:[pak::kindof $target]" }
+            default {}
         }
     }
 
