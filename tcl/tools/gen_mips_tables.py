@@ -19,6 +19,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 from pak.mips.n64_runtime import N64_RUNTIME_API  # noqa: E402
+from pak.mips.types import _PRIMITIVES  # noqa: E402
 
 # Reproduce _emit_externs ordering exactly: iterate values, take string syms in
 # first-seen order, then append the fixed helper list.
@@ -56,7 +57,13 @@ lines.append("set ::pak::MIPS_API [dict create \\")
 for key, sym in api:
     lines.append(f"    {{{key}}} {{{sym}}} \\")
 lines.append("]")
+lines.append("")
+lines.append("# primitive type layouts: name -> {size align is_float is_signed}")
+lines.append("set ::pak::MIPS_PRIM [dict create \\")
+for name, (size, align, is_float, is_signed) in _PRIMITIVES.items():
+    lines.append(f"    {{{name}}} {{{size} {align} {int(is_float)} {int(is_signed)}}} \\")
+lines.append("]")
 
 dest = REPO / "tcl" / "mips_tables.tcl"
 dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
-print(f"wrote {dest} ({len(externs)} externs, {len(api)} api entries)")
+print(f"wrote {dest} ({len(externs)} externs, {len(api)} api entries, {len(_PRIMITIVES)} primitives)")

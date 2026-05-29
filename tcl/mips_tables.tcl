@@ -266,3 +266,26 @@ set ::pak::MIPS_API [dict create \
     {t3d tri_draw} {t3d_tri_draw} \
     {t3d tri_sync} {t3d_tri_sync} \
 ]
+
+# primitive type layouts: name -> {size align is_float is_signed}
+set ::pak::MIPS_PRIM [dict create \
+    {void} {0 1 0 0} \
+    {bool} {1 1 0 0} \
+    {byte} {1 1 0 0} \
+    {c_char} {1 1 0 1} \
+    {i8} {1 1 0 1} \
+    {u8} {1 1 0 0} \
+    {i16} {2 2 0 1} \
+    {u16} {2 2 0 0} \
+    {i32} {4 4 0 1} \
+    {u32} {4 4 0 0} \
+    {i64} {8 8 0 1} \
+    {u64} {8 8 0 0} \
+    {f32} {4 4 1 1} \
+    {f64} {8 8 1 1} \
+    {fix16.16} {4 4 0 1} \
+    {fix10.5} {2 2 0 1} \
+    {fix1.15} {2 2 0 1} \
+    {ptr} {4 4 0 0} \
+    {*T} {4 4 0 0} \
+]
