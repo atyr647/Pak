@@ -49,7 +49,8 @@ proc pak::cg_fixshift {typ} {
 oo::class create pak::Codegen {
     variable filename uses assets module_name fn_names enum_variants variant_types \
              struct_fields scopes method_registry trait_decls const_values \
-             generic_fns generic_structs module_headers
+             generic_fns generic_structs module_headers defer_stack result_typedefs \
+             result_typedef_names current_ret_type
 
     constructor {{fname "<unknown>"} {mod_headers {}}} {
         set filename $fname
@@ -61,17 +62,35 @@ oo::class create pak::Codegen {
         set variant_types [dict create]
         set struct_fields [dict create]
         set scopes [list [dict create]]
+        set defer_stack [list {}]
         set method_registry [dict create]
         set trait_decls [dict create]
         set const_values [dict create]
         set generic_fns [dict create]
         set generic_structs [dict create]
         set module_headers $mod_headers
+        set result_typedefs {}
+        set result_typedef_names [dict create]
+        set current_ret_type ""
+    }
+
+    # Register (dedup) and return the C typedef name for Result(ok, err).
+    method result_typedef {ok_type err_type} {
+        set c_ok [expr {[pak::isnil $ok_type] ? "void *" : [my gen_type $ok_type]}]
+        set c_err [expr {[pak::isnil $err_type] ? "int32_t" : [my gen_type $err_type]}]
+        set safe_ok [string map {" " _ "*" p} $c_ok]
+        set safe_err [string map {" " _ "*" p} $c_err]
+        set tdname "PakResult_${safe_ok}_${safe_err}"
+        if {![dict exists $result_typedef_names $tdname]} {
+            dict set result_typedef_names $tdname 1
+            lappend result_typedefs [list $tdname $c_ok $c_err]
+        }
+        return $tdname
     }
 
     # ── scope helpers ─────────────────────────────────────────────────────────
-    method scope_push {} { lappend scopes [dict create] }
-    method scope_pop {}  { set scopes [lrange $scopes 0 end-1] }
+    method scope_push {} { lappend scopes [dict create]; lappend defer_stack {} }
+    method scope_pop {}  { set scopes [lrange $scopes 0 end-1]; set defer_stack [lrange $defer_stack 0 end-1] }
     method scope_set {name typ} {
         set f [lindex $scopes end]; dict set f $name $typ; lset scopes end $f
     }
@@ -83,6 +102,46 @@ oo::class create pak::Codegen {
         return ""
     }
     method is_pointer {name} { return [expr {[pak::kindof [my scope_get $name]] eq "TypePointer"}] }
+
+    # ── defer helpers (mirror codegen._defer_* / _emit_defers_*) ───────────────
+    method defer_push {stmt} {
+        set frame [lindex $defer_stack end]; lappend frame $stmt; lset defer_stack end $frame
+    }
+    # Emit the current scope's defers (LIFO) at the given indent. Returns a list
+    # of lines (empty when there are no defers, so output is unchanged otherwise).
+    method emit_defers_for_scope {indent} {
+        set lines {}
+        set frame [lindex $defer_stack end]
+        for {set i [expr {[llength $frame]-1}]} {$i >= 0} {incr i -1} {
+            set d [lindex $frame $i]
+            set body [pak::nfield $d body]
+            if {[pak::kindof $body] eq "Block"} {
+                foreach st [pak::items [pak::nfield $body stmts]] {
+                    set s [my gen_stmt $st $indent]
+                    if {$s ne ""} { lappend lines $s }
+                }
+            }
+        }
+        return $lines
+    }
+    # Emit ALL active defers (every scope, innermost first) — used before return.
+    method emit_all_defers {indent} {
+        set lines {}
+        for {set i [expr {[llength $defer_stack]-1}]} {$i >= 0} {incr i -1} {
+            set frame [lindex $defer_stack $i]
+            for {set j [expr {[llength $frame]-1}]} {$j >= 0} {incr j -1} {
+                set d [lindex $frame $j]
+                set body [pak::nfield $d body]
+                if {[pak::kindof $body] eq "Block"} {
+                    foreach st [pak::items [pak::nfield $body stmts]] {
+                        set s [my gen_stmt $st $indent]
+                        if {$s ne ""} { lappend lines $s }
+                    }
+                }
+            }
+        }
+        return $lines
+    }
 
     method expr_type {e} {
         switch -- [pak::kindof $e] {
@@ -128,6 +187,7 @@ oo::class create pak::Codegen {
                 return "[my gen_type [pak::nfield $t inner]]\[[my gen_expr [pak::nfield $t size]]\]"
             }
             TypeOption { return "[my gen_type [pak::nfield $t inner]] *" }
+            TypeResult { return [my result_typedef [pak::nfield $t ok] [pak::nfield $t err]] }
             TypeDynTrait { return [pak::fval $t name] }
             TypeVolatile { return "volatile [my gen_type [pak::nfield $t inner]]" }
             default { pak::cg_unported "type:[pak::kindof $t]" }
@@ -217,6 +277,29 @@ oo::class create pak::Codegen {
                 return "sizeof([my gen_expr $op])"
             }
             OffsetOf { return "offsetof([pak::fval $e type_name], [pak::fval $e field])" }
+            AllocExpr {
+                if {![pak::isnil [pak::nfield $e allocator]]} { pak::cg_unported "alloc:allocator" }
+                set ct [my gen_type [pak::nfield $e type_node]]
+                set count [pak::nfield $e count]
+                if {![pak::isnil $count]} {
+                    return "($ct *)malloc(sizeof($ct) * (size_t)([my gen_expr $count]))"
+                }
+                return "($ct *)malloc(sizeof($ct))"
+            }
+            FreeExpr {
+                if {![pak::isnil [pak::nfield $e allocator]]} { pak::cg_unported "free:allocator" }
+                return "free([my gen_expr [pak::nfield $e ptr]])"
+            }
+            OkExpr {
+                set val [my gen_expr [pak::nfield $e value]]
+                set rt [expr {($current_ret_type ne "" && ![pak::isnil $current_ret_type]) ? [my gen_type $current_ret_type] : "PakResult"}]
+                return "($rt)\{ .is_ok = true, .data.value = $val \}"
+            }
+            ErrExpr {
+                set val [my gen_expr [pak::nfield $e value]]
+                set rt [expr {($current_ret_type ne "" && ![pak::isnil $current_ret_type]) ? [my gen_type $current_ret_type] : "PakResult"}]
+                return "($rt)\{ .is_ok = false, .data.error = $val \}"
+            }
             default { pak::cg_unported "expr:[pak::kindof $e]" }
         }
     }
@@ -293,9 +376,10 @@ oo::class create pak::Codegen {
             LetDecl    { return [my gen_let_stmt $stmt $pad] }
             StaticDecl { return [my gen_static_stmt $stmt $pad] }
             Return {
+                set defers [my emit_all_defers $indent]
                 set v [pak::nfield $stmt value]
-                if {[pak::isnil $v]} { return "${pad}return;" }
-                return "${pad}return [my gen_expr $v];"
+                if {[pak::isnil $v]} { set r "${pad}return;" } else { set r "${pad}return [my gen_expr $v];" }
+                return [join [concat $defers [list $r]] \n]
             }
             Break    { return "${pad}break;" }
             Continue { return "${pad}continue;" }
@@ -329,13 +413,13 @@ oo::class create pak::Codegen {
                 set cond [my gen_expr [pak::nfield $stmt condition]]
                 return "${pad}do {\n[join $body \n]\n${pad}} while ($cond);"
             }
-            DeferStmt   { pak::cg_unported "stmt:defer" }
-            ForStmt     { pak::cg_unported "stmt:for" }
-            MatchStmt   { pak::cg_unported "stmt:match" }
+            DeferStmt   { my defer_push $stmt; return "" }
+            ForStmt     { return [my gen_for $stmt $pad $indent] }
+            MatchStmt   { return [my gen_match $stmt $pad $indent] }
             NullCheckStmt { pak::cg_unported "stmt:nullcheck" }
             StructDecl  { return [my gen_struct $stmt] }
             EnumDecl    { return [my gen_enum $stmt] }
-            VariantDecl { pak::cg_unported "stmt:variant" }
+            VariantDecl { return [my gen_variant $stmt] }
             UnionDecl   { return [my gen_union $stmt] }
             ComptimeIf  { pak::cg_unported "stmt:comptime-if" }
             default     { pak::cg_unported "stmt:[pak::kindof $stmt]" }
@@ -369,7 +453,14 @@ oo::class create pak::Codegen {
                 set count [my gen_expr $rep]
                 return "${pad}${decl} = {0};\n${pad}for (int _fi = 0; _fi < (int)($count); _fi++) $name\[_fi\] = $v;"
             }
-            if {[pak::kindof $val] in {OkExpr ErrExpr}} { pak::cg_unported "let:result" }
+            if {[pak::kindof $val] in {OkExpr ErrExpr} && ![pak::isnil $typ]} {
+                set result_c [my gen_type $typ]
+                set inner [my gen_expr [pak::nfield $val value]]
+                if {[pak::kindof $val] eq "OkExpr"} {
+                    return "${pad}${decl} = ($result_c)\{ .is_ok = true, .data.value = $inner \};"
+                }
+                return "${pad}${decl} = ($result_c)\{ .is_ok = false, .data.error = $inner \};"
+            }
             return "${pad}${decl} = [my gen_expr $val];"
         } elseif {[pak::kindof $val] eq "UndefinedLit"} {
             return "${pad}${decl}; /* undefined */"
@@ -395,6 +486,7 @@ oo::class create pak::Codegen {
         set lines [list "${pad}if ($cond) {"]
         my scope_push
         foreach st [pak::items [pak::nfield [pak::nfield $s then] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+        foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
         my scope_pop
         lappend lines "${pad}}"
         foreach pair [pak::items [pak::nfield $s elif_branches]] {
@@ -402,6 +494,7 @@ oo::class create pak::Codegen {
             lappend lines "${pad}else if ([pak::strip_parens [my gen_expr [lindex $p 0]]]) {"
             my scope_push
             foreach st [pak::items [pak::nfield [lindex $p 1] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+            foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
             my scope_pop
             lappend lines "${pad}}"
         }
@@ -410,6 +503,7 @@ oo::class create pak::Codegen {
             lappend lines "${pad}else {"
             my scope_push
             foreach st [pak::items [pak::nfield $eb stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+            foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
             my scope_pop
             lappend lines "${pad}}"
         }
@@ -420,6 +514,7 @@ oo::class create pak::Codegen {
         set lines [list "${pad}while (true) {"]
         my scope_push
         foreach st [pak::items [pak::nfield [pak::nfield $s body] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+        foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
         my scope_pop
         lappend lines "${pad}}"
         return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
@@ -430,7 +525,127 @@ oo::class create pak::Codegen {
         set lines [list "${pad}while ($cond) {"]
         my scope_push
         foreach st [pak::items [pak::nfield [pak::nfield $s body] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+        foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
         my scope_pop
+        lappend lines "${pad}}"
+        return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
+    }
+
+    method gen_for {s pad indent} {
+        set inner_pad [string repeat "    " [expr {$indent+1}]]
+        set iterable [pak::nfield $s iterable]
+        set binding [pak::fval $s binding]
+        set index_tv [pak::nfield $s index]
+        set has_index [expr {![pak::isnil $index_tv]}]
+        set index [expr {$has_index ? [pak::sval $index_tv] : ""}]
+        set lines {}
+        if {[pak::kindof $iterable] eq "RangeExpr"} {
+            set start [my gen_expr [pak::nfield $iterable start]]
+            set end_tv [pak::nfield $iterable end]
+            set end [expr {[pak::isnil $end_tv] ? "0" : [my gen_expr $end_tv]}]
+            if {$has_index} {
+                lappend lines "${pad}for (int $index = $start; $index < $end; $index++) \{"
+                lappend lines "${inner_pad}int $binding = $index;"
+            } else {
+                lappend lines "${pad}for (int $binding = $start; $binding < $end; $binding++) \{"
+            }
+        } else {
+            set coll [my gen_expr $iterable]
+            set coll_type [my expr_type $iterable]
+            my scope_set $binding [pak::N TypeName name auto]
+            set idx [expr {$has_index ? $index : "_i_$binding"}]
+            if {[pak::kindof $coll_type] eq "TypeSlice"} {
+                lappend lines "${pad}for (int $idx = 0; $idx < ($coll).len; $idx++) \{"
+                lappend lines "${inner_pad}__typeof__(($coll).data\[0\]) $binding = ($coll).data\[$idx\];"
+            } else {
+                lappend lines "${pad}for (int $idx = 0; $idx < (int)(sizeof($coll)/sizeof(($coll)\[0\])); $idx++) \{"
+                lappend lines "${inner_pad}__typeof__(($coll)\[0\]) $binding = ($coll)\[$idx\];"
+            }
+        }
+        my scope_push
+        foreach st [pak::items [pak::nfield [pak::nfield $s body] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+        foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+        my scope_pop
+        lappend lines "${pad}\}"
+        return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
+    }
+
+    method match_type_name {expr} {
+        set t [my expr_type $expr]
+        switch -- [pak::kindof $t] {
+            TypeName    { return [pak::fval $t name] }
+            TypePointer {
+                set inner [pak::nfield $t inner]
+                if {[pak::kindof $inner] eq "TypeName"} { return [pak::fval $inner name] }
+            }
+        }
+        return ""
+    }
+
+    method gen_match {s pad indent} {
+        set expr [my gen_expr [pak::nfield $s expr]]
+        set inner_pad [string repeat "    " [expr {$indent+1}]]
+        set inner2_pad [string repeat "    " [expr {$indent+2}]]
+        set match_type [my match_type_name [pak::nfield $s expr]]
+        set is_variant [dict exists $variant_types $match_type]
+        set switch_expr [expr {$is_variant ? "${expr}.tag" : $expr}]
+        set lines [list "${pad}switch ($switch_expr) {"]
+        foreach arm [pak::items [pak::nfield $s arms]] {
+            set pat [pak::nfield $arm pattern]
+            switch -- [pak::kindof $pat] {
+                Ident {
+                    if {[pak::fval $pat name] eq "_"} {
+                        lappend lines "${inner_pad}default:"
+                    } else {
+                        lappend lines "${inner_pad}case /* [my gen_expr $pat] */:"
+                    }
+                }
+                EnumVariantAccess {
+                    set pn [pak::fval $pat name]
+                    set tn [expr {[dict exists $enum_variants $pn] ? [dict get $enum_variants $pn] : ""}]
+                    if {[dict exists $variant_types $tn]} {
+                        lappend lines "${inner_pad}case ${tn}_tag_${pn}:"
+                    } elseif {$tn ne ""} {
+                        lappend lines "${inner_pad}case ${tn}_${pn}:"
+                    } else {
+                        lappend lines "${inner_pad}case ${pn}:"
+                    }
+                }
+                DotAccess {
+                    set variant [pak::fval $pat field]
+                    set obj_name [my gen_expr [pak::nfield $pat obj]]
+                    if {[dict exists $variant_types $obj_name]} {
+                        lappend lines "${inner_pad}case ${obj_name}_tag_${variant}:"
+                    } else {
+                        lappend lines "${inner_pad}case ${obj_name}_${variant}:"
+                    }
+                }
+                IntLit  { lappend lines "${inner_pad}case [pak::fval $pat value]:" }
+                BoolLit { lappend lines "${inner_pad}case [expr {[pak::fval $pat value] ? 1 : 0}]:" }
+                default { lappend lines "${inner_pad}case /* [my gen_expr $pat] */:" }
+            }
+            lappend lines "${inner_pad}{"
+            my scope_push
+            if {[pak::kindof $pat] eq "DotAccess" && ![pak::isnil [pak::nfield $pat binding]]} {
+                set obj_name [my gen_expr [pak::nfield $pat obj]]
+                if {[dict exists $variant_types $obj_name]} {
+                    set bind [pak::sval [pak::nfield $pat binding]]
+                    set field_name [string tolower [pak::fval $pat field]]
+                    lappend lines "${inner2_pad}__auto_type $bind = ${expr}.data.${field_name};"
+                    my scope_set $bind [pak::N TypeName name auto]
+                }
+            }
+            set body [pak::nfield $arm body]
+            if {[pak::kindof $body] eq "Block"} {
+                foreach st [pak::items [pak::nfield $body stmts]] { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
+            } else {
+                lappend lines "${inner2_pad}[my gen_expr $body];"
+            }
+            foreach d [my emit_defers_for_scope [expr {$indent+2}]] { lappend lines $d }
+            my scope_pop
+            lappend lines "${inner2_pad}break;"
+            lappend lines "${inner_pad}}"
+        }
         lappend lines "${pad}}"
         return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
     }
@@ -455,19 +670,28 @@ oo::class create pak::Codegen {
             EntryBlock  { return [my gen_entry $decl] }
             ConstDecl   { return [my gen_const $decl] }
             ExternConst { return [my gen_extern_const $decl] }
-            VariantDecl { pak::cg_unported "decl:variant" }
+            VariantDecl { return [my gen_variant $decl] }
             ImplBlock - ImplTraitBlock - TraitDecl { pak::cg_unported "decl:impl/trait" }
             ExternBlock { return [my gen_extern $decl] }
             StaticDecl  { return [my gen_static_global $decl] }
             LetDecl     { return [my gen_let_global $decl] }
-            CfgBlock    { pak::cg_unported "decl:cfg" }
+            CfgBlock    { return [my gen_cfg_block $decl] }
             ComptimeIf  { pak::cg_unported "decl:comptime-if" }
             default     { pak::cg_unported "decl:[pak::kindof $decl]" }
         }
     }
 
     method gen_struct {s} {
-        if {[llength [pak::annlist_or $s]] > 0} { pak::cg_unported "struct:annotations" }
+        set attrs {}
+        foreach ann [pak::annlist_or $s] {
+            if {[string match "*@packed*" $ann] || [string match "*@c_layout*" $ann]} {
+                if {[string match "*@packed*" $ann]} { lappend attrs "__attribute__((packed))" }
+            } elseif {[string match "*@aligned*" $ann]} {
+                set n [string range $ann [expr {[string first ( $ann]+1}] [expr {[string first ) $ann]-1}]]
+                lappend attrs "__attribute__((aligned($n)))"
+            }
+        }
+        set attr_str [join $attrs " "]
         set lines [list "typedef struct {"]
         foreach field [pak::items [pak::nfield $s fields]] {
             set bw [pak::nfield $field bit_width]
@@ -477,7 +701,8 @@ oo::class create pak::Codegen {
                 lappend lines "    [my gen_array_decl [pak::fval $field name] [pak::nfield $field type]];"
             }
         }
-        lappend lines "} [pak::fval $s name];"
+        set suffix [expr {$attr_str ne "" ? " $attr_str" : ""}]
+        lappend lines "} [pak::fval $s name]${suffix};"
         return [join $lines \n]
     }
 
@@ -488,6 +713,56 @@ oo::class create pak::Codegen {
         }
         lappend lines "} [pak::fval $u name];"
         return [join $lines \n]
+    }
+
+    method gen_variant {v} {
+        set lines {}
+        set name [pak::fval $v name]
+        foreach case [pak::items [pak::nfield $v cases]] {
+            set cfields [pak::items [pak::nfield $case fields]]
+            set cname [pak::fval $case name]
+            if {[llength $cfields] > 0} {
+                lappend lines "typedef struct {"
+                set i 0
+                foreach f $cfields {
+                    if {[lindex $f 0] eq "seq"} {
+                        set p [pak::items $f]
+                        lappend lines "    [my gen_array_decl [pak::sval [lindex $p 0]] [lindex $p 1]];"
+                    } else {
+                        lappend lines "    [my gen_type $f] field${i};"
+                    }
+                    incr i
+                }
+                lappend lines "} ${name}_${cname};"
+                lappend lines ""
+            }
+        }
+        lappend lines "typedef enum {"
+        foreach case [pak::items [pak::nfield $v cases]] {
+            lappend lines "    ${name}_tag_[pak::fval $case name],"
+        }
+        lappend lines "} ${name}_tag;"
+        lappend lines ""
+        lappend lines "typedef struct {"
+        lappend lines "    ${name}_tag tag;"
+        lappend lines "    union {"
+        foreach case [pak::items [pak::nfield $v cases]] {
+            set cname [pak::fval $case name]
+            if {[llength [pak::items [pak::nfield $case fields]]] > 0} {
+                lappend lines "        ${name}_${cname} ${cname};"
+            }
+        }
+        lappend lines "    } data;"
+        lappend lines "} ${name};"
+        return [join $lines \n]
+    }
+
+    method gen_cfg_block {cfg} {
+        set inner [my gen_decl [pak::nfield $cfg decl]]
+        if {$inner eq ""} { return "" }
+        set feature [pak::fval $cfg feature]
+        set directive [expr {[pak::fval $cfg negated] ? "#ifndef" : "#ifdef"}]
+        return "$directive $feature\n$inner\n#endif  /* $feature */"
     }
 
     method gen_enum {e} {
@@ -564,8 +839,6 @@ oo::class create pak::Codegen {
     }
 
     method gen_fn {fn prefix} {
-        set anns [pak::annlist_or $fn]
-        if {[llength $anns] > 0} { pak::cg_unported "fn:annotations" }
         if {[pak::fval $fn variadic]} { pak::cg_unported "fn:variadic" }
         set ret [my gen_type [pak::nfield $fn ret_type]]
         set params {}
@@ -578,18 +851,40 @@ oo::class create pak::Codegen {
             }
         }
         if {[llength $params] > 0} { set param_str [join $params {, }] } else { set param_str "void" }
+        # annotations → C attribute line + optional @export rename
+        set attrs {}
+        set export_name ""
+        foreach ann [pak::annlist_or $fn] {
+            if {$ann eq "@hot"} { lappend attrs "__attribute__((hot))" } \
+            elseif {$ann eq "@inline"} { lappend attrs "static inline" } \
+            elseif {$ann eq "@no_alloc"} { } \
+            elseif {[string match "@export*" $ann]} {
+                if {[regexp {@export\s*\(\s*"([^"]+)"\s*\)} $ann -> en]} { set export_name $en }
+            }
+        }
         set name [pak::fval $fn name]
         if {$prefix ne ""} { set name "${prefix}_$name" }
+        if {$export_name ne ""} { set name $export_name }
+        set attr_str [join $attrs " "]
+        set head {}
+        if {$attr_str ne ""} { lappend head $attr_str }
         set body [pak::nfield $fn body]
-        if {[pak::isnil $body]} { return "$ret ${name}($param_str);" }
-        set lines [list "$ret ${name}($param_str) {"]
+        if {[pak::isnil $body]} {
+            lappend head "$ret ${name}($param_str);"
+            return [join $head \n]
+        }
+        set lines [concat $head [list "$ret ${name}($param_str) {"]]
+        set prev_ret $current_ret_type
+        set current_ret_type [pak::nfield $fn ret_type]
         my scope_push
         foreach p [pak::items [pak::nfield $fn params]] { my scope_set [pak::fval $p name] [pak::nfield $p type] }
         foreach st [pak::items [pak::nfield $body stmts]] {
             set s [my gen_stmt $st 1]
             if {$s ne ""} { lappend lines $s }
         }
+        foreach d [my emit_defers_for_scope 1] { lappend lines $d }
         my scope_pop
+        set current_ret_type $prev_ret
         lappend lines "}"
         return [join $lines \n]
     }
@@ -601,6 +896,7 @@ oo::class create pak::Codegen {
             set s [my gen_stmt $st 1]
             if {$s ne ""} { lappend lines $s }
         }
+        foreach d [my emit_defers_for_scope 1] { lappend lines $d }
         my scope_pop
         lappend lines "    return 0;"
         lappend lines "}"
@@ -655,7 +951,30 @@ oo::class create pak::Codegen {
                 }
                 TraitDecl { dict set trait_decls [pak::fval $decl name] $decl }
                 ConstDecl { dict set const_values [pak::fval $decl name] [my gen_expr [pak::nfield $decl value]] }
-                CfgBlock  { pak::cg_unported "program:cfg-collect" }
+                CfgBlock {
+                    set inner [pak::nfield $decl decl]
+                    switch -- [pak::kindof $inner] {
+                        StructDecl {
+                            set fmap [dict create]
+                            foreach f [pak::items [pak::nfield $inner fields]] {
+                                dict set fmap [pak::fval $f name] [pak::nfield $f type]
+                            }
+                            dict set struct_fields [pak::fval $inner name] $fmap
+                        }
+                        EnumDecl {
+                            foreach v [pak::items [pak::nfield $inner variants]] {
+                                dict set enum_variants [pak::fval $v name] [pak::fval $inner name]
+                            }
+                        }
+                        VariantDecl {
+                            dict set variant_types [pak::fval $inner name] 1
+                            foreach c [pak::items [pak::nfield $inner cases]] {
+                                dict set enum_variants [pak::fval $c name] [pak::fval $inner name]
+                            }
+                        }
+                        FnDecl { lappend fn_names [pak::fval $inner name] }
+                    }
+                }
             }
         }
 
@@ -723,6 +1042,15 @@ oo::class create pak::Codegen {
         lappend out "    if (a->ptr + sz > a->base + a->capacity) return NULL;"
         lappend out "    void *p = a->ptr; a->ptr += sz; return p; }"
         lappend out "static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }"
+
+        # Result typedefs (collected as a side effect of body generation above).
+        if {[llength $result_typedefs] > 0} {
+            lappend out ""
+            foreach td $result_typedefs {
+                lassign $td tdname c_ok c_err
+                lappend out "typedef struct { bool is_ok; union { $c_ok value; $c_err error; } data; } ${tdname};"
+            }
+        }
 
         foreach b $body { lappend out $b }
         return [join $out \n]
