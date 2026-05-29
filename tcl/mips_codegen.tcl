@@ -89,6 +89,11 @@ oo::class create pak::Emitter {
     method not_ {d s}     { my instr "nor" "$d," "$s," {$zero} }
     method sllv {d s sh}  { my instr "sllv" "$d," "$s," $sh }
     method srav {d s sh}  { my instr "srav" "$d," "$s," $sh }
+    method sll {d s sh}   { my instr "sll" "$d," "$s," $sh }
+    method srl {d s sh}   { my instr "srl" "$d," "$s," $sh }
+    method sra {d s sh}   { my instr "sra" "$d," "$s," $sh }
+    method andi {d s imm} { my instr "andi" "$d," "$s," $imm }
+    method ori {d s imm}  { my instr "ori" "$d," "$s," $imm }
     # comparison (pseudo)
     method slt {d s1 s2}  { my instr "slt" "$d," "$s1," $s2 }
     method sle {d s1 s2}  { my instr "sle" "$d," "$s1," $s2 }
@@ -254,6 +259,12 @@ proc pak::mips_layout {type_tv} {
             pak::mips_unported "layout:$n"
         }
         TypePointer { return [dict create size 4 align 4 is_float 0 is_signed 0 is_ptr 1] }
+        TypeArray {
+            set inner [pak::mips_layout [pak::nfield $type_tv inner]]
+            set sz [pak::nfield $type_tv size]
+            if {[pak::kindof $sz] eq "IntLit"} { set n [pak::fval $sz value] } else { set n 0 }
+            return [dict create size [expr {[dict get $inner size] * $n}] align [dict get $inner align] is_float 0 is_signed 1 is_ptr 0]
+        }
         TypeOption {
             set inner [pak::mips_layout [pak::nfield $type_tv inner]]
             if {[dict get $inner is_ptr]} { return [dict create size 4 align 4 is_float 0 is_signed 0 is_ptr 1] }
@@ -263,6 +274,22 @@ proc pak::mips_layout {type_tv} {
     }
 }
 proc pak::mips_layout_name {n} { return [pak::mips_layout [pak::N TypeName name $n]] }
+
+# truncate / extend between integer sizes (port of builtins.emit_int_cast).
+# Masks are emitted in decimal to match Python's str(0xFFFF) = 65535.
+proc pak::emit_int_cast {em dst src to_size to_signed} {
+    if {$to_size >= 4} {
+        if {$dst ne $src} { $em move $dst $src }
+        return
+    }
+    if {$to_size == 2} {
+        if {$to_signed} { $em sll $dst $src 16; $em sra $dst $dst 16 } else { $em andi $dst $src 65535 }
+        return
+    }
+    if {$to_size == 1} {
+        if {$to_signed} { $em sll $dst $src 24; $em sra $dst $dst 24 } else { $em andi $dst $src 255 }
+    }
+}
 
 # annotation strings of a node, or {} if it has no annotations field.
 proc pak::mips_annlist {node} {
@@ -492,7 +519,6 @@ oo::class create pak::MipsCodegen {
                 set off [my declare_local [pak::fval $stmt name] $layout]
                 set v [pak::nfield $stmt value]
                 if {![pak::isnil $v]} {
-                    if {[dict get $layout size] > 4} { pak::mips_unported "let:large" }
                     set tmp [$ra alloc_temp]
                     my emit_expr $v $tmp
                     my store_to_sp $off $tmp $layout
@@ -666,6 +692,7 @@ oo::class create pak::MipsCodegen {
             Ident     { my emit_ident_load [pak::fval $expr name] $dst }
             BinaryOp  { my emit_binop $expr $dst }
             UnaryOp   { my emit_unop $expr $dst }
+            UndefinedLit { $em move $dst {$zero} }
             Deref {
                 set ptr [$ra alloc_temp]
                 my emit_expr [pak::nfield $expr expr] $ptr
@@ -673,6 +700,13 @@ oo::class create pak::MipsCodegen {
                 $ra free_temp $ptr
             }
             AddrOf { my emit_addr_of $expr $dst }
+            IndexAccess { my emit_index_access $expr $dst }
+            Cast {
+                set src [$ra alloc_temp]
+                my emit_expr [pak::nfield $expr expr] $src
+                my emit_cast $src $dst [pak::nfield $expr type]
+                $ra free_temp $src
+            }
             AllocExpr {
                 set inner [pak::mips_layout [pak::nfield $expr type_node]]
                 $em li {$a0} [dict get $inner size]
@@ -717,6 +751,53 @@ oo::class create pak::MipsCodegen {
         }
         $em la {$t9} $name
         $em lw $dst 0 {$t9}
+    }
+
+    # element layout for array/slice access — always 4-byte (matches backend).
+    method resolve_elem_layout {obj_expr} { return [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0] }
+
+    method emit_index_addr {obj index} {
+        # leaves the element address in `base` (a borrowed temp) and returns
+        # {base idx elem} so caller frees idx and uses base; matches the
+        # backend's borrow nesting (base then idx).
+        set elem [my resolve_elem_layout $obj]
+        set base [$ra alloc_temp]
+        set idx [$ra alloc_temp]
+        my emit_expr $obj $base
+        my emit_expr $index $idx
+        switch -- [dict get $elem size] {
+            4 { $em sll $idx $idx 2 }
+            2 { $em sll $idx $idx 1 }
+            1 {}
+            default {
+                set sz [$ra alloc_temp]
+                $em li $sz [dict get $elem size]
+                $em mul $idx $idx $sz
+                $ra free_temp $sz
+            }
+        }
+        $em addu $base $base $idx
+        return [list $base $idx $elem]
+    }
+
+    method emit_index_access {expr dst} {
+        lassign [my emit_index_addr [pak::nfield $expr obj] [pak::nfield $expr index]] base idx elem
+        my emit_typed_load $dst 0 $base $elem
+        $ra free_temp $idx
+        $ra free_temp $base
+    }
+
+    method emit_index_store {target val} {
+        lassign [my emit_index_addr [pak::nfield $target obj] [pak::nfield $target index]] base idx elem
+        my emit_typed_store $val 0 $base $elem
+        $ra free_temp $idx
+        $ra free_temp $base
+    }
+
+    method emit_cast {src dst type_node} {
+        set to [pak::mips_layout $type_node]
+        if {[dict get $to is_float]} { pak::mips_unported "cast:to-float" }
+        pak::emit_int_cast $em $dst $src [dict get $to size] [dict get $to is_signed]
     }
 
     method emit_addr_of {expr dst} {
@@ -810,7 +891,8 @@ oo::class create pak::MipsCodegen {
                 $em sw $val_reg 0 $ptr
                 $ra free_temp $ptr
             }
-            DotAccess - IndexAccess { pak::mips_unported "assign-target:[pak::kindof $target]" }
+            IndexAccess { my emit_index_store $target $val_reg }
+            DotAccess { pak::mips_unported "assign-target:DotAccess" }
             default {}
         }
     }
