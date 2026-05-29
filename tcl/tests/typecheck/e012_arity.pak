@@ -1,0 +1,5 @@
+-- E012: wrong argument count to user function
+fn add(a: i32, b: i32) -> i32 { return a + b }
+entry {
+    let r: i32 = add(1)
+}

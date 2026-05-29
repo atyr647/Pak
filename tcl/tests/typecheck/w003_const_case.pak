@@ -1,0 +1,3 @@
+-- W003: constant not UPPER_SNAKE_CASE
+const lower_const: i32 = 5
+entry { }

@@ -15,6 +15,9 @@ import re
 from pathlib import Path
 import pytest
 
+# Drives the installed `pak` CLI; skipped cleanly if it is not on PATH.
+pytestmark = pytest.mark.requires_pak
+
 INVALID_DIR = Path(__file__).parent / "invalid"
 EXPECT_RE = re.compile(r"--\s*EXPECT:\s*(E\d+)")
 

@@ -1,0 +1,6 @@
+-- E501: @no_alloc function performs a heap allocation
+@no_alloc
+fn worker() {
+    mem.alloc(64)
+}
+entry { }

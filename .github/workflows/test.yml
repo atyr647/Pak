@@ -94,17 +94,76 @@ jobs:
       - name: Verify validate_pak.sh is executable
         run: test -x tools/validate_pak.sh || chmod +x tools/validate_pak.sh
 
+  # ── Tcl compiler port ────────────────────────────────────────────────────────
+
+  tcl-port:
+    name: Tcl port (parity + lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Tcl + tcllib
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tcl tcllib
+
+      # Generated mirrors (AST schema, checker tables) must be regenerated from
+      # the Python sources without drift — otherwise the Tcl port is validating
+      # against a stale copy of the language.
+      - name: Verify generated Tcl mirrors are up to date
+        run: |
+          python3 tcl/tools/gen_schema.py
+          python3 tcl/tools/gen_check_tables.py
+          python3 tcl/tools/gen_tc_tables.py
+          python3 tcl/tools/gen_cg_tables.py
+          python3 tcl/tools/gen_mips_tables.py
+          git diff --exit-code tcl/ast_schema.tcl tcl/check_tables.tcl tcl/tc_tables.tcl tcl/cg_tables.tcl tcl/mips_tables.tcl \
+            || { echo "Generated Tcl mirrors are stale — run the gen_*.py scripts and commit."; exit 1; }
+
+      - name: Lexer parity (Tcl vs Python oracle)
+        run: bash tcl/tools/lex_parity.sh
+
+      - name: Parser AST parity (Tcl vs Python oracle)
+        run: bash tcl/tools/ast_parity.sh
+
+      - name: Checker diagnostic parity (Tcl vs Python oracle)
+        run: bash tcl/tools/check_parity.sh
+
+      - name: Typechecker diagnostic parity (Tcl vs Python oracle)
+        run: bash tcl/tools/tc_parity.sh
+
+      # Codegen is ported incrementally; this asserts the files already lowered
+      # stay byte-identical to the golden C (and that none regress to wrong
+      # output). The committed snapshots are the oracle — they are re-verified
+      # against `pak explain` in the test job, so no pak install is needed here.
+      - name: Codegen C parity (ported subset, Tcl vs golden C)
+        run: bash tcl/tools/cg_parity.sh
+
+      # MIPS backend is ported incrementally (unoptimized output); this asserts
+      # the files already lowered stay byte-identical to the Python oracle
+      # (MipsCodegen optimize=False) and that none regress to wrong assembly.
+      - name: MIPS assembly parity (ported subset, Tcl vs Python oracle)
+        run: bash tcl/tools/mips_parity.sh
+
+      - name: Static-lint Tcl sources (nagelfar)
+        run: bash tcl/tools/lint.sh
+
   # ── Summary badge job ───────────────────────────────────────────────────────
 
   summary:
     name: Test Summary
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, tcl-port]
     if: always()
     steps:
       - name: Report
         run: |
-          if [ "${{ needs.test.result }}" = "success" ]; then
+          if [ "${{ needs.test.result }}" = "success" ] && [ "${{ needs.tcl-port.result }}" = "success" ]; then
             echo "✓ All tests passed."
           else
             echo "✗ One or more tests failed."

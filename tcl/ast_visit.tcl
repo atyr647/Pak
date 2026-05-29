@@ -9,12 +9,29 @@
 
 namespace eval pak {}
 
+# Include guard (reachable via multiple consumers; see ast.tcl).
+if {[info exists ::pak::_ast_visit_loaded]} { return }
+set ::pak::_ast_visit_loaded 1
+
 # All node kinds (sorted) — handy for building dispatch tables.
 proc pak::all_kinds {} {
     if {![info exists ::pak::SCHEMA]} {
         return -code error "pak::all_kinds: source ast.tcl first"
     }
     return [lsort [dict keys $::pak::SCHEMA]]
+}
+
+# Verify every kind in `kinds` is a real AST kind — a typo guard for subset
+# dispatchers (like the checker) that intentionally handle only some kinds and
+# so can't use the full-coverage assert_exhaustive. Catches "IfStatement" for
+# "IfStmt" at source time rather than as a silent never-taken switch arm.
+proc pak::assert_kinds {label kinds} {
+    set all [pak::all_kinds]
+    set bad {}
+    foreach k $kinds { if {$k ni $all} { lappend bad $k } }
+    if {[llength $bad]} {
+        return -code error "$label: unknown AST kind(s): [lsort -unique $bad]"
+    }
 }
 
 # Verify a walker covers the AST. `handled` is the list of kinds it dispatches

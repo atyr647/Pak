@@ -1,0 +1,5 @@
+-- E105: display.init needs 5 args
+use n64.display
+entry {
+    n64.display.init(320, 240)
+}

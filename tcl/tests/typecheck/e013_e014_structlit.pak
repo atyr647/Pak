@@ -1,0 +1,5 @@
+-- E013 (unknown field) + E014 (missing field) in a struct literal
+struct Cfg { w: i32, h: i32 }
+entry {
+    let c: Cfg = Cfg { w: 1, bogus: 2 }
+}

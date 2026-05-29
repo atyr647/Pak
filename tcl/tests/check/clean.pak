@@ -1,0 +1,7 @@
+-- No diagnostics expected.
+use n64.display
+const MAX: i32 = 64
+fn helper(x: i32) -> i32 { return x + 1 }
+entry {
+    let a: i32 = helper(MAX)
+}

@@ -1,0 +1,3 @@
+-- W002: function not snake_case
+fn BadName() { }
+entry { }
