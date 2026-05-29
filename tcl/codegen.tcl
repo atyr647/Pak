@@ -671,7 +671,9 @@ oo::class create pak::Codegen {
             ConstDecl   { return [my gen_const $decl] }
             ExternConst { return [my gen_extern_const $decl] }
             VariantDecl { return [my gen_variant $decl] }
-            ImplBlock - ImplTraitBlock - TraitDecl { pak::cg_unported "decl:impl/trait" }
+            ImplBlock      { return [my gen_impl $decl] }
+            TraitDecl      { return [my gen_trait $decl] }
+            ImplTraitBlock { return [my gen_impl_trait $decl] }
             ExternBlock { return [my gen_extern $decl] }
             StaticDecl  { return [my gen_static_global $decl] }
             LetDecl     { return [my gen_let_global $decl] }
@@ -754,6 +756,81 @@ oo::class create pak::Codegen {
         }
         lappend lines "    } data;"
         lappend lines "} ${name};"
+        return [join $lines \n]
+    }
+
+    method gen_impl {impl} {
+        set parts {}
+        foreach m [pak::items [pak::nfield $impl methods]] {
+            lappend parts [my gen_fn $m [pak::fval $impl type_name]]
+        }
+        return [join $parts "\n\n"]
+    }
+
+    method gen_trait {t} {
+        set name [pak::fval $t name]
+        dict set trait_decls $name $t
+        set lines [list "/* trait $name */"]
+        lappend lines "typedef struct {"
+        foreach m [pak::items [pak::nfield $t methods]] {
+            set ret [my gen_type [pak::nfield $m ret_type]]
+            set ptypes [list "void *"]
+            foreach p [pak::items [pak::nfield $m params]] {
+                if {[pak::fval $p name] eq "self"} continue
+                lappend ptypes [my gen_type [pak::nfield $p type]]
+            }
+            set mname [pak::fval $m name]
+            lappend lines "    $ret (*${mname})([join $ptypes {, }]);"
+        }
+        lappend lines "} ${name}_vtable;"
+        lappend lines ""
+        lappend lines "typedef struct {"
+        lappend lines "    void *self;"
+        lappend lines "    const ${name}_vtable *vtable;"
+        lappend lines "} ${name};"
+        return [join $lines \n]
+    }
+
+    method gen_impl_trait {impl} {
+        set tname [pak::fval $impl type_name]
+        set trait [pak::fval $impl trait_name]
+        set lines [list "/* impl $tname for $trait */"]
+        foreach m [pak::items [pak::nfield $impl methods]] {
+            dict set method_registry $tname [pak::fval $m name] $m
+        }
+        foreach m [pak::items [pak::nfield $impl methods]] {
+            set ret [my gen_type [pak::nfield $m ret_type]]
+            set mname [pak::fval $m name]
+            set thunk "_pak_${trait}_${mname}_${tname}"
+            set thunk_params [list "void *_self"]
+            set call_params [list "($tname *)_self"]
+            foreach p [pak::items [pak::nfield $m params]] {
+                if {[pak::fval $p name] eq "self"} continue
+                lappend thunk_params "[my gen_type [pak::nfield $p type]] [pak::fval $p name]"
+                lappend call_params [pak::fval $p name]
+            }
+            lappend lines "static $ret ${thunk}([join $thunk_params {, }]) {"
+            set call_str "${tname}_${mname}([join $call_params {, }])"
+            if {$ret eq "void"} {
+                lappend lines "    ${call_str};"
+            } else {
+                lappend lines "    return ${call_str};"
+            }
+            lappend lines "}"
+            lappend lines ""
+        }
+        set vtable_var "_pak_${trait}_vtable_${tname}"
+        lappend lines "static const ${trait}_vtable ${vtable_var} = {"
+        foreach m [pak::items [pak::nfield $impl methods]] {
+            set mname [pak::fval $m name]
+            lappend lines "    .${mname} = _pak_${trait}_${mname}_${tname},"
+        }
+        lappend lines "};"
+        lappend lines ""
+        set ctor "${trait}_from_${tname}"
+        lappend lines "static inline $trait ${ctor}($tname *p) {"
+        lappend lines "    return (${trait})\{ .self = (void *)p, .vtable = &${vtable_var} \};"
+        lappend lines "}"
         return [join $lines \n]
     }
 
