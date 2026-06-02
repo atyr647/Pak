@@ -82,11 +82,48 @@ proc pak::cg_fixshift {typ} {
     return 0
 }
 
+# Substitute type-param names in a type tree (mirror codegen._subst_type).
+# `subst` maps a type-param name to its concrete type-arg value (a bare scalar
+# like "i32", matching Python which stores the raw type_arg string).
+proc pak::cg_subst_type {t subst} {
+    if {[pak::isnil $t]} { return $t }
+    if {[lindex $t 0] ne "node"} { return $t }
+    switch -- [pak::kindof $t] {
+        TypeParam {
+            set n [pak::fval $t name]
+            if {[dict exists $subst $n]} { return [dict get $subst $n] }
+            return $t
+        }
+        TypeName {
+            set n [pak::fval $t name]
+            if {[dict exists $subst $n]} { return [dict get $subst $n] }
+            return $t
+        }
+        TypePointer  { return [pak::N TypePointer inner [pak::cg_subst_type [pak::nfield $t inner] $subst] nullable [pak::fval $t nullable] mutable [pak::fval $t mutable]] }
+        TypeSlice    { return [pak::N TypeSlice inner [pak::cg_subst_type [pak::nfield $t inner] $subst] mutable [pak::fval $t mutable]] }
+        TypeArray    { return [pak::N TypeArray inner [pak::cg_subst_type [pak::nfield $t inner] $subst] size [pak::nfield $t size]] }
+        TypeResult   { return [pak::N TypeResult ok [pak::cg_subst_type [pak::nfield $t ok] $subst] err [pak::cg_subst_type [pak::nfield $t err] $subst]] }
+        TypeOption   { return [pak::N TypeOption inner [pak::cg_subst_type [pak::nfield $t inner] $subst]] }
+        TypeGeneric  {
+            set newargs {}
+            foreach a [pak::items [pak::nfield $t args]] { lappend newargs [pak::cg_subst_type $a $subst] }
+            return [pak::N TypeGeneric name [pak::fval $t name] args $newargs]
+        }
+        TypeFn {
+            set newp {}
+            foreach p [pak::items [pak::nfield $t params]] { lappend newp [pak::cg_subst_type $p $subst] }
+            return [pak::N TypeFn params $newp ret [pak::cg_subst_type [pak::nfield $t ret] $subst]]
+        }
+        default { return $t }
+    }
+}
+
 oo::class create pak::Codegen {
     variable filename uses assets module_name fn_names enum_variants variant_types \
              struct_fields scopes method_registry trait_decls const_values \
              generic_fns generic_structs module_headers defer_stack result_typedefs \
-             result_typedef_names current_ret_type closures fmt_counter tmp_counter
+             result_typedef_names current_ret_type closures fmt_counter tmp_counter \
+             mono_cache pending_mono
 
     constructor {{fname "<unknown>"} {mod_headers {}}} {
         set filename $fname
@@ -111,6 +148,8 @@ oo::class create pak::Codegen {
         set closures {}
         set fmt_counter 0
         set tmp_counter 0
+        set mono_cache [dict create]
+        set pending_mono {}
     }
 
     # Seed enum_variants from a program (case/variant name -> type name), used
@@ -225,6 +264,9 @@ oo::class create pak::Codegen {
     # ── types ─────────────────────────────────────────────────────────────────
     method gen_type {t} {
         if {[pak::isnil $t]} { return "void" }
+        # Substituted (monomorphized) type args are stored as bare scalars, not
+        # tagged AST nodes; mirror Python's gen_type catch-all of 'void *'.
+        if {[lindex $t 0] ne "node"} { return "void *" }
         switch -- [pak::kindof $t] {
             TypeName {
                 set n [pak::fval $t name]
@@ -252,6 +294,7 @@ oo::class create pak::Codegen {
                 foreach p [pak::items [pak::nfield $t params]] { lappend ps [my gen_type $p] }
                 return "$rc (*)([join $ps {, }])"
             }
+            TypeParam { return "void *" }
             default { pak::cg_unported "type:[pak::kindof $t]" }
         }
     }
@@ -486,9 +529,109 @@ oo::class create pak::Codegen {
         return $lines
     }
 
+    # ── generic monomorphization (mirror codegen._infer_type_args / _monomorphize_fn) ──
+    # Infer concrete type args for a generic fn from call-site argument expressions.
+    # Returns a list of type values (nodes), or {} if not fully inferable.
+    method infer_type_args {fn_decl call_args} {
+        set type_params [pak::items [pak::nfield $fn_decl type_params]]
+        if {[llength $type_params] == 0} { return {} }
+        set tpnames {}
+        foreach tp $type_params { lappend tpnames [pak::sval $tp] }
+        set inferred [dict create]
+        set params [pak::items [pak::nfield $fn_decl params]]
+        set n [expr {min([llength $params], [llength $call_args])}]
+        for {set i 0} {$i < $n} {incr i} {
+            my collect_type_param_inferences [pak::nfield [lindex $params $i] type] [lindex $call_args $i] $tpnames inferred
+        }
+        set result {}
+        foreach tpn $tpnames {
+            if {[dict exists $inferred $tpn]} {
+                lappend result [dict get $inferred $tpn]
+            } else {
+                return {}
+            }
+        }
+        return $result
+    }
+
+    method collect_type_param_inferences {param_type arg_expr tpnames inferredVar} {
+        upvar 1 $inferredVar inferred
+        switch -- [pak::kindof $param_type] {
+            TypeName {
+                set pn [pak::fval $param_type name]
+                if {$pn in $tpnames} {
+                    set t [my expr_type $arg_expr]
+                    if {$t eq "" || [pak::isnil $t]} {
+                        switch -- [pak::kindof $arg_expr] {
+                            IntLit    { set t [pak::N TypeName name i32] }
+                            FloatLit  { set t [pak::N TypeName name f32] }
+                            BoolLit   { set t [pak::N TypeName name bool] }
+                            StringLit { set t [pak::N TypeName name Str] }
+                            default   { set t "" }
+                        }
+                    }
+                    if {$t ne "" && ![pak::isnil $t] && ![dict exists $inferred $pn]} {
+                        dict set inferred $pn $t
+                    }
+                }
+            }
+            TypePointer {
+                my collect_type_param_inferences [pak::nfield $param_type inner] $arg_expr $tpnames inferred
+            }
+            TypeGeneric {
+                foreach sub [pak::items [pak::nfield $param_type args]] {
+                    my collect_type_param_inferences $sub $arg_expr $tpnames inferred
+                }
+            }
+        }
+    }
+
+    method monomorphize_fn {fn_name type_args} {
+        set fn_decl [dict get $generic_fns $fn_name]
+        set c_type_args {}
+        foreach t $type_args { lappend c_type_args [my gen_type $t] }
+        set cache_key [list $fn_name $c_type_args]
+        if {[dict exists $mono_cache $cache_key]} { return [dict get $mono_cache $cache_key] }
+        set safe_parts {}
+        foreach c $c_type_args { lappend safe_parts [string map {" " _ "*" p} $c] }
+        set specialized_name "${fn_name}_[join $safe_parts _]"
+        dict set mono_cache $cache_key $specialized_name
+        set type_params [pak::items [pak::nfield $fn_decl type_params]]
+        set subst [dict create]
+        for {set i 0} {$i < [llength $type_params]} {incr i} {
+            if {$i < [llength $type_args]} {
+                dict set subst [pak::sval [lindex $type_params $i]] [lindex $type_args $i]
+            }
+        }
+        # Build a specialized FnDecl with substituted param/ret types.
+        set new_params {}
+        foreach p [pak::items [pak::nfield $fn_decl params]] {
+            set np [pak::N Param \
+                name [pak::fval $p name] \
+                type [pak::cg_subst_type [pak::nfield $p type] $subst] \
+                mutable [pak::fval $p mutable] \
+                default_value [pak::nfield $p default_value]]
+            lappend new_params $np
+        }
+        set anns {}
+        foreach a [pak::items [pak::nfield $fn_decl annotations]] { lappend anns [pak::sval $a] }
+        set spec_decl [pak::N FnDecl \
+            name $specialized_name \
+            params $new_params \
+            ret_type [pak::cg_subst_type [pak::nfield $fn_decl ret_type] $subst] \
+            body [pak::nfield $fn_decl body] \
+            type_params {} \
+            annotations $anns \
+            is_method [pak::fval $fn_decl is_method] \
+            self_type [pak::nfield $fn_decl self_type] \
+            variadic [pak::fval $fn_decl variadic]]
+        lappend pending_mono $spec_decl
+        return $specialized_name
+    }
+
     # Static type-method calls: Vec3.zero(), Mat4.identity(), Vec3.from(...) etc.
     # Mirror codegen._gen_static_type_method. Returns "" if not handled.
-    method gen_static_type_method {type_name method args} {
+    method gen_static_type_method {type_name method arglist} {
         if {$type_name in {Vec3 T3DVec3}} {
             switch -- $method {
                 zero    { return "(T3DVec3){{0.0f, 0.0f, 0.0f}}" }
@@ -497,8 +640,8 @@ oo::class create pak::Codegen {
                 forward { return "(T3DVec3){{0.0f, 0.0f, -1.0f}}" }
                 one     { return "(T3DVec3){{1.0f, 1.0f, 1.0f}}" }
             }
-            if {$method eq "from" && [llength $args] == 3} {
-                return "(T3DVec3){{[lindex $args 0], [lindex $args 1], [lindex $args 2]}}"
+            if {$method eq "from" && [llength $arglist] == 3} {
+                return "(T3DVec3){{[lindex $arglist 0], [lindex $arglist 1], [lindex $arglist 2]}}"
             }
         }
         if {$type_name in {Vec2 T3DVec2}} {
@@ -525,11 +668,11 @@ oo::class create pak::Codegen {
     # Built-in instance method dispatch. Mirror codegen._gen_builtin_method.
     # Returns "" if not handled (caller falls through). Raises CGUNPORTED for
     # branches whose typedef machinery is not yet ported to the Tcl codegen.
-    method gen_builtin_method {obj c_type method args obj_type} {
-        set na [llength $args]
-        set a0 [expr {$na > 0 ? [lindex $args 0] : ""}]
-        set a1 [expr {$na > 1 ? [lindex $args 1] : ""}]
-        set a2 [expr {$na > 2 ? [lindex $args 2] : ""}]
+    method gen_builtin_method {obj c_type method arglist obj_type} {
+        set na [llength $arglist]
+        set a0 [expr {$na > 0 ? [lindex $arglist 0] : ""}]
+        set a1 [expr {$na > 1 ? [lindex $arglist 1] : ""}]
+        set a2 [expr {$na > 2 ? [lindex $arglist 2] : ""}]
         # Numeric cast methods
         if {[dict exists $::pak::CG_NUMERIC_CAST $method]} {
             return "([dict get $::pak::CG_NUMERIC_CAST $method])($obj)"
@@ -689,10 +832,19 @@ oo::class create pak::Codegen {
                 return [pak::cg_api_lambda $mod $fn $args]
             }
         }
-        # Generic call
+        # Generic call: foo::<T>(args) or inferred-generic foo(args)
         if {[pak::kindof $func] eq "Ident"} {
             set fname [pak::fval $func name]
-            if {[dict exists $generic_fns $fname]} { pak::cg_unported "call:generic" }
+            if {[dict exists $generic_fns $fname]} {
+                set type_args [pak::items [pak::nfield $e type_args]]
+                if {[llength $type_args] == 0} {
+                    set type_args [my infer_type_args [dict get $generic_fns $fname] [pak::items [pak::nfield $e args]]]
+                }
+                if {[llength $type_args] > 0} {
+                    set specialized [my monomorphize_fn $fname $type_args]
+                    return "${specialized}([join $args {, }])"
+                }
+            }
         }
         return "[my gen_expr $func]([join $args {, }])"
     }
@@ -1590,8 +1742,32 @@ oo::class create pak::Codegen {
         }
 
         foreach b $body { lappend out $b }
+
+        # Emit monomorphized generic specializations generated during body codegen.
+        if {[llength $pending_mono] > 0} {
+            lappend out ""
+            lappend out "/* -- Generic specializations -- */"
+            foreach decl $pending_mono {
+                switch -- [pak::kindof $decl] {
+                    FnDecl     { lappend out [my gen_fn $decl ""] }
+                    StructDecl { lappend out [my gen_struct $decl] }
+                }
+                lappend out ""
+            }
+            set pending_mono {}
+        }
         return [join $out \n]
     }
+}
+
+# Mirror codegen._addr: &args[i] unless already a pointer expression.
+proc pak::cg_addr {arglist i} {
+    if {$i < [llength $arglist]} {
+        set a [lindex $arglist $i]
+        if {[string index $a 0] in {& *}} { return $a }
+        return "&$a"
+    }
+    return "NULL"
 }
 
 # ── module-API lambda lowering (hand-ported subset; raises for the rest) ───────
@@ -1610,6 +1786,27 @@ proc pak::cg_api_lambda {mod fn arglist} {
             return "rdpq_sprite_blit([join $arglist {, }], NULL)"
         }
         "timer delta" { return "_pak_delta_time()" }
+        "t3d mat4_identity" { return "t3d_mat4_identity([pak::cg_addr $arglist 0])" }
+        "t3d mat4_rotate_y" { return "t3d_mat4_rotate([pak::cg_addr $arglist 0], &(T3DVec3){{0,1,0}}, [lindex $arglist 1])" }
+        "t3d mat4_rotate_x" { return "t3d_mat4_rotate([pak::cg_addr $arglist 0], &(T3DVec3){{1,0,0}}, [lindex $arglist 1])" }
+        "t3d mat4_rotate_z" { return "t3d_mat4_rotate([pak::cg_addr $arglist 0], &(T3DVec3){{0,0,1}}, [lindex $arglist 1])" }
+        "t3d mat4_translate" { return "t3d_mat4_translate([pak::cg_addr $arglist 0], [lindex $arglist 1], [lindex $arglist 2], [lindex $arglist 3])" }
+        "t3d mat4_scale" { return "t3d_mat4_scale([pak::cg_addr $arglist 0], [lindex $arglist 1], [lindex $arglist 2], [lindex $arglist 3])" }
+        "t3d mat4_mul" { return "t3d_mat4_mul([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2])" }
+        "t3d mat4_from_srt" { return "t3d_mat4_from_srt([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2], [pak::cg_addr $arglist 3])" }
+        "t3d mat4_from_srt_euler" { return "t3d_mat4_from_srt_euler([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2], [pak::cg_addr $arglist 3])" }
+        "t3d mat4_invert" { return "t3d_mat4_invert([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1])" }
+        "t3d mat4_transpose" { return "t3d_mat4_transpose([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1])" }
+        "t3d vec3_norm" { return "t3d_vec3_norm([pak::cg_addr $arglist 0])" }
+        "t3d vec3_cross" { return "t3d_vec3_cross([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2])" }
+        "t3d vec3_dot" { return "t3d_vec3_dot([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1])" }
+        "t3d vec3_lerp" { return "t3d_vec3_lerp([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2], [lindex $arglist 3])" }
+        "t3d quat_identity" { return "t3d_quat_identity([pak::cg_addr $arglist 0])" }
+        "t3d quat_from_axis_angle" { return "t3d_quat_from_axis_angle([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [lindex $arglist 2])" }
+        "t3d quat_mul" { return "t3d_quat_mul([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2])" }
+        "t3d quat_nlerp" { return "t3d_quat_nlerp([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2], [lindex $arglist 3])" }
+        "t3d quat_slerp" { return "t3d_quat_slerp([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2], [lindex $arglist 3])" }
+        "t3d fog_set_enabled" { return "t3d_fog_set_enabled([expr {[llength $arglist] > 0 ? [lindex $arglist 0] : "true"}])" }
         default { pak::cg_unported "api-lambda:$mod $fn" }
     }
 }
