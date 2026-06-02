@@ -1143,8 +1143,62 @@ oo::class create pak::Parser {
         if {[string first "\{" $escaped] < 0} {
             return [pak::N StringLit value [string map [list "\{\{" "\{" "\}\}" "\}"] $raw]]
         }
-        # Interpolation (FmtStr) not yet ported.
-        return -code error "PARSEERROR\t0\t0\tFmtStr interpolation not yet ported"
+        # Interpolation: walk char-by-char, parsing {expr} segments, skipping
+        # {{ and }} escapes. Mirrors pak/parser._parse_string_or_fmtstr.
+        set parts {}
+        set seg ""
+        set n [string length $raw]
+        set i 0
+        while {$i < $n} {
+            set ch [string index $raw $i]
+            if {$ch eq "\{"} {
+                if {$i + 1 < $n && [string index $raw [expr {$i+1}]] eq "\{"} {
+                    append seg "\{"
+                    incr i 2
+                } else {
+                    set j [expr {$i + 1}]
+                    set depth 1
+                    while {$j < $n && $depth > 0} {
+                        set cj [string index $raw $j]
+                        if {$cj eq "\{"} { incr depth } elseif {$cj eq "\}"} { incr depth -1 }
+                        incr j
+                    }
+                    set expr_src [string trim [string range $raw [expr {$i+1}] [expr {$j-2}]]]
+                    if {$seg ne ""} { lappend parts [pak::Lit $seg]; set seg "" }
+                    if {[catch {
+                        set sublex [pak::Lexer new $expr_src]
+                        set subp [pak::Parser new [$sublex tokenize]]
+                        set sub_expr [$subp parse_expr]
+                    }]} {
+                        lappend parts [pak::Lit "\{$expr_src\}"]
+                    } else {
+                        lappend parts $sub_expr
+                    }
+                    set i $j
+                }
+            } elseif {$ch eq "\}"} {
+                if {$i + 1 < $n && [string index $raw [expr {$i+1}]] eq "\}"} {
+                    append seg "\}"
+                    incr i 2
+                } else {
+                    append seg $ch
+                    incr i
+                }
+            } else {
+                append seg $ch
+                incr i
+            }
+        }
+        if {$seg ne ""} { lappend parts [pak::Lit $seg] }
+        # If every part is a plain string, collapse to a single StringLit.
+        set all_str 1
+        foreach p $parts { if {[lindex $p 0] ne "lit"} { set all_str 0; break } }
+        if {$all_str} {
+            set joined ""
+            foreach p $parts { append joined [lindex $p 1] }
+            return [pak::N StringLit value $joined]
+        }
+        return [pak::N FmtStr parts $parts]
     }
 }
 
