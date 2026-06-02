@@ -118,6 +118,8 @@ oo::class create pak::Emitter {
     method sb {s off base}  { my instr "sb" "$s," "${off}($base)" }
     method lwc1 {d off base} { my instr "lwc1" "$d," "${off}($base)" }
     method swc1 {s off base} { my instr "swc1" "$s," "${off}($base)" }
+    method ldc1 {d off base} { my instr "ldc1" "$d," "${off}($base)" }
+    method sdc1 {s off base} { my instr "sdc1" "$s," "${off}($base)" }
     method sync {} { my instr "sync" }
 }
 
@@ -372,7 +374,26 @@ oo::class create pak::MipsCodegen {
     }
 
     # ── type environment (port of mips/types.py MipsTypeEnv) ─────────────────
+    # Well-known external types (tiny3d / libdragon), pre-registered so user
+    # structs containing e.g. Vec3 fields resolve. Mirrors _EXTERNAL_TYPES.
+    method register_external_types {} {
+        foreach {name sz al fl} {
+            Vec3        12  4 1
+            Mat4        64  4 1
+            Quat        16  4 1
+            Color        4  4 0
+            T3DMat4FP  128 16 0
+            T3DViewport 128 16 0
+        } {
+            if {![dict exists $tenv_layouts $name]} {
+                dict set tenv_layouts $name [dict create size $sz align $al \
+                    is_float $fl is_signed 1 is_ptr 0 fields {} frac_bits 0]
+            }
+        }
+    }
+
     method register_program {program} {
+        my register_external_types
         set enums {}; set structs {}; set variants {}
         foreach decl [pak::items [pak::nfield $program decls]] {
             switch -- [pak::kindof $decl] {
@@ -833,7 +854,7 @@ oo::class create pak::MipsCodegen {
     # ── typed memory ──────────────────────────────────────────────────────────
     method emit_typed_load {dst off base layout} {
         if {[dict get $layout is_float]} {
-            $em lwc1 $dst $off $base
+            if {[dict get $layout size] == 4} { $em lwc1 $dst $off $base } else { $em ldc1 $dst $off $base }
         } else {
             switch -- [dict get $layout size] {
                 1 { if {[dict get $layout is_signed]} { $em lb $dst $off $base } else { $em lbu $dst $off $base } }
@@ -844,7 +865,7 @@ oo::class create pak::MipsCodegen {
     }
     method emit_typed_store {src off base layout} {
         if {[dict get $layout is_float]} {
-            $em swc1 $src $off $base
+            if {[dict get $layout size] == 4} { $em swc1 $src $off $base } else { $em sdc1 $src $off $base }
         } else {
             switch -- [dict get $layout size] {
                 1 { $em sb $src $off $base }
@@ -1028,7 +1049,14 @@ oo::class create pak::MipsCodegen {
 
     method emit_for {stmt} {
         set it [pak::nfield $stmt iterable]
-        if {[pak::kindof $it] ne "RangeExpr"} { pak::mips_unported "for:each" }
+        if {[pak::kindof $it] eq "RangeExpr"} {
+            my emit_for_range $stmt $it
+        } else {
+            my emit_for_each $stmt $it
+        }
+    }
+
+    method emit_for_range {stmt it} {
         set header [my fresh_label ".Lfor_h"]
         set exit_l [my fresh_label ".Lfor_x"]
         set counter_layout [my mips_layout_name i32]
@@ -1061,6 +1089,67 @@ oo::class create pak::MipsCodegen {
         $em nop
         $ra free_temp $end_r
         $ra free_temp $start_r
+        $em label $exit_l
+        set loop_header [lrange $loop_header 0 end-1]; set loop_exit [lrange $loop_exit 0 end-1]
+    }
+
+    # for item in slice — treat iterable as a fat pointer {ptr, len@+4}.
+    method emit_for_each {stmt iterable} {
+        set header [my fresh_label ".Lfeach_h"]
+        set exit_l [my fresh_label ".Lfeach_x"]
+        set ptr_layout [my mips_layout_name i32]
+        set ptr_off [my declare_local __for_ptr $ptr_layout]
+        set len_off [my declare_local __for_len $ptr_layout]
+        set idx_off [my declare_local __for_idx $ptr_layout]
+
+        set slice_base [$ra alloc_temp]
+        my emit_expr $iterable $slice_base
+        $em sw $slice_base $ptr_off {$sp}
+        set len_r [$ra alloc_temp]
+        $em lw $len_r 4 $slice_base
+        $em sw $len_r $len_off {$sp}
+        $ra free_temp $len_r
+        $ra free_temp $slice_base
+        $em sw {$zero} $idx_off {$sp}
+
+        lappend loop_header $header; lappend loop_exit $exit_l
+        $em label $header
+
+        set idx_r [$ra alloc_temp]
+        set len_r [$ra alloc_temp]
+        $em lw $idx_r $idx_off {$sp}
+        $em lw $len_r $len_off {$sp}
+        $em bge $idx_r $len_r $exit_l
+        $em nop
+
+        set binding_off [my declare_local [pak::fval $stmt binding] $ptr_layout]
+        set ptr_r [$ra alloc_temp]
+        set elem_r [$ra alloc_temp]
+        $em lw $ptr_r $ptr_off {$sp}
+        $em sll $elem_r $idx_r 2
+        $em addu $ptr_r $ptr_r $elem_r
+        $em lw $elem_r 0 $ptr_r
+        $em sw $elem_r $binding_off {$sp}
+        $ra free_temp $elem_r
+        $ra free_temp $ptr_r
+
+        set idx [pak::nfield $stmt index]
+        if {![pak::isnil $idx]} {
+            set existing [my lookup_local [pak::sval $idx]]
+            if {$existing eq ""} { set idx2_off [my declare_local [pak::sval $idx] $ptr_layout] } else { set idx2_off [lindex $existing 0] }
+            $em sw $idx_r $idx2_off {$sp}
+        }
+
+        my emit_block [pak::nfield $stmt body]
+
+        $em lw $idx_r $idx_off {$sp}
+        $em addiu $idx_r $idx_r 1
+        $em sw $idx_r $idx_off {$sp}
+        $ra free_temp $len_r
+        $ra free_temp $idx_r
+
+        $em j $header
+        $em nop
         $em label $exit_l
         set loop_header [lrange $loop_header 0 end-1]; set loop_exit [lrange $loop_exit 0 end-1]
     }
@@ -1333,6 +1422,9 @@ oo::class create pak::MipsCodegen {
                 $em sw $val [expr {$err_off + 4}] {$sp}
                 $ra free_temp $val
                 $em addiu $dst {$sp} $err_off
+            }
+            RangeExpr {
+                my emit_expr [pak::nfield $expr start] $dst
             }
             EnumVariantAccess {
                 set val [my resolve_enum_case_value [pak::fval $expr name]]
