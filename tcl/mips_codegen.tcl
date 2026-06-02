@@ -1024,8 +1024,28 @@ oo::class create pak::MipsCodegen {
                     if {![pak::isnil $eb]} { my emit_block_or_stmt $eb }
                 }
             }
+            NullCheckStmt { my emit_null_check_stmt $stmt }
             default    {}
         }
+    }
+
+    method emit_null_check_stmt {stmt} {
+        set else_label [my fresh_label .Lnull_else]
+        set end_label  [my fresh_label .Lnull_end]
+        set val [$ra alloc_temp]
+        my emit_expr [pak::nfield $stmt expr] $val
+        $em beqz $val $else_label
+        $em nop
+        set bind_off [my declare_local [pak::fval $stmt binding] [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]]
+        $em sw $val $bind_off {$sp}
+        my emit_block [pak::nfield $stmt then]
+        $em j $end_label
+        $em nop
+        $em label $else_label
+        set eb [pak::nfield $stmt else_branch]
+        if {![pak::isnil $eb]} { my emit_block $eb }
+        $em label $end_label
+        $ra free_temp $val
     }
 
     # ── control flow ──────────────────────────────────────────────────────────
@@ -1578,8 +1598,66 @@ oo::class create pak::MipsCodegen {
                 $ra free_temp $val
             }
             Call      { my emit_call $expr $dst }
+            FmtStr    { my emit_fmtstr $expr $dst }
+            Closure {
+                set name [my emit_closure $expr]
+                $em la $dst $name
+            }
+            CatchExpr { my emit_catch $expr $dst }
             default   { $em move $dst {$zero} }
         }
+    }
+
+    method emit_fmtstr {expr dst} {
+        foreach part [pak::items [pak::nfield $expr parts]] {
+            if {[lindex $part 0] eq "lit"} {
+                set lbl [$pool intern_string [lindex $part 1]]
+                $em la $dst $lbl
+                break
+            }
+        }
+    }
+
+    method emit_closure {expr} {
+        set name [my fresh_label __closure]
+        set body [pak::nfield $expr body]
+        if {[pak::kindof $body] ne "Block"} {
+            set body [pak::N Block stmts [pak::Seq [list [pak::N Return value $body]]]]
+        }
+        set saved [my save_fn_state]
+        my emit_fn $name [pak::nfield $expr params] $body
+        my restore_fn_state $saved
+        return $name
+    }
+
+    method emit_catch {expr dst} {
+        set ok_label [my fresh_label .Lcatch_ok]
+        # Result layout: {is_ok@0, payload@4}
+        set t_off 0
+        set p_off 4
+        set result_ptr [$ra alloc_temp]
+        my emit_expr [pak::nfield $expr expr] $result_ptr
+        set ok_flag [$ra alloc_temp]
+        $em lbu $ok_flag $t_off $result_ptr
+        $em bnez $ok_flag $ok_label
+        $em nop
+        $ra free_temp $ok_flag
+        set handler [pak::nfield $expr handler]
+        if {![pak::isnil $handler]} {
+            set binding_node [pak::nfield $expr binding]
+            if {![pak::isnil $binding_node]} {
+                set binding [pak::sval $binding_node]
+                set err_val [$ra alloc_temp]
+                $em lw $err_val $p_off $result_ptr
+                set bind_off [my declare_local $binding [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]]
+                $em sw $err_val $bind_off {$sp}
+                $ra free_temp $err_val
+            }
+            my emit_expr $handler $dst
+        }
+        $em label $ok_label
+        $em lw $dst $p_off $result_ptr
+        $ra free_temp $result_ptr
     }
 
     method emit_field_access {expr dst} {
