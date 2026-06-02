@@ -1,0 +1,99 @@
+-- anim.pk64 — skeletal animation blending helpers (self-contained Pak).
+--
+-- Poses are flat arrays of per-joint quaternion rotations + a translation.
+-- Blend two clips' sampled poses by weight t in [0,1] with normalized-lerp
+-- (nlerp) on the quaternions — cheap and good enough for N64. Bridge to T3D by
+-- copying the blended Quat/Vec3 into your T3DSkeleton's bone transforms.
+
+use n64.math
+
+struct Quat { x: f32, y: f32, z: f32, w: f32 }
+struct Vec3 { x: f32, y: f32, z: f32 }
+
+-- A single joint's local transform.
+struct Joint {
+    rot: Quat
+    pos: Vec3
+}
+
+const MAX_JOINTS: i32 = 32
+
+struct Pose {
+    joints: [32]Joint
+    count: i32
+}
+
+fn quat_dot(a: Quat, b: Quat) -> f32 {
+    return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
+}
+
+-- Normalized lerp between two quaternions (shortest path), weight t.
+fn quat_nlerp(a: Quat, b: Quat, t: f32) -> Quat {
+    -- choose shortest arc
+    let mut bb: Quat = b
+    if quat_dot(a, b) < 0.0 {
+        bb = Quat { x: 0.0 - b.x, y: 0.0 - b.y, z: 0.0 - b.z, w: 0.0 - b.w }
+    }
+    let mut q: Quat = Quat {
+        x: a.x + (bb.x - a.x) * t,
+        y: a.y + (bb.y - a.y) * t,
+        z: a.z + (bb.z - a.z) * t,
+        w: a.w + (bb.w - a.w) * t,
+    }
+    let len: f32 = math.sqrt_f(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w)
+    if len > 0.0 {
+        let inv: f32 = 1.0 / len
+        q = Quat { x: q.x * inv, y: q.y * inv, z: q.z * inv, w: q.w * inv }
+    }
+    return q
+}
+
+fn vec3_lerp(a: Vec3, b: Vec3, t: f32) -> Vec3 {
+    return Vec3 {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t,
+    }
+}
+
+-- Blend pose a and pose b into out by weight t (0 = a, 1 = b), joint-wise.
+fn pose_blend(out: *Pose, a: *Pose, b: *Pose, t: f32) {
+    let n: i32 = math.min_i32(a.count, b.count)
+    out.count = n
+    for i in 0..n {
+        out.joints[i].rot = quat_nlerp(a.joints[i].rot, b.joints[i].rot, t)
+        out.joints[i].pos = vec3_lerp(a.joints[i].pos, b.joints[i].pos, t)
+    }
+}
+
+-- A playing animation cursor: advance time, wrap on loop.
+struct AnimState {
+    time: f32
+    duration: f32
+    speed: f32
+    looping: bool
+}
+
+fn anim_advance(s: *AnimState, dt: f32) {
+    s.time = s.time + dt * s.speed
+    if s.looping {
+        loop {
+            if s.time < s.duration { break }
+            s.time = s.time - s.duration
+        }
+    }
+}
+
+entry {
+    -- usage demo / self-test (delete when used as a module)
+    let mut a: Pose = undefined
+    let mut b: Pose = undefined
+    let mut o: Pose = undefined
+    a.count = 1
+    b.count = 1
+    a.joints[0].rot = Quat { x: 0.0, y: 0.0, z: 0.0, w: 1.0 }
+    b.joints[0].rot = Quat { x: 0.0, y: 1.0, z: 0.0, w: 0.0 }
+    pose_blend(&o, &a, &b, 0.5)
+    let mut st: AnimState = AnimState { time: 0.0, duration: 1.0, speed: 1.0, looping: true }
+    anim_advance(&st, 0.016)
+}
