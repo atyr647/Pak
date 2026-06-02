@@ -77,6 +77,22 @@ oo::class create pak::Codegen {
         set tmp_counter 0
     }
 
+    # Seed enum_variants from a program (case/variant name -> type name), used
+    # by headergen, mirroring the first pass of pak/headergen.generate_header.
+    method seed_enums {program} {
+        foreach decl [pak::items [pak::nfield $program decls]] {
+            if {[pak::kindof $decl] eq "EnumDecl"} {
+                foreach v [pak::items [pak::nfield $decl variants]] {
+                    dict set enum_variants [pak::fval $v name] [pak::fval $decl name]
+                }
+            } elseif {[pak::kindof $decl] eq "VariantDecl"} {
+                foreach c [pak::items [pak::nfield $decl cases]] {
+                    dict set enum_variants [pak::fval $c name] [pak::fval $decl name]
+                }
+            }
+        }
+    }
+
     # Register (dedup) and return the C typedef name for Result(ok, err).
     method result_typedef {ok_type err_type} {
         set c_ok [expr {[pak::isnil $ok_type] ? "void *" : [my gen_type $ok_type]}]
