@@ -794,6 +794,14 @@ class Codegen:
                 return self.struct_fields[struct_name].get(e.field)
         return None
 
+    def _container_kind(self, t):
+        """Return the container kind name (Vec/FixedList/RingBuffer/FixedMap/Pool)
+        if t is one of the built-in generic containers, else None."""
+        if isinstance(t, ast.TypeGeneric) and t.name in (
+                'Vec', 'FixedList', 'RingBuffer', 'FixedMap', 'Pool'):
+            return t.name
+        return None
+
     def _match_type_name(self, expr) -> str:
         """Return the base type name of a match expression (for variant/enum detection)."""
         t = self._expr_type(expr)
@@ -1061,6 +1069,9 @@ class Codegen:
             obj_type = self._expr_type(e.obj)
             idx_str = self.gen_expr(e.index)
             if isinstance(obj_type, ast.TypeSlice):
+                return f'({obj_str}).data[{idx_str}]'
+            # Container index: Vec/FixedList/Pool hold a `.data` array.
+            if self._container_kind(obj_type) in ('Vec', 'FixedList', 'Pool'):
                 return f'({obj_str}).data[{idx_str}]'
             return f'{obj_str}[{idx_str}]'
         if isinstance(e, ast.SliceExpr):
@@ -2820,8 +2831,9 @@ class Codegen:
             coll_type = self._expr_type(iterable)
             self.scope_set(s.binding, ast.TypeName(name='auto'))
 
-            if isinstance(coll_type, ast.TypeSlice):
-                # Fat slice: iterate via .data and .len
+            if isinstance(coll_type, ast.TypeSlice) or \
+                    self._container_kind(coll_type) in ('Vec', 'FixedList', 'Pool'):
+                # Fat slice or .data/.len container: iterate via .data up to .len
                 idx = s.index if s.index else f'_i_{s.binding}'
                 lines.append(f'{pad}for (int {idx} = 0; {idx} < ({coll}).len; {idx}++) {{')
                 lines.append(f'{inner_pad}__typeof__(({coll}).data[0]) {s.binding} = ({coll}).data[{idx}];')

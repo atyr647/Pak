@@ -237,6 +237,12 @@ oo::class create pak::Codegen {
         return $lines
     }
 
+    method container_kind {t} {
+        if {[pak::kindof $t] eq "TypeGeneric" && [pak::fval $t name] in {Vec FixedList RingBuffer FixedMap Pool}} {
+            return [pak::fval $t name]
+        }
+        return ""
+    }
     method expr_type {e} {
         switch -- [pak::kindof $e] {
             Ident { return [my scope_get [pak::fval $e name]] }
@@ -331,6 +337,7 @@ oo::class create pak::Codegen {
                 set ot [my expr_type [pak::nfield $e obj]]
                 set idx [my gen_expr [pak::nfield $e index]]
                 if {[pak::kindof $ot] eq "TypeSlice"} { return "($obj).data\[$idx\]" }
+                if {[my container_kind $ot] in {Vec FixedList Pool}} { return "($obj).data\[$idx\]" }
                 return "$obj\[$idx\]"
             }
             Call      { return [my gen_call $e] }
@@ -1151,7 +1158,7 @@ oo::class create pak::Codegen {
             set coll_type [my expr_type $iterable]
             my scope_set $binding [pak::N TypeName name auto]
             set idx [expr {$has_index ? $index : "_i_$binding"}]
-            if {[pak::kindof $coll_type] eq "TypeSlice"} {
+            if {[pak::kindof $coll_type] eq "TypeSlice" || [my container_kind $coll_type] in {Vec FixedList Pool}} {
                 lappend lines "${pad}for (int $idx = 0; $idx < ($coll).len; $idx++) \{"
                 lappend lines "${inner_pad}__typeof__(($coll).data\[0\]) $binding = ($coll).data\[$idx\];"
             } else {
