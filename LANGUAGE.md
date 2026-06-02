@@ -174,19 +174,23 @@ Result(OkType, ErrType)
 
 Constructed with `ok(value)` and `err(value)`. See [Section 20](#20-error-handling-result).
 
-### Option Type [PARTIAL]
+### Option Type [IMPLEMENTED]
 
 ```pak
 Option(T)    -- T or none
 ?T           -- shorthand for Option(T) (nullable value)
 ```
 
-### Function Pointer Types [PARTIAL]
+Lowers to `T *` in C; `none` becomes `NULL`.
+
+### Function Pointer Types [IMPLEMENTED]
 
 ```pak
 fn(A, B) -> R     -- function pointer taking A, B returning R
 fn(A)             -- function pointer with no return
 ```
+
+Lowers to C function pointer syntax: `R (*)(A, B)`.
 
 ### Generic Container Types [IMPLEMENTED]
 
@@ -294,7 +298,7 @@ variant Event {
 }
 ```
 
-### Union (Untagged) [PARTIAL]
+### Union (Untagged) [IMPLEMENTED]
 
 ```pak
 union Name {
@@ -503,10 +507,10 @@ All fields must be specified (no partial struct init unless defaults exist).
 
 ```pak
 [1, 2, 3]               -- array literal
-[0; 256]                -- repeat: 256 zeros (PARTIAL)
+[0; 256]                -- repeat: 256 zeros
 ```
 
-### Tuple Literal [PARTIAL]
+### Tuple Literal [IMPLEMENTED]
 
 ```pak
 (1, 2)
@@ -535,7 +539,7 @@ arr[i]
 buf[offset]
 ```
 
-### Slice Expression [PARTIAL]
+### Slice Expression [IMPLEMENTED]
 
 ```pak
 arr[start..end]
@@ -580,7 +584,7 @@ ok(value)
 err(error_value)
 ```
 
-### Catch Expression [PARTIAL]
+### Catch Expression [IMPLEMENTED]
 
 ```pak
 result catch |err| { fallback_value }
@@ -588,7 +592,7 @@ result catch |err| { fallback_value }
 
 Unwraps a `Result`, running the handler block on `err`.
 
-### Null Check Expression [PARTIAL]
+### Null Check Expression [IMPLEMENTED]
 
 ```pak
 ptr? binding { fallback }
@@ -609,16 +613,28 @@ sizeof(Type)          -- byte size of a type
 sizeof(expr)          -- byte size of expression's type
 offsetof(Struct, field)   -- byte offset of a field
 alignof(Type)         -- alignment requirement
-align_of(Type)        -- alias
-size_of(Type)         -- alias
 ```
 
-### Closures / Lambda [PARTIAL]
+### Closures / Lambda
+
+Non-capturing function literals [IMPLEMENTED]:
 
 ```pak
 fn(x: i32) -> i32 { x + 1 }
 fn(x: i32) -> i32 = x + 1    -- expression body
 ```
+
+Lowers to a static file-scope C function; the name decays to a function pointer.
+
+Capturing closures (referencing outer variables) [PLANNED]:
+
+```pak
+let base = 10
+let add_base: fn(i32) -> i32 = fn(x: i32) -> i32 { return x + base }
+```
+
+Capturing closures require GCC nested functions (a non-standard extension).
+Not recommended for N64 toolchain targets.
 
 ### Explicit Type Arguments [IMPLEMENTED]
 
@@ -788,14 +804,14 @@ defer { cleanup() }
 defer free(ptr)
 ```
 
-### Goto / Label [PARTIAL]
+### Goto / Label [IMPLEMENTED]
 
 ```pak
 goto label_name
 label_name:
 ```
 
-### Comptime If [PARTIAL]
+### Comptime If [IMPLEMENTED]
 
 ```pak
 comptime if FEATURE_FLAG {
@@ -848,7 +864,7 @@ match entity {
 }
 ```
 
-### Match with Guard [PARTIAL]
+### Match with Guard [PLANNED]
 
 ```pak
 match value {
@@ -857,6 +873,9 @@ match value {
     .none              => {}
 }
 ```
+
+Guard conditions (`if expr`) are parsed as a reserved syntax but not yet evaluated;
+the guard field is always `none` in the current implementation.
 
 ### Wildcard Pattern [IMPLEMENTED]
 
@@ -896,6 +915,9 @@ After `use n64.display`, call functions as `display.init(...)`, `display.get()`,
 ```pak
 use n64.display as disp
 ```
+
+The alias is parsed and stored but the code generator does not yet remap
+module-qualified calls through it. Use the canonical module name for now.
 
 ### Module Declaration [IMPLEMENTED]
 

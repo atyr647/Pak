@@ -2391,7 +2391,7 @@ class TestConstDeclarations:
         src = textwrap.dedent('''
             struct Player { x: f32  y: f32  health: i32 }
             entry {
-                comptime_assert(size_of(Player) <= 64, "Player too large")
+                comptime_assert(sizeof(Player) <= 64, "Player too large")
             }
         ''')
         c = codegen(src)

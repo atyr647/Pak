@@ -422,3 +422,5 @@ free(p)
 | `alloc<T>()`               | Wrong alloc syntax                     | `alloc(T)`                        |
 | `Result<T, E>`             | Wrong Result syntax                    | `Result(T, E)`                    |
 | `Option<T>`                | Wrong Option syntax                    | `Option(T)` or `?T`               |
+| `size_of(T)`               | Removed alias                          | `sizeof(T)`                       |
+| `align_of(T)`              | Removed alias                          | `alignof(T)`                      |

@@ -30,8 +30,6 @@ sizeof(Type)             -- byte size of a type (compile-time constant)
 sizeof(expr)             -- byte size of expression's type
 offsetof(StructName, field)  -- byte offset of struct field (compile-time)
 alignof(Type)            -- alignment requirement of a type
-align_of(Type)           -- alias for alignof
-size_of(Type)            -- alias for sizeof
 ```
 
 ### Result Constructors
