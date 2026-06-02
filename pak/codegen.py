@@ -211,6 +211,8 @@ MODULE_API: dict = {
     ('backup', 'size'):            'backup_size',
 
     # n64.eeprom — Direct EEPROM access
+    ('eeprom', 'present'):         'eeprom_present',
+    ('eeprom', 'type_detect'):     'eeprom_type_detect',
     ('eeprom', 'init'):            'eeprom_init',
     ('eeprom', 'read'):            'eeprom_read',
     ('eeprom', 'write'):           'eeprom_write',
@@ -494,6 +496,8 @@ MODULE_API: dict = {
     ('flashram', 'write'):         'flashram_write',
     ('flashram', 'erase_sector'):  'flashram_erase_sector',
 
+    ('eeprom', 'present'):         'eeprom_present',
+    ('eeprom', 'type_detect'):     'eeprom_type_detect',
     ('eeprom', 'init'):            'eeprom_init',
     ('eeprom', 'read'):            'eeprom_read',
     ('eeprom', 'write'):           'eeprom_write',
@@ -741,6 +745,11 @@ class Codegen:
         self._vec_typedef_names: set = set()
         self._vec_used: bool = False
         self._allocator_used: bool = False
+        # Function declarations registry: name → FnDecl (for default params + named args)
+        self.fn_decls: dict = {}
+        # Break-as-expression support: stack of result var names (None if loop not an expr)
+        self._loop_result_stack: list = []
+        self._loop_result_counter: int = 0
 
     # ── Scope helpers ─────────────────────────────────────────────────────────
 
@@ -1122,7 +1131,10 @@ class Codegen:
                 return f'__alignof__({self.gen_type(op)})'
             return f'__alignof__({self.gen_expr(op)})'
         if isinstance(e, ast.Call):
-            args_strs = [self.gen_expr(a) for a in e.args]
+            # Default: generate args positionally (may be overridden at each dispatch
+            # point when we know the callee's param list for named-arg / default handling)
+            args_strs = [self.gen_expr(a) if not isinstance(a, ast.NamedArg)
+                         else self.gen_expr(a.value) for a in e.args]
             # comptime_assert(cond, msg) → _Static_assert(cond, msg)
             if isinstance(e.func, ast.Ident) and e.func.name == 'comptime_assert':
                 cond = args_strs[0] if args_strs else 'true'
@@ -1176,7 +1188,10 @@ class Codegen:
                                 self_arg = obj_name
                         else:
                             self_arg = f'&{obj_name}'
-                        all_args = [self_arg] + args_strs
+                        # Apply named-arg reordering / default fill for non-self params
+                        user_params = fn_decl.params[1:] if fn_decl.params else []
+                        user_args = self._apply_named_args_and_defaults(user_params, e.args)
+                        all_args = [self_arg] + user_args
                         return f'{c_fn}({", ".join(all_args)})'
             # Trait-object method dispatch: d.method(args) → d.vtable->method(d.self, args)
             if isinstance(e.func, ast.DotAccess) and isinstance(e.func.obj, ast.Ident):
@@ -1226,6 +1241,12 @@ class Codegen:
                         args = ', '.join(args_strs)
                         return f'{specialized}({args})'
             func = self.gen_expr(e.func)
+            # Apply named-arg reordering / default fill for known direct functions
+            if isinstance(e.func, ast.Ident) and e.func.name in self.fn_decls:
+                fn_decl = self.fn_decls[e.func.name]
+                if fn_decl.params and (any(isinstance(a, ast.NamedArg) for a in e.args)
+                                        or len(e.args) < len(fn_decl.params)):
+                    args_strs = self._apply_named_args_and_defaults(fn_decl.params, e.args)
             args = ', '.join(args_strs)
             return f'{func}({args})'
         if isinstance(e, ast.StructLit):
@@ -1582,6 +1603,47 @@ class Codegen:
     # Vec3 method, still dispatch (handles chained calls like pos.add(v).normalize())
     _KNOWN_VEC3_METHODS = set(_VEC3_INSTANCE.keys())
 
+    def _apply_named_args_and_defaults(self, params, arg_nodes: list) -> List[str]:
+        """Resolve a call's argument list against a known function's param list.
+
+        Handles:
+        - Named args (NamedArg nodes) — placed by name, not position
+        - Default values — filled in for omitted trailing params
+
+        Returns an ordered list of generated C argument strings.
+        Falls back to simple positional generation if no NamedArg nodes are
+        present and no defaults are needed.
+        """
+        # Fast path: purely positional, all params covered, no defaults needed
+        has_named = any(isinstance(a, ast.NamedArg) for a in arg_nodes)
+        if not has_named and len(arg_nodes) >= len(params):
+            return [self.gen_expr(a) for a in arg_nodes]
+
+        # Slow path: build slot list indexed by param position
+        result: List[Optional[str]] = [None] * len(params)
+        positional_idx = 0
+
+        for arg_node in arg_nodes:
+            if isinstance(arg_node, ast.NamedArg):
+                for pi, p in enumerate(params):
+                    if p.name == arg_node.name:
+                        result[pi] = self.gen_expr(arg_node.value)
+                        break
+            else:
+                # Advance past already-filled named slots
+                while positional_idx < len(result) and result[positional_idx] is not None:
+                    positional_idx += 1
+                if positional_idx < len(result):
+                    result[positional_idx] = self.gen_expr(arg_node)
+                    positional_idx += 1
+
+        # Fill in defaults for any remaining None slots
+        for i, p in enumerate(params):
+            if result[i] is None and p.default_value is not None:
+                result[i] = self.gen_expr(p.default_value)
+
+        return [r for r in result if r is not None]
+
     def _gen_builtin_method(self, obj: str, c_type: str, method: str,
                              args: List[str], obj_type) -> Optional[str]:
         """Dispatch built-in method calls. Returns None if not handled."""
@@ -1850,6 +1912,7 @@ class Codegen:
                 self.module_name = decl.path
             elif isinstance(decl, ast.FnDecl):
                 self.fn_names.append(decl.name)
+                self.fn_decls[decl.name] = decl
                 if decl.type_params:
                     self._generic_fns[decl.name] = decl
                 if decl.is_method and decl.self_type:
@@ -2669,6 +2732,10 @@ class Codegen:
             lines = defers + [f'{pad}return{val};']
             return '\n'.join(lines)
         if isinstance(stmt, ast.Break):
+            if stmt.value is not None and self._loop_result_stack and self._loop_result_stack[-1]:
+                rv = self._loop_result_stack[-1]
+                val = self.gen_expr(stmt.value)
+                return f'{pad}{rv} = {val};\n{pad}break;'
             return f'{pad}break;'
         if isinstance(stmt, ast.Continue):
             return f'{pad}continue;'
@@ -2785,6 +2852,10 @@ class Codegen:
             # CatchExpr: multi-statement emit
             if isinstance(s.value, ast.CatchExpr):
                 return self._gen_catch_let(s, s.value, pad, prefix, decl)
+            # Loop / while used as expression via `break value`
+            # e.g. `let x: i32 = loop { ...; break result }`
+            if isinstance(s.value, (ast.LoopStmt, ast.WhileStmt)):
+                return self._gen_loop_expr_let(s, pad, prefix, decl)
             # ArrayLit repeat with large/dynamic N: declare then loop fill
             if isinstance(s.value, ast.ArrayLit) and s.value.repeat is not None:
                 val_expr = s.value.elements[0] if s.value.elements else ast.IntLit(value=0)
@@ -2973,6 +3044,27 @@ class Codegen:
             self.scope_pop()
             lines.append(f'{pad}}}')
         return '\n'.join(l for l in lines if l is not None)
+
+    def _gen_loop_expr_let(self, s: ast.LetDecl, pad: str, prefix: str, decl: str) -> str:
+        """Emit `let x: T = loop { ...; break val }` as a C block with result var.
+
+        Generates:
+            T _loop_res_N = 0;
+            while (true) { ...; _loop_res_N = val; break; }
+            T x = _loop_res_N;
+        """
+        self._loop_result_counter += 1
+        rv = f'_loop_res_{self._loop_result_counter}'
+        c_type = self.gen_type(s.type) if s.type else 'int32_t'
+        self._loop_result_stack.append(rv)
+        if isinstance(s.value, ast.LoopStmt):
+            loop_str = self.gen_loop(s.value, pad, 1)
+        else:
+            loop_str = self.gen_while(s.value, pad, 1)
+        self._loop_result_stack.pop()
+        lines = [f'{pad}{c_type} {rv} = ({c_type})0;', loop_str,
+                 f'{pad}{prefix}{decl} = {rv};']
+        return '\n'.join(lines)
 
     def gen_loop(self, s: ast.LoopStmt, pad: str, indent: int) -> str:
         lines = [f'{pad}while (true) {{']

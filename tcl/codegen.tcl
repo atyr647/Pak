@@ -728,16 +728,209 @@ oo::class create pak::Codegen {
                 return [string map [list {%OBJ%} $obj {%A0%} [expr {$na>0?$a0:"0"}] {%A1%} [expr {$na>1?$a1:"0"}] {%A2%} [expr {$na>2?$a2:"0"}]] $tmpl]
             }
         }
-        # Container / Vec / string methods require typedef machinery not yet ported
+        # ── FixedList / Pool instance methods ────────────────────────────────
         if {[pak::kindof $obj_type] eq "TypeGeneric"} {
             set gn [pak::fval $obj_type name]
-            if {$gn in {FixedList Pool RingBuffer FixedMap Vec}} { pak::cg_unported "builtin:container-method" }
+            if {$gn in {FixedList Pool}} {
+                set args [pak::fval $obj_type args]
+                set cap [expr {[llength $args] > 1 ? [pak::fval [lindex $args 1] value] : 16}]
+                set elem_t [my gen_type [lindex $args 0]]
+                if {$method eq "init"} {
+                    return "memset(&($obj), 0, sizeof($obj))"
+                }
+                if {$method eq "push" && $na > 0} {
+                    return "(($obj).len < $cap ? (($obj).data[($obj).len++] = ($a0), 1) : 0)"
+                }
+                if {$method eq "pop"} {
+                    return "($obj).data[--($obj).len]"
+                }
+                if {$method eq "remove" && $na > 0} {
+                    return "({{ int32_t _ri = ($a0); ($obj).data[_ri] = ($obj).data[--($obj).len]; }})"
+                }
+                if {$method in {items slice}} {
+                    return "($elem_t \*){{ .data = ($obj).data, .len = ($obj).len }}"
+                }
+                if {$method eq "len" && $na == 0} {
+                    return "($obj).len"
+                }
+                if {$method eq "is_empty" && $na == 0} {
+                    return "(($obj).len == 0)"
+                }
+                if {$method eq "acquire"} {
+                    return "(($elem_t *)pak_pool_acquire(&($obj)))"
+                }
+                if {$method eq "release" && $na > 0} {
+                    return "pak_pool_release(&($obj), $a0)"
+                }
+            }
+            # ── RingBuffer instance methods ───────────────────────────────────
+            if {$gn eq "RingBuffer"} {
+                set args [pak::fval $obj_type args]
+                set cap [expr {[llength $args] > 1 ? [pak::fval [lindex $args 1] value] : 16}]
+                if {$method eq "init"} {
+                    return "memset(&($obj), 0, sizeof($obj))"
+                }
+                if {$method eq "push" && $na > 0} {
+                    return "({{ ($obj).data[($obj).tail] = ($a0); ($obj).tail = (($obj).tail + 1) % $cap; if (($obj).len < $cap) ($obj).len++; }})"
+                }
+                if {$method eq "peek_back" && $na > 0} {
+                    return "($obj).data[(($obj).tail - ($a0) - 1 + $cap) % $cap]"
+                }
+                if {$method eq "pop"} {
+                    return "({{ __auto_type _v = ($obj).data[($obj).head]; ($obj).head = (($obj).head + 1) % $cap; if (($obj).len > 0) ($obj).len--; _v; }})"
+                }
+                if {$method eq "is_empty" && $na == 0} {
+                    return "(($obj).len == 0)"
+                }
+            }
+            # ── FixedMap instance methods ─────────────────────────────────────
+            if {$gn eq "FixedMap"} {
+                set args [pak::fval $obj_type args]
+                set k_type [expr {[llength $args] > 0 ? [my gen_type [lindex $args 0]] : "int32_t"}]
+                set v_type [expr {[llength $args] > 1 ? [my gen_type [lindex $args 1]] : "int32_t"}]
+                set cap [expr {[llength $args] > 2 ? [pak::fval [lindex $args 2] value] : 16}]
+                set ksuf [expr {$k_type in {"const char *" "char *"} ? "_str" : ""}]
+                if {$method eq "init"} {
+                    return "memset(&($obj), 0, sizeof($obj))"
+                }
+                if {$method eq "set" && $na == 2} {
+                    return "pak_map_set${ksuf}(&($obj), $cap, $a0, $a1)"
+                }
+                if {$method eq "get" && $na > 0} {
+                    return "(($v_type *)pak_map_get${ksuf}(&($obj), $cap, $a0))"
+                }
+                if {$method in {has contains} && $na > 0} {
+                    return "pak_map_has${ksuf}(&($obj), $cap, $a0)"
+                }
+                if {$method eq "remove" && $na > 0} {
+                    return "pak_map_remove${ksuf}(&($obj), $cap, $a0)"
+                }
+                if {$method in {len count} && $na == 0} {
+                    return "($obj).len"
+                }
+                if {$method eq "is_empty" && $na == 0} {
+                    return "(($obj).len == 0)"
+                }
+            }
+            # ── Vec(T) dynamic vector methods ─────────────────────────────────
+            if {$gn eq "Vec"} {
+                set args [pak::fval $obj_type args]
+                set elem_t [expr {[llength $args] > 0 ? [my gen_type [lindex $args 0]] : "void *"}]
+                if {$method eq "init"} {
+                    return "memset(&($obj), 0, sizeof($obj))"
+                }
+                if {$method eq "push" && $na > 0} {
+                    return "_PAK_VEC_PUSH(&($obj), ($a0))"
+                }
+                if {$method eq "pop"} {
+                    return "(($obj).len > 0 ? ($obj).data[--($obj).len] : ($obj).data[0])"
+                }
+                if {$method eq "get" && $na > 0} {
+                    return "($obj).data[$a0]"
+                }
+                if {$method eq "len" && $na == 0} {
+                    return "($obj).len"
+                }
+                if {$method eq "is_empty" && $na == 0} {
+                    return "(($obj).len == 0)"
+                }
+                if {$method eq "clear" && $na == 0} {
+                    return "(($obj).len = 0)"
+                }
+                if {$method eq "reserve" && $na > 0} {
+                    return "(($obj).cap < ($a0) ? (($obj).data = ($elem_t *)realloc(($obj).data, (size_t)($a0) * sizeof(*($obj).data)), ($obj).cap = ($a0), (void)0) : (void)0)"
+                }
+                if {$method eq "free" && $na == 0} {
+                    return "({{ free(($obj).data); ($obj).data = NULL; ($obj).len = ($obj).cap = 0; }})"
+                }
+            }
         }
+        # ── CStr / Str / PakStr string methods ───────────────────────────────
         set is_cstr [expr {$c_type in {"const char *" "char *"} || ([pak::kindof $obj_type] eq "TypeName" && [pak::fval $obj_type name] in {CStr c_char})}]
         set is_pakstr [expr {$c_type eq "PakStr" || ([pak::kindof $obj_type] eq "TypeName" && [pak::fval $obj_type name] in {Str PakStr})}]
-        if {$is_cstr || $is_pakstr} {
-            if {$method in {len contains starts_with ends_with eq cmp is_empty as_bytes to_pakstr find slice copy_to concat_into format_into data as_cstr}} {
-                pak::cg_unported "builtin:string-method"
+        if {$is_cstr} {
+            if {$method eq "len" && $na == 0} {
+                return "(int32_t)strlen($obj)"
+            }
+            if {$method eq "contains" && $na == 1} {
+                return "(strstr($obj, $a0) != NULL)"
+            }
+            if {$method eq "starts_with" && $na == 1} {
+                return "(strncmp($obj, $a0, strlen($a0)) == 0)"
+            }
+            if {$method eq "ends_with" && $na == 1} {
+                return "(strlen($obj) >= strlen($a0) && strcmp(($obj) + strlen($obj) - strlen($a0), $a0) == 0)"
+            }
+            if {$method eq "eq" && $na == 1} {
+                return "(strcmp($obj, $a0) == 0)"
+            }
+            if {$method eq "cmp" && $na == 1} {
+                return "strcmp($obj, $a0)"
+            }
+            if {$method eq "is_empty" && $na == 0} {
+                return "(($obj)[0] == '\\0')"
+            }
+            if {$method eq "as_bytes" && $na == 0} {
+                return "(const uint8_t *)($obj)"
+            }
+            if {$method eq "to_pakstr" && $na == 0} {
+                return "pak_str_from_cstr($obj)"
+            }
+            if {$method eq "find" && $na == 1} {
+                return "({{ const char *_h = strstr($obj, $a0); _h ? (int32_t)(_h - ($obj)) : -1; }})"
+            }
+            if {$method eq "slice" && $na == 1} {
+                return "(($obj) + ($a0))"
+            }
+            if {$method eq "slice" && $na == 2} {
+                return "(PakStr){{.data = ($obj) + ($a0), .len = ($a1)}}"
+            }
+            if {$method eq "copy_to" && $na == 2} {
+                return "(snprintf($a0, (size_t)($a1), \"%s\", $obj), $a0)"
+            }
+            if {$method eq "concat_into" && $na == 3} {
+                set a2 [lindex $arglist 2]
+                return "(snprintf($a0, (size_t)($a1), \"%s%s\", $obj, $a2), $a0)"
+            }
+            if {$method eq "format_into" && $na >= 2} {
+                set rest_args [lrange $arglist 2 end]
+                set fmt_arg [expr {[llength $rest_args] > 0 ? ", [join $rest_args {, }]" : ""}]
+                return "snprintf($a0, (size_t)($a1), $obj$fmt_arg)"
+            }
+        }
+        if {$is_pakstr} {
+            if {$method eq "len" && $na == 0} {
+                return "($obj).len"
+            }
+            if {$method eq "data" && $na == 0} {
+                return "($obj).data"
+            }
+            if {$method eq "eq" && $na == 1} {
+                return "pak_str_eq($obj, $a0)"
+            }
+            if {$method eq "is_empty" && $na == 0} {
+                return "(($obj).len == 0)"
+            }
+            if {$method eq "as_cstr" && $na == 0} {
+                return "($obj).data"
+            }
+            if {$method eq "contains" && $na == 1} {
+                return "(memmem(($obj).data, (size_t)($obj).len, ($a0).data, (size_t)($a0).len) != NULL)"
+            }
+            if {$method eq "find" && $na == 1} {
+                return "({{ const void *_h = memmem(($obj).data, (size_t)($obj).len, ($a0).data, (size_t)($a0).len); _h ? (int32_t)((const char *)_h - ($obj).data) : -1; }})"
+            }
+            if {$method eq "slice" && $na == 2} {
+                return "(PakStr){{.data = ($obj).data + ($a0), .len = ($a1)}}"
+            }
+            if {$method eq "starts_with" && $na == 1} {
+                return "(($obj).len >= ($a0).len && memcmp(($obj).data, ($a0).data, (size_t)($a0).len) == 0)"
+            }
+            if {$method eq "ends_with" && $na == 1} {
+                return "(($obj).len >= ($a0).len && memcmp(($obj).data + ($obj).len - ($a0).len, ($a0).data, (size_t)($a0).len) == 0)"
+            }
+            if {$method eq "copy_to" && $na == 2} {
+                return "(snprintf($a0, (size_t)($a1), \"%.*s\", (int)($obj).len, ($obj).data), $a0)"
             }
         }
         return ""
@@ -908,7 +1101,26 @@ oo::class create pak::Codegen {
             EnumDecl    { return [my gen_enum $stmt] }
             VariantDecl { return [my gen_variant $stmt] }
             UnionDecl   { return [my gen_union $stmt] }
-            ComptimeIf  { pak::cg_unported "stmt:comptime-if" }
+            ComptimeIf {
+                set cond [my gen_expr [pak::nfield $stmt condition]]
+                set then_lines {}
+                foreach s [pak::items [pak::nfield [pak::nfield $stmt then] stmts]] {
+                    set r [my gen_stmt $s $indent]
+                    if {$r ne ""} { lappend then_lines $r }
+                }
+                set result "#if $cond\n[join $then_lines \n]"
+                set else_br [pak::nfield $stmt else_branch]
+                if {![pak::isnil $else_br]} {
+                    set else_lines {}
+                    foreach s [pak::items [pak::nfield $else_br stmts]] {
+                        set r [my gen_stmt $s $indent]
+                        if {$r ne ""} { lappend else_lines $r }
+                    }
+                    append result "\n#else\n[join $else_lines \n]"
+                }
+                append result "\n#endif"
+                return $result
+            }
             default     { pak::cg_unported "stmt:[pak::kindof $stmt]" }
         }
     }
@@ -1056,15 +1268,23 @@ oo::class create pak::Codegen {
 
     method gen_static_stmt {s pad} {
         set anns [pak::annlist_or $s]
-        if {[llength $anns] > 0} { pak::cg_unported "static:annotations" }
+        set prefix ""
+        foreach ann $anns {
+            if {[string match "*@aligned*" $ann]} {
+                regexp {\((\d+)\)} $ann -> n
+                set prefix "__attribute__((aligned($n))) $prefix"
+            } elseif {$ann eq "@uncached"} {
+                set prefix "__attribute__((aligned(16))) $prefix"
+            }
+        }
         set typ [pak::nfield $s type]
         if {![pak::isnil $typ]} { set decl [my gen_array_decl [pak::fval $s name] $typ] } \
         else { set decl "__auto_type [pak::fval $s name]" }
         set val [pak::nfield $s value]
         if {![pak::isnil $val] && [pak::kindof $val] ne "UndefinedLit"} {
-            return "${pad}static $decl = [my gen_expr $val];"
+            return "${pad}${prefix}static $decl = [my gen_expr $val];"
         }
-        return "${pad}static $decl;"
+        return "${pad}${prefix}static $decl;"
     }
 
     method gen_if {s pad indent} {
@@ -1288,7 +1508,26 @@ oo::class create pak::Codegen {
             StaticDecl  { return [my gen_static_global $decl] }
             LetDecl     { return [my gen_let_global $decl] }
             CfgBlock    { return [my gen_cfg_block $decl] }
-            ComptimeIf  { pak::cg_unported "decl:comptime-if" }
+            ComptimeIf {
+                set cond [my gen_expr [pak::nfield $decl condition]]
+                set then_lines {}
+                foreach d [pak::items [pak::nfield [pak::nfield $decl then] stmts]] {
+                    set r [my gen_decl $d]
+                    if {$r ne ""} { lappend then_lines $r }
+                }
+                set result "#if $cond\n[join $then_lines \n]"
+                set else_br [pak::nfield $decl else_branch]
+                if {![pak::isnil $else_br]} {
+                    set else_lines {}
+                    foreach d [pak::items [pak::nfield $else_br stmts]] {
+                        set r [my gen_decl $d]
+                        if {$r ne ""} { lappend else_lines $r }
+                    }
+                    append result "\n#else\n[join $else_lines \n]"
+                }
+                append result "\n#endif"
+                return $result
+            }
             default     { pak::cg_unported "decl:[pak::kindof $decl]" }
         }
     }

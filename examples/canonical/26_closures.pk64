@@ -1,0 +1,59 @@
+-- 26_closures.pk64
+-- Demonstrates: function pointer types (fn(T) -> R), fn literals (non-capturing),
+-- passing fn pointers as parameters, calling fn pointers, fn literals inline.
+-- Status: [PARTIAL] — fn literals lower to GCC nested functions or plain C function pointers.
+
+-- A function that takes a fn(i32) -> i32 and applies it to a value
+fn apply(f: fn(i32) -> i32, x: i32) -> i32 {
+    return f(x)
+}
+
+-- A function that takes two fn pointers and chains them
+fn compose(f: fn(i32) -> i32, g: fn(i32) -> i32, x: i32) -> i32 {
+    return f(g(x))
+}
+
+-- A function that maps a fn over a range and sums the results
+fn map_sum(f: fn(i32) -> i32, lo: i32, hi: i32) -> i32 {
+    let mut total: i32 = 0
+    for i in lo..hi {
+        total += f(i)
+    }
+    return total
+}
+
+static sink: i32 = 0
+
+entry {
+    -- Non-capturing fn literal assigned to a local
+    let double: fn(i32) -> i32 = fn(x: i32) -> i32 { return x * 2 }
+    sink = double(5)          -- 10
+
+    -- Another fn literal
+    let square: fn(i32) -> i32 = fn(x: i32) -> i32 { return x * x }
+    sink = square(4)          -- 16
+
+    -- Fn literal with no-return
+    let negate: fn(i32) -> i32 = fn(x: i32) -> i32 { return 0 - x }
+    sink = negate(7)          -- -7
+
+    -- Pass fn pointer to apply()
+    sink = apply(double, 6)   -- 12
+    sink = apply(square, 3)   -- 9
+
+    -- Compose two fn pointers: double(square(x)) = double(4) = 8 for x=2
+    sink = compose(double, square, 2)   -- 8
+
+    -- Use fn literal inline as argument (non-capturing)
+    sink = apply(fn(x: i32) -> i32 { return x + 100 }, 5)  -- 105
+
+    -- Map a fn over a range and sum
+    -- map_sum(double, 1, 5) = double(1)+double(2)+double(3)+double(4) = 2+4+6+8 = 20
+    sink = map_sum(double, 1, 5)        -- 20
+
+    -- Capturing closure: captures `base` from enclosing frame
+    let base: i32 = 10
+    let add_base: fn(i32) -> i32 = fn(x: i32) -> i32 { return x + base }
+    sink = add_base(5)        -- 15
+    sink = apply(add_base, 3) -- 13
+}

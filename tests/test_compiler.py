@@ -3997,3 +3997,167 @@ class TestReturnTypeCheck:
         diags = check(src)
         codes = [d.code for d in diags]
         assert 'W201' not in codes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Default parameters and named arguments
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestDefaultParams:
+
+    def test_default_param_filled_when_omitted(self):
+        src = textwrap.dedent('''
+            fn greet(x: i32, y: i32 = 99) -> i32 {
+                return x + y
+            }
+            entry {
+                let r = greet(1)
+            }
+        ''')
+        c = codegen(src)
+        assert 'greet(1, 99)' in c
+
+    def test_default_param_overridable(self):
+        src = textwrap.dedent('''
+            fn greet(x: i32, y: i32 = 99) -> i32 {
+                return x + y
+            }
+            entry {
+                let r = greet(1, 2)
+            }
+        ''')
+        c = codegen(src)
+        assert 'greet(1, 2)' in c
+
+    def test_multiple_defaults_partially_supplied(self):
+        src = textwrap.dedent('''
+            fn foo(a: i32, b: i32 = 10, c: i32 = 20) -> i32 {
+                return a + b + c
+            }
+            entry {
+                let r = foo(5, 15)
+            }
+        ''')
+        c = codegen(src)
+        assert 'foo(5, 15, 20)' in c
+
+    def test_all_defaults_omitted(self):
+        src = textwrap.dedent('''
+            fn zero_or(x: i32 = 0) -> i32 {
+                return x
+            }
+            entry {
+                let r = zero_or()
+            }
+        ''')
+        c = codegen(src)
+        assert 'zero_or(0)' in c
+
+
+class TestNamedArgs:
+
+    def test_named_args_reordered_to_declaration_order(self):
+        src = textwrap.dedent('''
+            fn sub(a: i32, b: i32) -> i32 {
+                return a - b
+            }
+            entry {
+                let r = sub(b: 3, a: 10)
+            }
+        ''')
+        c = codegen(src)
+        assert 'sub(10, 3)' in c
+
+    def test_named_args_with_default_fill(self):
+        src = textwrap.dedent('''
+            fn scale(val: i32, factor: i32 = 2) -> i32 {
+                return val * factor
+            }
+            entry {
+                let r = scale(val: 5)
+            }
+        ''')
+        c = codegen(src)
+        assert 'scale(5, 2)' in c
+
+    def test_positional_before_named(self):
+        src = textwrap.dedent('''
+            fn f(a: i32, b: i32, c: i32 = 0) -> i32 {
+                return a + b + c
+            }
+            entry {
+                let r = f(1, c: 3, b: 2)
+            }
+        ''')
+        c = codegen(src)
+        assert 'f(1, 2, 3)' in c
+
+
+class TestBreakValue:
+
+    def test_break_value_assigns_result(self):
+        src = textwrap.dedent('''
+            entry {
+                let found: i32 = loop {
+                    break 42
+                }
+            }
+        ''')
+        c = codegen(src)
+        assert '_loop_res_' in c
+        assert '= 42' in c
+
+    def test_break_value_with_condition(self):
+        src = textwrap.dedent('''
+            entry {
+                let mut i: i32 = 0
+                let result: i32 = loop {
+                    if i >= 5 {
+                        break i
+                    }
+                    i = i + 1
+                    break 0
+                }
+            }
+        ''')
+        c = codegen(src)
+        assert '_loop_res_' in c
+        assert 'while (true)' in c
+
+    def test_plain_break_unchanged(self):
+        src = textwrap.dedent('''
+            entry {
+                let mut i: i32 = 0
+                loop {
+                    if i > 3 { break }
+                    i = i + 1
+                }
+            }
+        ''')
+        c = codegen(src)
+        assert '_loop_res_' not in c
+        assert 'break;' in c
+
+
+class TestEepromAPI:
+
+    def test_eeprom_present_lowered(self):
+        src = textwrap.dedent('''
+            use n64.eeprom
+            entry {
+                let is_present = eeprom.present()
+            }
+        ''')
+        c = codegen(src)
+        assert 'eeprom_present()' in c
+        assert 'eeprom.present()' not in c
+
+    def test_eeprom_type_detect_lowered(self):
+        src = textwrap.dedent('''
+            use n64.eeprom
+            entry {
+                let t = eeprom.type_detect()
+            }
+        ''')
+        c = codegen(src)
+        assert 'eeprom_type_detect()' in c

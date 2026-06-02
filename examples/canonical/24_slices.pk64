@@ -1,0 +1,98 @@
+-- 24_slices.pk64
+-- Demonstrates: slice types ([]T, []mut T), slice expressions (arr[start..end]),
+-- slice field access (.len), passing slices to functions, for-loop over slice,
+-- slice of struct array.
+-- Status: [IMPLEMENTED]
+
+struct Point {
+    x: i32
+    y: i32
+}
+
+-- Function that takes an immutable slice of i32 and returns the sum
+fn sum(s: []i32) -> i32 {
+    let mut total: i32 = 0
+    for item in s {
+        total += item
+    }
+    return total
+}
+
+-- Function that takes a slice of i32 and returns the max element
+fn find_max(s: []i32) -> i32 {
+    let mut best: i32 = s[0]
+    for item in s {
+        if item > best { best = item }
+    }
+    return best
+}
+
+-- Function that takes a mutable slice and doubles each element
+fn double_all(s: []mut i32) {
+    for i in 0..s.len {
+        s[i] = s[i] * 2
+    }
+}
+
+-- Function that takes a slice of Points and sums the x fields
+fn sum_x(pts: []Point) -> i32 {
+    let mut total: i32 = 0
+    for p in pts {
+        total += p.x
+    }
+    return total
+}
+
+static sink: i32 = 0
+
+entry {
+    -- Declare a fixed array of i32
+    let nums: [8]i32 = undefined
+    nums[0] = 10
+    nums[1] = 20
+    nums[2] = 30
+    nums[3] = 40
+    nums[4] = 50
+    nums[5] = 60
+    nums[6] = 70
+    nums[7] = 80
+
+    -- Create a slice from the full array
+    let full: []i32 = nums[0..8]
+    sink = full.len              -- 8
+
+    -- Create a sub-slice (elements 0..4)
+    let first_half: []i32 = nums[0..4]
+    sink = first_half.len        -- 4
+
+    -- Pass slice to a function
+    sink = sum(first_half)       -- 100
+
+    -- Slice of the second half
+    let second_half: []i32 = nums[4..8]
+    sink = sum(second_half)      -- 260
+
+    -- Find max in full slice
+    sink = find_max(full)        -- 80
+
+    -- Mutable slice — modify elements in place
+    let part: []mut i32 = nums[0..4]
+    double_all(part)
+    sink = nums[0]               -- 20 (was 10)
+    sink = sum(first_half)       -- 200 (doubled)
+
+    -- Slice of struct array
+    let points: [4]Point = undefined
+    points[0] = Point { x: 1, y: 10 }
+    points[1] = Point { x: 2, y: 20 }
+    points[2] = Point { x: 3, y: 30 }
+    points[3] = Point { x: 4, y: 40 }
+
+    let pt_slice: []Point = points[0..4]
+    sink = pt_slice.len          -- 4
+    sink = sum_x(pt_slice)       -- 10
+
+    -- Slice length field access
+    let mid: []Point = points[1..3]
+    sink = mid.len               -- 2
+}

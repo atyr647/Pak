@@ -50,7 +50,9 @@ set ::pak::CG_API [dict create \
     {dma wait} {dma_wait} \
     {dma write} {dma_write} \
     {eeprom init} {eeprom_init} \
+    {eeprom present} {eeprom_present} \
     {eeprom read} {eeprom_read} \
+    {eeprom type_detect} {eeprom_type_detect} \
     {eeprom write} {eeprom_write} \
     {exception get_handler} {exception_get_handler} \
     {exception set_handler} {exception_set_handler} \

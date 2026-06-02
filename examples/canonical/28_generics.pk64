@@ -1,0 +1,88 @@
+-- 28_generics.pk64
+-- Demonstrates: generic functions and generic structs with monomorphization.
+-- Generic functions are specialized per call-site type; generic structs emit
+-- a separate C typedef per instantiation (e.g. Pair_int32_t, Pair_float).
+-- Status: [IMPLEMENTED]
+
+-- Generic identity function
+fn identity<T>(x: T) -> T {
+    return x
+}
+
+-- Generic max_of: returns the larger of two values (by value comparison)
+-- Note: T must be a comparable type at call site
+fn max_of<T>(a: T, b: T) -> T {
+    if a > b { return a }
+    return b
+}
+
+-- Generic swap: returns the second argument (demonstrates two T params used)
+fn swap_first<T>(a: T, b: T) -> T {
+    return b
+}
+
+-- Generic struct: Pair<T> holds two values of the same type
+struct Pair<T> {
+    first: T
+    second: T
+}
+
+-- Generic impl: methods on Pair<T>
+impl Pair<T> {
+    fn sum_i32(self: *Pair<T>) -> T {
+        return self.first + self.second
+    }
+
+    fn get_first(self: *Pair<T>) -> T {
+        return self.first
+    }
+
+    fn get_second(self: *Pair<T>) -> T {
+        return self.second
+    }
+}
+
+-- Generic struct with two type parameters
+struct KeyVal<K, V> {
+    key: K
+    value: V
+}
+
+static sink_i: i32 = 0
+static sink_f: f32 = 0.0
+
+entry {
+    -- Generic function: identity<T> specializes to identity_int32_t and identity_float
+    sink_i = identity(42)           -- i32 specialization
+    sink_f = identity(3.14)         -- f32 specialization
+    let flag = identity(true)       -- bool specialization
+
+    -- Generic max_of: specialized per type
+    sink_i = max_of(3, 7)           -- 7  (i32)
+    sink_f = max_of(1.5, 2.5)       -- 2.5 (f32)
+    sink_i = max_of(100, 50)        -- 100
+
+    -- Generic swap_first
+    sink_i = swap_first(1, 2)       -- 2
+
+    -- Generic struct Pair<i32>
+    let p: Pair<i32> = Pair<i32> { first: 10, second: 32 }
+    sink_i = p.first                -- 10
+    sink_i = p.second               -- 32
+    sink_i = p.sum_i32()            -- 42
+    sink_i = p.get_first()          -- 10
+
+    -- Generic struct Pair<f32>
+    let fp: Pair<f32> = Pair<f32> { first: 1.5, second: 2.5 }
+    sink_f = fp.first               -- 1.5
+    sink_f = fp.sum_i32()           -- 4.0
+    sink_f = fp.get_second()        -- 2.5
+
+    -- Explicit type arguments on function call
+    sink_i = identity<i32>(99)      -- 99 (explicit monomorphization)
+
+    -- KeyVal generic struct with two type params
+    let kv: KeyVal<i32, f32> = KeyVal<i32, f32> { key: 1, value: 9.9 }
+    sink_i = kv.key                 -- 1
+    sink_f = kv.value               -- 9.9
+}

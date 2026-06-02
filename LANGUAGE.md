@@ -403,8 +403,8 @@ fn critical_path(data: *u8, len: i32) {
 
 - Parameters are immutable by default.
 - `mut param: Type` makes the parameter mutable (copy-on-write for value types).
-- Default values: `fn foo(x: i32 = 0)` [PARTIAL]
-- Named arguments at call site: `foo(x: 5, y: 10)` [PARTIAL]
+- Default values: `fn foo(x: i32 = 0)` [IMPLEMENTED]
+- Named arguments at call site: `foo(x: 5, y: 10)` [IMPLEMENTED]
 
 ### Methods (inside `impl`)
 
@@ -758,7 +758,18 @@ See [Section 12](#12-pattern-matching).
 ```pak
 break           -- exit loop
 continue        -- next iteration
-break value     -- break with value (PARTIAL)
+break value     -- break with value (loop-as-expression) [IMPLEMENTED]
+```
+
+Loop-as-expression: `loop` and `while` blocks can appear as the right-hand
+side of a `let` binding. The `break value` exits with a value that becomes
+the binding's initial value:
+
+```pak
+let found: i32 = loop {
+    if condition { break 42 }
+    break 0
+}
 ```
 
 ### Return [IMPLEMENTED]

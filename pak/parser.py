@@ -715,7 +715,16 @@ class Parser:
             return ast.Return(value=val, line=line, col=col)
         elif tok.type == TT.BREAK:
             self.advance()
-            return ast.Break(line=line, col=col)
+            # Optional break value: `break expr` — used for loop-as-expression.
+            # Value is only present if the next token is on the same line as break.
+            val = None
+            next_tok = self.peek()
+            if (next_tok.line == line
+                    and not self.check(TT.RBRACE)
+                    and not self.check(TT.EOF)
+                    and not self.check(TT.SEMICOLON)):
+                val = self.parse_expr()
+            return ast.Break(value=val, line=line, col=col)
         elif tok.type == TT.CONTINUE:
             self.advance()
             return ast.Continue(line=line, col=col)
@@ -1490,6 +1499,18 @@ class Parser:
                     end = self.parse_primary()
                 return ast.RangeExpr(start=ast.IntLit(value=ival, raw=raw, line=line, col=col), end=end, line=line, col=col)
             return ast.IntLit(value=ival, raw=raw, line=line, col=col)
+
+        # loop { ... } and while cond { ... } as expressions (break-with-value)
+        if tok.type == TT.LOOP:
+            self.advance()
+            body = self.parse_block()
+            return ast.LoopStmt(body=body, line=line, col=col)
+
+        if tok.type == TT.WHILE:
+            self.advance()
+            cond = self.parse_expr()
+            body = self.parse_block()
+            return ast.WhileStmt(condition=cond, body=body, line=line, col=col)
 
         raise ParseError(f'Unexpected token in expression', tok)
 

@@ -1,0 +1,78 @@
+-- 27_dyn_trait.pk64
+-- Demonstrates: dyn Trait trait objects with vtable dispatch.
+-- Two structs implement a Shape trait; methods are called through dyn Shape values.
+-- Use TraitName_from_TypeName(&obj) to construct a trait object.
+-- Status: [PARTIAL] — vtable structs emitted, method calls dispatch via function pointers.
+
+trait Shape {
+    fn area(self: *Self) -> f32
+    fn perimeter(self: *Self) -> f32
+}
+
+struct Circle {
+    radius: f32
+}
+
+struct Rect {
+    width: f32
+    height: f32
+}
+
+impl Circle for Shape {
+    fn area(self: *Circle) -> f32 {
+        -- pi * r^2, approximated as 3.14159 * r * r
+        return 3.14159 * self.radius * self.radius
+    }
+    fn perimeter(self: *Circle) -> f32 {
+        -- 2 * pi * r
+        return 6.28318 * self.radius
+    }
+}
+
+impl Rect for Shape {
+    fn area(self: *Rect) -> f32 {
+        return self.width * self.height
+    }
+    fn perimeter(self: *Rect) -> f32 {
+        return 2.0 * (self.width + self.height)
+    }
+}
+
+-- Function taking a dyn Shape and returning its area
+fn get_area(s: dyn Shape) -> f32 {
+    return s.area()
+}
+
+-- Function taking a dyn Shape and returning its perimeter
+fn get_perimeter(s: dyn Shape) -> f32 {
+    return s.perimeter()
+}
+
+static sink_f: f32 = 0.0
+static sink_i: i32 = 0
+
+entry {
+    -- Create a Circle and wrap as dyn Shape using the generated constructor
+    let mut c = Circle { radius: 5.0 }
+    let shape_c: dyn Shape = Shape_from_Circle(&c)
+    sink_f = shape_c.area()          -- ~78.54
+    sink_f = shape_c.perimeter()     -- ~31.42
+
+    -- Create a Rect and wrap as dyn Shape
+    let mut r = Rect { width: 4.0, height: 6.0 }
+    let shape_r: dyn Shape = Shape_from_Rect(&r)
+    sink_f = shape_r.area()          -- 24.0
+    sink_f = shape_r.perimeter()     -- 20.0
+
+    -- Call through helper functions (dyn Shape passed by value)
+    sink_f = get_area(shape_c)       -- ~78.54
+    sink_f = get_area(shape_r)       -- 24.0
+    sink_f = get_perimeter(shape_r)  -- 20.0
+
+    -- Direct method calls on concrete types still work
+    sink_f = c.area()                -- ~78.54
+    sink_f = r.area()                -- 24.0
+
+    -- Cast area to i32 for easy comparison
+    sink_i = shape_r.area() as i32   -- 24
+}
