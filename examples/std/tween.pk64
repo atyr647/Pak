@@ -1,0 +1,121 @@
+-- tween.pk64
+-- Self-contained easing functions + a Tween value animator for Pak games.
+--
+-- The easing functions take a normalized time t in [0,1] and return an eased
+-- value in [0,1]: linear, ease_in_quad, ease_out_quad, ease_in_out_quad, and
+-- smoothstep. A Tween animates a single f32 from `from` to `to` over `duration`
+-- seconds: call tween_update() each frame with dt, then tween_value() for the
+-- current eased value (it uses ease_in_out_quad). tween_done() reports completion.
+--
+-- Usage:
+--     let mut tw = tween_new(0.0, 100.0, 2.0)
+--     tween_update(&mut tw, dt)
+--     let v = tween_value(&tw)
+--     if tween_done(&tw) { ... }
+
+use n64.math
+
+struct Tween {
+    start: f32
+    to: f32
+    duration: f32
+    elapsed: f32
+}
+
+-- Clamp t into [0,1] so easing stays well-defined past the endpoints.
+fn clamp01(t: f32) -> f32 {
+    return math.clamp_f(t, 0.0, 1.0)
+}
+
+-- Identity easing.
+fn linear(t: f32) -> f32 {
+    return clamp01(t)
+}
+
+-- Accelerating from zero (t^2).
+fn ease_in_quad(t: f32) -> f32 {
+    let c = clamp01(t)
+    return c * c
+}
+
+-- Decelerating to the end (1 - (1-t)^2).
+fn ease_out_quad(t: f32) -> f32 {
+    let c = clamp01(t)
+    let inv = 1.0 - c
+    return 1.0 - inv * inv
+}
+
+-- Accelerate then decelerate; symmetric S-curve based on quadratics.
+fn ease_in_out_quad(t: f32) -> f32 {
+    let c = clamp01(t)
+    if c < 0.5 {
+        return 2.0 * c * c
+    }
+    let inv = 1.0 - c
+    return 1.0 - 2.0 * inv * inv
+}
+
+-- Hermite smoothstep: 3t^2 - 2t^3. Smooth at both ends, slightly cheaper feel.
+fn smoothstep(t: f32) -> f32 {
+    let c = clamp01(t)
+    return c * c * (3.0 - 2.0 * c)
+}
+
+-- Build a tween animating start -> to over duration seconds.
+fn tween_new(start: f32, to: f32, duration: f32) -> Tween {
+    return Tween {
+        start: start,
+        to: to,
+        duration: duration,
+        elapsed: 0.0,
+    }
+}
+
+-- Advance elapsed time, clamped to the duration so it never overshoots.
+fn tween_update(tw: *mut Tween, dt: f32) {
+    tw.elapsed += dt
+    if tw.elapsed > tw.duration {
+        tw.elapsed = tw.duration
+    }
+}
+
+-- Current interpolated value using ease_in_out_quad over normalized progress.
+fn tween_value(tw: *Tween) -> f32 {
+    let mut t: f32 = 1.0
+    if tw.duration > 0.0 {
+        t = tw.elapsed / tw.duration
+    }
+    let e = ease_in_out_quad(t)
+    return tw.start + (tw.to - tw.start) * e
+}
+
+-- True once elapsed time has reached the duration.
+fn tween_done(tw: *Tween) -> bool {
+    return tw.elapsed >= tw.duration
+}
+
+-- Restart the tween from the beginning (keeps from/to/duration).
+fn tween_reset(tw: *mut Tween) {
+    tw.elapsed = 0.0
+}
+
+static sink: f32 = 0.0
+
+-- Usage demo / self-test. A library file with free functions needs an entry
+-- block to satisfy `pak check`; delete it when you `use` this as a module.
+entry {
+    sink = linear(0.5)
+    sink = ease_in_quad(0.5)
+    sink = ease_out_quad(0.5)
+    sink = ease_in_out_quad(0.25)
+    sink = smoothstep(0.5)
+
+    let mut tw = tween_new(0.0, 100.0, 1.0)
+    tween_update(&mut tw, 0.5)
+    sink = tween_value(&tw)
+    tween_update(&mut tw, 0.6)
+    sink = tween_value(&tw)
+    if tween_done(&tw) {
+        tween_reset(&mut tw)
+    }
+}

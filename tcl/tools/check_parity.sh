@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Compare the Tcl checker's diagnostics against the Python checker (oracle) on
-# every .pak file, plus the dedicated fixtures in tcl/tests/check that exercise
+# every .pk64 file, plus the dedicated fixtures in tcl/tests/check that exercise
 # each diagnostic code. A file "matches" when both emit identical diagnostics
 # (code + severity + message + hint), in the same order.
 #
@@ -32,7 +32,7 @@ while IFS= read -r f; do
             diff <(printf '%s' "$py") <(printf '%s' "$tcl") | head -25
         fi
     fi
-done < <( { find examples ai tests -name '*.pak'; find tcl/tests/check -name '*.pak'; } | sort )
+done < <( { find examples ai tests -name '*.pk64'; find tcl/tests/check -name '*.pk64'; } | sort )
 
 total=$((match+unported+mismatch))
 echo "checker parity: MATCH=$match  UNPORTED=$unported  MISMATCH=$mismatch  (of $total)"

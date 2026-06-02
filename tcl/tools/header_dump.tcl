@@ -1,5 +1,5 @@
 #!/usr/bin/env tclsh
-# Emit the Tcl header generator's output for a .pak file + module path.
+# Emit the Tcl header generator's output for a .pk64 file + module path.
 set here [file dirname [file normalize [info script]]]
 source [file join $here .. parser.tcl]
 source [file join $here .. headergen.tcl]

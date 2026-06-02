@@ -1,0 +1,44 @@
+-- INVALID: wrong_containers.pk64
+-- NOTE: This file is DOCUMENTATION ONLY. The bad code is commented out.
+-- For actual failing test cases, see tests/invalid/ (verified by pak check).
+-- Error: Invented container methods and types that don't exist in Pak.
+
+entry {
+    -- WRONG: no .push(), .pop(), .len(), .append() on arrays
+    -- let mut arr: [8]i32 = undefined
+    -- arr.push(5)           -- arrays have no methods
+    -- let n = arr.len()     -- no .len() method
+
+    -- WRONG: inventing a Vec with methods
+    -- let mut v: Vec(i32) = Vec.new()   -- Vec.new() doesn't exist
+    -- v.push(1)                          -- no .push()
+    -- v.push(2)
+    -- let first = v[0]                   -- indexing may not work
+
+    -- WRONG: inventing module functions
+    -- let buf = memory.alloc(256)    -- no memory module
+    -- string.format("hello {}", x)   -- no string module
+
+    -- CORRECT: use raw arrays with explicit length tracking
+    let mut arr: [8]i32 = undefined
+    let mut count: i32 = 0
+
+    arr[count] = 5
+    count += 1
+    arr[count] = 10
+    count += 1
+
+    -- access by index
+    let first = arr[0]
+
+    -- pass to function with explicit length
+    -- process(&arr[0], count)
+
+    let _ = first
+    let _ = count
+
+    -- CORRECT: alloc is a built-in keyword, not a module call
+    let heap: *i32 = alloc(i32)
+    *heap = 42
+    free(heap)
+}

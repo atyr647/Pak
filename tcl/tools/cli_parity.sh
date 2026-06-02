@@ -15,11 +15,11 @@ ok() { echo "  $1: MATCH"; }
 bad() { echo "  $1: MISMATCH"; fail=1; }
 
 mksample() { local d=$1; mkdir -p "$d/src"; printf '[project]\nname = "demo"\nrom_title = "DEMO GAME"\nsave_type = "eeprom4k"\n\n[display]\nresolution = "320x240"\nbit_depth = 16\nframebuffers = 3\n\n[dependencies]\ntiny3d = false\n\n[build]\noptimization = "debug"\n' > "$d/pak.toml"
-printf 'use n64.display\n\nstruct P { x: i32, y: i32 }\nfn mk() -> P { return P { x: 1, y: 2 } }\nentry { display.init(0,2,3,0,1)\n  let p = mk()\n  loop { } }\n' > "$d/src/main.pak"; }
+printf 'use n64.display\n\nstruct P { x: i32, y: i32 }\nfn mk() -> P { return P { x: 1, y: 2 } }\nentry { display.init(0,2,3,0,1)\n  let p = mk()\n  loop { } }\n' > "$d/src/main.pk64"; }
 
 T=$(mktemp -d)
 # explain c + mips
-f=examples/canonical/05_enums.pak
+f=examples/canonical/05_enums.pk64
 diff <(eval $PY explain "$f" 2>&1|norm) <(eval $TCL explain "$f" 2>&1|norm) >/dev/null && ok "explain-c" || bad "explain-c"
 diff <(eval $PY explain --backend mips "$f" 2>&1) <(eval $TCL explain --backend mips "$f" 2>&1) >/dev/null && ok "explain-mips" || bad "explain-mips"
 # build c
@@ -34,7 +34,7 @@ diff "$T/bm_py/build/src/main.s" "$T/bm_tcl/build/src/main.s" >/dev/null && ok "
 # init
 mkdir -p "$T/i_py" "$T/i_tcl"
 (cd "$T/i_py" && eval $PY init g >/dev/null 2>&1); (cd "$T/i_tcl" && eval $TCL init g >/dev/null 2>&1)
-for ff in pak.toml src/main.pak .gitignore; do
+for ff in pak.toml src/main.pk64 .gitignore; do
   diff "$T/i_py/g/$ff" "$T/i_tcl/g/$ff" >/dev/null && ok "init-$ff" || bad "init-$ff"
 done
 # pack

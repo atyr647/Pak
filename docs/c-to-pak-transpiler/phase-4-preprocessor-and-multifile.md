@@ -98,7 +98,7 @@ C headers serve multiple purposes that PAK handles differently:
 
 | C Header Pattern | PAK Equivalent |
 |-----------------|----------------|
-| Type declarations (struct, enum, typedef) | Declarations in `.pak` file (shared via module) |
+| Type declarations (struct, enum, typedef) | Declarations in `.pk64` file (shared via module) |
 | Function prototypes | Not needed — PAK resolves within module |
 | `#define` constants | `const` declarations |
 | `extern` variable declarations | `extern` declarations or `use` imports |
@@ -109,7 +109,7 @@ C headers serve multiple purposes that PAK handles differently:
 1. **Parse all `.h` files first** to build a type/symbol table.
 2. **Parse each `.c` file** using the symbol table for type resolution.
 3. **Merge `.c` + `.h` pairs**: If `player.c` includes `player.h`, merge them into one
-   `player.pak` module.
+   `player.pk64` module.
 4. **Shared headers** (`types.h`, `common.h`): Become a shared PAK module that others `use`.
 
 ### Example
@@ -130,10 +130,10 @@ project/
 
 ```
 project_pak/
-├── types.pak         # shared types (from types.h)
-├── player.pak        # merged player.h + player.c
-├── enemy.pak         # merged enemy.h + enemy.c
-└── main.pak          # main.c, with `use player` and `use enemy`
+├── types.pk64         # shared types (from types.h)
+├── player.pk64        # merged player.h + player.c
+├── enemy.pk64         # merged enemy.h + enemy.c
+└── main.pk64          # main.c, with `use player` and `use enemy`
 ```
 
 ### Include Graph Resolution
@@ -161,7 +161,7 @@ pak convert project/src/ \
 3. Build the global type table (all structs, enums, typedefs across all files).
 4. Convert each `.c` file individually, referencing the global type table.
 5. Emit `use` declarations for cross-module references.
-6. Write each `.pak` file to the output directory.
+6. Write each `.pk64` file to the output directory.
 
 ### Handling Extern Declarations
 
@@ -175,7 +175,7 @@ int player_count = 0;
 void player_spawn(Vec2 pos) { /* ... */ }
 ```
 
-In the merged `player.pak`:
+In the merged `player.pk64`:
 ```pak
 static mut player_count: i32 = 0
 
@@ -199,5 +199,5 @@ A 3-file C project with:
 - Cross-file function calls.
 - `#define` constants and one function-like macro.
 
-The transpiler produces 3 `.pak` files with correct `use` declarations, and all three
+The transpiler produces 3 `.pk64` files with correct `use` declarations, and all three
 compile and type-check successfully.

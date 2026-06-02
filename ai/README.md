@@ -106,7 +106,7 @@ ai/
 
 | Category | Description | Seed Count |
 |----------|-------------|------------|
-| full_program | Complete .pak programs from canonical examples | 22 |
+| full_program | Complete .pk64 programs from canonical examples | 22 |
 | explanation | "Explain this code" reverse pairs | 22 |
 | syntax | Language syntax Q&A from LANGUAGE.md | 15 |
 | api_reference | Module API docs from STDLIB.md | 14 |

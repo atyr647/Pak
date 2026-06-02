@@ -757,7 +757,7 @@ class TestTypechecker:
         ''')
         prog1 = parse(src1)
         prog2 = parse(src2)
-        results = typecheck_multi([('math.pak', prog1), ('main.pak', prog2)])
+        results = typecheck_multi([('math.pk64', prog1), ('main.pk64', prog2)])
         # add() should be found — no E010 or E012 in either file
         all_errs = [e for errs in results.values() for e in errs]
         codes = [e.code for e in all_errs]
@@ -1604,23 +1604,23 @@ class TestOkErr:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# features.pak end-to-end
+# features.pk64 end-to-end
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestFeaturesPak:
 
     def test_features_pak_compiles(self):
-        """examples/features.pak should parse and codegen without errors."""
+        """examples/features.pk64 should parse and codegen without errors."""
         import pathlib
-        src = pathlib.Path('examples/features.pak').read_text()
+        src = pathlib.Path('examples/features.pk64').read_text()
         c = codegen(src)
         assert 'Player' in c
         assert 'update_player' in c
 
     def test_features_pak_no_type_errors(self):
-        """examples/features.pak should produce no type errors."""
+        """examples/features.pk64 should produce no type errors."""
         import pathlib
-        src = pathlib.Path('examples/features.pak').read_text()
+        src = pathlib.Path('examples/features.pk64').read_text()
         errors = check(src)
         # Filter out module-related false positives from use declarations
         real_errors = [e for e in errors if e.code not in ('E010',)]

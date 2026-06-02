@@ -25,7 +25,7 @@ pytestmark = pytest.mark.requires_pak
 
 
 def _check(source: str) -> tuple[int, str]:
-    with tempfile.NamedTemporaryFile(suffix=".pak", mode="w",
+    with tempfile.NamedTemporaryFile(suffix=".pk64", mode="w",
                                      encoding="utf-8", delete=False) as f:
         f.write(textwrap.dedent(source).strip())
         tmp = Path(f.name)

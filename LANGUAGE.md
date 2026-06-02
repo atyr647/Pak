@@ -40,7 +40,7 @@ Every feature is tagged:
 
 ## 1. File Structure
 
-A `.pak` file is a flat sequence of top-level declarations. There is no mandatory
+A `.pk64` file is a flat sequence of top-level declarations. There is no mandatory
 header or boilerplate. Order of declarations matters for forward references.
 
 ```pak

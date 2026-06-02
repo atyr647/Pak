@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Compare the Tcl typechecker's diagnostics against the Python typechecker
-# (oracle) on every .pak file, plus the fixtures in tcl/tests that exercise the
+# (oracle) on every .pk64 file, plus the fixtures in tcl/tests that exercise the
 # individual diagnostic codes. A file "matches" when both emit identical
 # diagnostics (code + severity + message + hint) in the same accumulation order.
 #
@@ -28,7 +28,7 @@ while IFS= read -r f; do
             diff <(printf '%s' "$py") <(printf '%s' "$tcl") | head -25
         fi
     fi
-done < <( { find examples ai tests -name '*.pak'; find tcl/tests -name '*.pak'; } | sort )
+done < <( { find examples ai tests -name '*.pk64'; find tcl/tests -name '*.pk64'; } | sort )
 
 total=$((match+unported+mismatch))
 echo "typechecker parity: MATCH=$match  UNPORTED=$unported  MISMATCH=$mismatch  (of $total)"

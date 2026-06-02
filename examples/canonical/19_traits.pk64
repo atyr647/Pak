@@ -1,0 +1,57 @@
+-- 19_traits.pk64
+-- Demonstrates: trait definition, impl for trait.
+-- Status: [PARTIAL] — parsed and type-checked, codegen partial.
+
+trait Drawable {
+    fn draw(self: *Self, x: i32, y: i32)
+    fn get_width(self: *Self) -> i32
+    fn get_height(self: *Self) -> i32
+}
+
+trait Updatable {
+    fn update(self: *Self, dt: f32)
+}
+
+struct Sprite {
+    x: i32
+    y: i32
+    w: i32
+    h: i32
+}
+
+impl Sprite for Drawable {
+    fn draw(self: *Sprite, x: i32, y: i32) {
+        self.x = x
+        self.y = y
+    }
+    fn get_width(self: *Sprite) -> i32 {
+        return self.w
+    }
+    fn get_height(self: *Sprite) -> i32 {
+        return self.h
+    }
+}
+
+struct Enemy {
+    x: f32
+    y: f32
+    speed: f32
+}
+
+impl Enemy for Updatable {
+    fn update(self: *Enemy, dt: f32) {
+        self.x += self.speed * dt
+    }
+}
+
+static sink: i32 = 0
+
+entry {
+    let mut spr = Sprite { x: 0, y: 0, w: 16, h: 16 }
+    spr.draw(10, 20)
+    sink = spr.get_width()
+
+    let mut enemy = Enemy { x: 0.0, y: 0.0, speed: 50.0 }
+    enemy.update(0.016)
+    sink = enemy.x as i32
+}

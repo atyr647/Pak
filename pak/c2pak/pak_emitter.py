@@ -1,4 +1,4 @@
-"""PAK emitter: top-level orchestrator that converts a CFile to .pak source.
+"""PAK emitter: top-level orchestrator that converts a CFile to .pk64 source.
 
 Pipeline:
   1. Register typedefs with TypeMapper.
@@ -59,7 +59,7 @@ class EmitOptions:
 
 
 class PakEmitter:
-    """Converts a CFile AST to a .pak source string."""
+    """Converts a CFile AST to a .pk64 source string."""
 
     def __init__(self, options: EmitOptions = None):
         self.options = options or EmitOptions()

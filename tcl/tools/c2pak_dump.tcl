@@ -1,5 +1,5 @@
 #!/usr/bin/env tclsh
-# Tcl c2pak transpile of a .c file -> .pak text (CGUNPORTED -> UNPORTED marker).
+# Tcl c2pak transpile of a .c file -> .pk64 text (CGUNPORTED -> UNPORTED marker).
 set here [file dirname [file normalize [info script]]]
 source [file join $here .. c2pak.tcl]
 set path [lindex $argv 0]

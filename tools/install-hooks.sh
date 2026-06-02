@@ -19,4 +19,4 @@ ln -sf "../../tools/pre-commit" "$HOOKS_DIR/pre-commit"
 chmod +x "$SCRIPT_DIR/pre-commit"
 
 echo "Installed: .git/hooks/pre-commit -> tools/pre-commit"
-echo "Staged .pak files will now be validated before every commit."
+echo "Staged .pk64 files will now be validated before every commit."

@@ -1,6 +1,6 @@
 #!/usr/bin/env tclsh
 # Emit Tcl-generated Makefiles for a fixed set of scenarios (the makefile_gen
-# port has no .pak corpus; parity is checked over representative parameter
+# port has no .pk64 corpus; parity is checked over representative parameter
 # combinations covering c/mips backends, tiny3d, pakfs, save types, repr()).
 set here [file dirname [file normalize [info script]]]
 source [file join $here .. makefile_gen.tcl]

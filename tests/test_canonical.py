@@ -20,10 +20,10 @@ CANONICAL_DIR = Path(__file__).parent.parent / "examples" / "canonical"
 
 
 def _canonical_files():
-    """Collect all .pak files from examples/canonical/."""
+    """Collect all .pk64 files from examples/canonical/."""
     return [
         pytest.param(f, id=f.name)
-        for f in sorted(CANONICAL_DIR.glob("*.pak"))
+        for f in sorted(CANONICAL_DIR.glob("*.pk64"))
     ]
 
 

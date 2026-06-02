@@ -345,7 +345,7 @@ class TestDiffStatic:
 
 
 class TestExamplePrograms:
-    """Graduation criterion: example .pak files compile via MIPS backend."""
+    """Graduation criterion: example .pk64 files compile via MIPS backend."""
 
     def _compile_example(self, path):
         import os
@@ -361,17 +361,17 @@ class TestExamplePrograms:
         return asm
 
     def test_features_pak(self):
-        asm = self._compile_example('examples/features.pak')
+        asm = self._compile_example('examples/features.pk64')
         assert 'main:' in asm
         assert len(asm) > 100
 
     def test_sprite_game_pak(self):
-        asm = self._compile_example('examples/sprite_game.pak')
+        asm = self._compile_example('examples/sprite_game.pk64')
         assert 'main:' in asm
         assert len(asm) > 100
 
     def test_model_viewer_pak(self):
-        asm = self._compile_example('examples/model_viewer.pak')
+        asm = self._compile_example('examples/model_viewer.pk64')
         assert 'main:' in asm
 
 

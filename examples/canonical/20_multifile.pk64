@@ -1,0 +1,15 @@
+-- 20_multifile.pk64
+-- Demonstrates: module declaration and cross-file structure.
+-- Status: [PARTIAL]
+--
+-- In a multi-file project, declare the module path at the top of each file.
+-- The entry block lives in only one file (typically main.pk64).
+-- Other files declare their module path and are imported via 'use'.
+
+module main
+
+-- use other.module   -- would import another file's module
+
+entry {
+    -- entry block exists in only one file per project
+}

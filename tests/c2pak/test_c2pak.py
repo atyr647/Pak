@@ -8,7 +8,7 @@ Tests are organized by phase milestone:
 
 Modes:
   - Syntax check: transpiled PAK parses without errors (uses PAK parser)
-  - Snapshot check: output matches expected .pak file
+  - Snapshot check: output matches expected .pk64 file
   - Content check: output contains expected patterns
 """
 

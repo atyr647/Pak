@@ -13,7 +13,7 @@ UPDATING SNAPSHOTS:
         pytest tests/test_snapshots.py --update-snapshots
 
     Or regenerate one file manually:
-        pak explain examples/canonical/05_enums.pak > tests/snapshots/05_enums.c
+        pak explain examples/canonical/05_enums.pk64 > tests/snapshots/05_enums.c
 
 EXPECTATIONS:
 - Snapshots change when the compiler's C backend is intentionally modified.
@@ -53,7 +53,7 @@ def _normalize(c_source: str) -> str:
 def _canonical_files():
     return [
         pytest.param(f, id=f.name)
-        for f in sorted(CANONICAL_DIR.glob("*.pak"))
+        for f in sorted(CANONICAL_DIR.glob("*.pk64"))
     ]
 
 

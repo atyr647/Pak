@@ -295,7 +295,7 @@ repo):
 - Has a main loop with input handling.
 - Loads sprite assets.
 
-The transpiler produces a `.pak` file that:
+The transpiler produces a `.pk64` file that:
 - Uses `n64.*` module calls instead of raw C function names.
 - Has an `entry` block instead of `int main`.
 - Has `asset` declarations for ROM resources.

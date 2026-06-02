@@ -23,7 +23,7 @@ oracle() {  # $1 = pak file
     if [ "$HAVE_PAK" = "1" ]; then
         pak explain "$f" 2>/dev/null | norm
     else
-        local snap="tests/snapshots/$(basename "$f" .pak).c"
+        local snap="tests/snapshots/$(basename "$f" .pk64).c"
         [ -f "$snap" ] && norm < "$snap"
     fi
 }
@@ -48,7 +48,7 @@ while IFS= read -r f; do
             diff <(printf '%s' "$py") <(printf '%s' "$tcl") | head -40
         fi
     fi
-done < <(find examples/canonical -name '*.pak' | sort)
+done < <(find examples/canonical -name '*.pk64' | sort)
 
 total=$((match+unported+mismatch))
 echo "codegen parity: MATCH=$match  UNPORTED=$unported  MISMATCH=$mismatch  (of $total canonical)"

@@ -40,7 +40,7 @@ jobs:
       - name: Verify all canonical examples pass pak check
         run: |
           failed=0
-          for f in examples/canonical/*.pak; do
+          for f in examples/canonical/*.pk64; do
             if ! pak check "$f" > /dev/null 2>&1; then
               echo "FAIL: $f"
               pak check "$f"
@@ -53,7 +53,7 @@ jobs:
       - name: Verify all invalid test examples fail pak check
         run: |
           failed=0
-          for f in tests/invalid/*.pak; do
+          for f in tests/invalid/*.pk64; do
             if pak check "$f" > /dev/null 2>&1; then
               echo "FAIL (should have failed): $f"
               failed=1
@@ -67,8 +67,8 @@ jobs:
       - name: Check pak explain snapshots are up to date
         run: |
           failed=0
-          for f in examples/canonical/*.pak; do
-            name=$(basename "$f" .pak)
+          for f in examples/canonical/*.pk64; do
+            name=$(basename "$f" .pk64)
             snapshot="tests/snapshots/${name}.c"
             if [ ! -f "$snapshot" ]; then
               echo "MISSING SNAPSHOT: $snapshot"

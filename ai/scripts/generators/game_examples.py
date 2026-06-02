@@ -1,4 +1,4 @@
-"""Load hand-crafted .pak game files and generate training pairs from them."""
+"""Load hand-crafted .pk64 game files and generate training pairs from them."""
 
 import re
 from pathlib import Path
@@ -73,7 +73,7 @@ def gen_game_examples() -> list[dict]:
         print(f"WARNING: {GAMES_DIR} not found")
         return pairs
 
-    for pak_file in sorted(GAMES_DIR.glob("*.pak")):
+    for pak_file in sorted(GAMES_DIR.glob("*.pk64")):
         name = pak_file.stem
         code = pak_file.read_text(encoding="utf-8").strip()
 

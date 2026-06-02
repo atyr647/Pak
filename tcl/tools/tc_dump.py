@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Serialize the Python typechecker's diagnostics to a canonical form for parity.
 
-For each .pak file: parse, run typecheck (style warnings ON, the default), and
+For each .pk64 file: parse, run typecheck (style warnings ON, the default), and
 print one line per diagnostic in accumulation order (errors and warnings
 interleaved, exactly as TypeChecker.check returns them):
 

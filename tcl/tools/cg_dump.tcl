@@ -1,5 +1,5 @@
 #!/usr/bin/env tclsh
-# Emit the Tcl codegen's C output for a .pak file. On any unported construct the
+# Emit the Tcl codegen's C output for a .pk64 file. On any unported construct the
 # codegen raises CGUNPORTED; we print a marker line so cg_parity.sh classifies
 # the file as UNPORTED rather than a content mismatch.
 

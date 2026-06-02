@@ -1,0 +1,31 @@
+-- 13_extern.pk64
+-- Demonstrates: extern "C" block for C FFI, extern const.
+
+-- Declare C functions that exist in the linked library
+extern "C" {
+    fn memset(ptr: *u8, value: i32, size: u32) -> *u8
+    fn memcpy(dst: *u8, src: *u8, size: u32) -> *u8
+    fn strlen(s: *c_char) -> u32
+}
+
+-- Declare external constants (C macros / extern values)
+extern const TICKS_PER_SECOND: u32
+extern const RDPQ_COMBINER_FLAT: u32
+
+static buf: [64]u8 = undefined
+static sink: u32 = 0
+
+entry {
+    -- call extern C functions
+    memset(&buf[0], 0, 64)
+
+    let src: [8]u8 = undefined
+    memcpy(&buf[0], &src[0], 8)
+
+    let msg: *c_char = "hello"
+    sink = strlen(msg)
+
+    -- use extern constants
+    sink = TICKS_PER_SECOND
+    buf[0] = RDPQ_COMBINER_FLAT as u8
+}

@@ -3,7 +3,7 @@
 prepare_data.py — Build fine-tuning dataset for Pak N64 AI model.
 
 Extracts training pairs from:
-  - examples/canonical/*.pak   (full program examples)
+  - examples/canonical/*.pk64   (full program examples)
   - LANGUAGE.md                (syntax reference)
   - STDLIB.md                  (API reference)
   - N64_HARDWARE.md            (hardware constraints)
@@ -62,13 +62,13 @@ def load_file(name: str) -> str:
 
 
 def gen_canonical_examples() -> list[dict]:
-    """Turn each canonical .pak file into a training pair."""
+    """Turn each canonical .pk64 file into a training pair."""
     pairs = []
     if not EXAMPLES_DIR.exists():
         print(f"WARNING: {EXAMPLES_DIR} not found")
         return pairs
 
-    for pak_file in sorted(EXAMPLES_DIR.glob("*.pak")):
+    for pak_file in sorted(EXAMPLES_DIR.glob("*.pk64")):
         code = pak_file.read_text(encoding="utf-8").strip()
         name = pak_file.stem  # e.g. "01_hello"
 
@@ -709,7 +709,7 @@ def validate_pak_outputs(pairs: list[dict]) -> list[dict]:
     for pair in pairs:
         for code, kind in code_units(pair["output"], pair.get("category", "")):
             checked += 1
-            tmp = REPO_ROOT / ".tmp_validate.pak"
+            tmp = REPO_ROOT / ".tmp_validate.pk64"
             tmp.write_text(code, encoding="utf-8")
             try:
                 result = subprocess.run(

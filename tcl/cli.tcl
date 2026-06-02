@@ -60,10 +60,10 @@ proc pak::cli_find_project_root {{start ""}} {
 }
 proc pak::cli_runtime_dir {} { return [file join $::pak::CLI_ROOT runtime] }
 
-# Recursive *.pak glob, excluding any path with a 'build' component, sorted.
+# Recursive *.pk64 glob, excluding any path with a 'build' component, sorted.
 proc pak::cli_src_files {root} {
     set out {}
-    foreach f [pak::_rglob $root *.pak] {
+    foreach f [pak::_rglob $root *.pk64] {
         set rel [pak::_relto $f $root]
         if {[lsearch -exact [file split $rel] build] >= 0} continue
         lappend out $f
@@ -101,7 +101,7 @@ proc pak::cli_write {path content} {
     set f [open $path w]; fconfigure $f -encoding [encoding system]; puts -nonewline $f $content; close $f
 }
 
-# Parse a .pak file → ast, or "" (printing E001/E002 to stderr like Python).
+# Parse a .pk64 file → ast, or "" (printing E001/E002 to stderr like Python).
 proc pak::cli_parse_file {path} {
     set src [pak::cli_read $path]
     if {[catch {
@@ -308,7 +308,7 @@ proc pak::cmd_build {opts} {
     file mkdir $build_dir
 
     set src_files [pak::cli_src_files $root]
-    if {[llength $src_files] == 0} { puts stderr "error: no .pak source files found"; exit 1 }
+    if {[llength $src_files] == 0} { puts stderr "error: no .pk64 source files found"; exit 1 }
     set parsed {}
     foreach pf $src_files {
         set prog [pak::cli_parse_file $pf]
@@ -404,13 +404,13 @@ proc pak::cmd_check {opts} {
         set files [dict get $opts files]
         if {[llength $files] == 0} {
             puts stderr "error: no pak.toml found and no files specified"
-            puts stderr "  hint: run `pak check file.pak` or `cd` to a project directory"
+            puts stderr "  hint: run `pak check file.pk64` or `cd` to a project directory"
             exit 1
         }
         set src_files $files
     } else {
         set src_files [pak::cli_src_files $root]
-        if {[llength $src_files] == 0} { puts stderr "error: no .pak source files found"; exit 1 }
+        if {[llength $src_files] == 0} { puts stderr "error: no .pk64 source files found"; exit 1 }
     }
     set parsed {}; set n_parse_errors 0
     foreach pf $src_files {
@@ -514,7 +514,7 @@ tiny3d = false
 \[build\]
 optimization = \"debug\"
 "
-    pak::cli_write [file join $name src main.pak] "-- $name
+    pak::cli_write [file join $name src main.pk64] "-- $name
 -- Created with: pak init $name
 
 use n64.display
@@ -548,7 +548,7 @@ Makefile
 "
     puts "Created project '$name'"
     puts "  $name/pak.toml"
-    puts "  $name/src/main.pak"
+    puts "  $name/src/main.pk64"
     puts "  $name/assets/sprites/"
     puts "  $name/assets/models/"
     puts "  $name/assets/audio/"

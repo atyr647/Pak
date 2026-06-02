@@ -24,7 +24,7 @@ gate is **zero MISMATCH**.
 
 Every Python module in the toolchain has a parity-verified Tcl port.
 `c2pak` parity uses the Python transpiler (which wraps `pycparser`) as its
-oracle; the Tcl side has its own C front-end and matches the final `.pak`
+oracle; the Tcl side has its own C front-end and matches the final `.pk64`
 text byte-for-byte on the corpus.
 
 ## Known boundary: source positions

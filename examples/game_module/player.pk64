@@ -1,0 +1,38 @@
+-- game/player.pk64 - demonstrates the module system
+
+module game.player
+
+use n64.controller
+use t3d.math
+
+struct Player {
+    pos: Vec3
+    vel: Vec3
+    health: i32
+    speed: f32
+}
+
+fn new(x: f32, y: f32, z: f32) -> Player {
+    return Player {
+        pos: Vec3 { x: x, y: y, z: z },
+        vel: Vec3 { x: 0, y: 0, z: 0 },
+        health: 3,
+        speed: 4.0,
+    }
+}
+
+fn update(p: *Player, dt: f32) {
+    let input = controller.read(0)
+    let stick_x = input.stick.x
+    let stick_y = input.stick.y
+
+    p.vel.x = stick_x * p.speed
+    p.vel.z = stick_y * p.speed
+
+    p.pos.x += p.vel.x * dt
+    p.pos.z += p.vel.z * dt
+}
+
+fn is_alive(p: *Player) -> bool {
+    return p.health > 0
+}

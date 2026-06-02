@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit the Python MIPS backend's UNOPTIMIZED assembly for a .pak file.
+"""Emit the Python MIPS backend's UNOPTIMIZED assembly for a .pk64 file.
 
 Calls MipsCodegen(optimize=False) directly (not the CLI, which forces
 optimize=True) so the Tcl port can target unoptimized output first — the

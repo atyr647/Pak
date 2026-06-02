@@ -5,7 +5,7 @@ be happy to maintain, not a mechanical dump.
 
 ## 6.1 — Pretty-Printer (`pak_emitter.py`)
 
-The pretty-printer converts PAK AST nodes back into formatted `.pak` source text.
+The pretty-printer converts PAK AST nodes back into formatted `.pk64` source text.
 
 ### Formatting Rules
 

@@ -1,0 +1,35 @@
+-- INVALID: int_match.pk64
+-- NOTE: This file is DOCUMENTATION ONLY. The bad code is commented out.
+-- For actual failing test cases, see tests/invalid/ (verified by pak check).
+-- Error: match only works on enums and variants, not integers or strings.
+
+entry {
+    let x: i32 = 5
+
+    -- WRONG: matching on integer literals
+    -- match x {
+    --     0 => { }      -- error: integer patterns not supported
+    --     1 => { }
+    --     _ => { }
+    -- }
+
+    -- WRONG: matching on string
+    -- let s: *c_char = "hello"
+    -- match s {
+    --     "hello" => { }   -- error: string patterns not supported
+    -- }
+
+    -- CORRECT: use if/elif chains for integer branching
+    if x == 0 {
+        -- zero
+    } elif x == 1 {
+        -- one
+    } elif x < 10 {
+        -- small
+    } else {
+        -- other
+    }
+
+    -- CORRECT: match works on enums
+    -- (see examples/canonical/05_enums.pk64)
+}

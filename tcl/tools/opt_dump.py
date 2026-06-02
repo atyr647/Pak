@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit the Python MIPS backend's OPTIMIZED assembly for a .pak file.
+"""Emit the Python MIPS backend's OPTIMIZED assembly for a .pk64 file.
 
 Oracle for the Tcl optimizer port: MipsCodegen(optimize=True) runs the same
 unoptimized codegen and then optimize_asm() (peephole, VR4300 scheduling,

@@ -300,5 +300,5 @@ A C file containing:
 - A `goto cleanup` pattern.
 - An array+length parameter pair.
 
-The transpiler should produce a `.pak` file using `variant`, `impl`, `fix16.16`, `defer`,
+The transpiler should produce a `.pk64` file using `variant`, `impl`, `fix16.16`, `defer`,
 and `[]T` slices — not a mechanical line-by-line translation.

@@ -1,9 +1,0 @@
--- 01_hello.pak
--- Minimal valid Pak program.
--- Demonstrates: entry block, use, debug output.
-
-use n64.debug
-
-entry {
-    debug.log("Hello from Pak!")
-}

@@ -1,0 +1,107 @@
+-- physics.pk64
+-- Self-contained rigid-body point physics for Pak games.
+--
+-- A Body holds position, velocity, acceleration (all Vec3) plus a scalar mass
+-- and an inverse mass (precomputed so the hot integrate path avoids a divide).
+-- integrate() advances the body one step with semi-implicit (symplectic) Euler,
+-- which is stable for games. apply_force / apply_gravity / apply_drag accumulate
+-- into acceleration or velocity before the next integrate.
+--
+-- The Vec3 here is redeclared locally so this file checks standalone; it is
+-- field-compatible with vec.pk64's Vec3.
+--
+-- Usage:
+--     let mut body = body_new(Vec3 { x: 0.0, y: 10.0, z: 0.0 }, 2.0)
+--     apply_gravity(&mut body, -9.8)
+--     integrate(&mut body, 0.016)
+
+use n64.math
+
+struct Vec3 {
+    x: f32
+    y: f32
+    z: f32
+}
+
+struct Body {
+    pos: Vec3
+    vel: Vec3
+    accel: Vec3
+    mass: f32
+    inv_mass: f32
+}
+
+-- Build a body at pos with the given mass. A mass <= 0 means "infinite"
+-- (immovable): inv_mass becomes 0 so forces never move it.
+fn body_new(pos: Vec3, mass: f32) -> Body {
+    let mut inv: f32 = 0.0
+    if mass > 0.0 {
+        inv = 1.0 / mass
+    }
+    return Body {
+        pos: pos,
+        vel: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+        accel: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+        mass: mass,
+        inv_mass: inv,
+    }
+}
+
+-- Add a force (Newtons). Acceleration gains force * inv_mass (a = F / m).
+fn apply_force(body: *mut Body, fx: f32, fy: f32, fz: f32) {
+    body.accel.x += fx * body.inv_mass
+    body.accel.y += fy * body.inv_mass
+    body.accel.z += fz * body.inv_mass
+}
+
+-- Add a uniform gravity acceleration along Y (independent of mass).
+fn apply_gravity(body: *mut Body, g: f32) {
+    body.accel.y += g
+}
+
+-- Exponential velocity damping. coeff in [0,1): fraction of speed lost per second.
+fn apply_drag(body: *mut Body, coeff: f32, dt: f32) {
+    let mut factor = 1.0 - coeff * dt
+    if factor < 0.0 {
+        factor = 0.0
+    }
+    body.vel.x *= factor
+    body.vel.y *= factor
+    body.vel.z *= factor
+}
+
+-- Semi-implicit Euler: velocity updates from acceleration first, then position
+-- from the new velocity. Acceleration is cleared so forces are per-step.
+fn integrate(body: *mut Body, dt: f32) {
+    body.vel.x += body.accel.x * dt
+    body.vel.y += body.accel.y * dt
+    body.vel.z += body.accel.z * dt
+
+    body.pos.x += body.vel.x * dt
+    body.pos.y += body.vel.y * dt
+    body.pos.z += body.vel.z * dt
+
+    body.accel.x = 0.0
+    body.accel.y = 0.0
+    body.accel.z = 0.0
+}
+
+-- Current speed (magnitude of velocity).
+fn body_speed(body: *Body) -> f32 {
+    let v = body.vel
+    return math.sqrt_f(v.x * v.x + v.y * v.y + v.z * v.z)
+}
+
+static sink: f32 = 0.0
+
+-- Usage demo / self-test. A library file with free functions needs an entry
+-- block to satisfy `pak check`; delete it when you `use` this as a module.
+entry {
+    let mut body = body_new(Vec3 { x: 0.0, y: 10.0, z: 0.0 }, 2.0)
+    apply_gravity(&mut body, -9.8)
+    apply_force(&mut body, 1.0, 0.0, 0.0)
+    integrate(&mut body, 0.016)
+    apply_drag(&mut body, 0.1, 0.016)
+    sink = body_speed(&body)
+    sink = body.pos.y
+}

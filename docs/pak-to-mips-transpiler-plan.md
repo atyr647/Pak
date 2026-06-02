@@ -33,8 +33,8 @@ We validate the transpiler by **differential testing**:
 ### 0.1 — Test Harness
 
 - Build a comparison framework that can:
-  - Compile a `.pak` file via the C path (existing `codegen.py` → GCC).
-  - Compile the same `.pak` file via the new MIPS path.
+  - Compile a `.pk64` file via the C path (existing `codegen.py` → GCC).
+  - Compile the same `.pk64` file via the new MIPS path.
   - Run both ROMs in a headless N64 emulator (cen64 or ares with scripted input).
   - Capture and diff: frame checksums, debug log output, memory dumps at sync points.
 - The harness should produce a clear report: PASS / FAIL with the first divergence point.
@@ -342,7 +342,7 @@ The C transpiler can be retired when ALL of the following hold:
 
 1. The test game ("Dungeon of Types") produces **bit-identical frames** through both paths for a 60-second automated playthrough.
 2. All existing tests in `tests/test_compiler.py` have MIPS equivalents that pass.
-3. All three example programs (`features.pak`, `sprite_game.pak`, `model_viewer.pak`) compile and run correctly via the MIPS path.
+3. All three example programs (`features.pk64`, `sprite_game.pk64`, `model_viewer.pk64`) compile and run correctly via the MIPS path.
 4. Performance is within **15%** of the C path (measured by emulator cycle counting).
 5. At least **3 community-submitted PAK programs** compile and run correctly without C-path fallback.
 6. The MIPS backend has its own test suite with **>90% code coverage** of `pak/mips/`.
@@ -368,7 +368,7 @@ Phase 7  [Graduation]      ██████████  ✅ DONE — Differen
 - **pak/mips/optimize.py**: ~250 lines — 3-pass post-processing optimizer
 - **Test coverage**: 163 MIPS codegen tests + 11 CLI tests + 25 differential tests = 199 MIPS-specific tests
 - **Total test suite**: 240 tests (including 41 checker tests), all passing
-- **Example programs**: features.pak ✅, sprite_game.pak ✅, model_viewer.pak ✅
+- **Example programs**: features.pk64 ✅, sprite_game.pk64 ✅, model_viewer.pk64 ✅
 - **Optimizer passes**: peephole, VR4300 scheduling (load-use, mult/div latency), delay slot filling, dead label elimination
 - **Register allocator**: caller-saved pool with callee-saved fallback, dynamic prologue/epilogue
 

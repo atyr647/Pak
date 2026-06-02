@@ -31,7 +31,7 @@ while IFS= read -r f; do
             diff <(printf '%s' "$py") <(printf '%s' "$tcl") | head -40
         fi
     fi
-done < <(find examples/canonical -name '*.pak' | sort)
+done < <(find examples/canonical -name '*.pk64' | sort)
 
 total=$((match+unported+mismatch))
 echo "mips optimizer parity: MATCH=$match  UNPORTED=$unported  MISMATCH=$mismatch  (of $total canonical)"

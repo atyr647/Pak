@@ -1,0 +1,32 @@
+-- INVALID: implicit_cast.pk64
+-- NOTE: This file is DOCUMENTATION ONLY. The bad code is commented out.
+-- For actual failing test cases, see tests/invalid/ (verified by pak check).
+-- Error: Pak has no implicit type conversions. All casts are explicit.
+
+entry {
+    let i: i32 = 5
+    let f: f32 = 3.14
+
+    -- WRONG: implicit conversion
+    -- let sum: f32 = i + f        -- error: i32 + f32 not allowed implicitly
+    -- let as_float: f32 = i       -- error: i32 cannot be assigned to f32
+
+    -- WRONG: using integer as bool
+    -- if i { }                    -- error: no implicit int-to-bool
+
+    -- CORRECT: explicit cast with 'as'
+    let sum: f32 = (i as f32) + f
+    let as_float: f32 = i as f32
+    if i != 0 { }                  -- compare explicitly
+
+    -- WRONG: narrowing without cast
+    let big: i32 = 1000
+    -- let small: u8 = big          -- error: no implicit narrowing
+
+    -- CORRECT:
+    let small: u8 = big as u8      -- explicit truncate
+
+    let _ = sum
+    let _ = as_float
+    let _ = small
+}

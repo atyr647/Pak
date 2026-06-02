@@ -45,7 +45,7 @@ def _make_project(tmp_path, src_text):
     """))
     src_dir = tmp_path / 'src'
     src_dir.mkdir()
-    pak_file = src_dir / 'main.pak'
+    pak_file = src_dir / 'main.pk64'
     pak_file.write_text(textwrap.dedent(src_text))
     return tmp_path
 
@@ -63,7 +63,7 @@ class TestBuildMips:
         """)
         build_dir = root / 'build'
         build_dir.mkdir()
-        pak_file = root / 'src' / 'main.pak'
+        pak_file = root / 'src' / 'main.pk64'
         program = parse_file(pak_file)
         assert program is not None
 
@@ -85,7 +85,7 @@ class TestBuildMips:
         """)
         build_dir = root / 'build'
         build_dir.mkdir()
-        pak_file = root / 'src' / 'main.pak'
+        pak_file = root / 'src' / 'main.pk64'
         program = parse_file(pak_file)
 
         paths = _build_mips(
@@ -104,7 +104,7 @@ class TestBuildMips:
         """)
         build_dir = root / 'build'
         build_dir.mkdir()
-        pak_file = root / 'src' / 'main.pak'
+        pak_file = root / 'src' / 'main.pk64'
         program = parse_file(pak_file)
 
         from pak.mips import MipsCodegen, CodegenError
@@ -128,7 +128,7 @@ class TestBuildC:
         """)
         build_dir = root / 'build'
         build_dir.mkdir()
-        pak_file = root / 'src' / 'main.pak'
+        pak_file = root / 'src' / 'main.pk64'
         program = parse_file(pak_file)
 
         paths = _build_c(
@@ -188,7 +188,7 @@ class TestExplainMips:
     """Test pak explain --backend mips."""
 
     def test_explain_mips_prints_assembly(self, tmp_path, capsys):
-        pak_file = tmp_path / 'test.pak'
+        pak_file = tmp_path / 'test.pk64'
         pak_file.write_text(textwrap.dedent("""\
             fn add(a: i32, b: i32) -> i32 {
                 return a + b
@@ -201,7 +201,7 @@ class TestExplainMips:
         assert 'addu' in captured.out or 'addiu' in captured.out
 
     def test_explain_c_prints_c_code(self, tmp_path, capsys):
-        pak_file = tmp_path / 'test.pak'
+        pak_file = tmp_path / 'test.pk64'
         pak_file.write_text(textwrap.dedent("""\
             fn add(a: i32, b: i32) -> i32 {
                 return a + b

@@ -1,0 +1,15 @@
+-- INVALID: no_main.pk64
+-- NOTE: This file is DOCUMENTATION ONLY. The bad code is commented out.
+-- For actual failing test cases, see tests/invalid/ (verified by pak check).
+-- Error: Pak has no fn main(). Use entry { } instead.
+
+-- WRONG:
+fn main() {
+    -- this will not compile
+    -- "main" is not a special function name in Pak
+}
+
+-- CORRECT:
+-- entry {
+--     -- program starts here
+-- }

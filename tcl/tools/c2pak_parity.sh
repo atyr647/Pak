@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Compare Tcl c2pak against the Python oracle on tests/c2pak/inputs/*.c.
-# Gate: byte-identical .pak output.
+# Gate: byte-identical .pk64 output.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"; cd "$REPO"

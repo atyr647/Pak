@@ -1,0 +1,55 @@
+-- model_viewer.pk64
+-- Complete example: 3D scene with Tiny3D (from Pak spec)
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+use t3d.core
+use t3d.model
+use t3d.math
+use t3d.viewport
+use t3d.light
+
+asset character_model from "character.t3dm"
+
+entry {
+    let camera_pos = Vec3 { x: 0, y: 25, z: -50 }
+    let camera_target = Vec3 { x: 0, y: 0, z: 0 }
+
+    -- Model matrix: allocated with 16-byte alignment for DMA
+    @aligned(16)
+    let model_mat: Mat4 = undefined
+
+    let rotation: f32 = 0.0
+
+    loop {
+        let input = controller.read(0)
+        let dt = timer.delta()
+        let stick_x = input.stick.x
+
+        -- Rotate model with stick
+        rotation += stick_x * 2.0 * dt
+
+        -- Update model matrix
+        t3d.mat4_identity(model_mat)
+        t3d.mat4_rotate_y(model_mat, rotation)
+
+        -- Set up camera
+        let viewport = t3d.viewport_create(320, 240, fov: 70.0, near: 1.0, far: 200.0, aspect: 320.0 / 240.0)
+
+        -- Begin frame
+        let disp = display.get()
+        rdpq.attach_clear(disp, none)
+        t3d.frame_start()
+
+        -- Set up lighting
+        t3d.light_set_directional(index: 0, color: 0xFFFFFFFF, direction: Vec3 { x: 1, y: 1, z: 1 })
+
+        -- Draw model
+        t3d.model_draw(character_model, model_mat)
+
+        t3d.frame_end()
+        rdpq.detach_show()
+    }
+}

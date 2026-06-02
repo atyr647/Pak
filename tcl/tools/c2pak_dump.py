@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Oracle: Python c2pak transpile of a .c file -> .pak text."""
+"""Oracle: Python c2pak transpile of a .c file -> .pk64 text."""
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))

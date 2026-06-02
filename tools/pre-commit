@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Git pre-commit hook: validate all staged .pak files before commit.
+# Git pre-commit hook: validate all staged .pk64 files before commit.
 #
 # Install by symlinking into .git/hooks/:
 #   ln -sf ../../tools/pre-commit .git/hooks/pre-commit
@@ -19,14 +19,14 @@ if ! command -v pak &>/dev/null; then
     exit 0
 fi
 
-# Get list of staged .pak files
-staged=$(git diff --cached --name-only --diff-filter=ACM | grep '\.pak$' || true)
+# Get list of staged .pk64 files
+staged=$(git diff --cached --name-only --diff-filter=ACM | grep '\.pk64$' || true)
 
 if [ -z "$staged" ]; then
-    exit 0  # No .pak files staged
+    exit 0  # No .pk64 files staged
 fi
 
-echo "Validating staged .pak files..."
+echo "Validating staged .pk64 files..."
 failed=0
 
 for f in $staged; do
@@ -50,4 +50,4 @@ if [ $failed -ne 0 ]; then
     exit 1
 fi
 
-echo "All staged .pak files valid."
+echo "All staged .pk64 files valid."

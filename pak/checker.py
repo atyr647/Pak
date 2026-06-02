@@ -25,7 +25,7 @@ Usage::
 
     from pak.checker import semantic_check, CheckError
 
-    errors, warnings = semantic_check(program, filename="src/main.pak")
+    errors, warnings = semantic_check(program, filename="src/main.pk64")
     for e in errors:
         print(e)        # hard error — abort build
     for w in warnings:

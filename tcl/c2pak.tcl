@@ -1,11 +1,11 @@
 # tcl/c2pak.tcl — C → Pak transpiler (Tcl port of pak/c2pak/).
 #
-# Entry point: pak::c2pak_transpile {source filename} -> .pak text
+# Entry point: pak::c2pak_transpile {source filename} -> .pk64 text
 #
 # This is a self-contained port. It implements its own C lexer/parser producing
 # a normalized C AST (dict-based) equivalent to pak.c2pak.c_ast, then mirrors the
 # mapping/emission logic of pak/c2pak/{type,expr,stmt,decl}_mapper, idiom_detector,
-# pak_emitter, c_preprocess, n64_api. Only the emitted .pak text must match.
+# pak_emitter, c_preprocess, n64_api. Only the emitted .pk64 text must match.
 
 namespace eval pak {}
 namespace eval pak::c2pak {}

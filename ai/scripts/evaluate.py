@@ -152,7 +152,7 @@ def check_pak_syntax(code: str) -> tuple[bool, str]:
     if not pak_bin.exists():
         return True, "skipped (no validator)"
 
-    with tempfile.NamedTemporaryFile(suffix=".pak", mode="w", delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".pk64", mode="w", delete=False) as f:
         f.write(code)
         f.flush()
         try:

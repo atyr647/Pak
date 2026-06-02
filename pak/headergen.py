@@ -1,6 +1,6 @@
 """Generate C header files from Pak module declarations.
 
-For each .pak file with a `module foo.bar` declaration, this produces
+For each .pk64 file with a `module foo.bar` declaration, this produces
 a foo_bar.h that other generated .c files can include.  The header
 contains forward declarations for all public types and functions.
 """

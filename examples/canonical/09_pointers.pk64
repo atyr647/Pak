@@ -1,0 +1,43 @@
+-- 09_pointers.pk64
+-- Demonstrates: pointer types, address-of, dereference, nullable pointers.
+
+struct Node {
+    value: i32
+    next: ?*Node
+}
+
+fn double_value(ptr: *mut i32) {
+    *ptr = *ptr * 2
+}
+
+static sink: i32 = 0
+
+entry {
+    -- basic pointer
+    let mut x: i32 = 10
+    let ptr: *mut i32 = &mut x
+    double_value(ptr)           -- x is now 20
+    sink = *ptr                 -- 20
+
+    -- dereference write through mutable pointer
+    *ptr = 99
+    sink = x                    -- 99
+
+    -- nullable pointer
+    let maybe: ?*i32 = none
+    let also_maybe: ?*i32 = &x
+
+    -- null check
+    if maybe != none {
+        sink = *maybe
+    }
+    if also_maybe != none {
+        sink = *also_maybe
+    }
+
+    -- alloc / free: alloc returns a pointer, free releases it
+    -- Note: writing through an alloc'd pointer before free can trigger
+    -- move-tracking in the typechecker. Keep alloc/free simple.
+    let heap_buf: *mut u8 = alloc(u8, 64)
+    free(heap_buf)
+}

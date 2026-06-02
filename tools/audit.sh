@@ -50,7 +50,7 @@ fi
 section "Canonical Examples (pak check)"
 
 n_ok=0; n_fail=0
-for f in examples/canonical/*.pak; do
+for f in examples/canonical/*.pk64; do
   name=$(basename "$f")
   if pak check "$f" &>/dev/null; then
     ((n_ok++)) || true
@@ -71,7 +71,7 @@ fi
 section "Invalid Examples (must fail)"
 
 n_ok=0; n_fail=0
-for f in tests/invalid/*.pak; do
+for f in tests/invalid/*.pk64; do
   name=$(basename "$f")
   expected=$(grep -oP '(?<=EXPECT: )E\d+' "$f" 2>/dev/null || echo "")
   set +e
@@ -102,8 +102,8 @@ if [ "$FAST" -eq 0 ]; then
   section "Semantic Snapshots (pak explain)"
 
   n_ok=0; n_drift=0; n_missing=0
-  for f in examples/canonical/*.pak; do
-    name=$(basename "$f" .pak)
+  for f in examples/canonical/*.pk64; do
+    name=$(basename "$f" .pk64)
     snapshot="tests/snapshots/${name}.c"
     set +e
     actual=$(pak explain "$f" 2>/dev/null)
@@ -205,8 +205,8 @@ section "Documentation Consistency"
 
 # Every canonical example must have a snapshot
 missing_snaps=0
-for f in examples/canonical/*.pak; do
-  name=$(basename "$f" .pak)
+for f in examples/canonical/*.pk64; do
+  name=$(basename "$f" .pk64)
   if [ ! -f "tests/snapshots/${name}.c" ]; then
     fail "Missing snapshot for $name"
     ((missing_snaps++)) || true
@@ -216,7 +216,7 @@ done
 
 # Every file in tests/invalid/ must have an EXPECT annotation
 missing_expect=0
-for f in tests/invalid/*.pak; do
+for f in tests/invalid/*.pk64; do
   if ! grep -q "EXPECT: E" "$f" 2>/dev/null; then
     fail "$(basename "$f") missing -- EXPECT: EXXX annotation"
     ((missing_expect++)) || true

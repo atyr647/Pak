@@ -1,5 +1,5 @@
 #!/usr/bin/env tclsh
-# Emit the Tcl MIPS backend's OPTIMIZED assembly for a .pak file: unoptimized
+# Emit the Tcl MIPS backend's OPTIMIZED assembly for a .pk64 file: unoptimized
 # codegen followed by the Tcl peephole/scheduler/delay-slot/dead-label passes.
 # On any unported construct the backend raises MIPSUNPORTED; print a marker so
 # opt_parity.sh classifies the file as UNPORTED rather than a content mismatch.
