@@ -720,6 +720,11 @@ class Codegen:
         self._mono_cache: dict = {}
         # Closure registry: list of (c_name, Closure) — emitted as static fns
         self._closures: List[tuple] = []
+        # Capturing closures hoisted as GCC nested functions inside the current
+        # statement's enclosing block: list of (c_name, Closure). Flushed (and
+        # emitted just before the using statement) by the gen_stmt wrapper.
+        self._pending_nested: List[tuple] = []
+        self._in_stmt: bool = False
         # Const values visible to all scopes (name → expr string)
         self.const_values: dict = {}
         # Trait declarations: name → TraitDecl
@@ -1367,12 +1372,39 @@ class Codegen:
         return f'({typedef_name}){{{fields}}}'
 
     def _gen_closure(self, e: ast.Closure) -> str:
-        """Emit a non-capturing closure as a static function + function pointer.
-        The closure is registered and emitted as a top-level static fn.
+        """Emit a closure as a function pointer.
+
+        Inside a statement (function body), emit it as a GCC nested function in
+        the enclosing block: it lexically captures any outer locals it uses and
+        decays to a plain function pointer (trampoline), so no ABI change is
+        needed. At top level (global/static initializers, no enclosing frame),
+        fall back to a top-level static function (non-capturing).
         """
+        if self._in_stmt:
+            name = f'_pak_clo_{len(self._closures) + len(self._pending_nested)}'
+            self._pending_nested.append((name, e))
+            return name
         name = f'_pak_closure_{len(self._closures)}'
         self._closures.append((name, e))
         return name  # use function pointer directly (decays to fn ptr)
+
+    def _emit_nested_closure(self, name: str, e: ast.Closure, indent: int) -> List[str]:
+        """Emit a capturing closure as a GCC nested function at the given indent."""
+        pad = '    ' * indent
+        inner = '    ' * (indent + 1)
+        ret = self.gen_type(e.ret_type) if e.ret_type else 'void'
+        params = ', '.join(f'{self.gen_type(p.type)} {p.name}' for p in e.params)
+        lines = [f'{pad}{ret} {name}({params or "void"}) {{']
+        self.scope_push()
+        for p in e.params:
+            self.scope_set(p.name, p.type)
+        for stmt in e.body.stmts:
+            s = self.gen_stmt(stmt, indent + 1)
+            if s:
+                lines.append(s)
+        self.scope_pop()
+        lines.append(f'{pad}}}')
+        return lines
 
     def _emit_closures(self) -> List[str]:
         """Emit all registered closures as static functions."""
@@ -2490,6 +2522,23 @@ class Codegen:
         return f'{decl};'
 
     def gen_stmt(self, stmt, indent: int = 0) -> str:
+        # Wrapper: emit any capturing closures used by this statement as GCC
+        # nested-function definitions in the enclosing block, just before the
+        # statement that references them (so lexical capture is in scope).
+        saved_pending, saved_in = self._pending_nested, self._in_stmt
+        self._pending_nested, self._in_stmt = [], True
+        body = self._gen_stmt_body(stmt, indent)
+        hoisted = self._pending_nested
+        self._pending_nested, self._in_stmt = saved_pending, saved_in
+        if hoisted:
+            pad = '    ' * indent
+            defs = []
+            for name, e in hoisted:
+                defs.extend(self._emit_nested_closure(name, e, indent))
+            return '\n'.join(defs) + '\n' + (body if body else f'{pad};')
+        return body
+
+    def _gen_stmt_body(self, stmt, indent: int = 0) -> str:
         pad = '    ' * indent
 
         if isinstance(stmt, ast.LetDecl):
