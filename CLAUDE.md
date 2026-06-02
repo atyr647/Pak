@@ -111,11 +111,14 @@ When the compiler reports an error, use this table to understand it:
 | E002 | Parse error — syntax is wrong |
 | E010 | Undefined variable or function |
 | E102 | Wrong number of arguments |
-| E103 | No `entry` block found |
+| E103 | No `entry` block found (or more than one across the project) |
+| E105 | `use path` has no matching `module path` declaration in the project |
 | E201 | DMA used without `cache.writeback` first |
 | E202 | DMA buffer not `@aligned(16)` |
 | E301 | Non-exhaustive match — missing cases |
 | E401 | Use-after-move |
+| E601 | Method in `impl ... for Trait` is not declared in the trait |
+| E602 | `impl ... for Trait` omits a required trait method (no default body) |
 | W001–W003 | Style warnings (naming conventions) |
 
 ---

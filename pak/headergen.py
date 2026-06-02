@@ -12,13 +12,22 @@ from .codegen import Codegen, PRIMITIVE_TYPES
 
 
 def module_to_guard(module_path: str) -> str:
-    """'game.player' → 'GAME_PLAYER_H'"""
-    return module_path.upper().replace('.', '_') + '_H'
+    """'game.player' → 'PAKMOD_GAME_PLAYER_H'
+
+    The PAKMOD_ prefix keeps the guard from colliding with C standard-library
+    headers (e.g. a `module math` must not clash with <math.h>'s guard).
+    """
+    return 'PAKMOD_' + module_path.upper().replace('.', '_') + '_H'
 
 
 def module_to_filename(module_path: str) -> str:
-    """'game.player' → 'game_player.h'"""
-    return module_path.replace('.', '_') + '.h'
+    """'game.player' → 'pakmod_game_player.h'
+
+    The pakmod_ prefix prevents the generated header from shadowing C
+    standard-library headers (`module math` -> pakmod_math.h, not math.h)
+    and is distinct from the runtime's own pak_*.h headers.
+    """
+    return 'pakmod_' + module_path.replace('.', '_') + '.h'
 
 
 def generate_header(program: ast.Program, module_path: str) -> str:

@@ -716,6 +716,10 @@ class Codegen:
         # Generic functions/structs registered for monomorphization
         self._generic_fns: dict = {}   # name → FnDecl
         self._generic_structs: dict = {}  # name → StructDecl
+        # Generic impl blocks: base type name → ImplBlock (with type_params)
+        self._generic_impls: dict = {}
+        # specialized struct name → (base_name, [type_arg nodes])
+        self._mono_struct_origin: dict = {}
         # Monomorphization cache: (fn_name, tuple(type_args)) → specialized C name
         self._mono_cache: dict = {}
         # Closure registry: list of (c_name, Closure) — emitted as static fns
@@ -1150,6 +1154,11 @@ class Codegen:
                     type_name = obj_type.name
                 elif isinstance(obj_type, ast.TypePointer) and isinstance(obj_type.inner, ast.TypeName):
                     type_name = obj_type.inner.name
+                # Instance of a monomorphized generic struct (Box_i32): specialize
+                # its impl methods on first use so they resolve like any other.
+                if type_name and type_name not in self.method_registry \
+                        and type_name in self._mono_struct_origin:
+                    self._monomorphize_impl_methods(type_name)
                 if type_name and type_name in self.method_registry:
                     if method_name in self.method_registry[type_name]:
                         fn_decl = self.method_registry[type_name][method_name]
@@ -1220,8 +1229,9 @@ class Codegen:
             args = ', '.join(args_strs)
             return f'{func}({args})'
         if isinstance(e, ast.StructLit):
+            type_name = self._struct_lit_c_name(e)
             fields = ', '.join(f'.{name} = {self.gen_expr(val)}' for name, val in e.fields)
-            return f'({e.type_name}){{{fields}}}'
+            return f'({type_name}){{{fields}}}'
         if isinstance(e, ast.ArrayLit):
             if e.repeat is not None:
                 val_expr = e.elements[0] if e.elements else ast.IntLit(value=0)
@@ -1854,10 +1864,15 @@ class Codegen:
                     self.enum_variants[c.name] = decl.name
             elif isinstance(decl, ast.ImplBlock):
                 tname = decl.type_name
-                if tname not in self.method_registry:
-                    self.method_registry[tname] = {}
-                for m in decl.methods:
-                    self.method_registry[tname][m.name] = m
+                if decl.type_params:
+                    # Generic impl (impl Box<T> { ... }): keep it whole so its
+                    # methods can be monomorphized per instantiation on demand.
+                    self._generic_impls[tname] = decl
+                else:
+                    if tname not in self.method_registry:
+                        self.method_registry[tname] = {}
+                    for m in decl.methods:
+                        self.method_registry[tname][m.name] = m
             elif isinstance(decl, ast.TraitDecl):
                 self.trait_decls[decl.name] = decl
             elif isinstance(decl, ast.ImplTraitBlock):
@@ -2027,24 +2042,38 @@ class Codegen:
             out_lines.append('/* -- Closures -- */')
             out_lines.extend(closure_lines)
 
-        out_lines.extend(body_lines)
-
-        # Emit any monomorphized generic specializations generated during body codegen
+        # Emit monomorphized generic specializations discovered during body
+        # codegen. These must precede body_lines so that specialized struct
+        # typedefs and function definitions are visible where main/other code
+        # uses them. The index-based loop also picks up specializations that
+        # are themselves triggered while emitting an earlier one.
         if hasattr(self, '_pending_mono') and self._pending_mono:
             out_lines.append('')
             out_lines.append('/* -- Generic specializations -- */')
-            for decl in self._pending_mono:
-                if isinstance(decl, ast.FnDecl):
-                    out_lines.append(self.gen_fn(decl))
-                elif isinstance(decl, ast.StructDecl):
+            i = 0
+            while i < len(self._pending_mono):
+                decl = self._pending_mono[i]
+                if isinstance(decl, ast.StructDecl):
                     out_lines.append(self.gen_struct(decl))
+                elif isinstance(decl, ast.FnDecl):
+                    out_lines.append(self.gen_fn(decl))
+                elif isinstance(decl, tuple) and decl[0] == 'impl_method':
+                    _, spec_struct, spec_m = decl
+                    out_lines.append(self.gen_fn(spec_m, prefix=spec_struct))
                 out_lines.append('')
+                i += 1
             self._pending_mono.clear()
+
+        out_lines.extend(body_lines)
 
         return '\n'.join(out_lines)
 
     def gen_decl(self, decl) -> str:
         if isinstance(decl, ast.StructDecl):
+            # Skip generic struct templates — emitted only when specialized
+            # (the unsubstituted `T` field would not be valid C).
+            if decl.type_params:
+                return None
             return self.gen_struct(decl)
         if isinstance(decl, ast.EnumDecl):
             return self.gen_enum(decl)
@@ -2098,6 +2127,10 @@ class Codegen:
         return f'/* unhandled decl: {type(decl).__name__} */'
 
     def gen_impl(self, impl: ast.ImplBlock) -> str:
+        # Generic impls are emitted lazily, specialized per instantiation
+        # (see _monomorphize_impl_methods). Emit nothing eagerly here.
+        if impl.type_params:
+            return ''
         parts = []
         for method in impl.methods:
             parts.append(self.gen_fn(method, prefix=impl.type_name))
@@ -2330,7 +2363,53 @@ class Codegen:
         if not hasattr(self, '_pending_mono'):
             self._pending_mono = []
         self._pending_mono.append(spec_decl)
+        # Record field types and the (base, type_args) origin so method calls
+        # on instances of this specialization can lazily monomorphize the impl.
+        self.struct_fields[specialized_name] = {f.name: f.type for f in spec_decl.fields}
+        self._mono_struct_origin[specialized_name] = (struct_name, list(type_args))
         return specialized_name
+
+    def _struct_lit_c_name(self, e: ast.StructLit) -> str:
+        """Resolve the C type name for a struct literal, monomorphizing the
+        struct when explicit type args are present (Box<i32> { ... } -> Box_i32)."""
+        if getattr(e, 'type_args', None) and e.type_name in self._generic_structs:
+            return self._monomorphize_struct(e.type_name, list(e.type_args))
+        return e.type_name
+
+    def _monomorphize_impl_methods(self, spec_struct: str) -> None:
+        """Lazily specialize the methods of a generic impl for an instantiated
+        struct (e.g. Box_i32). Emits Box_i32_method functions and registers them
+        in method_registry[spec_struct] so ordinary method-call lowering works."""
+        import copy
+        if spec_struct in self.method_registry:
+            return  # already done
+        origin = self._mono_struct_origin.get(spec_struct)
+        if origin is None:
+            return
+        base, type_args = origin
+        impl = self._generic_impls.get(base)
+        if impl is None:
+            return
+        subst = {}
+        for i, tp in enumerate(impl.type_params):
+            if i < len(type_args):
+                subst[tp] = type_args[i]
+        self.method_registry[spec_struct] = {}
+        if not hasattr(self, '_pending_mono'):
+            self._pending_mono = []
+        for m in impl.methods:
+            spec_m = copy.deepcopy(m)
+            spec_m.type_params = []
+            spec_m.self_type = spec_struct
+            _subst_types_in_fn(spec_m, subst)
+            # Retype the self parameter's pointer target to the specialized struct
+            if spec_m.params:
+                sp = spec_m.params[0]
+                if sp.name == 'self' and isinstance(sp.type, ast.TypePointer):
+                    sp.type = ast.TypePointer(inner=ast.TypeName(name=spec_struct))
+            # Mark so gen_fn emits it with the spec_struct prefix.
+            self.method_registry[spec_struct][spec_m.name] = spec_m
+            self._pending_mono.append(('impl_method', spec_struct, spec_m))
 
     def gen_struct(self, s: ast.StructDecl) -> str:
         attrs = []
@@ -2690,6 +2769,11 @@ class Codegen:
             # Infer pointer type from value if possible
             if isinstance(s.value, ast.AddrOf):
                 self.scope_set(s.name, ast.TypePointer(inner=ast.TypeName(name='auto')))
+            # Record the concrete struct type for a struct-literal binding so
+            # that later method calls (obj.method()) resolve. For generic
+            # literals this is the monomorphized name (Box<i32> -> Box_i32).
+            elif isinstance(s.value, ast.StructLit):
+                self.scope_set(s.name, ast.TypeName(name=self._struct_lit_c_name(s.value)))
 
         if s.value is not None and not isinstance(s.value, ast.UndefinedLit):
             # CatchExpr: multi-statement emit

@@ -1094,10 +1094,19 @@ oo::class create pak::Parser {
             }
             IDENT {
                 set name [my advancev]
+                # Parse call-site / struct-literal type arguments as real types
+                # (mirror of Python _try_parse_type_args) so explicit args like
+                # foo<i32>(x) and Box<i32>{ .. } carry AST type nodes.
                 set targs {}
+                set save $pos
                 if {[my check LT]} {
-                    set save $pos
-                    set targs [my parse_generic_params]
+                    set parsed [my try_type_args]
+                    if {$parsed eq "NONE"} {
+                        set pos $save
+                        set targs {}
+                    } else {
+                        set targs $parsed
+                    }
                 }
                 if {[my check LBRACE] && [my is_struct_lit_ctx]} {
                     my advance
@@ -1110,7 +1119,7 @@ oo::class create pak::Parser {
                         my match COMMA
                     }
                     my expect RBRACE
-                    return [pak::N StructLit type_name $name fields $fields]
+                    return [pak::N StructLit type_name $name fields $fields type_args $targs]
                 }
                 if {[my check DOTDOT] && [llength $targs] == 0} {
                     my advance
@@ -1118,11 +1127,13 @@ oo::class create pak::Parser {
                     if {![my check RBRACE] && ![my check COMMA] && ![my check RPAREN]} { set end [my parse_primary] }
                     return [pak::N RangeExpr start [pak::N Ident name $name type_args {}] end $end]
                 }
-                set taseq {}
-                if {[llength $targs] > 0 && [my check LPAREN]} {
-                    foreach tp $targs { lappend taseq [pak::Lit $tp] }
+                # If type args weren't followed by a call/struct, the '<...>' was
+                # a comparison — rewind so they re-parse as binary operators.
+                if {[llength $targs] > 0 && !([my check LPAREN] || [my check LBRACE])} {
+                    set pos $save
+                    set targs {}
                 }
-                return [pak::N Ident name $name type_args $taseq]
+                return [pak::N Ident name $name type_args $targs]
             }
             default {
                 set tk [my peek]

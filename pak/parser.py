@@ -1429,15 +1429,23 @@ class Parser:
         if tok.type == TT.IDENT:
             name = self.advance().value
 
-            # Generic struct literal: TypeName<T> { field: val, ... }
+            # Generic call / struct literal: TypeName<T>(...) or TypeName<T> { ... }
+            # Parse the type arguments as real types (not bare identifiers) so
+            # that explicit args like foo<i32>(x) carry an AST type node the
+            # code generator can monomorphize against — matching what the
+            # inference path produces.
             type_args = []
+            saved = self.pos
             if self.check(TT.LT):
-                saved = self.pos
                 try:
-                    type_args = self._parse_generic_params()
+                    parsed_args = self._try_parse_type_args()
                 except Exception:
+                    parsed_args = None
+                if parsed_args is None:
                     self.pos = saved
                     type_args = []
+                else:
+                    type_args = parsed_args
 
             # Look ahead: Struct literal: TypeName { field: val, ... }
             if self.check(TT.LBRACE) and self._is_struct_literal_context():
@@ -1450,7 +1458,8 @@ class Parser:
                     fields.append((fname, fval))
                     self.match(TT.COMMA)
                 self.expect(TT.RBRACE)
-                return ast.StructLit(type_name=name, fields=fields, line=line, col=col)
+                return ast.StructLit(type_name=name, fields=fields,
+                                     type_args=type_args, line=line, col=col)
 
             # Range: name..end
             if self.check(TT.DOTDOT) and not type_args:
@@ -1461,11 +1470,11 @@ class Parser:
                 return ast.RangeExpr(start=ast.Ident(name=name, line=line, col=col), end=end, line=line, col=col)
 
             ident = ast.Ident(name=name, line=line, col=col)
-            # If we parsed type args but the next token isn't (, back off the type args
-            # They'll be used if we see ( in parse_postfix
-            if type_args and not self.check(TT.LPAREN):
-                # Discard type args, they were probably a comparison
-                pass
+            # If we parsed type args but the next token isn't '(' or '{', the
+            # '<...>' was almost certainly a comparison — rewind so the tokens
+            # are re-parsed as binary operators rather than silently dropped.
+            if type_args and not (self.check(TT.LPAREN) or self.check(TT.LBRACE)):
+                self.pos = saved
             elif type_args:
                 ident.type_args = type_args
             return ident

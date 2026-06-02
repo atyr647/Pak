@@ -190,6 +190,45 @@ proc pak::cli_check_entry_blocks {parsed} {
 proc pak::_nodeline {node} { if {[catch {pak::fval $node line} v]} { return 0 }; return $v }
 proc pak::_nodecol {node}  { if {[catch {pak::fval $node col} v]} { return 0 }; return $v }
 
+# Verify every project-local `use` path resolves to a declared module. Builtin
+# namespaces (n64.*, t3d.*, std) are validated per-file by the semantic checker;
+# this cross-file pass catches `use foo.bar` with no matching `module foo.bar`.
+proc pak::cli_check_module_imports {parsed} {
+    set declared [dict create]
+    foreach pr $parsed {
+        lassign $pr fn prog
+        foreach decl [pak::items [pak::nfield $prog decls]] {
+            if {[pak::kindof $decl] eq "ModuleDecl"} {
+                dict set declared [pak::fval $decl path] 1
+            }
+        }
+    }
+    set builtins {n64 t3d std}
+    set diags {}
+    foreach pr $parsed {
+        lassign $pr fn prog
+        foreach decl [pak::items [pak::nfield $prog decls]] {
+            if {[pak::kindof $decl] ne "UseDecl"} { continue }
+            set path [pak::fval $decl path]
+            set prefix [lindex [split $path .] 0]
+            if {$prefix in $builtins} { continue }
+            if {![dict exists $declared $path]} {
+                if {[dict size $declared] > 0} {
+                    set hint "Known project modules: [join [lsort [dict keys $declared]] {, }]"
+                } else {
+                    set hint "No project modules are declared. Add `module $path` to the file that defines it."
+                }
+                lappend diags [dict create code E105 \
+                    message "Unknown module '$path' — no matching `module $path` declaration found" \
+                    hint $hint \
+                    line [pak::_nodeline $decl] col [pak::_nodecol $decl] \
+                    filename $fn severity error]
+            }
+        }
+    }
+    return $diags
+}
+
 # Returns {hard_errors warnings}. Prints diagnostics to stderr and per-file
 # status to stdout, exactly like _run_full_check.
 proc pak::cli_run_full_check {parsed root no_style} {
@@ -211,6 +250,10 @@ proc pak::cli_run_full_check {parsed root no_style} {
         if {!$no_style} { incr warns [llength $ws] }
     }
     foreach d [pak::cli_check_entry_blocks $parsed] {
+        incr hard
+        puts stderr [pak::diag_str $d]
+    }
+    foreach d [pak::cli_check_module_imports $parsed] {
         incr hard
         puts stderr [pak::diag_str $d]
     }

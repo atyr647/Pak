@@ -56,7 +56,7 @@ asset bg: Sprite from "bg.png"
 -- entry point (entry { ... })
 ```
 
-Multiple source files are linked via `module` declarations. [PARTIAL]
+Multiple source files are linked via `module` declarations. [IMPLEMENTED]
 
 ---
 
@@ -303,14 +303,21 @@ union Name {
 
 Untagged C-style union. Use `variant` for safe tagged unions.
 
-### Trait [PARTIAL]
+### Trait [IMPLEMENTED]
 
 ```pak
 trait Name {
-    fn method_name(self: *Self) -> RetType
+    fn method_name(self: *Self) -> RetType      -- required (no body)
     fn other_method(self: *Self, arg: i32)
+    fn with_default(self: *Self) -> i32 {        -- default method (has a body)
+        return 0
+    }
 }
 ```
+
+A trait method **with a body** is a *default*: an `impl` may omit it and inherit
+the default (specialized for the implementing type). A trait method **without a
+body** is *required* — an `impl` that omits it raises `E602`.
 
 ### Impl Block [IMPLEMENTED]
 
@@ -326,11 +333,12 @@ impl TypeName<T> {
 }
 ```
 
-### Impl Trait [PARTIAL]
+### Impl Trait [IMPLEMENTED]
 
 ```pak
 impl TypeName for TraitName {
     fn required_method(self: *TypeName) -> i32 { ... }
+    -- methods with a default body in the trait may be omitted here
 }
 ```
 
@@ -610,11 +618,19 @@ fn(x: i32) -> i32 { x + 1 }
 fn(x: i32) -> i32 = x + 1    -- expression body
 ```
 
-### Turbofish [PARTIAL]
+### Explicit Type Arguments [IMPLEMENTED]
+
+Generic functions and generic struct literals accept explicit type arguments
+with angle-bracket syntax directly before the call/braces. (Rust-style `::<>`
+turbofish is **not** supported.)
 
 ```pak
-foo::<i32>(arg)     -- explicit type argument at call site
+foo<i32>(arg)            -- explicit type argument on a generic call
+pair<i32, f32>(a, b)     -- multiple type arguments
+Box<i32> { value: 42 }   -- explicit type argument on a generic struct literal
 ```
+
+When omitted, type arguments are inferred from the call arguments.
 
 ### Inline Assembly Expression [IMPLEMENTED]
 
@@ -868,13 +884,22 @@ After `use n64.display`, call functions as `display.init(...)`, `display.get()`,
 use n64.display as disp
 ```
 
-### Module Declaration [PARTIAL]
+### Module Declaration [IMPLEMENTED]
 
 ```pak
 module my.module.name
 ```
 
-Declares the current file as belonging to a module. Used for multi-file projects.
+Declares the current file as belonging to a module. In a multi-file project,
+every `.pk64` file under the project root is parsed, type-checked against a
+shared symbol environment, and compiled. A `use my.module.name` brings another
+file's module into scope; functions and types are shared via a flat namespace.
+
+- Exactly one `entry` block may exist across the whole project (`E103`).
+- A `use path` that matches no declared `module path` raises `E105`.
+- Each module compiles to its own `.c` plus a generated `pakmod_<path>.h`
+  header (the `pakmod_` prefix avoids colliding with C standard-library
+  headers such as `<math.h>`).
 
 ---
 

@@ -943,6 +943,12 @@ oo::class create pak::Codegen {
             set decl "__auto_type $name"
             if {[pak::kindof [pak::nfield $s value]] eq "AddrOf"} {
                 my scope_set $name [pak::N TypePointer inner [pak::N TypeName name auto] nullable 0 mutable 0]
+            } elseif {[pak::kindof [pak::nfield $s value]] eq "StructLit"} {
+                # Record the concrete struct type for a struct-literal binding so
+                # later method calls (obj.method()) resolve. (Generic-struct
+                # monomorphization is not yet ported here; canonical files use
+                # plain struct names, matching the Python output.)
+                my scope_set $name [pak::N TypeName name [pak::fval [pak::nfield $s value] type_name]]
             }
         }
         set val [pak::nfield $s value]

@@ -1,6 +1,6 @@
 -- 19_traits.pk64
 -- Demonstrates: trait definition, impl for trait.
--- Status: [PARTIAL] — parsed and type-checked, codegen partial.
+-- Status: [IMPLEMENTED] — method calls lower to Type_method(&obj); vtables emitted.
 
 trait Drawable {
     fn draw(self: *Self, x: i32, y: i32)

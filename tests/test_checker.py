@@ -25,7 +25,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from pak.lexer import Lexer
 from pak.parser import Parser
-from pak.checker import semantic_check, check_entry_blocks, assert_checked
+from pak.checker import (
+    semantic_check, check_entry_blocks, check_module_imports, assert_checked,
+)
+from pak.headergen import module_to_filename, module_to_guard
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -316,6 +319,42 @@ class TestE103:
         prog2 = parse("entry { helper() }")
         diags = check_entry_blocks([('helpers.pk64', prog1), ('main.pk64', prog2)])
         assert not diags
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# E105 — Module import resolution (cross-file) + header naming
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestE105:
+    def test_resolved_module_import_ok(self):
+        prog1 = parse("module math\nfn sq(x: i32) -> i32 { return x * x }")
+        prog2 = parse("module main\nuse math\nentry { }")
+        diags = check_module_imports([('math.pk64', prog1), ('main.pk64', prog2)])
+        assert not diags
+
+    def test_unknown_module_import_errors(self):
+        prog1 = parse("module math\nfn sq(x: i32) -> i32 { return x * x }")
+        prog2 = parse("module main\nuse maths\nentry { }")
+        diags = check_module_imports([('math.pk64', prog1), ('main.pk64', prog2)])
+        assert any(d.code == 'E105' for d in diags)
+
+    def test_builtin_namespaces_not_flagged(self):
+        prog = parse("module main\nuse n64.display\nuse t3d.core\nentry { }")
+        diags = check_module_imports([('main.pk64', prog)])
+        assert not diags
+
+
+class TestModuleHeaderNaming:
+    """Generated module headers must not collide with C stdlib headers."""
+
+    def test_header_filename_prefixed(self):
+        # `module math` must not produce math.h (collides with <math.h>).
+        assert module_to_filename('math') == 'pakmod_math.h'
+        assert module_to_filename('game.player') == 'pakmod_game_player.h'
+
+    def test_header_guard_prefixed(self):
+        assert module_to_guard('math') == 'PAKMOD_MATH_H'
+        assert module_to_guard('game.player') == 'PAKMOD_GAME_PLAYER_H'
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -212,8 +212,21 @@ let n: i32 = 42
 debug.print("x={n}")      -- emits snprintf(..., "x=%ld", (long)(n))
 ```
 
-### No Trait Default Methods [Currently]
-Traits can declare method signatures but not provide default implementations.
+### Trait Default Methods [Supported]
+Traits **can** provide default method bodies; an `impl` may omit a method that
+has a default. A method **without** a body is required — omitting it raises
+`E602`. See LANGUAGE.md § Trait.
+
+### No `::<>` Turbofish
+```
+-- WRONG:
+foo::<i32>(arg)
+-- RIGHT:
+foo<i32>(arg)
+```
+Explicit type arguments use angle brackets directly before the call or struct
+braces (`foo<i32>(arg)`, `Box<i32> { value: 1 }`). The Rust-style `::<>` form
+is not recognized.
 
 ### No `impl Trait` Return Type
 ```

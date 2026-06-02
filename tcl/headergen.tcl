@@ -11,10 +11,13 @@ if {[info exists ::pak::_headergen_loaded]} { return }
 set ::pak::_headergen_loaded 1
 
 proc pak::module_to_guard {module_path} {
-    return "[string toupper [string map {. _} $module_path]]_H"
+    # PAKMOD_ prefix avoids colliding with C stdlib header guards.
+    return "PAKMOD_[string toupper [string map {. _} $module_path]]_H"
 }
 proc pak::module_to_filename {module_path} {
-    return "[string map {. _} $module_path].h"
+    # pakmod_ prefix keeps generated headers from shadowing C stdlib headers
+    # (module math -> pakmod_math.h, not math.h) and the runtime's pak_*.h.
+    return "pakmod_[string map {. _} $module_path].h"
 }
 
 proc pak::generate_header {program module_path} {

@@ -13,7 +13,7 @@ from .lexer import Lexer, LexError
 from .parser import Parser, ParseError, parse
 from .codegen import generate
 from .typechecker import typecheck_multi, TypeEnv, PakError
-from .checker import semantic_check, check_entry_blocks, CheckDiag
+from .checker import semantic_check, check_entry_blocks, check_module_imports, CheckDiag
 from .headergen import generate_header, module_to_filename, collect_module_includes
 from . import ast as pak_ast
 from .mips import MipsCodegen, CodegenError
@@ -332,6 +332,12 @@ def _run_full_check(
     # ── 3. Cross-file entry block check ──────────────────────────────────────
     entry_diags = check_entry_blocks(parsed)
     for d in entry_diags:
+        hard_errors += 1
+        print(str(d), file=sys.stderr)
+
+    # ── 3b. Cross-file module-import resolution ───────────────────────────────
+    import_diags = check_module_imports(parsed)
+    for d in import_diags:
         hard_errors += 1
         print(str(d), file=sys.stderr)
 

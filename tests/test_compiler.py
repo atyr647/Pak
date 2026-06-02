@@ -2532,6 +2532,99 @@ class TestGenericFunctions:
         real = [e for e in errors if not e.is_warning]
         assert not real
 
+    def test_generic_fn_explicit_type_args(self):
+        """foo<i32>(x) must monomorphize to foo_int32_t, not foo_void_p."""
+        src = textwrap.dedent('''
+            fn id<T>(x: T) -> T { return x }
+            static s: i32 = 0
+            entry { s = id<i32>(42) }
+        ''')
+        c = codegen(src)
+        assert 'id_int32_t' in c
+        assert 'id_void_p' not in c
+
+    def test_generic_fn_explicit_multi_type_args(self):
+        src = textwrap.dedent('''
+            fn pair<A, B>(a: A, b: B) -> A { return a }
+            static s: i32 = 0
+            entry { s = pair<i32, f32>(7, 3.5) }
+        ''')
+        c = codegen(src)
+        assert 'pair_int32_t_float' in c
+
+    def test_explicit_type_args_dont_break_comparison(self):
+        """`a < b` must still parse as a comparison, not type args."""
+        src = textwrap.dedent('''
+            fn lt(a: i32, b: i32) -> bool { return a < b }
+            entry { }
+        ''')
+        errors = check(src)
+        real = [e for e in errors if not e.is_warning]
+        assert not real
+
+    def test_generic_struct_literal_monomorphized(self):
+        """Box<i32> { .. } emits a specialized struct typedef + cast."""
+        src = textwrap.dedent('''
+            struct Box<T> { value: T }
+            static r: i32 = 0
+            entry {
+                let mut b = Box<i32> { value: 42 }
+                r = b.value
+            }
+        ''')
+        c = codegen(src)
+        assert 'Box_int32_t' in c
+        assert '(Box_int32_t){' in c
+        # The unsubstituted template must not leak into output.
+        assert 'T value;' not in c
+
+    def test_generic_impl_method_specialized(self):
+        """A method on a generic struct lowers to Box_i32_get(&b)."""
+        src = textwrap.dedent('''
+            struct Box<T> { value: T }
+            impl Box<T> { fn get(self: *Box<T>) -> T { return self.value } }
+            static r: i32 = 0
+            entry {
+                let mut b = Box<i32> { value: 42 }
+                r = b.get()
+            }
+        ''')
+        c = codegen(src)
+        assert 'Box_int32_t_get(Box_int32_t * self)' in c
+        assert 'Box_int32_t_get(&b)' in c
+
+    def test_generic_struct_two_instantiations(self):
+        src = textwrap.dedent('''
+            struct Box<T> { value: T }
+            impl Box<T> { fn get(self: *Box<T>) -> T { return self.value } }
+            static a: i32 = 0
+            static b: f32 = 0.0
+            entry {
+                let mut bi = Box<i32> { value: 7 }
+                let mut bf = Box<f32> { value: 1.5 }
+                a = bi.get()
+                b = bf.get()
+            }
+        ''')
+        c = codegen(src)
+        assert 'Box_int32_t_get(&bi)' in c
+        assert 'Box_float_get(&bf)' in c
+
+    def test_struct_literal_method_call_lowered(self):
+        """Method calls on a let-bound struct literal lower to Type_method(&v)."""
+        src = textwrap.dedent('''
+            struct P { x: i32 }
+            impl P { fn get(self: *P) -> i32 { return self.x } }
+            static r: i32 = 0
+            entry {
+                let mut p = P { x: 9 }
+                r = p.get()
+            }
+        ''')
+        c = codegen(src)
+        assert 'P_get(&p)' in c
+        assert 'p.get()' not in c
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Format strings — end-to-end golden tests
@@ -3036,6 +3129,55 @@ class TestTraits:
         assert '_pak_Drawable_draw_Sprite' in c
         assert '_pak_Drawable_vtable_Sprite' in c
         assert 'Drawable_from_Sprite' in c
+
+    def test_trait_default_method_synthesized(self):
+        """A trait default body is emitted for an impl that omits it."""
+        src = textwrap.dedent('''
+            trait Greeter {
+                fn name(self: *Self) -> i32
+                fn greet(self: *Self) -> i32 { return self.name() + 100 }
+            }
+            struct Bot { id: i32 }
+            impl Bot for Greeter {
+                fn name(self: *Bot) -> i32 { return self.id }
+            }
+        ''')
+        c = codegen(src)
+        # The default greet() is specialized for Bot and calls Bot_name.
+        assert 'Bot_greet(Bot * self)' in c
+        assert 'Bot_name(self)' in c
+
+    def test_trait_default_method_ok(self):
+        """Omitting a method that has a default body must type-check."""
+        src = textwrap.dedent('''
+            trait Greeter {
+                fn name(self: *Self) -> i32
+                fn greet(self: *Self) -> i32 { return self.name() + 100 }
+            }
+            struct Bot { id: i32 }
+            impl Bot for Greeter {
+                fn name(self: *Bot) -> i32 { return self.id }
+            }
+        ''')
+        errors = check(src)
+        real = [e for e in errors if not e.is_warning]
+        assert not real
+
+    def test_trait_missing_required_method_errors(self):
+        """Omitting a required (body-less) trait method raises E602."""
+        src = textwrap.dedent('''
+            trait Greeter {
+                fn name(self: *Self) -> i32
+                fn greet(self: *Self) -> i32 { return self.name() + 100 }
+            }
+            struct Bot { id: i32 }
+            impl Bot for Greeter {
+                fn greet(self: *Bot) -> i32 { return 5 }
+            }
+        ''')
+        errors = check(src)
+        codes = [e.code for e in errors]
+        assert 'E602' in codes
 
     def test_dyn_trait_type(self):
         src = textwrap.dedent('''

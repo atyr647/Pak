@@ -113,10 +113,10 @@ static int32_t sink = 0;
 
 int main(void) {
     __auto_type spr = (Sprite){.x = 0, .y = 0, .w = 16, .h = 16};
-    spr.draw(10, 20);
-    sink = spr.get_width();
+    Sprite_draw(&spr, 10, 20);
+    sink = Sprite_get_width(&spr);
     __auto_type enemy = (Enemy){.x = 0.0f, .y = 0.0f, .speed = 50.0f};
-    enemy.update(0.016f);
+    Enemy_update(&enemy, 0.016f);
     sink = (int32_t)enemy.x;
     return 0;
 }
