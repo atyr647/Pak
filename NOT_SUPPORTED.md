@@ -184,19 +184,21 @@ fn add_one(a: i32) -> i32 { return a + 1 }
 let x = add_one(5)
 ```
 
-### Closures Cannot Capture Environment [Currently]
-Lambda syntax works (`fn(x: i32) -> i32 { return x + 1 }`) and **non-capturing**
-closures compile and run fine — they lower to a lifted top-level C function and a
-function pointer. **Capturing** closures do NOT work: a lambda that references an
-outer local passes `pak check` but the lifted C function references a name that is
-out of scope, producing C that does not compile. Do not rely on captured variables.
+### Closures Capture Environment — Supported (within the enclosing frame)
+Lambda syntax works (`fn(x: i32) -> i32 { return x + 1 }`). A closure used inside
+a function body **may capture** outer locals/params: it lowers to a GCC nested
+function in the enclosing block and decays to a plain function pointer. Capture is
+**by reference** and valid only while the enclosing call frame is alive (consistent
+with Pak's manual-lifetime model) — do not store a capturing closure and call it
+after its defining function returns. Top-level closures (in global/`static`
+initializers) have no frame to capture and must be non-capturing.
 ```
 -- WORKS (non-capturing):
 let f: fn(i32) -> i32 = fn(x: i32) -> i32 { return x + 1 }
 
--- BROKEN (captures `base` — generates invalid C):
+-- WORKS (captures `base` — emitted as a GCC nested function):
 let base: i32 = 10
-let g: fn(i32) -> i32 = fn(x: i32) -> i32 { return x + base }
+let g = fn(x: i32) -> i32 { return x + base }
 ```
 
 ### String Interpolation `{name}` IS Supported

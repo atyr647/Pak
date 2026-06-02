@@ -185,7 +185,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Inline `asm` | ✅ Full | |
 | Generic functions | ⚠️ Partial | Monomorphised at call sites, not all cases covered |
 | Non-capturing closures | ✅ Full | Lowered to a top-level fn + function pointer |
-| Closures capturing environment | ❌ Known bug | Lifted fn references out-of-scope name → invalid C |
+| Closures capturing environment | ✅ Full | Emitted as a GCC nested function; captures by reference within the enclosing frame |
 | Trait object dispatch (`dyn`) | ⚠️ Partial | |
 | `goto` / labels | ✅ Full | |
 | Format strings | ✅ Full | `"x={n}"` → `snprintf` into static buffer |
@@ -217,7 +217,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Bug | Workaround |
 |-----|------------|
 | `let _ = expr` — `_` is a keyword, not a valid `let` target | Assign to a named variable or static |
-| Capturing closures generate C that references out-of-scope names | Use non-capturing lambdas; pass state via parameters |
+| (fixed) Capturing closures — now emitted as GCC nested functions | — |
 | Named-field variant construction as expression (`Event.move { x: 1 }`) | Use positional payloads: `Event.move(1, 2)` |
 
 ## Recently Fixed Bugs
