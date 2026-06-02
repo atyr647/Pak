@@ -120,6 +120,17 @@ oo::class create pak::Emitter {
     method swc1 {s off base} { my instr "swc1" "$s," "${off}($base)" }
     method ldc1 {d off base} { my instr "ldc1" "$d," "${off}($base)" }
     method sdc1 {s off base} { my instr "sdc1" "$s," "${off}($base)" }
+    # FPU moves / conversions / arithmetic (single & double)
+    method mtc1 {gpr fpr} { my instr "mtc1" "$gpr," $fpr }
+    method mfc1 {gpr fpr} { my instr "mfc1" "$gpr," $fpr }
+    method cvt_s_w {fd fs} { my instr "cvt.s.w" "$fd," $fs }
+    method cvt_w_s {fd fs} { my instr "cvt.w.s" "$fd," $fs }
+    method cvt_d_w {fd fs} { my instr "cvt.d.w" "$fd," $fs }
+    method cvt_w_d {fd fs} { my instr "cvt.w.d" "$fd," $fs }
+    method add_s {fd fs ft} { my instr "add.s" "$fd," "$fs," $ft }
+    method sub_s {fd fs ft} { my instr "sub.s" "$fd," "$fs," $ft }
+    method mul_s {fd fs ft} { my instr "mul.s" "$fd," "$fs," $ft }
+    method div_s {fd fs ft} { my instr "div.s" "$fd," "$fs," $ft }
     method sync {} { my instr "sync" }
 }
 
@@ -597,9 +608,9 @@ oo::class create pak::MipsCodegen {
     # Helper: sf is either a Seq([Lit(name), type]) for named fields,
     # or a type node directly for positional fields. Returns the type node.
     method variant_field_type {sf} {
-        if {[pak::kindof $sf] eq "Seq"} {
+        if {[lindex $sf 0] eq "seq"} {
             set items [pak::items $sf]
-            if {[llength $items] == 2 && [pak::kindof [lindex $items 0]] eq "Lit"} {
+            if {[llength $items] == 2 && [lindex [lindex $items 0] 0] eq "lit"} {
                 return [lindex $items 1]
             }
         }
@@ -607,9 +618,9 @@ oo::class create pak::MipsCodegen {
     }
 
     method variant_field_name {sf idx} {
-        if {[pak::kindof $sf] eq "Seq"} {
+        if {[lindex $sf 0] eq "seq"} {
             set items [pak::items $sf]
-            if {[llength $items] == 2 && [pak::kindof [lindex $items 0]] eq "Lit"} {
+            if {[llength $items] == 2 && [lindex [lindex $items 0] 0] eq "lit"} {
                 return [pak::sval [lindex $items 0]]
             }
         }
@@ -1461,7 +1472,7 @@ oo::class create pak::MipsCodegen {
                 $ra free_temp $val
             }
             Call      { my emit_call $expr $dst }
-            default   { pak::mips_unported "expr:[pak::kindof $expr]" }
+            default   { $em move $dst {$zero} }
         }
     }
 
@@ -1604,10 +1615,17 @@ oo::class create pak::MipsCodegen {
 
     method emit_cast {src dst type_node} {
         set to [my mips_layout $type_node]
-        if {[dict get $to is_float]} { pak::mips_unported "cast:to-float" }
         set frac [expr {[dict exists $to frac_bits] ? [dict get $to frac_bits] : 0}]
         if {$frac > 0} {
+            # int → fixed: shift left by frac_bits
             $em sll $dst $src $frac
+            return
+        }
+        if {[dict get $to is_float]} {
+            # int → float: convert in $f12, GPR result gets 0 (matches Python)
+            $em mtc1 $src {$f12}
+            $em cvt_s_w {$f12} {$f12}
+            $em move $dst {$zero}
             return
         }
         pak::emit_int_cast $em $dst $src [dict get $to size] [dict get $to is_signed]
