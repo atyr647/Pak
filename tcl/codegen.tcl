@@ -666,7 +666,7 @@ oo::class create pak::Codegen {
         if {$type_name in {Mat4Fp T3DMat4FP}} {
             if {$method eq "create"} { return "malloc_uncached(sizeof(T3DMat4FP))" }
         }
-        if {$type_name in {FixedList RingBuffer FixedMap Pool}} {
+        if {$type_name in {FixedList RingBuffer FixedMap Pool Vec}} {
             if {$method eq "init"} { return "{0}" }
         }
         return ""

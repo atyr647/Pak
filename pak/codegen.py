@@ -1011,7 +1011,7 @@ class Codegen:
                     f'    {k_type} keys[{cap}];',
                     f'    {v_type} values[{cap}];',
                     f'    bool occupied[{cap}];',
-                    f'    int32_t count;',
+                    f'    int32_t len;',
                     f'}} {tname};',
                 ]
             elif kind == 'RingBuffer':
@@ -1019,7 +1019,7 @@ class Codegen:
                 lines += [
                     f'typedef struct {{',
                     f'    {elem_type} data[{cap}];',
-                    f'    int32_t head, tail, count;',
+                    f'    int32_t head, tail, len;',
                     f'}} {tname};',
                 ]
             else:  # FixedList / Pool
@@ -1524,8 +1524,8 @@ class Codegen:
         if type_name in ('Mat4Fp', 'T3DMat4FP'):
             if method == 'create':
                 return 'malloc_uncached(sizeof(T3DMat4FP))'
-        # FixedList / RingBuffer / FixedMap static init
-        if type_name in ('FixedList', 'RingBuffer', 'FixedMap', 'Pool'):
+        # FixedList / RingBuffer / FixedMap / Vec / Pool static init
+        if type_name in ('FixedList', 'RingBuffer', 'FixedMap', 'Pool', 'Vec'):
             if method == 'init':
                 return '{0}'
         return None
@@ -1679,8 +1679,11 @@ class Codegen:
                 return f'({td}){{.data = ({obj}).data, .len = ({obj}).len}}'
             if method == 'len' and not a:
                 return f'({obj}).len'
-            if method in ('acquire',):    # Pool-specific
-                return f'pak_pool_acquire(&({obj}))'
+            if method == 'is_empty' and not a:
+                return f'(({obj}).len == 0)'
+            if method in ('acquire',):    # Pool-specific — cast to elem type pointer
+                elem_t = self.gen_type(obj_type.args[0]) if obj_type.args else 'void'
+                return f'(({elem_t} *)pak_pool_acquire(&({obj})))'
             if method in ('release',) and a:
                 return f'pak_pool_release(&({obj}), {a[0]})'
 
@@ -1692,33 +1695,36 @@ class Codegen:
             if method == 'push' and a:
                 return (f'({{ ({obj}).data[({obj}).tail] = ({a[0]}); '
                         f'({obj}).tail = (({obj}).tail + 1) % {cap}; '
-                        f'if (({obj}).count < {cap}) ({obj}).count++; }})')
+                        f'if (({obj}).len < {cap}) ({obj}).len++; }})')
             if method == 'peek_back' and a:
                 return (f'({obj}).data[(({obj}).tail - ({a[0]}) - 1 + {cap}) % {cap}]')
             if method == 'pop':
                 return (f'({{ __auto_type _v = ({obj}).data[({obj}).head]; '
                         f'({obj}).head = (({obj}).head + 1) % {cap}; '
-                        f'if (({obj}).count > 0) ({obj}).count--; _v; }})')
-            if method == 'len' and not a:
-                return f'({obj}).count'
+                        f'if (({obj}).len > 0) ({obj}).len--; _v; }})')
+            if method == 'is_empty' and not a:
+                return f'(({obj}).len == 0)'
 
         # ── FixedMap instance methods ─────────────────────────────────────────
         if isinstance(obj_type, ast.TypeGeneric) and obj_type.name == 'FixedMap':
             cap = obj_type.args[2].value if len(obj_type.args) > 2 else 0
             # String keys (*c_char) compare by content (strcmp); others memcmp.
             ksuf = '_str' if (len(obj_type.args) > 0 and self._is_cstr_type(obj_type.args[0])) else ''
+            v_type = self.gen_type(obj_type.args[1]) if len(obj_type.args) > 1 else 'int32_t'
             if method == 'init':
                 return f'memset(&({obj}), 0, sizeof({obj}))'
             if method == 'set' and len(a) == 2:
                 return (f'pak_map_set{ksuf}(&({obj}), {cap}, {a[0]}, {a[1]})')
             if method == 'get' and a:
-                return f'pak_map_get{ksuf}(&({obj}), {cap}, {a[0]})'
+                return f'(({v_type} *)pak_map_get{ksuf}(&({obj}), {cap}, {a[0]}))'
             if method in ('has', 'contains') and a:
                 return f'pak_map_has{ksuf}(&({obj}), {cap}, {a[0]})'
             if method == 'remove' and a:
                 return f'pak_map_remove{ksuf}(&({obj}), {cap}, {a[0]})'
             if method in ('len', 'count') and not a:
-                return f'({obj}).count'
+                return f'({obj}).len'
+            if method == 'is_empty' and not a:
+                return f'(({obj}).len == 0)'
 
         # ── Vec(T) dynamic vector methods ─────────────────────────────────────
         if isinstance(obj_type, ast.TypeGeneric) and obj_type.name == 'Vec':

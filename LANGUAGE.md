@@ -188,7 +188,7 @@ fn(A, B) -> R     -- function pointer taking A, B returning R
 fn(A)             -- function pointer with no return
 ```
 
-### Generic Container Types [PARTIAL]
+### Generic Container Types [IMPLEMENTED]
 
 Built-in parameterized types (do NOT invent others):
 
@@ -199,6 +199,8 @@ RingBuffer(T, N)    -- ring buffer, capacity N
 FixedMap(K, V, N)   -- fixed-capacity hash map
 Pool(T, N)          -- object pool, capacity N
 ```
+
+N must be a compile-time integer literal. See `examples/canonical/23_containers.pk64`.
 
 ### Trait Objects [PARTIAL]
 

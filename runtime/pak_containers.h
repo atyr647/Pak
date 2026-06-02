@@ -34,7 +34,7 @@
 static inline bool pak_map_set_raw(void *map_ptr, int32_t cap,
                                    const void *key_ptr, const void *val_ptr,
                                    int32_t key_sz, int32_t val_sz) {
-    /* Layout: keys[cap], values[cap], occupied[cap], count */
+    /* Layout: keys[cap], values[cap], occupied[cap], len */
     uint8_t *keys     = (uint8_t *)map_ptr;
     uint8_t *values   = keys + (size_t)cap * (size_t)key_sz;
     bool    *occupied = (bool *)(values + (size_t)cap * (size_t)val_sz);

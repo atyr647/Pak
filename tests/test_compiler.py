@@ -1852,6 +1852,73 @@ class TestContainers:
         c = codegen(src)
         assert 'len' in c
 
+    def test_vec_init_lowers_to_zero(self):
+        """Vec.init() must lower to {0}, not the literal string Vec.init()."""
+        src = textwrap.dedent('''
+            entry {
+                let mut v: Vec(i32) = Vec.init()
+            }
+        ''')
+        c = codegen(src)
+        assert 'Vec.init()' not in c
+        assert '{0}' in c
+
+    def test_ring_buffer_uses_len_field(self):
+        """RingBuffer struct must use .len (not .count) for consistency."""
+        src = textwrap.dedent('''
+            entry {
+                let mut rb: RingBuffer(i32, 8) = RingBuffer.init()
+                rb.push(1)
+                let n = rb.len()
+            }
+        ''')
+        c = codegen(src)
+        assert 'int32_t head, tail, len;' in c
+        assert '(rb).len' in c
+
+    def test_fixedmap_get_typed_cast(self):
+        """FixedMap.get() result should be cast to V* (not void*)."""
+        src = textwrap.dedent('''
+            entry {
+                let mut m: FixedMap(i32, i32, 8) = FixedMap.init()
+                m.set(1, 42)
+                let p = m.get(1)
+            }
+        ''')
+        c = codegen(src)
+        assert '(int32_t *)pak_map_get' in c
+
+    def test_pool_acquire_typed_cast(self):
+        """Pool.acquire() result should be cast to T* for the pool element type."""
+        src = textwrap.dedent('''
+            struct Item { v: i32 }
+            entry {
+                let mut pool: Pool(Item, 4) = Pool.init()
+                let p: *Item = pool.acquire()
+            }
+        ''')
+        c = codegen(src)
+        assert '(Item *)pak_pool_acquire' in c
+
+    def test_is_empty_all_containers(self):
+        """All container types support .is_empty()."""
+        src = textwrap.dedent('''
+            entry {
+                let mut fl: FixedList(i32, 4) = FixedList.init()
+                let a = fl.is_empty()
+                let mut rb: RingBuffer(i32, 4) = RingBuffer.init()
+                let b = rb.is_empty()
+                let mut fm: FixedMap(i32, i32, 4) = FixedMap.init()
+                let c = fm.is_empty()
+                let mut p: Pool(i32, 4) = Pool.init()
+                let d = p.is_empty()
+                let mut v: Vec(i32) = Vec.init()
+                let e = v.is_empty()
+            }
+        ''')
+        c = codegen(src)
+        assert c.count('.len == 0') >= 5
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # @export annotation

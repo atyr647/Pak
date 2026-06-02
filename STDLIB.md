@@ -78,11 +78,11 @@ Generic containers (parameterized, no import needed):
 ```pak
 Result(OkType, ErrType)   -- error-or-value type
 Option(T)                  -- nullable value
-Vec(T)                     -- growable heap array      [PARTIAL]
-FixedList(T, N)            -- fixed-capacity list      [PARTIAL]
-RingBuffer(T, N)           -- ring buffer              [PARTIAL]
-FixedMap(K, V, N)          -- fixed-capacity hash map  [PARTIAL]
-Pool(T, N)                 -- object pool              [PARTIAL]
+Vec(T)                     -- growable heap array      [IMPLEMENTED]
+FixedList(T, N)            -- fixed-capacity list      [IMPLEMENTED]
+RingBuffer(T, N)           -- ring buffer              [IMPLEMENTED]
+FixedMap(K, V, N)          -- fixed-capacity hash map  [IMPLEMENTED]
+Pool(T, N)                 -- object pool              [IMPLEMENTED]
 ```
 
 ---
