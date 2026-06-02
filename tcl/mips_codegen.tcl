@@ -392,6 +392,8 @@ oo::class create pak::MipsCodegen {
             set base i32
         } elseif {[pak::kindof $base_type_node] eq "TypeName"} {
             set base [pak::fval $base_type_node name]
+        } elseif {[lindex $base_type_node 0] eq "lit"} {
+            set base [pak::sval $base_type_node]
         } else {
             set base i32
         }
@@ -1678,7 +1680,21 @@ oo::class create pak::MipsCodegen {
             <=  { $em sle $dst $lhs $rhs }
             >   { $em sgt $dst $lhs $rhs }
             >=  { $em sge $dst $lhs $rhs }
-            default { pak::mips_unported "binop:$op" }
+            && {
+                set tmp [$ra alloc_temp]
+                $em sltiu $tmp $lhs 1
+                $em sltiu $dst $rhs 1
+                $em or_ $dst $tmp $dst
+                $em sltiu $dst $dst 1
+                $ra free_temp $tmp
+            }
+            || {
+                set tmp [$ra alloc_temp]
+                $em or_ $tmp $lhs $rhs
+                $em sltu $dst {$zero} $tmp
+                $ra free_temp $tmp
+            }
+            default { $em addu $dst $lhs $rhs }
         }
         $ra free_temp $rhs
         $ra free_temp $lhs
@@ -1870,7 +1886,11 @@ oo::class create pak::MipsCodegen {
 
     method emit_module_call {mod fn args_seq dst} {
         my marshal_args $args_seq
-        set sym [dict get $::pak::MIPS_API [list $mod $fn]]
+        if {[dict exists $::pak::MIPS_API [list $mod $fn]]} {
+            set sym [dict get $::pak::MIPS_API [list $mod $fn]]
+        } else {
+            set sym "${mod}_${fn}"
+        }
         if {$sym eq ""} { set sym "${mod}_${fn}" }
         $em jal $sym
         $em nop
