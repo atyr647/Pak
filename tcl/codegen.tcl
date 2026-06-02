@@ -1807,6 +1807,32 @@ proc pak::cg_api_lambda {mod fn arglist} {
         "t3d quat_nlerp" { return "t3d_quat_nlerp([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2], [lindex $arglist 3])" }
         "t3d quat_slerp" { return "t3d_quat_slerp([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2], [lindex $arglist 3])" }
         "t3d fog_set_enabled" { return "t3d_fog_set_enabled([expr {[llength $arglist] > 0 ? [lindex $arglist 0] : "true"}])" }
+        "math abs_i32"   { return "abs([lindex $arglist 0])" }
+        "math min_i32"   { return "MIN([lindex $arglist 0], [lindex $arglist 1])" }
+        "math max_i32"   { return "MAX([lindex $arglist 0], [lindex $arglist 1])" }
+        "math clamp_i32" { return "CLAMP([lindex $arglist 0], [lindex $arglist 1], [lindex $arglist 2])" }
+        "math sin_f"     { return "sinf([lindex $arglist 0])" }
+        "math cos_f"     { return "cosf([lindex $arglist 0])" }
+        "math sqrt_f"    { return "sqrtf([lindex $arglist 0])" }
+        "math atan2_f"   { return "atan2f([lindex $arglist 0], [lindex $arglist 1])" }
+        "math lerp_f"    { return "([lindex $arglist 0] + ([lindex $arglist 1] - [lindex $arglist 0]) * [lindex $arglist 2])" }
+        "math fix_to_f"  { return "((float)([lindex $arglist 0]) / 65536.0f)" }
+        "math f_to_fix"  { return "((int32_t)(([lindex $arglist 0]) * 65536.0f))" }
+        "math abs_f"     { return "fabsf([lindex $arglist 0])" }
+        "math min_f"     { return "fminf([lindex $arglist 0], [lindex $arglist 1])" }
+        "math max_f"     { return "fmaxf([lindex $arglist 0], [lindex $arglist 1])" }
+        "math clamp_f"   { return "fminf(fmaxf([lindex $arglist 0], [lindex $arglist 1]), [lindex $arglist 2])" }
+        "math floor_f"   { return "floorf([lindex $arglist 0])" }
+        "math ceil_f"    { return "ceilf([lindex $arglist 0])" }
+        "math pow_f"     { return "powf([lindex $arglist 0], [lindex $arglist 1])" }
+        "math tan_f"     { return "tanf([lindex $arglist 0])" }
+        "math fix_sin"   { return "((int32_t)(sinf((float)([lindex $arglist 0]) / 65536.0f) * 65536.0f))" }
+        "math fix_cos"   { return "((int32_t)(cosf((float)([lindex $arglist 0]) / 65536.0f) * 65536.0f))" }
+        "math fix_sqrt"  { return "((int32_t)(sqrtf((float)([lindex $arglist 0]) / 65536.0f) * 65536.0f))" }
+        "math rand"        { return "__pak_rand()" }
+        "math rand_seed"   { return "__pak_srand([lindex $arglist 0])" }
+        "math rand_range"  { return "__pak_rand_range([lindex $arglist 0], [lindex $arglist 1])" }
+        "math rand_f"      { return "__pak_rand_f()" }
         default { pak::cg_unported "api-lambda:$mod $fn" }
     }
 }

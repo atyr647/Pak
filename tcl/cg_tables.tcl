@@ -231,17 +231,32 @@ set ::pak::CG_API_LAMBDA [dict create \
     {arena reset} {1} \
     {controller read} {1} \
     {joypad is_connected} {1} \
+    {math abs_f} {1} \
     {math abs_i32} {1} \
     {math atan2_f} {1} \
+    {math ceil_f} {1} \
+    {math clamp_f} {1} \
     {math clamp_i32} {1} \
     {math cos_f} {1} \
     {math f_to_fix} {1} \
+    {math fix_cos} {1} \
+    {math fix_sin} {1} \
+    {math fix_sqrt} {1} \
     {math fix_to_f} {1} \
+    {math floor_f} {1} \
     {math lerp_f} {1} \
+    {math max_f} {1} \
     {math max_i32} {1} \
+    {math min_f} {1} \
     {math min_i32} {1} \
+    {math pow_f} {1} \
+    {math rand} {1} \
+    {math rand_f} {1} \
+    {math rand_range} {1} \
+    {math rand_seed} {1} \
     {math sin_f} {1} \
     {math sqrt_f} {1} \
+    {math tan_f} {1} \
     {mem alloc} {1} \
     {mem alloc_aligned} {1} \
     {mem copy} {1} \
@@ -317,7 +332,8 @@ set ::pak::CG_USE_INCLUDES [dict create \
     {n64.flashram} {#include <backup.h>} \
     {n64.joypad} {#include <joypad.h>} \
     {n64.math} {#include <n64sys.h>
-#include <math.h>} \
+#include <math.h>
+#include "pak_rand.h"} \
     {n64.mem} {#include <malloc.h>
 #include <string.h>} \
     {n64.mixer} {#include <audio.h>
@@ -383,13 +399,4 @@ set ::pak::CG_PRIM [dict create \
     {u64} {uint64_t} \
     {u8} {uint8_t} \
     {void} {void} \
-]
-
-# printf format specifiers for interpolated fmt-string expressions
-# (mirror codegen._FMT_SPEC)
-set ::pak::CG_FMT_SPEC [dict create \
-    {int8_t} {%d} {int16_t} {%d} {int32_t} {%ld} {int64_t} {%lld} \
-    {uint8_t} {%u} {uint16_t} {%u} {uint32_t} {%lu} {uint64_t} {%llu} \
-    {float} {%f} {double} {%lf} {bool} {%d} \
-    {PakStr} {%.*s} \
 ]

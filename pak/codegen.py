@@ -333,6 +333,24 @@ MODULE_API: dict = {
     ('math', 'lerp_f'):            lambda args: f'({args[0]} + ({args[1]} - {args[0]}) * {args[2]})',
     ('math', 'fix_to_f'):          lambda args: f'((float)({args[0]}) / 65536.0f)',
     ('math', 'f_to_fix'):          lambda args: f'((int32_t)(({args[0]}) * 65536.0f))',
+    # float scalar helpers
+    ('math', 'abs_f'):             lambda args: f'fabsf({args[0]})',
+    ('math', 'min_f'):             lambda args: f'fminf({args[0]}, {args[1]})',
+    ('math', 'max_f'):             lambda args: f'fmaxf({args[0]}, {args[1]})',
+    ('math', 'clamp_f'):           lambda args: f'fminf(fmaxf({args[0]}, {args[1]}), {args[2]})',
+    ('math', 'floor_f'):           lambda args: f'floorf({args[0]})',
+    ('math', 'ceil_f'):            lambda args: f'ceilf({args[0]})',
+    ('math', 'pow_f'):             lambda args: f'powf({args[0]}, {args[1]})',
+    ('math', 'tan_f'):             lambda args: f'tanf({args[0]})',
+    # fixed-point (fix16.16) trig / sqrt — routed through libm, fix<->float at the edges
+    ('math', 'fix_sin'):           lambda args: f'((int32_t)(sinf((float)({args[0]}) / 65536.0f) * 65536.0f))',
+    ('math', 'fix_cos'):           lambda args: f'((int32_t)(cosf((float)({args[0]}) / 65536.0f) * 65536.0f))',
+    ('math', 'fix_sqrt'):          lambda args: f'((int32_t)(sqrtf((float)({args[0]}) / 65536.0f) * 65536.0f))',
+    # deterministic PRNG (xorshift32, see runtime/pak_rand.h)
+    ('math', 'rand'):              lambda args: f'__pak_rand()',
+    ('math', 'rand_seed'):         lambda args: f'__pak_srand({args[0]})',
+    ('math', 'rand_range'):        lambda args: f'__pak_rand_range({args[0]}, {args[1]})',
+    ('math', 'rand_f'):            lambda args: f'__pak_rand_f()',
 
     # n64.rdpq — full RDP command queue API
     ('rdpq', 'triangle'):            'rdpq_triangle',
@@ -598,7 +616,7 @@ USE_INCLUDES = {
     'n64.dma':          '#include <dma.h>',
     'n64.cache':        '#include <n64sys.h>',
     'n64.debug':        '#include <debug.h>',
-    'n64.math':         '#include <n64sys.h>\n#include <math.h>',
+    'n64.math':         '#include <n64sys.h>\n#include <math.h>\n#include "pak_rand.h"',
     'n64.mem':          '#include <malloc.h>',
     'n64.rsp':          '#include <rspq.h>',
 
