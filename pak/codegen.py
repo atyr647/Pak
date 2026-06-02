@@ -2131,18 +2131,50 @@ class Codegen:
 
         return '\n'.join(lines)
 
+    def _trait_default_method(self, tm: ast.FnDecl, type_name: str) -> ast.FnDecl:
+        """Specialize a trait default method for a concrete impl type: copy the
+        FnDecl and retype its `self` parameter to *type_name so the body's
+        self.field / self.other() resolve against the implementing type."""
+        import copy as _copy
+        new_params = []
+        for p in tm.params:
+            if p.name == 'self':
+                p = ast.Param(name='self',
+                              type=ast.TypePointer(inner=ast.TypeName(name=type_name),
+                                                   nullable=False, mutable=True),
+                              mutable=getattr(p, 'mutable', False))
+            new_params.append(p)
+        return ast.FnDecl(name=tm.name, params=new_params, ret_type=tm.ret_type,
+                          body=_copy.deepcopy(tm.body), type_params=[], annotations=[],
+                          is_method=True, self_type=type_name)
+
     def gen_impl_trait(self, impl: ast.ImplTraitBlock) -> str:
-        """Emit thunk wrappers, vtable instance, and constructor for an impl."""
+        """Emit the real method bodies, thunk wrappers, vtable instance, and
+        constructor for an `impl Type for Trait` block. Trait methods the impl
+        omits but the trait provides a default body for are synthesized here."""
         lines = [f'/* impl {impl.type_name} for {impl.trait_name} */']
         trait = self.trait_decls.get(impl.trait_name)
 
-        # Register impl methods so obj.method() dispatch works
+        # Full method set = impl methods + non-overridden trait defaults.
+        impl_names = {m.name for m in impl.methods}
+        methods = list(impl.methods)
+        if trait:
+            for tm in trait.methods:
+                if tm.name not in impl_names and tm.body is not None:
+                    methods.append(self._trait_default_method(tm, impl.type_name))
+
+        # Register methods so obj.method() direct dispatch works
         if impl.type_name not in self.method_registry:
             self.method_registry[impl.type_name] = {}
-        for m in impl.methods:
+        for m in methods:
             self.method_registry[impl.type_name][m.name] = m
 
-        for m in impl.methods:
+        # Emit the concrete method bodies: TypeName_method(...)
+        for m in methods:
+            lines.append(self.gen_fn(m, prefix=impl.type_name))
+            lines.append('')
+
+        for m in methods:
             ret = self.gen_type(m.ret_type)
             thunk = f'_pak_{impl.trait_name}_{m.name}_{impl.type_name}'
             # Thunk params: void *_self, then other params
@@ -2167,7 +2199,7 @@ class Codegen:
         # Vtable instance
         vtable_var = f'_pak_{impl.trait_name}_vtable_{impl.type_name}'
         lines.append(f'static const {impl.trait_name}_vtable {vtable_var} = {{')
-        for m in impl.methods:
+        for m in methods:
             thunk = f'_pak_{impl.trait_name}_{m.name}_{impl.type_name}'
             lines.append(f'    .{m.name} = {thunk},')
         lines.append('};')

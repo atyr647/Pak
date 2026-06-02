@@ -51,6 +51,19 @@ typedef struct {
 } Sprite;
 
 /* impl Sprite for Drawable */
+void Sprite_draw(Sprite * self, int32_t x, int32_t y) {
+    self->x = x;
+    self->y = y;
+}
+
+int32_t Sprite_get_width(Sprite * self) {
+    return self->w;
+}
+
+int32_t Sprite_get_height(Sprite * self) {
+    return self->h;
+}
+
 static void _pak_Drawable_draw_Sprite(void *_self, int32_t x, int32_t y) {
     Sprite_draw((Sprite *)_self, x, y);
 }
@@ -80,6 +93,10 @@ typedef struct {
 } Enemy;
 
 /* impl Enemy for Updatable */
+void Enemy_update(Enemy * self, float dt) {
+    self->x += (self->speed * dt);
+}
+
 static void _pak_Updatable_update_Enemy(void *_self, float dt) {
     Enemy_update((Enemy *)_self, dt);
 }

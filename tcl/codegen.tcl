@@ -1395,14 +1395,48 @@ oo::class create pak::Codegen {
         return [join $lines \n]
     }
 
+    # Specialize a trait default method for a concrete impl type: rebuild it
+    # with its `self` param retyped to *tname (mirrors _trait_default_method).
+    method trait_default_method {tm tname} {
+        set new_params {}
+        foreach p [pak::items [pak::nfield $tm params]] {
+            if {[pak::fval $p name] eq "self"} {
+                set p [pak::N Param name self \
+                    type [pak::N TypePointer inner [pak::N TypeName name $tname] nullable 0 mutable 1] \
+                    mutable 0 default_value [pak::Nil]]
+            }
+            lappend new_params $p
+        }
+        return [pak::N FnDecl name [pak::fval $tm name] params $new_params \
+            ret_type [pak::nfield $tm ret_type] body [pak::nfield $tm body] \
+            type_params {} annotations {} is_method 1 self_type [pak::N TypeName name $tname] variadic 0]
+    }
+
     method gen_impl_trait {impl} {
         set tname [pak::fval $impl type_name]
         set trait [pak::fval $impl trait_name]
         set lines [list "/* impl $tname for $trait */"]
-        foreach m [pak::items [pak::nfield $impl methods]] {
+        # Full method set = impl methods + non-overridden trait defaults.
+        set impl_names {}
+        foreach m [pak::items [pak::nfield $impl methods]] { lappend impl_names [pak::fval $m name] }
+        set methods [pak::items [pak::nfield $impl methods]]
+        if {[dict exists $trait_decls $trait]} {
+            set tdecl [dict get $trait_decls $trait]
+            foreach tm [pak::items [pak::nfield $tdecl methods]] {
+                if {[pak::fval $tm name] ni $impl_names && ![pak::isnil [pak::nfield $tm body]]} {
+                    lappend methods [my trait_default_method $tm $tname]
+                }
+            }
+        }
+        foreach m $methods {
             dict set method_registry $tname [pak::fval $m name] $m
         }
-        foreach m [pak::items [pak::nfield $impl methods]] {
+        # Emit the concrete method bodies: TypeName_method(...)
+        foreach m $methods {
+            lappend lines [my gen_fn $m $tname]
+            lappend lines ""
+        }
+        foreach m $methods {
             set ret [my gen_type [pak::nfield $m ret_type]]
             set mname [pak::fval $m name]
             set thunk "_pak_${trait}_${mname}_${tname}"
@@ -1425,7 +1459,7 @@ oo::class create pak::Codegen {
         }
         set vtable_var "_pak_${trait}_vtable_${tname}"
         lappend lines "static const ${trait}_vtable ${vtable_var} = {"
-        foreach m [pak::items [pak::nfield $impl methods]] {
+        foreach m $methods {
             set mname [pak::fval $m name]
             lappend lines "    .${mname} = _pak_${trait}_${mname}_${tname},"
         }
