@@ -38,6 +38,42 @@ proc pak::strip_parens {s} {
 }
 
 set ::pak::CG_FIXSHIFT [dict create fix16.16 16 fix10.5 5 fix1.15 15]
+
+# Mirror codegen._NUMERIC_CAST_METHODS / _FIXPOINT_CAST / _VEC*_INSTANCE / _MAT4_INSTANCE
+set ::pak::CG_NUMERIC_CAST [dict create \
+    as_i8 int8_t as_i16 int16_t as_i32 int32_t as_i64 int64_t \
+    as_u8 uint8_t as_u16 uint16_t as_u32 uint32_t as_u64 uint64_t \
+    as_f32 float as_f64 double as_bool bool as_byte uint8_t]
+set ::pak::CG_FIXPOINT_CAST [dict create \
+    as_fix16_16 {(int32_t)((%VAL%) * 65536.0f)} \
+    as_fix10_5  {(int16_t)((%VAL%) * 32.0f)} \
+    as_fix1_15  {(int16_t)((%VAL%) * 32768.0f)}]
+set ::pak::CG_VEC3_INSTANCE [dict create \
+    add          {pak_vec3_add(%OBJ%, %A0%)} \
+    sub          {pak_vec3_sub(%OBJ%, %A0%)} \
+    scale        {pak_vec3_scale(%OBJ%, %A0%)} \
+    normalize    {pak_vec3_normalize(%OBJ%)} \
+    length       {pak_vec3_length(%OBJ%)} \
+    dot          {pak_vec3_dot(%OBJ%, %A0%)} \
+    cross        {pak_vec3_cross(%OBJ%, %A0%)} \
+    distance_to  {pak_vec3_distance(%OBJ%, %A0%)} \
+    direction_to {pak_vec3_direction(%OBJ%, %A0%)} \
+    negate       {pak_vec3_scale(%OBJ%, -1.0f)}]
+set ::pak::CG_VEC2_INSTANCE [dict create \
+    add    {pak_vec2_add(%OBJ%, %A0%)} \
+    sub    {pak_vec2_sub(%OBJ%, %A0%)} \
+    scale  {pak_vec2_scale(%OBJ%, %A0%)} \
+    length {pak_vec2_length(%OBJ%)}]
+set ::pak::CG_MAT4_INSTANCE [dict create \
+    rotate_y     {pak_mat4_rotate_y(&(%OBJ%), %A0%)} \
+    rotate_x     {pak_mat4_rotate_x(&(%OBJ%), %A0%)} \
+    rotate_z     {pak_mat4_rotate_z(&(%OBJ%), %A0%)} \
+    set_position {pak_mat4_set_position(&(%OBJ%), %A0%)} \
+    translate    {pak_mat4_translate(&(%OBJ%), %A0%, %A1%, %A2%)} \
+    scale        {pak_mat4_scale_uniform(&(%OBJ%), %A0%)} \
+    to_fixed     {t3d_mat4_to_fixed(%A0%, &(%OBJ%))} \
+    as_t3d       {pak_mat4_to_fp_alloc(&(%OBJ%))} \
+    identity     {t3d_mat4_identity(&(%OBJ%))}]
 proc pak::cg_fixshift {typ} {
     if {[pak::kindof $typ] eq "TypeName"} {
         set n [pak::fval $typ name]
@@ -209,6 +245,13 @@ oo::class create pak::Codegen {
             TypeResult { return [my result_typedef [pak::nfield $t ok] [pak::nfield $t err]] }
             TypeDynTrait { return [pak::fval $t name] }
             TypeVolatile { return "volatile [my gen_type [pak::nfield $t inner]]" }
+            TypeFn {
+                set tret [pak::nfield $t ret]
+                set rc [expr {[pak::isnil $tret] ? "void" : [my gen_type $tret]}]
+                set ps {}
+                foreach p [pak::items [pak::nfield $t params]] { lappend ps [my gen_type $p] }
+                return "$rc (*)([join $ps {, }])"
+            }
             default { pak::cg_unported "type:[pak::kindof $t]" }
         }
     }
@@ -323,6 +366,12 @@ oo::class create pak::Codegen {
             Closure   { return [my gen_closure $e] }
             CatchExpr { return [my gen_expr [pak::nfield $e expr]] }
             NullCheck { return [my gen_expr [pak::nfield $e expr]] }
+            RangeExpr {
+                set start [my gen_expr [pak::nfield $e start]]
+                set end_node [pak::nfield $e end]
+                set end [expr {[pak::isnil $end_node] ? "" : [my gen_expr $end_node]}]
+                return "$start..$end"
+            }
             default { pak::cg_unported "expr:[pak::kindof $e]" }
         }
     }
@@ -437,32 +486,213 @@ oo::class create pak::Codegen {
         return $lines
     }
 
+    # Static type-method calls: Vec3.zero(), Mat4.identity(), Vec3.from(...) etc.
+    # Mirror codegen._gen_static_type_method. Returns "" if not handled.
+    method gen_static_type_method {type_name method args} {
+        if {$type_name in {Vec3 T3DVec3}} {
+            switch -- $method {
+                zero    { return "(T3DVec3){{0.0f, 0.0f, 0.0f}}" }
+                up      { return "(T3DVec3){{0.0f, 1.0f, 0.0f}}" }
+                right   { return "(T3DVec3){{1.0f, 0.0f, 0.0f}}" }
+                forward { return "(T3DVec3){{0.0f, 0.0f, -1.0f}}" }
+                one     { return "(T3DVec3){{1.0f, 1.0f, 1.0f}}" }
+            }
+            if {$method eq "from" && [llength $args] == 3} {
+                return "(T3DVec3){{[lindex $args 0], [lindex $args 1], [lindex $args 2]}}"
+            }
+        }
+        if {$type_name in {Vec2 T3DVec2}} {
+            switch -- $method {
+                zero { return "(T3DVec2){{0.0f, 0.0f}}" }
+                one  { return "(T3DVec2){{1.0f, 1.0f}}" }
+            }
+        }
+        if {$type_name in {Vec4 T3DVec4}} {
+            if {$method eq "zero"} { return "(T3DVec4){{0.0f, 0.0f, 0.0f, 0.0f}}" }
+        }
+        if {$type_name in {Mat4 T3DMat4}} {
+            if {$method eq "identity"} { return "pak_mat4_identity()" }
+        }
+        if {$type_name in {Mat4Fp T3DMat4FP}} {
+            if {$method eq "create"} { return "malloc_uncached(sizeof(T3DMat4FP))" }
+        }
+        if {$type_name in {FixedList RingBuffer FixedMap Pool}} {
+            if {$method eq "init"} { return "{0}" }
+        }
+        return ""
+    }
+
+    # Built-in instance method dispatch. Mirror codegen._gen_builtin_method.
+    # Returns "" if not handled (caller falls through). Raises CGUNPORTED for
+    # branches whose typedef machinery is not yet ported to the Tcl codegen.
+    method gen_builtin_method {obj c_type method args obj_type} {
+        set na [llength $args]
+        set a0 [expr {$na > 0 ? [lindex $args 0] : ""}]
+        set a1 [expr {$na > 1 ? [lindex $args 1] : ""}]
+        set a2 [expr {$na > 2 ? [lindex $args 2] : ""}]
+        # Numeric cast methods
+        if {[dict exists $::pak::CG_NUMERIC_CAST $method]} {
+            return "([dict get $::pak::CG_NUMERIC_CAST $method])($obj)"
+        }
+        if {[dict exists $::pak::CG_FIXPOINT_CAST $method]} {
+            return [string map [list {%VAL%} $obj] [dict get $::pak::CG_FIXPOINT_CAST $method]]
+        }
+        if {$method eq "integer"} { return "(int32_t)(($obj) >> 16)" }
+        if {$method eq "fraction"} { return "((float)(($obj) & 0xFFFF) / 65536.0f)" }
+        if {$method eq "clamp" && $na == 2} {
+            return "(($obj) < ($a0) ? ($a0) : ($obj) > ($a1) ? ($a1) : ($obj))"
+        }
+        if {$method in {as_slice as_slice_mut}} {
+            if {[pak::kindof $obj_type] eq "TypeArray"} { pak::cg_unported "builtin:as_slice" }
+            return "(\{ __auto_type _arr = &($obj)\[0\]; (void*)_arr; \})"
+        }
+        if {$method eq "get_unchecked" && $na == 1} {
+            if {[pak::kindof $obj_type] eq "TypeSlice"} { return "($obj).data\[$a0\]" }
+            return "($obj)\[$a0\]"
+        }
+        if {$method eq "len" && $na == 0} {
+            if {[pak::kindof $obj_type] eq "TypeSlice"} { return "($obj).len" }
+            if {[pak::kindof $obj_type] eq "TypeArray"} { return "(int32_t)(sizeof($obj)/sizeof(($obj)\[0\]))" }
+            return "($obj).len"
+        }
+        if {$method eq "free" && $na == 0} {
+            if {$c_type in {"T3DMat4FP *" "T3DMat4FP*"}} { return "free_uncached($obj)" }
+            if {$c_type in {"T3DModel *" "T3DModel*"}} { return "t3d_model_free($obj)" }
+        }
+        # Vec3 instance methods
+        if {$c_type in {"T3DVec3" "T3DVec3 *"} || [dict exists $::pak::CG_VEC3_INSTANCE $method]} {
+            if {[dict exists $::pak::CG_VEC3_INSTANCE $method]} {
+                set tmpl [dict get $::pak::CG_VEC3_INSTANCE $method]
+                return [string map [list {%OBJ%} $obj {%A0%} [expr {$na>0?$a0:"0"}] {%A1%} [expr {$na>1?$a1:"0"}] {%A2%} [expr {$na>2?$a2:"0"}]] $tmpl]
+            }
+        }
+        if {$c_type in {"T3DVec2" "T3DVec2 *"}} {
+            if {[dict exists $::pak::CG_VEC2_INSTANCE $method]} {
+                set tmpl [dict get $::pak::CG_VEC2_INSTANCE $method]
+                return [string map [list {%OBJ%} $obj {%A0%} [expr {$na>0?$a0:"0"}]] $tmpl]
+            }
+        }
+        if {$c_type in {"T3DMat4" "T3DMat4 *"}} {
+            if {[dict exists $::pak::CG_MAT4_INSTANCE $method]} {
+                set tmpl [dict get $::pak::CG_MAT4_INSTANCE $method]
+                return [string map [list {%OBJ%} $obj {%A0%} [expr {$na>0?$a0:"0"}] {%A1%} [expr {$na>1?$a1:"0"}] {%A2%} [expr {$na>2?$a2:"0"}]] $tmpl]
+            }
+        }
+        # Container / Vec / string methods require typedef machinery not yet ported
+        if {[pak::kindof $obj_type] eq "TypeGeneric"} {
+            set gn [pak::fval $obj_type name]
+            if {$gn in {FixedList Pool RingBuffer FixedMap Vec}} { pak::cg_unported "builtin:container-method" }
+        }
+        set is_cstr [expr {$c_type in {"const char *" "char *"} || ([pak::kindof $obj_type] eq "TypeName" && [pak::fval $obj_type name] in {CStr c_char})}]
+        set is_pakstr [expr {$c_type eq "PakStr" || ([pak::kindof $obj_type] eq "TypeName" && [pak::fval $obj_type name] in {Str PakStr})}]
+        if {$is_cstr || $is_pakstr} {
+            if {$method in {len contains starts_with ends_with eq cmp is_empty as_bytes to_pakstr find slice copy_to concat_into format_into data as_cstr}} {
+                pak::cg_unported "builtin:string-method"
+            }
+        }
+        return ""
+    }
+
     method gen_call {e} {
         set args {}
         foreach a [pak::items [pak::nfield $e args]] { lappend args [my gen_expr $a] }
         set func [pak::nfield $e func]
-        # module API: mod.fn(args)
+        # comptime_assert(cond, msg) → _Static_assert(cond, msg)
+        if {[pak::kindof $func] eq "Ident"} {
+            set fnm [pak::fval $func name]
+            if {$fnm eq "comptime_assert"} {
+                set cond [expr {[llength $args] > 0 ? [lindex $args 0] : "true"}]
+                set msg [expr {[llength $args] > 1 ? [lindex $args 1] : {"assertion"}}]
+                return "_Static_assert($cond, $msg)"
+            }
+            if {$fnm eq "heap_allocator"} { return "pak_heap_allocator()" }
+            if {$fnm eq "arena_allocator"} {
+                set arg [expr {[llength $args] > 0 ? [lindex $args 0] : "0"}]
+                return "Allocator_from_Arena($arg)"
+            }
+        }
+        if {[pak::kindof $func] eq "DotAccess" && [pak::kindof [pak::nfield $func obj]] eq "Ident"} {
+            set type_name [pak::fval [pak::nfield $func obj] name]
+            set method [pak::fval $func field]
+            # Static type-method calls
+            set r [my gen_static_type_method $type_name $method $args]
+            if {$r ne ""} { return $r }
+        }
+        # Method call: obj.method(args) → TypeName_method(&obj, args)
+        if {[pak::kindof $func] eq "DotAccess" && [pak::kindof [pak::nfield $func obj]] eq "Ident"} {
+            set obj_name [pak::fval [pak::nfield $func obj] name]
+            set method_name [pak::fval $func field]
+            set obj_type [my scope_get $obj_name]
+            set tname ""
+            if {[pak::kindof $obj_type] eq "TypeName"} {
+                set tname [pak::fval $obj_type name]
+            } elseif {[pak::kindof $obj_type] eq "TypePointer" && [pak::kindof [pak::nfield $obj_type inner]] eq "TypeName"} {
+                set tname [pak::fval [pak::nfield $obj_type inner] name]
+            }
+            if {$tname ne "" && [dict exists $method_registry $tname] && [dict exists [dict get $method_registry $tname] $method_name]} {
+                set fn_decl [dict get [dict get $method_registry $tname] $method_name]
+                set c_fn "${tname}_${method_name}"
+                set params [pak::items [pak::nfield $fn_decl params]]
+                if {[llength $params] > 0} {
+                    set sp [lindex $params 0]
+                    if {[pak::kindof [pak::nfield $sp type]] eq "TypePointer"} {
+                        if {[pak::kindof $obj_type] eq "TypePointer"} {
+                            set self_arg $obj_name
+                        } else {
+                            set self_arg "&$obj_name"
+                        }
+                    } else {
+                        set self_arg $obj_name
+                    }
+                } else {
+                    set self_arg "&$obj_name"
+                }
+                set all_args [concat [list $self_arg] $args]
+                return "${c_fn}([join $all_args {, }])"
+            }
+        }
+        # Trait-object method dispatch: d.method(args) → (d.vtable->method)(d.self, args)
+        if {[pak::kindof $func] eq "DotAccess" && [pak::kindof [pak::nfield $func obj]] eq "Ident"} {
+            set obj_name [pak::fval [pak::nfield $func obj] name]
+            set method_name [pak::fval $func field]
+            set obj_type [my scope_get $obj_name]
+            set trait_tn ""
+            if {[pak::kindof $obj_type] eq "TypeName" && [dict exists $trait_decls [pak::fval $obj_type name]]} {
+                set trait_tn [pak::fval $obj_type name]
+            } elseif {[pak::kindof $obj_type] eq "TypeDynTrait"} {
+                set trait_tn [pak::fval $obj_type name]
+            }
+            if {$trait_tn ne ""} {
+                set vtable_args [concat [list "${obj_name}.self"] $args]
+                return "(${obj_name}.vtable->${method_name})([join $vtable_args {, }])"
+            }
+        }
+        # Built-in instance method dispatch
+        if {[pak::kindof $func] eq "DotAccess"} {
+            set obj_expr [pak::nfield $func obj]
+            set method [pak::fval $func field]
+            set obj_str [my gen_expr $obj_expr]
+            set obj_type [my expr_type $obj_expr]
+            set c_type [expr {($obj_type ne "" && ![pak::isnil $obj_type]) ? [my gen_type $obj_type] : ""}]
+            set r [my gen_builtin_method $obj_str $c_type $method $args $obj_type]
+            if {$r ne ""} { return $r }
+        }
+        # Module API call: module.function(args) → C API
         if {[pak::kindof $func] eq "DotAccess" && [pak::kindof [pak::nfield $func obj]] eq "Ident"} {
             set mod [pak::fval [pak::nfield $func obj] name]
             set fn [pak::fval $func field]
             set key [list $mod $fn]
-            # builtin / static type methods + method-registry dispatch not yet ported:
-            # only fall through to those when this isn't a known module-API call.
             if {[dict exists $::pak::CG_API $key]} {
                 return "[dict get $::pak::CG_API $key]([join $args {, }])"
             }
             if {[dict exists $::pak::CG_API_LAMBDA $key]} {
                 return [pak::cg_api_lambda $mod $fn $args]
             }
-            # could be a struct method / builtin method / enum access — not yet ported
-            if {[my scope_get $mod] ne "" || [dict exists $method_registry $mod]} {
-                pak::cg_unported "call:method-or-builtin"
-            }
         }
+        # Generic call
         if {[pak::kindof $func] eq "Ident"} {
             set fname [pak::fval $func name]
             if {[dict exists $generic_fns $fname]} { pak::cg_unported "call:generic" }
-            if {$fname in {comptime_assert heap_allocator arena_allocator}} { pak::cg_unported "call:builtin-fn" }
         }
         return "[my gen_expr $func]([join $args {, }])"
     }
@@ -526,9 +756,27 @@ oo::class create pak::Codegen {
 
     method gen_let_stmt {s pad} {
         set anns [pak::annlist_or $s]
-        if {[llength $anns] > 0} { pak::cg_unported "let:annotations" }
         set typ [pak::nfield $s type]
         set name [pak::fval $s name]
+        set prefix ""
+        if {[string first "@aligned" [join $anns " "]] >= 0} {
+            foreach ann $anns {
+                if {[string first "@aligned" $ann] >= 0} {
+                    set n [string range $ann [expr {[string first ( $ann]+1}] [expr {[string first ) $ann]-1}]]
+                    set prefix "__attribute__((aligned($n))) "
+                }
+            }
+        }
+        if {"@dma_safe" in $anns} { set prefix "__attribute__((aligned(16))) $prefix" }
+        if {"@uncached" in $anns} {
+            if {![pak::isnil $typ] && [pak::kindof $typ] eq "TypeArray"} {
+                set elem_t [my gen_type [pak::nfield $typ inner]]
+                set n_elems [my gen_expr [pak::nfield $typ size]]
+                my scope_set $name [pak::N TypePointer inner [pak::nfield $typ inner] nullable 0 mutable 0]
+                return "${pad}$elem_t * const $name = ($elem_t *)malloc_uncached($n_elems * sizeof($elem_t));"
+            }
+            set prefix "/* @uncached */ $prefix"
+        }
         if {![pak::isnil $typ]} {
             set decl [my gen_array_decl $name $typ]
             my scope_set $name $typ
@@ -540,30 +788,30 @@ oo::class create pak::Codegen {
         }
         set val [pak::nfield $s value]
         if {![pak::isnil $val] && [pak::kindof $val] ne "UndefinedLit"} {
-            if {[pak::kindof $val] eq "CatchExpr"} { return [my gen_catch_let $s $val $pad "" $decl] }
+            if {[pak::kindof $val] eq "CatchExpr"} { return [my gen_catch_let $s $val $pad $prefix $decl] }
             if {[pak::kindof $val] eq "ArrayLit" && ![pak::isnil [pak::nfield $val repeat]]} {
                 set rep [pak::nfield $val repeat]
                 set elems [pak::items [pak::nfield $val elements]]
                 if {[llength $elems] > 0} { set v [my gen_expr [lindex $elems 0]] } else { set v 0 }
                 set zero [expr {$v in {0 false NULL 0.0f 0.0}}]
                 set small [expr {[pak::kindof $rep] eq "IntLit" && [pak::fval $rep value] <= 64}]
-                if {$zero || $small} { return "${pad}${decl} = [my gen_expr $val];" }
+                if {$zero || $small} { return "${pad}${prefix}${decl} = [my gen_expr $val];" }
                 set count [my gen_expr $rep]
-                return "${pad}${decl} = {0};\n${pad}for (int _fi = 0; _fi < (int)($count); _fi++) $name\[_fi\] = $v;"
+                return "${pad}${prefix}${decl} = {0};\n${pad}for (int _fi = 0; _fi < (int)($count); _fi++) $name\[_fi\] = $v;"
             }
             if {[pak::kindof $val] in {OkExpr ErrExpr} && ![pak::isnil $typ]} {
                 set result_c [my gen_type $typ]
                 set inner [my gen_expr [pak::nfield $val value]]
                 if {[pak::kindof $val] eq "OkExpr"} {
-                    return "${pad}${decl} = ($result_c)\{ .is_ok = true, .data.value = $inner \};"
+                    return "${pad}${prefix}${decl} = ($result_c)\{ .is_ok = true, .data.value = $inner \};"
                 }
-                return "${pad}${decl} = ($result_c)\{ .is_ok = false, .data.error = $inner \};"
+                return "${pad}${prefix}${decl} = ($result_c)\{ .is_ok = false, .data.error = $inner \};"
             }
-            return "${pad}${decl} = [my gen_expr $val];"
+            return "${pad}${prefix}${decl} = [my gen_expr $val];"
         } elseif {[pak::kindof $val] eq "UndefinedLit"} {
-            return "${pad}${decl}; /* undefined */"
+            return "${pad}${prefix}${decl}; /* undefined */"
         }
-        return "${pad}${decl};"
+        return "${pad}${prefix}${decl};"
     }
 
     # ── catch expressions (mirror codegen._gen_catch_let / _gen_catch_stmt) ─────
@@ -1113,7 +1361,6 @@ oo::class create pak::Codegen {
     }
 
     method gen_fn {fn prefix} {
-        if {[pak::fval $fn variadic]} { pak::cg_unported "fn:variadic" }
         set ret [my gen_type [pak::nfield $fn ret_type]]
         set params {}
         foreach p [pak::items [pak::nfield $fn params]] {
@@ -1124,7 +1371,14 @@ oo::class create pak::Codegen {
                 lappend params "[my gen_type $pt] [pak::fval $p name]"
             }
         }
-        if {[llength $params] > 0} { set param_str [join $params {, }] } else { set param_str "void" }
+        if {[pak::fval $fn variadic]} {
+            lappend params "..."
+            set param_str [join $params {, }]
+        } elseif {[llength $params] > 0} {
+            set param_str [join $params {, }]
+        } else {
+            set param_str "void"
+        }
         # annotations → C attribute line + optional @export rename
         set attrs {}
         set export_name ""
