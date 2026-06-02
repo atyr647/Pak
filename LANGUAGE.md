@@ -149,22 +149,24 @@ volatile T   -- volatile value type
 
 `N` must be a compile-time integer constant.
 
-### Slice Types [PARTIAL]
+### Slice Types [IMPLEMENTED]
 
 ```pak
 []T          -- immutable slice (pointer + length)
 []mut T      -- mutable slice
 ```
 
-### Tuple Types [PARTIAL]
+Lowers to a struct `{ T *data; int32_t len; }`. Access `.data` and `.len` directly.
+Create with slice expression `arr[start..end]`.
+
+### Tuple Types [IMPLEMENTED]
 
 ```pak
 (T1, T2)     -- two-element tuple
 (T1, T2, T3) -- three-element tuple
-()           -- unit / empty tuple
 ```
 
-Access elements with `.0`, `.1`, etc.
+Access elements with `.0`, `.1`, etc. Lowers to a named C struct per unique type signature.
 
 ### Result Type [IMPLEMENTED]
 
@@ -206,12 +208,15 @@ Pool(T, N)          -- object pool, capacity N
 
 N must be a compile-time integer literal. See `examples/canonical/23_containers.pk64`.
 
-### Trait Objects [PARTIAL]
+### Trait Objects [IMPLEMENTED]
 
 ```pak
 dyn TraitName        -- dynamic dispatch trait object
 *dyn TraitName       -- pointer to trait object
 ```
+
+Lowers to a vtable-based struct pair. Construct with `TraitName_from_TypeName(&obj)`.
+See `examples/canonical/27_dyn_trait.pk64`.
 
 ---
 
