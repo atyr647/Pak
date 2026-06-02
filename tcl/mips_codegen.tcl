@@ -1456,6 +1456,60 @@ oo::class create pak::MipsCodegen {
                 $ra free_temp $src
             }
             StructLit { my emit_struct_lit $expr $dst }
+            SizeOf {
+                set l [my mips_layout [pak::nfield $expr operand]]
+                $em li $dst [dict get $l size]
+            }
+            AlignOf {
+                set l [my mips_layout [pak::nfield $expr operand]]
+                $em li $dst [dict get $l align]
+            }
+            OffsetOf {
+                set layout [my mips_layout_name [pak::fval $expr type_name]]
+                set fname [pak::fval $expr field]
+                set off 0
+                if {[dict exists $layout fields]} {
+                    set fields [dict get $layout fields]
+                    if {[dict exists $fields $fname]} { set off [dict get [dict get $fields $fname] offset] }
+                }
+                $em li $dst $off
+            }
+            ArrayLit {
+                set elems [pak::items [pak::nfield $expr elements]]
+                set n [llength $elems]
+                set arr_off [my declare_local __arr_lit [dict create size [expr {$n*4}] align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]]
+                set i 0
+                foreach elem $elems {
+                    set tmp [$ra alloc_temp]
+                    my emit_expr $elem $tmp
+                    $em sw $tmp [expr {$arr_off + $i*4}] {$sp}
+                    $ra free_temp $tmp
+                    incr i
+                }
+                $em addiu $dst {$sp} $arr_off
+            }
+            TupleLit {
+                set elems [pak::items [pak::nfield $expr elements]]
+                set n [llength $elems]
+                set tup_off [my declare_local __tup [dict create size [expr {$n*4}] align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]]
+                set i 0
+                foreach elem $elems {
+                    set er [$ra alloc_temp]
+                    my emit_expr $elem $er
+                    $em sw $er [expr {$tup_off + $i*4}] {$sp}
+                    $ra free_temp $er
+                    incr i
+                }
+                $em addiu $dst {$sp} $tup_off
+            }
+            TupleAccess {
+                set base [$ra alloc_temp]
+                my emit_expr [pak::nfield $expr obj] $base
+                $em lw $dst [expr {[pak::fval $expr index] * 4}] $base
+                $ra free_temp $base
+            }
+            AsmExpr { my emit_asm_expr $expr $dst }
+            SliceExpr { my emit_slice $expr $dst }
             OkExpr {
                 # Result layout: {is_ok: bool@0, payload@4, size=8}
                 set ok_layout [dict create size 8 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]
@@ -1564,6 +1618,70 @@ oo::class create pak::MipsCodegen {
             $em sw $val 0 $base
         }
         $ra free_temp $base
+    }
+
+    method emit_asm_expr {expr dst} {
+        # Inputs: evaluate each into a temp that is immediately freed (so they
+        # reuse the same register — matches the Python oracle's per-iter borrow).
+        set input_regs {}
+        foreach inp [pak::items [pak::nfield $expr inputs]] {
+            set iexpr [lindex [pak::items $inp] 1]
+            set inp_r [$ra alloc_temp]
+            my emit_expr $iexpr $inp_r
+            $ra free_temp $inp_r
+            lappend input_regs $inp_r
+        }
+        # Substitute %0 (output/dst), %1.. (inputs) sequentially.
+        set template [lindex [pak::nfield $expr template] 1]
+        set all_regs [concat [list $dst] $input_regs]
+        set j 0
+        foreach reg $all_regs {
+            set template [string map [list "%$j" $reg] $template]
+            incr j
+        }
+        foreach line [split $template "\n"] {
+            set line [string trim $line]
+            if {$line ne ""} { $em verbatim $line }
+        }
+        set outputs [pak::items [pak::nfield $expr outputs]]
+        set inputs  [pak::items [pak::nfield $expr inputs]]
+        if {[llength $outputs] > 0} {
+            $em move $dst {$v0}
+        } elseif {[llength $inputs] == 0 && [llength $outputs] == 0} {
+            $em move $dst {$v0}
+        }
+    }
+
+    method emit_slice {expr dst} {
+        set slice_off [my declare_local __slice [dict create size 8 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]]
+        set base [$ra alloc_temp]
+        my emit_expr [pak::nfield $expr obj] $base
+        set start [pak::nfield $expr start]
+        if {![pak::isnil $start]} {
+            set s [$ra alloc_temp]
+            my emit_expr $start $s
+            $em sll $s $s 2
+            $em addu $base $base $s
+            $ra free_temp $s
+        }
+        $em sw $base $slice_off {$sp}
+        set end [pak::nfield $expr end]
+        if {![pak::isnil $end]} {
+            set end_r [$ra alloc_temp]
+            set start_r [$ra alloc_temp]
+            my emit_expr $end $end_r
+            if {![pak::isnil $start]} {
+                my emit_expr $start $start_r
+                $em subu $end_r $end_r $start_r
+            }
+            $em sw $end_r [expr {$slice_off + 4}] {$sp}
+            $ra free_temp $start_r
+            $ra free_temp $end_r
+        } else {
+            $em sw {$zero} [expr {$slice_off + 4}] {$sp}
+        }
+        $ra free_temp $base
+        $em addiu $dst {$sp} $slice_off
     }
 
     method emit_struct_lit {expr dst} {
