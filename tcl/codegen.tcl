@@ -50,7 +50,7 @@ oo::class create pak::Codegen {
     variable filename uses assets module_name fn_names enum_variants variant_types \
              struct_fields scopes method_registry trait_decls const_values \
              generic_fns generic_structs module_headers defer_stack result_typedefs \
-             result_typedef_names current_ret_type
+             result_typedef_names current_ret_type closures fmt_counter tmp_counter
 
     constructor {{fname "<unknown>"} {mod_headers {}}} {
         set filename $fname
@@ -72,6 +72,9 @@ oo::class create pak::Codegen {
         set result_typedefs {}
         set result_typedef_names [dict create]
         set current_ret_type ""
+        set closures {}
+        set fmt_counter 0
+        set tmp_counter 0
     }
 
     # Register (dedup) and return the C typedef name for Result(ok, err).
@@ -300,6 +303,10 @@ oo::class create pak::Codegen {
                 set rt [expr {($current_ret_type ne "" && ![pak::isnil $current_ret_type]) ? [my gen_type $current_ret_type] : "PakResult"}]
                 return "($rt)\{ .is_ok = false, .data.error = $val \}"
             }
+            FmtStr    { return [my gen_fmtstr $e] }
+            Closure   { return [my gen_closure $e] }
+            CatchExpr { return [my gen_expr [pak::nfield $e expr]] }
+            NullCheck { return [my gen_expr [pak::nfield $e expr]] }
             default { pak::cg_unported "expr:[pak::kindof $e]" }
         }
     }
@@ -337,6 +344,81 @@ oo::class create pak::Codegen {
         set parts {}
         foreach el $elems { lappend parts [my gen_expr $el] }
         return "{[join $parts {, }]}"
+    }
+
+    # ── format strings (mirror codegen._gen_fmtstr / _fmt_* helpers) ───────────
+    method fmt_spec_for_expr {expr} {
+        set t [my expr_type $expr]
+        if {$t ne "" && ![pak::isnil $t]} {
+            set c [my gen_type $t]
+            if {[dict exists $::pak::CG_FMT_SPEC $c]} { return [dict get $::pak::CG_FMT_SPEC $c] }
+            if {[string match "*\*" $c] || $c eq "const char *"} { return "%s" }
+        }
+        return "%ld"
+    }
+    method fmt_arg_for_expr {expr spec} {
+        set c [my gen_expr $expr]
+        switch -- $spec {
+            "%ld"  { return "(long)($c)" }
+            "%lld" { return "(long long)($c)" }
+            "%lu" - "%llu" { return "(unsigned long)($c)" }
+            "%.*s" { return "($c).len, ($c).data" }
+        }
+        return $c
+    }
+    method gen_fmtstr {e} {
+        set fmt_parts {}
+        set arg_parts {}
+        foreach part [pak::items [pak::nfield $e parts]] {
+            if {[lindex $part 0] eq "lit"} {
+                set s [pak::sval $part]
+                set s [string map [list "\\" "\\\\" "\"" "\\\"" "\n" "\\n"] $s]
+                lappend fmt_parts $s
+            } else {
+                set spec [my fmt_spec_for_expr $part]
+                lappend fmt_parts $spec
+                lappend arg_parts [my fmt_arg_for_expr $part $spec]
+            }
+        }
+        set fmt_str [join $fmt_parts ""]
+        set n $fmt_counter
+        incr fmt_counter
+        set buf "_pak_fmt_$n"
+        set args [expr {[llength $arg_parts] > 0 ? ", [join $arg_parts {, }]" : ""}]
+        return "(\{ static char $buf\[256\]; snprintf($buf, 256, \"$fmt_str\"$args); (const char*)$buf; \})"
+    }
+
+    # ── closures (mirror codegen._gen_closure / _emit_closures) ────────────────
+    method gen_closure {e} {
+        set name "_pak_closure_[llength $closures]"
+        lappend closures [list $name $e]
+        return $name
+    }
+    method emit_closures {} {
+        set lines {}
+        foreach pair $closures {
+            lassign $pair name e
+            set rt [pak::nfield $e ret_type]
+            set ret [expr {[pak::isnil $rt] ? "void" : [my gen_type $rt]}]
+            set params {}
+            foreach p [pak::items [pak::nfield $e params]] {
+                lappend params "[my gen_type [pak::nfield $p type]] [pak::fval $p name]"
+            }
+            set param_str [expr {[llength $params] > 0 ? [join $params {, }] : "void"}]
+            lappend lines "static $ret ${name}($param_str) {"
+            my scope_push
+            foreach p [pak::items [pak::nfield $e params]] {
+                my scope_set [pak::fval $p name] [pak::nfield $p type]
+            }
+            foreach st [pak::items [pak::nfield [pak::nfield $e body] stmts]] {
+                set s [my gen_stmt $st 1]
+                if {$s ne ""} { lappend lines $s }
+            }
+            my scope_pop
+            lappend lines "}"
+            lappend lines ""
+        }
+        return $lines
     }
 
     method gen_call {e} {
@@ -390,7 +472,7 @@ oo::class create pak::Codegen {
             }
             ExprStmt {
                 set ex [pak::nfield $stmt expr]
-                if {[pak::kindof $ex] eq "CatchExpr"} { pak::cg_unported "stmt:catch" }
+                if {[pak::kindof $ex] eq "CatchExpr"} { return [my gen_catch_stmt $ex $pad $indent] }
                 return "${pad}[my gen_expr $ex];"
             }
             IfStmt    { return [my gen_if $stmt $pad $indent] }
@@ -416,7 +498,7 @@ oo::class create pak::Codegen {
             DeferStmt   { my defer_push $stmt; return "" }
             ForStmt     { return [my gen_for $stmt $pad $indent] }
             MatchStmt   { return [my gen_match $stmt $pad $indent] }
-            NullCheckStmt { pak::cg_unported "stmt:nullcheck" }
+            NullCheckStmt { return [my gen_null_check $stmt $pad $indent] }
             StructDecl  { return [my gen_struct $stmt] }
             EnumDecl    { return [my gen_enum $stmt] }
             VariantDecl { return [my gen_variant $stmt] }
@@ -442,7 +524,7 @@ oo::class create pak::Codegen {
         }
         set val [pak::nfield $s value]
         if {![pak::isnil $val] && [pak::kindof $val] ne "UndefinedLit"} {
-            if {[pak::kindof $val] eq "CatchExpr"} { pak::cg_unported "let:catch" }
+            if {[pak::kindof $val] eq "CatchExpr"} { return [my gen_catch_let $s $val $pad "" $decl] }
             if {[pak::kindof $val] eq "ArrayLit" && ![pak::isnil [pak::nfield $val repeat]]} {
                 set rep [pak::nfield $val repeat]
                 set elems [pak::items [pak::nfield $val elements]]
@@ -466,6 +548,81 @@ oo::class create pak::Codegen {
             return "${pad}${decl}; /* undefined */"
         }
         return "${pad}${decl};"
+    }
+
+    # ── catch expressions (mirror codegen._gen_catch_let / _gen_catch_stmt) ─────
+    method gen_catch_let {s catch pad prefix decl} {
+        set name [pak::fval $s name]
+        set inner_c [my gen_expr [pak::nfield $catch expr]]
+        set tmp "_catch_$name"
+        set lines {}
+        set inner_pad "${pad}    "
+        set handler [pak::nfield $catch handler]
+        set binding [pak::nfield $catch binding]
+
+        # Detect fallback form: handler is a Block with a single ExprStmt.
+        set is_fallback 0
+        set fallback_expr ""
+        if {[pak::kindof $handler] eq "Block"} {
+            set stmts {}
+            foreach st [pak::items [pak::nfield $handler stmts]] {
+                if {![pak::isnil $st]} { lappend stmts $st }
+            }
+            if {[llength $stmts] == 1 && [pak::kindof [lindex $stmts 0]] eq "ExprStmt"} {
+                set is_fallback 1
+                set fallback_expr [my gen_expr [pak::nfield [lindex $stmts 0] expr]]
+            }
+        }
+
+        if {$is_fallback && $fallback_expr ne ""} {
+            lappend lines "${pad}__auto_type $tmp = $inner_c;"
+            lappend lines "${pad}${prefix}${decl} = $tmp.is_ok ? $tmp.data.value : ($fallback_expr);"
+            return [join $lines \n]
+        }
+
+        # Propagation form
+        lappend lines "${pad}__auto_type $tmp = $inner_c;"
+        lappend lines "${pad}if (!$tmp.is_ok) {"
+        if {![pak::isnil $binding]} {
+            lappend lines "${inner_pad}__auto_type [pak::sval $binding] = $tmp.data.error;"
+        }
+        if {[pak::kindof $handler] eq "Block"} {
+            foreach st [pak::items [pak::nfield $handler stmts]] {
+                set r [my gen_stmt $st [expr {[string length $inner_pad] / 4}]]
+                if {$r ne ""} { lappend lines $r }
+            }
+        } else {
+            lappend lines "${inner_pad}[my gen_expr $handler];"
+        }
+        lappend lines "${pad}}"
+        lappend lines "${pad}${prefix}${decl} = $tmp.data.value;"
+        return [join $lines \n]
+    }
+
+    method gen_catch_stmt {catch pad indent} {
+        incr tmp_counter
+        set tmp "_catch_tmp_$tmp_counter"
+        set inner_pad "${pad}    "
+        set handler [pak::nfield $catch handler]
+        set binding [pak::nfield $catch binding]
+        set lines [list "${pad}{"]
+        lappend lines "${inner_pad}__auto_type $tmp = [my gen_expr [pak::nfield $catch expr]];"
+        lappend lines "${inner_pad}if (!$tmp.is_ok) {"
+        set handler_pad "${inner_pad}    "
+        if {![pak::isnil $binding]} {
+            lappend lines "${handler_pad}__auto_type [pak::sval $binding] = $tmp.data.error;"
+        }
+        if {[pak::kindof $handler] eq "Block"} {
+            foreach st [pak::items [pak::nfield $handler stmts]] {
+                set r [my gen_stmt $st [expr {$indent+2}]]
+                if {$r ne ""} { lappend lines $r }
+            }
+        } else {
+            lappend lines "${handler_pad}[my gen_expr $handler];"
+        }
+        lappend lines "${inner_pad}}"
+        lappend lines "${pad}}"
+        return [join $lines \n]
     }
 
     method gen_static_stmt {s pad} {
@@ -498,6 +655,30 @@ oo::class create pak::Codegen {
             my scope_pop
             lappend lines "${pad}}"
         }
+        set eb [pak::nfield $s else_branch]
+        if {![pak::isnil $eb]} {
+            lappend lines "${pad}else {"
+            my scope_push
+            foreach st [pak::items [pak::nfield $eb stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+            foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+            my scope_pop
+            lappend lines "${pad}}"
+        }
+        return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
+    }
+
+    method gen_null_check {s pad indent} {
+        set expr [my gen_expr [pak::nfield $s expr]]
+        set binding [pak::fval $s binding]
+        set inner_pad [string repeat "    " [expr {$indent+1}]]
+        set lines [list "${pad}if ($expr != NULL) {"]
+        my scope_push
+        my scope_set $binding [pak::N TypePointer inner [pak::N TypeName name auto] nullable 0 mutable 0]
+        lappend lines "${inner_pad}__typeof__($expr) $binding = $expr;"
+        foreach st [pak::items [pak::nfield [pak::nfield $s then] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+        foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+        my scope_pop
+        lappend lines "${pad}}"
         set eb [pak::nfield $s else_branch]
         if {![pak::isnil $eb]} {
             lappend lines "${pad}else {"
@@ -1127,6 +1308,15 @@ oo::class create pak::Codegen {
                 lassign $td tdname c_ok c_err
                 lappend out "typedef struct { bool is_ok; union { $c_ok value; $c_err error; } data; } ${tdname};"
             }
+        }
+
+        # Emit closures (non-capturing fn literals) as static functions.
+        if {[llength $closures] > 0} {
+            set closure_lines [my emit_closures]
+            set closures {}
+            lappend out ""
+            lappend out "/* -- Closures -- */"
+            foreach cl $closure_lines { lappend out $cl }
         }
 
         foreach b $body { lappend out $b }

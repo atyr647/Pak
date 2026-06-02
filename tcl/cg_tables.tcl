@@ -384,3 +384,12 @@ set ::pak::CG_PRIM [dict create \
     {u8} {uint8_t} \
     {void} {void} \
 ]
+
+# printf format specifiers for interpolated fmt-string expressions
+# (mirror codegen._FMT_SPEC)
+set ::pak::CG_FMT_SPEC [dict create \
+    {int8_t} {%d} {int16_t} {%d} {int32_t} {%ld} {int64_t} {%lld} \
+    {uint8_t} {%u} {uint16_t} {%u} {uint32_t} {%lu} {uint64_t} {%llu} \
+    {float} {%f} {double} {%lf} {bool} {%d} \
+    {PakStr} {%.*s} \
+]
