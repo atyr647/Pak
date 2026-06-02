@@ -123,7 +123,7 @@ oo::class create pak::Codegen {
              struct_fields scopes method_registry trait_decls const_values \
              generic_fns generic_structs module_headers defer_stack result_typedefs \
              result_typedef_names current_ret_type closures fmt_counter tmp_counter \
-             mono_cache pending_mono
+             mono_cache pending_mono pending_nested _in_stmt
 
     constructor {{fname "<unknown>"} {mod_headers {}}} {
         set filename $fname
@@ -150,6 +150,8 @@ oo::class create pak::Codegen {
         set tmp_counter 0
         set mono_cache [dict create]
         set pending_mono {}
+        set pending_nested {}
+        set _in_stmt 0
     }
 
     # Seed enum_variants from a program (case/variant name -> type name), used
@@ -505,6 +507,13 @@ oo::class create pak::Codegen {
 
     # ── closures (mirror codegen._gen_closure / _emit_closures) ────────────────
     method gen_closure {e} {
+        if {$_in_stmt} {
+            # Inside a statement: emit as GCC nested function inline (mirrors Python _pending_nested)
+            set name "_pak_clo_[expr {[llength $closures] + [llength $pending_nested]}]"
+            lappend pending_nested [list $name $e]
+            return $name
+        }
+        # At top level: emit as static function at file scope
         set name "_pak_closure_[llength $closures]"
         lappend closures [list $name $e]
         return $name
@@ -532,6 +541,35 @@ oo::class create pak::Codegen {
             my scope_pop
             lappend lines "}"
             lappend lines ""
+        }
+        return $lines
+    }
+    # Emit pending_nested closures as GCC nested function definitions at indent.
+    # Mirrors Python _emit_nested_closure / the hoisted-defs loop in gen_stmt.
+    method emit_nested_closures {indent pairs} {
+        set pad [string repeat "    " $indent]
+        set inner [string repeat "    " [expr {$indent + 1}]]
+        set lines {}
+        foreach pair $pairs {
+            lassign $pair name e
+            set rt [pak::nfield $e ret_type]
+            set ret [expr {[pak::isnil $rt] ? "void" : [my gen_type $rt]}]
+            set params {}
+            foreach p [pak::items [pak::nfield $e params]] {
+                lappend params "[my gen_type [pak::nfield $p type]] [pak::fval $p name]"
+            }
+            set param_str [expr {[llength $params] > 0 ? [join $params {, }] : "void"}]
+            lappend lines "${pad}$ret ${name}($param_str) {"
+            my scope_push
+            foreach p [pak::items [pak::nfield $e params]] {
+                my scope_set [pak::fval $p name] [pak::nfield $p type]
+            }
+            foreach st [pak::items [pak::nfield [pak::nfield $e body] stmts]] {
+                set s [my gen_stmt $st [expr {$indent + 1}]]
+                if {$s ne ""} { lappend lines $s }
+            }
+            my scope_pop
+            lappend lines "${pad}}"
         }
         return $lines
     }
@@ -739,13 +777,13 @@ oo::class create pak::Codegen {
                     return "memset(&($obj), 0, sizeof($obj))"
                 }
                 if {$method eq "push" && $na > 0} {
-                    return "(($obj).len < $cap ? (($obj).data[($obj).len++] = ($a0), 1) : 0)"
+                    return "(($obj).len < $cap ? (($obj).data\[($obj).len++\] = ($a0), 1) : 0)"
                 }
                 if {$method eq "pop"} {
-                    return "($obj).data[--($obj).len]"
+                    return "($obj).data\[--($obj).len\]"
                 }
                 if {$method eq "remove" && $na > 0} {
-                    return "({{ int32_t _ri = ($a0); ($obj).data[_ri] = ($obj).data[--($obj).len]; }})"
+                    return "({{ int32_t _ri = ($a0); ($obj).data\[_ri\] = ($obj).data\[--($obj).len\]; }})"
                 }
                 if {$method in {items slice}} {
                     return "($elem_t \*){{ .data = ($obj).data, .len = ($obj).len }}"
@@ -771,13 +809,13 @@ oo::class create pak::Codegen {
                     return "memset(&($obj), 0, sizeof($obj))"
                 }
                 if {$method eq "push" && $na > 0} {
-                    return "({{ ($obj).data[($obj).tail] = ($a0); ($obj).tail = (($obj).tail + 1) % $cap; if (($obj).len < $cap) ($obj).len++; }})"
+                    return "({{ ($obj).data\[($obj).tail\] = ($a0); ($obj).tail = (($obj).tail + 1) % $cap; if (($obj).len < $cap) ($obj).len++; }})"
                 }
                 if {$method eq "peek_back" && $na > 0} {
-                    return "($obj).data[(($obj).tail - ($a0) - 1 + $cap) % $cap]"
+                    return "($obj).data\[(($obj).tail - ($a0) - 1 + $cap) % $cap\]"
                 }
                 if {$method eq "pop"} {
-                    return "({{ __auto_type _v = ($obj).data[($obj).head]; ($obj).head = (($obj).head + 1) % $cap; if (($obj).len > 0) ($obj).len--; _v; }})"
+                    return "({{ __auto_type _v = ($obj).data\[($obj).head\]; ($obj).head = (($obj).head + 1) % $cap; if (($obj).len > 0) ($obj).len--; _v; }})"
                 }
                 if {$method eq "is_empty" && $na == 0} {
                     return "(($obj).len == 0)"
@@ -823,10 +861,10 @@ oo::class create pak::Codegen {
                     return "_PAK_VEC_PUSH(&($obj), ($a0))"
                 }
                 if {$method eq "pop"} {
-                    return "(($obj).len > 0 ? ($obj).data[--($obj).len] : ($obj).data[0])"
+                    return "(($obj).len > 0 ? ($obj).data\[--($obj).len\] : ($obj).data\[0\])"
                 }
                 if {$method eq "get" && $na > 0} {
-                    return "($obj).data[$a0]"
+                    return "($obj).data\[$a0\]"
                 }
                 if {$method eq "len" && $na == 0} {
                     return "($obj).len"
@@ -868,7 +906,7 @@ oo::class create pak::Codegen {
                 return "strcmp($obj, $a0)"
             }
             if {$method eq "is_empty" && $na == 0} {
-                return "(($obj)[0] == '\\0')"
+                return "(($obj)\[0\] == '\\0')"
             }
             if {$method eq "as_bytes" && $na == 0} {
                 return "(const uint8_t *)($obj)"
@@ -1858,10 +1896,20 @@ oo::class create pak::Codegen {
     method gen_entry {entry} {
         set lines [list "int main(void) {"]
         my scope_push
+        set saved_in $_in_stmt
+        set _in_stmt 1
         foreach st [pak::items [pak::nfield [pak::nfield $entry body] stmts]] {
+            set saved_pending $pending_nested
+            set pending_nested {}
             set s [my gen_stmt $st 1]
+            set hoisted $pending_nested
+            set pending_nested $saved_pending
+            if {[llength $hoisted] > 0} {
+                foreach hl [my emit_nested_closures 1 $hoisted] { lappend lines $hl }
+            }
             if {$s ne ""} { lappend lines $s }
         }
+        set _in_stmt $saved_in
         foreach d [my emit_defers_for_scope 1] { lappend lines $d }
         my scope_pop
         lappend lines "    return 0;"
