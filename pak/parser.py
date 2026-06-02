@@ -31,6 +31,16 @@ class Parser:
     def check(self, *types) -> bool:
         return self.peek().type in types
 
+    def _newline_before(self) -> bool:
+        """True if the current token begins on a later source line than the
+        previous token. Pak is newline-delimited: a binary operator that is
+        also a valid prefix/statement-starter (* deref, - negate, & address-of)
+        must NOT continue the previous expression when it opens a new line —
+        otherwise `let p = alloc(T)` / `*p = v` parses as `alloc(T) * p = v`."""
+        if self.pos <= 0:
+            return False
+        return self.peek().line > self.tokens[self.pos - 1].line
+
     def match(self, *types) -> Optional[Token]:
         if self.check(*types):
             return self.advance()
@@ -1040,6 +1050,8 @@ class Parser:
         line, col = self.loc()
         left = self.parse_eq()
         while self.check(TT.AMP):
+            if self._newline_before():
+                break  # leading '&' on a new line is address-of, a new statement
             self.advance()
             right = self.parse_eq()
             left = ast.BinaryOp(op='&', left=left, right=right, line=line, col=col)
@@ -1076,6 +1088,8 @@ class Parser:
         line, col = self.loc()
         left = self.parse_mul()
         while self.check(TT.PLUS, TT.MINUS):
+            if self.check(TT.MINUS) and self._newline_before():
+                break  # leading '-' on a new line is unary, a new statement
             op = self.advance().value
             right = self.parse_mul()
             left = ast.BinaryOp(op=op, left=left, right=right, line=line, col=col)
@@ -1085,6 +1099,8 @@ class Parser:
         line, col = self.loc()
         left = self.parse_unary()
         while self.check(TT.STAR, TT.SLASH, TT.PERCENT):
+            if self.check(TT.STAR) and self._newline_before():
+                break  # leading '*' on a new line is a deref, a new statement
             op = self.advance().value
             right = self.parse_unary()
             left = ast.BinaryOp(op=op, left=left, right=right, line=line, col=col)

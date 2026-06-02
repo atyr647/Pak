@@ -832,9 +832,18 @@ oo::class create pak::Parser {
         return $expr
     }
 
+    # True if the current token begins on a later source line than the previous
+    # token. Pak is newline-delimited: a binary op that is also a valid prefix
+    # (* deref, - negate, & address-of) must not continue the previous
+    # expression when it opens a new line (mirrors Parser._newline_before).
+    method _newline_before {} {
+        if {$pos <= 0} { return 0 }
+        return [expr {[dict get [my peek] line] > [dict get [lindex $toks [expr {$pos-1}]] line]}]
+    }
     method binop_chain {next types} {
         set left [my $next]
         while {[my check {*}[dict keys $types]]} {
+            if {[my ptype] in {STAR MINUS AMP} && [my _newline_before]} { break }
             set op [dict get $types [my ptype]]
             my advance
             set right [my $next]

@@ -36,7 +36,8 @@ int main(void) {
     int32_t x = 10;
     int32_t * ptr = &x;
     double_value(ptr);
-    sink = (*ptr * ptr) = 99;
+    sink = *ptr;
+    *ptr = 99;
     sink = x;
     int32_t * maybe = NULL;
     int32_t * also_maybe = &x;
