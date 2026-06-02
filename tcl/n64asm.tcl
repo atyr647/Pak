@@ -232,6 +232,9 @@ proc pak::n64asm {asm_text base} {
         if {$line eq ""} continue
         set t [string trim $line]
         if {[string index $t 0] eq "#"} continue
+        # strip trailing '# ...' comments (but keep '#' inside .asciiz strings)
+        if {![string match {.asciiz*} $t]} { set t [string trim [regsub {\s*#.*$} $t ""]] }
+        if {$t eq ""} continue
         # label?
         if {[regexp {^([A-Za-z_.$][\w.$]*):\s*$} $t -> lbl]} {
             dict lappend items $sec [list label $lbl]; continue

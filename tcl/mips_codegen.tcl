@@ -363,7 +363,7 @@ oo::class create pak::MipsCodegen {
     variable em pool ra ret_label scopes defers next_local loop_header loop_exit \
              globals consts label_n \
              tenv_layouts tenv_enum_values tenv_variant_decls \
-             generic_fns mono_emitted
+             generic_fns mono_emitted type_nodes
 
     constructor {} {
         set em [pak::Emitter new]
@@ -383,6 +383,7 @@ oo::class create pak::MipsCodegen {
         set tenv_variant_decls [dict create]
         set generic_fns [dict create]
         set mono_emitted [dict create]
+        set type_nodes [dict create]
     }
     destructor {
         $em destroy
@@ -737,7 +738,7 @@ oo::class create pak::MipsCodegen {
             lset defers end $last
         }
     }
-    method declare_local {name layout} {
+    method declare_local {name layout {type_node ""}} {
         set align [dict get $layout align]
         set next_local [expr {($next_local + $align - 1) & ~($align - 1)}]
         set off $next_local
@@ -745,6 +746,7 @@ oo::class create pak::MipsCodegen {
         if {[llength $scopes] > 0} {
             set f [lindex $scopes end]; dict set f $name [list $off $layout]; lset scopes end $f
         }
+        if {$type_node ne ""} { dict set type_nodes $name $type_node }
         return $off
     }
     method lookup_local {name} {
@@ -752,6 +754,10 @@ oo::class create pak::MipsCodegen {
             set f [lindex $scopes $i]
             if {[dict exists $f $name]} { return [dict get $f $name] }
         }
+        return ""
+    }
+    method lookup_type_node {name} {
+        if {[dict exists $type_nodes $name]} { return [dict get $type_nodes $name] }
         return ""
     }
 
@@ -901,7 +907,8 @@ oo::class create pak::MipsCodegen {
     }
 
     # ── typed memory ──────────────────────────────────────────────────────────
-    method emit_typed_load {dst off base layout} {
+    method emit_typed_load {dst off base layout {volatile 0}} {
+        if {$volatile} { $em sync }
         if {[dict get $layout is_float]} {
             if {[dict get $layout size] == 4} { $em lwc1 $dst $off $base } else { $em ldc1 $dst $off $base }
         } else {
@@ -911,8 +918,10 @@ oo::class create pak::MipsCodegen {
                 default { $em lw $dst $off $base }
             }
         }
+        if {$volatile} { $em sync }
     }
-    method emit_typed_store {src off base layout} {
+    method emit_typed_store {src off base layout {volatile 0}} {
+        if {$volatile} { $em sync }
         if {[dict get $layout is_float]} {
             if {[dict get $layout size] == 4} { $em swc1 $src $off $base } else { $em sdc1 $src $off $base }
         } else {
@@ -922,6 +931,32 @@ oo::class create pak::MipsCodegen {
                 default { $em sw $src $off $base }
             }
         }
+        if {$volatile} { $em sync }
+    }
+    # Resolve {layout volatile} of what a pointer expression points to, so a
+    # Deref load/store picks the correct width and emits volatile sync barriers.
+    # `*volatile u16` parses as TypeVolatile(TypePointer(u16)); unwrap the outer
+    # volatile, then take the pointee from the inner TypePointer.
+    method pointee_layout {ptr_expr} {
+        set ptr_type ""
+        switch -- [pak::kindof $ptr_expr] {
+            Cast  { set ptr_type [pak::nfield $ptr_expr type] }
+            Ident { set ptr_type [my lookup_type_node [pak::fval $ptr_expr name]] }
+        }
+        set volatile 0
+        if {$ptr_type ne "" && ![pak::isnil $ptr_type] && [pak::kindof $ptr_type] eq "TypeVolatile"} {
+            set volatile 1
+            set ptr_type [pak::nfield $ptr_type inner]
+        }
+        if {$ptr_type ne "" && ![pak::isnil $ptr_type] && [pak::kindof $ptr_type] eq "TypePointer"} {
+            set inner [pak::nfield $ptr_type inner]
+            if {![pak::isnil $inner] && [pak::kindof $inner] eq "TypeVolatile"} {
+                set volatile 1
+                set inner [pak::nfield $inner inner]
+            }
+            return [list [my mips_layout $inner] $volatile]
+        }
+        return [list [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}] 0]
     }
     method load_from_sp {off dst layout}  { my emit_typed_load $dst $off {$sp} $layout }
     method store_to_sp {off src layout}   { my emit_typed_store $src $off {$sp} $layout }
@@ -945,7 +980,8 @@ oo::class create pak::MipsCodegen {
             LetDecl {
                 set typ [pak::nfield $stmt type]
                 if {![pak::isnil $typ]} { set layout [my mips_layout $typ] } else { set layout [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}] }
-                set off [my declare_local [pak::fval $stmt name] $layout]
+                set tn [expr {[pak::isnil $typ] ? "" : $typ}]
+                set off [my declare_local [pak::fval $stmt name] $layout $tn]
                 set v [pak::nfield $stmt value]
                 if {![pak::isnil $v]} {
                     set lsz [dict get $layout size]
@@ -1461,9 +1497,10 @@ oo::class create pak::MipsCodegen {
             UnaryOp   { my emit_unop $expr $dst }
             UndefinedLit { $em move $dst {$zero} }
             Deref {
+                lassign [my pointee_layout [pak::nfield $expr expr]] dl dvol
                 set ptr [$ra alloc_temp]
                 my emit_expr [pak::nfield $expr expr] $ptr
-                $em lw $dst 0 $ptr
+                my emit_typed_load $dst 0 $ptr $dl $dvol
                 $ra free_temp $ptr
             }
             AddrOf { my emit_addr_of $expr $dst }
@@ -2101,9 +2138,10 @@ oo::class create pak::MipsCodegen {
                 }
             }
             Deref {
+                lassign [my pointee_layout [pak::nfield $target expr]] dl dvol
                 set ptr [$ra alloc_temp]
                 my emit_expr [pak::nfield $target expr] $ptr
-                $em sw $val_reg 0 $ptr
+                my emit_typed_store $val_reg 0 $ptr $dl $dvol
                 $ra free_temp $ptr
             }
             IndexAccess { my emit_index_store $target $val_reg }

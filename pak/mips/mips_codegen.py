@@ -103,6 +103,10 @@ class FnCtx:
     # Each scope push adds a new dict; pop removes it.
     _scopes:    List[Dict[str, Tuple[int, TypeLayout]]] = field(default_factory=list)
 
+    # Declared type nodes for locals (name → AST type node). Used to recover the
+    # pointee type/volatility of a pointer local at a Deref site.
+    _type_nodes: Dict[str, Any] = field(default_factory=dict)
+
     # Loop context stack for break/continue
     _loop_exit:   List[str] = field(default_factory=list)
     _loop_header: List[str] = field(default_factory=list)
@@ -122,7 +126,7 @@ class FnCtx:
         self._scopes.pop()
         return list(reversed(self._defers.pop()))
 
-    def declare_local(self, name: str, layout: TypeLayout) -> int:
+    def declare_local(self, name: str, layout: TypeLayout, type_node: Any = None) -> int:
         """Allocate a stack slot and record the local. Returns SP offset."""
         align = layout.align
         self._next_local = (self._next_local + align - 1) & ~(align - 1)
@@ -130,7 +134,12 @@ class FnCtx:
         self._next_local += layout.size
         if self._scopes:
             self._scopes[-1][name] = (offset, layout)
+        if type_node is not None:
+            self._type_nodes[name] = type_node
         return offset
+
+    def lookup_type_node(self, name: str) -> Optional[Any]:
+        return self._type_nodes.get(name)
 
     def lookup_local(self, name: str) -> Optional[Tuple[int, TypeLayout]]:
         for scope in reversed(self._scopes):
@@ -512,7 +521,7 @@ class MipsCodegen:
 
         if isinstance(stmt, ast.LetDecl):
             layout = self._tenv.layout_of_type(stmt.type) if stmt.type else TypeLayout(4, 4)
-            off = ctx.declare_local(stmt.name, layout)
+            off = ctx.declare_local(stmt.name, layout, type_node=stmt.type)
             if stmt.value is not None:
                 if layout.size > 4 and layout.fields:
                     # Large struct / composite: expr returns a pointer; memcpy to our slot
@@ -997,9 +1006,10 @@ class MipsCodegen:
             self._emit_addr_of(ctx, expr, dst)
 
         elif isinstance(expr, ast.Deref):
+            layout, vol = self._pointee_layout(ctx, expr.expr)
             with borrow_temp(ctx.ra) as ptr:
                 self._emit_expr(ctx, expr.expr, ptr)
-                em.lw(dst, 0, ptr)
+                self._emit_typed_load(dst, 0, ptr, layout, volatile=vol)
 
         elif isinstance(expr, ast.SizeOf):
             size = expand_sizeof(expr.operand, self._tenv)
@@ -1212,9 +1222,10 @@ class MipsCodegen:
                 em.la(T9, target.name)
                 em.sw(val_reg, 0, T9)
         elif isinstance(target, ast.Deref):
+            layout, vol = self._pointee_layout(ctx, target.expr)
             with borrow_temp(ctx.ra) as ptr:
                 self._emit_expr(ctx, target.expr, ptr)
-                em.sw(val_reg, 0, ptr)
+                self._emit_typed_store(val_reg, 0, ptr, layout, volatile=vol)
         elif isinstance(target, ast.DotAccess):
             self._emit_field_store(ctx, target, val_reg)
         elif isinstance(target, ast.IndexAccess):
@@ -1363,6 +1374,30 @@ class MipsCodegen:
     def _resolve_field_offset(self, expr: ast.DotAccess) -> int:
         fi = self._resolve_field_info(expr)
         return fi.offset if fi else 0
+
+    def _pointee_layout(self, ctx: FnCtx, ptr_expr) -> Tuple[TypeLayout, bool]:
+        """Resolve the (layout, is_volatile) of what a pointer expression points to,
+        so a Deref load/store picks the correct width (lb/lh/lw, sb/sh/sw) and
+        emits sync() barriers for volatile MMIO. Falls back to a 4-byte word."""
+        ptr_type = None
+        if isinstance(ptr_expr, ast.Cast):
+            ptr_type = ptr_expr.type
+        elif isinstance(ptr_expr, ast.Ident) and ctx is not None:
+            ptr_type = ctx.lookup_type_node(ptr_expr.name)
+        # `*volatile u16` parses as TypeVolatile(TypePointer(u16)): an outer
+        # volatile qualifier wrapping the pointer. Unwrap it, recording that the
+        # access is volatile, then take the pointee from the inner TypePointer.
+        volatile = False
+        if isinstance(ptr_type, ast.TypeVolatile):
+            volatile = True
+            ptr_type = ptr_type.inner
+        if isinstance(ptr_type, ast.TypePointer):
+            inner = ptr_type.inner
+            if isinstance(inner, ast.TypeVolatile):
+                volatile = True
+                inner = inner.inner
+            return self._tenv.layout_of_type(inner), volatile
+        return TypeLayout(size=4, align=4), False
 
     def _resolve_elem_layout(self, obj_expr) -> TypeLayout:
         """Try to determine the element layout for an array/slice access."""
