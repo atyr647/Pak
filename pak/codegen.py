@@ -802,6 +802,12 @@ class Codegen:
             return t.name
         return None
 
+    def _is_cstr_type(self, t) -> bool:
+        """True if t is a C-string type (*c_char / *mut c_char)."""
+        return (isinstance(t, ast.TypePointer)
+                and isinstance(t.inner, ast.TypeName)
+                and t.inner.name == 'c_char')
+
     def _match_type_name(self, expr) -> str:
         """Return the base type name of a match expression (for variant/enum detection)."""
         t = self._expr_type(expr)
@@ -1657,12 +1663,20 @@ class Codegen:
         # ── FixedMap instance methods ─────────────────────────────────────────
         if isinstance(obj_type, ast.TypeGeneric) and obj_type.name == 'FixedMap':
             cap = obj_type.args[2].value if len(obj_type.args) > 2 else 0
+            # String keys (*c_char) compare by content (strcmp); others memcmp.
+            ksuf = '_str' if (len(obj_type.args) > 0 and self._is_cstr_type(obj_type.args[0])) else ''
             if method == 'init':
                 return f'memset(&({obj}), 0, sizeof({obj}))'
             if method == 'set' and len(a) == 2:
-                return (f'pak_map_set(&({obj}), {cap}, {a[0]}, {a[1]})')
+                return (f'pak_map_set{ksuf}(&({obj}), {cap}, {a[0]}, {a[1]})')
             if method == 'get' and a:
-                return f'pak_map_get(&({obj}), {cap}, {a[0]})'
+                return f'pak_map_get{ksuf}(&({obj}), {cap}, {a[0]})'
+            if method in ('has', 'contains') and a:
+                return f'pak_map_has{ksuf}(&({obj}), {cap}, {a[0]})'
+            if method == 'remove' and a:
+                return f'pak_map_remove{ksuf}(&({obj}), {cap}, {a[0]})'
+            if method in ('len', 'count') and not a:
+                return f'({obj}).count'
 
         # ── Vec(T) dynamic vector methods ─────────────────────────────────────
         if isinstance(obj_type, ast.TypeGeneric) and obj_type.name == 'Vec':
