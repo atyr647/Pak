@@ -132,6 +132,9 @@ oo::class create pak::Emitter {
     method mul_s {fd fs ft} { my instr "mul.s" "$fd," "$fs," $ft }
     method div_s {fd fs ft} { my instr "div.s" "$fd," "$fs," $ft }
     method sync {} { my instr "sync" }
+    method verbatim {asm_text} {
+        foreach line [split $asm_text "\n"] { lappend buf "$indent$line" }
+    }
 }
 
 # ── Linear-scan register allocator (port of mips/registers.py RegAlloc) ─────────
@@ -359,7 +362,8 @@ proc pak::mips_annlist {node} {
 oo::class create pak::MipsCodegen {
     variable em pool ra ret_label scopes defers next_local loop_header loop_exit \
              globals consts label_n \
-             tenv_layouts tenv_enum_values tenv_variant_decls
+             tenv_layouts tenv_enum_values tenv_variant_decls \
+             generic_fns mono_emitted
 
     constructor {} {
         set em [pak::Emitter new]
@@ -377,6 +381,8 @@ oo::class create pak::MipsCodegen {
         set tenv_layouts [dict create]
         set tenv_enum_values [dict create]
         set tenv_variant_decls [dict create]
+        set generic_fns [dict create]
+        set mono_emitted [dict create]
     }
     destructor {
         $em destroy
@@ -551,23 +557,53 @@ oo::class create pak::MipsCodegen {
                 return [dict create size [expr {[dict get $inner size] * $n}] \
                     align [dict get $inner align] is_float 0 is_signed 1 is_ptr 0 fields {} frac_bits 0]
             }
+            TypeSlice {
+                # Fat pointer: {ptr@0, len@4}
+                set ptr_fi [dict create name ptr offset 0 size 4 align 4 type_node ""]
+                set len_fi [dict create name len offset 4 size 4 align 4 type_node ""]
+                return [dict create size 8 align 4 is_float 0 is_signed 1 is_ptr 0 \
+                    fields [dict create ptr $ptr_fi len $len_fi] frac_bits 0]
+            }
             TypeOption {
                 set inner [my mips_layout [pak::nfield $type_tv inner]]
                 if {[dict get $inner is_ptr]} {
                     return [dict create size 4 align 4 is_float 0 is_signed 0 is_ptr 1 fields {} frac_bits 0]
                 }
-                pak::mips_unported "layout:option-nonptr"
+                set ia [dict get $inner align]
+                set pay_off [expr {(1 + $ia - 1) & ~($ia - 1)}]
+                set total_align [expr {max(1, $ia)}]
+                set total_size [expr {($pay_off + [dict get $inner size] + $total_align - 1) & ~($total_align - 1)}]
+                set total_size [expr {max($total_size, $total_align)}]
+                return [dict create size $total_size align $total_align is_float 0 is_signed 1 is_ptr 0 fields {} frac_bits 0]
             }
             TypeResult {
-                # Default Result layout: {is_ok: bool@0, payload@4, size=8}
+                set ok_l  [my mips_layout [pak::nfield $type_tv ok]]
+                set err_l [my mips_layout [pak::nfield $type_tv err]]
+                set payload_size  [expr {max([dict get $ok_l size], [dict get $err_l size])}]
+                set payload_align [expr {max([dict get $ok_l align], [dict get $err_l align])}]
+                set pay_off [expr {(1 + $payload_align - 1) & ~($payload_align - 1)}]
+                set total_align [expr {max(1, $payload_align)}]
+                set total_size [expr {($pay_off + $payload_size + $total_align - 1) & ~($total_align - 1)}]
+                set total_size [expr {max($total_size, $total_align)}]
                 set ok_fi  [dict create name is_ok  offset 0 size 1 align 1 type_node ""]
-                set pay_fi [dict create name payload offset 4 size 4 align 4 type_node ""]
-                return [dict create size 8 align 4 is_float 0 is_signed 1 is_ptr 0 \
+                set pay_fi [dict create name payload offset $pay_off size $payload_size align $payload_align type_node ""]
+                return [dict create size $total_size align $total_align is_float 0 is_signed 1 is_ptr 0 \
                     fields [dict create is_ok $ok_fi payload $pay_fi] \
                     tag_offset 0 tag_size 1 frac_bits 0]
             }
+            TypeGeneric {
+                return [my mips_layout_name [pak::fval $type_tv name]]
+            }
+            TypeVolatile {
+                return [my mips_layout [pak::nfield $type_tv inner]]
+            }
+            TypeFn {
+                # Function pointer is just a 32-bit pointer
+                return [dict create size 4 align 4 is_float 0 is_signed 0 is_ptr 1 fields {} frac_bits 0]
+            }
             default {
-                pak::mips_unported "layout:[pak::kindof $type_tv]"
+                # Fallback: treat as a 4-byte word (matches Python)
+                return [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {} frac_bits 0]
             }
         }
     }
@@ -741,9 +777,11 @@ oo::class create pak::MipsCodegen {
         switch -- [pak::kindof $decl] {
             FnDecl {
                 if {[llength [pak::items [pak::nfield $decl type_params]]] > 0} {
-                    pak::mips_unported "generic-fn"
+                    # Generic function: defer until a monomorphized call is seen.
+                    dict set generic_fns [pak::fval $decl name] $decl
+                } else {
+                    my emit_fn [pak::fval $decl name] [pak::nfield $decl params] [pak::nfield $decl body]
                 }
-                my emit_fn [pak::fval $decl name] [pak::nfield $decl params] [pak::nfield $decl body]
             }
             EntryBlock {
                 my emit_fn main [pak::Seq {}] [pak::nfield $decl body]
@@ -972,7 +1010,21 @@ oo::class create pak::MipsCodegen {
             Block      { my emit_block $stmt }
             GotoStmt   { $em j [pak::fval $stmt label]; $em nop }
             LabelStmt  { $em label [pak::fval $stmt name] }
-            default    { pak::mips_unported "stmt:[pak::kindof $stmt]" }
+            AsmStmt {
+                foreach line [pak::items [pak::nfield $stmt lines]] {
+                    $em verbatim [lindex $line 1]
+                }
+            }
+            ComptimeIf {
+                set val [my eval_const_expr [pak::nfield $stmt condition]]
+                if {$val ne "" && $val} {
+                    my emit_block_or_stmt [pak::nfield $stmt then]
+                } else {
+                    set eb [pak::nfield $stmt else_branch]
+                    if {![pak::isnil $eb]} { my emit_block_or_stmt $eb }
+                }
+            }
+            default    {}
         }
     }
 
@@ -1931,19 +1983,130 @@ oo::class create pak::MipsCodegen {
                 return
             }
         }
-        if {[pak::kindof $func] ne "Ident"} { pak::mips_unported "call:indirect" }
-        set fname [pak::fval $func name]
-        # Check if this is a variant constructor via bare name: Circle(r)
-        set vname [my resolve_variant_name_for_case $fname]
-        if {$vname ne ""} {
-            my emit_variant_constructor $vname $fname [pak::nfield $expr args] $dst
+        if {[pak::kindof $func] eq "Ident"} {
+            set fname [pak::fval $func name]
+            # Variant constructor via bare name: Circle(r)
+            set vname [my resolve_variant_name_for_case $fname]
+            if {$vname ne ""} {
+                my emit_variant_constructor $vname $fname [pak::nfield $expr args] $dst
+                return
+            }
+            # Generic monomorphization: identity<i32>(42) -> identity__i32
+            set type_args [pak::items [pak::nfield $expr type_args]]
+            if {[llength $type_args] == 0} {
+                set type_args [pak::items [pak::nfield $func type_args]]
+            }
+            if {[llength $type_args] > 0 && [dict exists $generic_fns $fname]} {
+                set fname [my monomorphize $fname $type_args]
+            }
+            my marshal_args [pak::nfield $expr args]
+            $em jal $fname
+            $em nop
+            if {$dst ne {$v0}} { $em move $dst {$v0} }
             return
         }
-        # Regular direct call
+        # Indirect call: evaluate func into a temp and jalr
         my marshal_args [pak::nfield $expr args]
-        $em jal $fname
+        set fptr [$ra alloc_temp]
+        my emit_expr $func $fptr
+        $em jalr $fptr
         $em nop
+        $ra free_temp $fptr
         if {$dst ne {$v0}} { $em move $dst {$v0} }
+    }
+
+    # ── generic monomorphization (port of _monomorphize / _subst_*) ───────────
+    method monomorphize {generic_name type_args_items} {
+        set arg_names {}
+        foreach ta $type_args_items {
+            if {[lindex $ta 0] eq "lit"} {
+                lappend arg_names [lindex $ta 1]
+            } elseif {[pak::kindof $ta] eq "TypeName"} {
+                lappend arg_names [pak::fval $ta name]
+            } else {
+                lappend arg_names T
+            }
+        }
+        set mangled "${generic_name}__[join $arg_names _]"
+        if {[dict exists $mono_emitted $mangled]} { return $mangled }
+        if {![dict exists $generic_fns $generic_name]} { return $generic_name }
+        set template [dict get $generic_fns $generic_name]
+        set subst [dict create]
+        set tps [pak::items [pak::nfield $template type_params]]
+        set i 0
+        foreach tp $tps {
+            if {$i < [llength $type_args_items]} {
+                dict set subst [lindex $tp 1] [lindex $type_args_items $i]
+            }
+            incr i
+        }
+        set spec_params [my subst_params [pak::nfield $template params] $subst]
+        dict set mono_emitted $mangled 1
+        set saved [my save_fn_state]
+        my emit_fn $mangled $spec_params [pak::nfield $template body]
+        my restore_fn_state $saved
+        return $mangled
+    }
+
+    method subst_type {type_node subst} {
+        if {[pak::isnil $type_node]} { return $type_node }
+        set k [pak::kindof $type_node]
+        if {$k eq "TypeName"} {
+            set nm [pak::fval $type_node name]
+            if {[dict exists $subst $nm]} {
+                set repl [dict get $subst $nm]
+                if {[pak::kindof $repl] eq "TypeName"} { return $repl }
+                if {[lindex $repl 0] eq "lit"} { return [pak::N TypeName name [lindex $repl 1]] }
+                return [pak::N TypeName name $repl]
+            }
+            return $type_node
+        }
+        if {$k eq "TypePointer"} {
+            return [pak::N TypePointer inner [my subst_type [pak::nfield $type_node inner] $subst] \
+                nullable [pak::fval $type_node nullable] mutable [pak::fval $type_node mutable]]
+        }
+        if {$k eq "TypeSlice"} {
+            return [pak::N TypeSlice inner [my subst_type [pak::nfield $type_node inner] $subst] \
+                mutable [pak::fval $type_node mutable]]
+        }
+        if {$k eq "TypeArray"} {
+            return [pak::N TypeArray size [pak::nfield $type_node size] \
+                inner [my subst_type [pak::nfield $type_node inner] $subst]]
+        }
+        return $type_node
+    }
+
+    method subst_params {params_seq subst} {
+        set out {}
+        foreach p [pak::items $params_seq] {
+            lappend out [pak::N Param name [pak::fval $p name] \
+                type [my subst_type [pak::nfield $p type] $subst] \
+                mutable [pak::fval $p mutable] \
+                default_value [pak::nfield $p default_value]]
+        }
+        return [pak::Seq $out]
+    }
+
+    # Save/restore all per-function state around a nested emit_fn (mono). The
+    # outer ra is detached (set to "") so emit_fn won't destroy it.
+    method save_fn_state {} {
+        set s [dict create ra $ra scopes $scopes defers $defers \
+            next_local $next_local ret_label $ret_label \
+            loop_header $loop_header loop_exit $loop_exit]
+        set ra ""
+        set loop_header {}
+        set loop_exit {}
+        return $s
+    }
+    method restore_fn_state {s} {
+        if {$ra ne ""} { catch {$ra destroy} }
+        set ra [dict get $s ra]
+        set scopes [dict get $s scopes]
+        set defers [dict get $s defers]
+        set next_local [dict get $s next_local]
+        set ret_label [dict get $s ret_label]
+        set loop_header [dict get $s loop_header]
+        set loop_exit [dict get $s loop_exit]
     }
 
     method emit_method_call {access args_seq dst} {
