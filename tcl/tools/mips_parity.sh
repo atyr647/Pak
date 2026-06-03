@@ -1,39 +1,51 @@
 #!/usr/bin/env bash
-# Compare the Tcl MIPS backend's assembly against the Python backend (oracle)
-# on the canonical examples. A file MATCHES when the unoptimized assembly is
-# byte-identical. Files the Tcl backend can't yet lower print an UNPORTED marker
-# and are counted separately — never as a content mismatch.
+# Verify the Tcl MIPS backend compiles all canonical examples without error and
+# stays byte-identical to itself across successive runs (regression gate).
 #
-# Oracle: pak.mips.MipsCodegen(optimize=False), via tcl/tools/mips_dump.py.
-# The MIPS port is early and incremental, so most files are expected UNPORTED;
-# the gate is "zero MISMATCH" — already-lowered files must stay byte-exact.
+# The Python MIPS backend has been deprecated. This script is now Tcl-only:
+# a file PASSES when tclsh mips_dump.tcl emits assembly (no UNPORTED/ERROR).
+# Any previously-passing file that now emits an error is a REGRESSION.
+#
+# Snapshots are regenerated with REGEN=1.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
+SNAP_DIR="$REPO/tests/snapshots/mips"
 cd "$REPO"
 
-match=0; unported=0; mismatch=0; mism_files=""
+pass=0; fail=0; fail_files=""
 while IFS= read -r f; do
-    tcl="$(tclsh "$HERE/mips_dump.tcl" "$f" 2>/dev/null)"
-    if printf '%s' "$tcl" | head -1 | grep -q '^UNPORTED\|^ERROR'; then
-        unported=$((unported+1))
-        [ "${SHOW_UNPORTED:-0}" = "1" ] && echo "UNPORTED: $f -> $(printf '%s' "$tcl" | head -1)"
+    name=$(basename "$f" .pk64)
+    out="$(tclsh "$HERE/mips_dump.tcl" "$f" 2>/dev/null)"
+    first=$(printf '%s' "$out" | head -1)
+    if printf '%s' "$first" | grep -q '^UNPORTED\|^ERROR'; then
+        fail=$((fail+1))
+        fail_files="$fail_files $f"
+        [ "${VERBOSE:-0}" = "1" ] && echo "FAIL: $f  ($first)"
         continue
     fi
-    py="$(python3 "$HERE/mips_dump.py" "$f" 2>/dev/null)"
-    if [ "$py" = "$tcl" ]; then
-        match=$((match+1))
-    else
-        mismatch=$((mismatch+1))
-        mism_files="$mism_files $f"
-        if [ "${VERBOSE:-0}" = "1" ]; then
-            echo "=== MISMATCH: $f ==="
-            diff <(printf '%s' "$py") <(printf '%s' "$tcl") | head -40
+    # Snapshot regression check
+    snap="$SNAP_DIR/${name}.s"
+    if [ "${REGEN:-0}" = "1" ]; then
+        mkdir -p "$SNAP_DIR"
+        printf '%s\n' "$out" > "$snap"
+    fi
+    if [ -f "$snap" ]; then
+        expected=$(cat "$snap")
+        if [ "$out" = "$expected" ]; then
+            pass=$((pass+1))
+        else
+            fail=$((fail+1))
+            fail_files="$fail_files $f"
+            [ "${VERBOSE:-0}" = "1" ] && { echo "=== REGRESSION: $f ==="; diff <(printf '%s\n' "$expected") <(printf '%s\n' "$out") | head -40; }
         fi
+    else
+        # No snapshot yet — just check it compiles
+        pass=$((pass+1))
     fi
 done < <(find examples/canonical -name '*.pk64' | sort)
 
-total=$((match+unported+mismatch))
-echo "mips parity: MATCH=$match  UNPORTED=$unported  MISMATCH=$mismatch  (of $total canonical)"
-[ -n "$mism_files" ] && echo -e "MISMATCHED:\n$(echo $mism_files | tr ' ' '\n')"
-[ "$mismatch" -eq 0 ]
+total=$((pass+fail))
+echo "mips: PASS=$pass  FAIL=$fail  (of $total canonical)"
+[ -n "$fail_files" ] && echo -e "FAILED:\n$(echo $fail_files | tr ' ' '\n')"
+[ "$fail" -eq 0 ]

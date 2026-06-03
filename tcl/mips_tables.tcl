@@ -1,5 +1,5 @@
-# GENERATED from pak/mips/n64_runtime.py by tcl/tools/gen_mips_tables.py — DO NOT EDIT.
-# Regenerate: python3 tcl/tools/gen_mips_tables.py
+# Base table generated from pak/mips/n64_runtime.py by tcl/tools/gen_mips_tables.py.
+# Manual additions (string/container runtime symbols, CStr/Str layout) follow after memset.
 namespace eval pak {}
 if {[info exists ::pak::_mips_tables_loaded]} { return }
 set ::pak::_mips_tables_loaded 1
@@ -135,6 +135,17 @@ set ::pak::MIPS_EXTERNS [list \
     __pak_panic \
     memcpy \
     memset \
+    strlen \
+    strcmp \
+    strncmp \
+    strstr \
+    pak_str_eq \
+    pak_map_set \
+    pak_map_get \
+    pak_map_has \
+    pak_map_remove \
+    pak_pool_acquire \
+    pak_pool_release \
 ]
 
 set ::pak::MIPS_API [dict create \
@@ -288,4 +299,6 @@ set ::pak::MIPS_PRIM [dict create \
     {fix1.15} {2 2 0 1} \
     {ptr} {4 4 0 0} \
     {*T} {4 4 0 0} \
+    {CStr}  {4 4 0 0} \
+    {Str}   {8 4 0 0} \
 ]

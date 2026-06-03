@@ -16,7 +16,6 @@ from .typechecker import typecheck_multi, TypeEnv, PakError
 from .checker import semantic_check, check_entry_blocks, check_module_imports, CheckDiag
 from .headergen import generate_header, module_to_filename, collect_module_includes
 from . import ast as pak_ast
-from .mips import MipsCodegen, CodegenError
 
 
 def find_project_root(start: Path = None) -> Optional[Path]:
@@ -264,33 +263,36 @@ def _build_c(parsed, root, build_dir, verbose):
     return c_rel_paths
 
 
-def _build_mips(parsed, root, build_dir, verbose):
-    """Generate MIPS assembly for all parsed programs. Returns list of relative paths."""
-    # Run typechecker to get TypeEnv for codegen
-    tc_input = [(str(pf), prog) for pf, prog in parsed]
-    from .typechecker import typecheck_multi
-    typecheck_multi(tc_input)  # we already checked; this just gives us the env
+def _tcl_mips(pak_file: Path) -> str:
+    """Run the Tcl MIPS backend on a single .pk64 file, return assembly text."""
+    tcl_cli = Path(__file__).resolve().parents[1] / 'tcl' / 'cli.tcl'
+    result = subprocess.run(
+        ['tclsh', str(tcl_cli), 'explain', '--backend', 'mips', str(pak_file)],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip())
+    return result.stdout
 
+
+def _build_mips(parsed, root, build_dir, verbose):
+    """Generate MIPS assembly via the Tcl MIPS backend. Returns list of relative paths."""
     s_rel_paths = []
-    for pak_file, program in parsed:
+    for pak_file, _program in parsed:
         rel = pak_file.relative_to(root)
         s_file = build_dir / rel.with_suffix('.s')
         s_file.parent.mkdir(parents=True, exist_ok=True)
-
         if verbose:
             print(f'  Generating MIPS assembly for {rel}...')
         try:
-            cg = MipsCodegen(bounds_check=True, optimize=True)
-            asm_text = cg.generate(program)
-        except CodegenError as e:
+            asm_text = _tcl_mips(pak_file)
+        except RuntimeError as e:
             print(f'error[codegen]: {e}', file=sys.stderr)
             print(f'  --> {pak_file}', file=sys.stderr)
             sys.exit(1)
-
         s_file.write_text(asm_text, encoding='utf-8')
         s_rel_paths.append(s_file.relative_to(root))
         print(f'  Compiled {rel} -> {s_file.relative_to(root)}')
-
     return s_rel_paths
 
 
@@ -428,16 +430,11 @@ def cmd_explain(args):
 
     backend = getattr(args, 'backend', 'c')
     if backend == 'mips':
-        program = parse_file(pak_file)
-        if program is None:
-            sys.exit(1)
         try:
-            cg = MipsCodegen(bounds_check=True, optimize=True)
-            asm_text = cg.generate(program)
-        except CodegenError as e:
+            print(_tcl_mips(pak_file), end='')
+        except RuntimeError as e:
             print(f'error[codegen]: {e}', file=sys.stderr)
             sys.exit(1)
-        print(asm_text)
     else:
         c_source, _ = compile_file(pak_file)
         print(c_source)
