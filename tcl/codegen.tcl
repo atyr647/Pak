@@ -122,7 +122,10 @@ oo::class create pak::Codegen {
     variable filename uses assets module_name fn_names enum_variants variant_types \
              struct_fields scopes method_registry trait_decls const_values \
              generic_fns generic_structs module_headers defer_stack result_typedefs \
-             result_typedef_names current_ret_type closures fmt_counter tmp_counter \
+             result_typedef_names slice_typedefs slice_typedef_names \
+             tuple_typedefs tuple_typedef_names vec_typedefs vec_typedef_names vec_used \
+             container_typedefs container_typedef_names \
+             current_ret_type closures fmt_counter tmp_counter \
              mono_cache pending_mono pending_nested _in_stmt
 
     constructor {{fname "<unknown>"} {mod_headers {}}} {
@@ -144,6 +147,15 @@ oo::class create pak::Codegen {
         set module_headers $mod_headers
         set result_typedefs {}
         set result_typedef_names [dict create]
+        set slice_typedefs {}
+        set slice_typedef_names [dict create]
+        set tuple_typedefs {}
+        set tuple_typedef_names [dict create]
+        set vec_typedefs {}
+        set vec_typedef_names [dict create]
+        set vec_used 0
+        set container_typedefs {}
+        set container_typedef_names [dict create]
         set current_ret_type ""
         set closures {}
         set fmt_counter 0
@@ -182,6 +194,66 @@ oo::class create pak::Codegen {
             lappend result_typedefs [list $tdname $c_ok $c_err]
         }
         return $tdname
+    }
+
+    method slice_typedef {inner_type} {
+        set c_inner [my gen_type $inner_type]
+        set safe [string map {" " _ "*" p "," "" "(" "" ")" ""} $c_inner]
+        set tdname "PakSlice_$safe"
+        if {![dict exists $slice_typedef_names $tdname]} {
+            dict set slice_typedef_names $tdname 1
+            lappend slice_typedefs [list $tdname $c_inner]
+        }
+        return $tdname
+    }
+
+    method tuple_typedef {c_types} {
+        set safe [join [lmap ct $c_types {string map {" " _ "*" p "," "" "(" "" ")" ""} $ct}] _]
+        set tdname "PakTuple[llength $c_types]_$safe"
+        if {![dict exists $tuple_typedef_names $tdname]} {
+            dict set tuple_typedef_names $tdname 1
+            lappend tuple_typedefs [list $tdname $c_types]
+        }
+        return $tdname
+    }
+
+    method vec_typedef {elem_c_type} {
+        set safe [string map {" " _ "*" p "," ""} $elem_c_type]
+        set tdname "_PakVec_$safe"
+        if {![dict exists $vec_typedef_names $tdname]} {
+            dict set vec_typedef_names $tdname 1
+            lappend vec_typedefs [list $tdname $elem_c_type]
+            set vec_used 1
+        }
+        return $tdname
+    }
+
+    method container_typedef {t} {
+        set kind [pak::fval $t name]
+        set args [pak::items [pak::nfield $t args]]
+        if {$kind eq "FixedMap"} {
+            set k_type [expr {[llength $args] > 0 ? [my gen_type [lindex $args 0]] : "int32_t"}]
+            set v_type [expr {[llength $args] > 1 ? [my gen_type [lindex $args 1]] : "int32_t"}]
+            set cap    [expr {[llength $args] > 2 && [pak::kindof [lindex $args 2]] eq "IntLit" ? [pak::fval [lindex $args 2] value] : 16}]
+            set safe_k [string map {" " _ "*" p} $k_type]
+            set safe_v [string map {" " _ "*" p} $v_type]
+            set tname "_PakMap_${safe_k}_${safe_v}_${cap}"
+            if {![dict exists $container_typedef_names $tname]} {
+                dict set container_typedef_names $tname 1
+                lappend container_typedefs [list $tname FixedMap $k_type $v_type $cap]
+            }
+        } else {
+            set elem_type [expr {[llength $args] > 0 ? [my gen_type [lindex $args 0]] : "int32_t"}]
+            set cap [expr {[llength $args] > 1 && [pak::kindof [lindex $args 1]] eq "IntLit" ? [pak::fval [lindex $args 1] value] : 16}]
+            set safe [string map {" " _ "*" p} $elem_type]
+            set prefix [dict get {FixedList _PakList RingBuffer _PakRBuf Pool _PakPool} $kind]
+            set tname "${prefix}_${safe}_${cap}"
+            if {![dict exists $container_typedef_names $tname]} {
+                dict set container_typedef_names $tname 1
+                lappend container_typedefs [list $tname $kind $elem_type {} $cap]
+            }
+        }
+        return $tname
     }
 
     # ── scope helpers ─────────────────────────────────────────────────────────
@@ -245,6 +317,22 @@ oo::class create pak::Codegen {
         }
         return ""
     }
+    method infer_c_type_for_elem {e} {
+        set t [my expr_type $e]
+        if {$t ne "" && ![pak::isnil $t]} { return [my gen_type $t] }
+        switch -- [pak::kindof $e] {
+            IntLit    { return "int32_t" }
+            FloatLit  { return "float" }
+            BoolLit   { return "bool" }
+            StringLit { return "const char *" }
+            TupleLit  {
+                set inner [lmap el [pak::items [pak::nfield $e elements]] {my infer_c_type_for_elem $el}]
+                return [my tuple_typedef $inner]
+            }
+        }
+        return "void *"
+    }
+
     method expr_type {e} {
         switch -- [pak::kindof $e] {
             Ident { return [my scope_get [pak::fval $e name]] }
@@ -303,6 +391,30 @@ oo::class create pak::Codegen {
                 return "$rc (*)([join $ps {, }])"
             }
             TypeParam { return "void *" }
+            TypeSlice  { return [my slice_typedef [pak::nfield $t inner]] }
+            TypeTuple  {
+                set ctypes [lmap el [pak::items [pak::nfield $t elements]] {my gen_type $el}]
+                return [my tuple_typedef $ctypes]
+            }
+            TypeGeneric {
+                set gname [pak::fval $t name]
+                set args  [pak::items [pak::nfield $t args]]
+                if {$gname in {List Slice Array} && [llength $args] == 1} {
+                    return [my slice_typedef [lindex $args 0]]
+                }
+                if {$gname in {FixedList RingBuffer FixedMap Pool}} {
+                    return [my container_typedef $t]
+                }
+                if {$gname eq "Vec" && [llength $args] > 0} {
+                    return [my vec_typedef [my gen_type [lindex $args 0]]]
+                }
+                # Generic struct: Foo<i32, Str> → Foo_i32_Str
+                set cargs [join [lmap a $args {
+                    if {[pak::kindof $a] eq "IntLit"} { pak::fval $a value } \
+                    else { string map {" " _ "*" p "," ""} [my gen_type $a] }
+                }] _]
+                return "${gname}_${cargs}"
+            }
             default { pak::cg_unported "type:[pak::kindof $t]" }
         }
     }
@@ -351,6 +463,16 @@ oo::class create pak::Codegen {
                 }
                 return "([pak::fval $e type_name]){[join $parts {, }]}"
             }
+            VariantLit {
+                set vt [pak::fval $e variant_type]
+                set vc [pak::fval $e case_name]
+                set parts {}
+                foreach pair [pak::items [pak::nfield $e fields]] {
+                    set p [pak::items $pair]
+                    lappend parts ".[pak::sval [lindex $p 0]] = [my gen_expr [lindex $p 1]]"
+                }
+                return "($vt)\{.tag = ${vt}_tag_$vc, .data.$vc = \{[join $parts {, }]\}\}"
+            }
             ArrayLit  { return [my gen_array_lit $e] }
             UnaryOp {
                 set op [pak::fval $e op]
@@ -383,6 +505,40 @@ oo::class create pak::Codegen {
                 return $n
             }
             TupleAccess { return "([my gen_expr [pak::nfield $e obj]]).f[pak::fval $e index]" }
+            TupleLit {
+                set elems [pak::items [pak::nfield $e elements]]
+                set ctypes [lmap el $elems { my infer_c_type_for_elem $el }]
+                set tdname [my tuple_typedef $ctypes]
+                set parts {}
+                set i 0
+                foreach el $elems { lappend parts ".f$i = [my gen_expr $el]"; incr i }
+                return "($tdname)\{[join $parts {, }]\}"
+            }
+            SliceExpr {
+                set obj_str [my gen_expr [pak::nfield $e obj]]
+                set start_node [pak::nfield $e start]
+                set end_node   [pak::nfield $e end]
+                set start [expr {[pak::isnil $start_node] ? "0" : [my gen_expr $start_node]}]
+                set obj_type [my expr_type [pak::nfield $e obj]]
+                if {![pak::isnil $end_node]} {
+                    set end_str [my gen_expr $end_node]
+                    set length "($end_str) - ($start)"
+                } elseif {[pak::kindof $obj_type] eq "TypeArray" && [pak::kindof [pak::nfield $obj_type size]] eq "IntLit"} {
+                    set sz [pak::fval [pak::nfield $obj_type size] value]
+                    set length "(int)($sz) - ($start)"
+                } else {
+                    set length "/* slice length unknown */ 0"
+                }
+                if {[pak::kindof $obj_type] eq "TypeArray"} {
+                    set inner_type [pak::nfield $obj_type inner]
+                } elseif {[pak::kindof $obj_type] eq "TypeSlice"} {
+                    set inner_type [pak::nfield $obj_type inner]
+                } else {
+                    set inner_type [pak::N TypeName name auto]
+                }
+                set tdname [my slice_typedef $inner_type]
+                return "($tdname)\{ .data = &($obj_str)\[$start\], .len = $length \}"
+            }
             SizeOf {
                 set op [pak::nfield $e operand]
                 if {[pak::kindof $op] in {TypeName TypePointer TypeArray TypeSlice TypeResult TypeGeneric TypeVolatile}} {
@@ -783,10 +939,10 @@ oo::class create pak::Codegen {
                     return "($obj).data\[--($obj).len\]"
                 }
                 if {$method eq "remove" && $na > 0} {
-                    return "({{ int32_t _ri = ($a0); ($obj).data\[_ri\] = ($obj).data\[--($obj).len\]; }})"
+                    return "({ int32_t _ri = ($a0); ($obj).data\[_ri\] = ($obj).data\[--($obj).len\]; })"
                 }
                 if {$method in {items slice}} {
-                    return "($elem_t \*){{ .data = ($obj).data, .len = ($obj).len }}"
+                    return "($elem_t \*){ .data = ($obj).data, .len = ($obj).len }"
                 }
                 if {$method eq "len" && $na == 0} {
                     return "($obj).len"
@@ -809,13 +965,13 @@ oo::class create pak::Codegen {
                     return "memset(&($obj), 0, sizeof($obj))"
                 }
                 if {$method eq "push" && $na > 0} {
-                    return "({{ ($obj).data\[($obj).tail\] = ($a0); ($obj).tail = (($obj).tail + 1) % $cap; if (($obj).len < $cap) ($obj).len++; }})"
+                    return "({ ($obj).data\[($obj).tail\] = ($a0); ($obj).tail = (($obj).tail + 1) % $cap; if (($obj).len < $cap) ($obj).len++; })"
                 }
                 if {$method eq "peek_back" && $na > 0} {
                     return "($obj).data\[(($obj).tail - ($a0) - 1 + $cap) % $cap\]"
                 }
                 if {$method eq "pop"} {
-                    return "({{ __auto_type _v = ($obj).data\[($obj).head\]; ($obj).head = (($obj).head + 1) % $cap; if (($obj).len > 0) ($obj).len--; _v; }})"
+                    return "({ __auto_type _v = ($obj).data\[($obj).head\]; ($obj).head = (($obj).head + 1) % $cap; if (($obj).len > 0) ($obj).len--; _v; })"
                 }
                 if {$method eq "is_empty" && $na == 0} {
                     return "(($obj).len == 0)"
@@ -879,7 +1035,7 @@ oo::class create pak::Codegen {
                     return "(($obj).cap < ($a0) ? (($obj).data = ($elem_t *)realloc(($obj).data, (size_t)($a0) * sizeof(*($obj).data)), ($obj).cap = ($a0), (void)0) : (void)0)"
                 }
                 if {$method eq "free" && $na == 0} {
-                    return "({{ free(($obj).data); ($obj).data = NULL; ($obj).len = ($obj).cap = 0; }})"
+                    return "({ free(($obj).data); ($obj).data = NULL; ($obj).len = ($obj).cap = 0; })"
                 }
             }
         }
@@ -915,13 +1071,13 @@ oo::class create pak::Codegen {
                 return "pak_str_from_cstr($obj)"
             }
             if {$method eq "find" && $na == 1} {
-                return "({{ const char *_h = strstr($obj, $a0); _h ? (int32_t)(_h - ($obj)) : -1; }})"
+                return "({ const char *_h = strstr($obj, $a0); _h ? (int32_t)(_h - ($obj)) : -1; })"
             }
             if {$method eq "slice" && $na == 1} {
                 return "(($obj) + ($a0))"
             }
             if {$method eq "slice" && $na == 2} {
-                return "(PakStr){{.data = ($obj) + ($a0), .len = ($a1)}}"
+                return "(PakStr){ .data = ($obj) + ($a0), .len = ($a1) }"
             }
             if {$method eq "copy_to" && $na == 2} {
                 return "(snprintf($a0, (size_t)($a1), \"%s\", $obj), $a0)"
@@ -956,10 +1112,10 @@ oo::class create pak::Codegen {
                 return "(memmem(($obj).data, (size_t)($obj).len, ($a0).data, (size_t)($a0).len) != NULL)"
             }
             if {$method eq "find" && $na == 1} {
-                return "({{ const void *_h = memmem(($obj).data, (size_t)($obj).len, ($a0).data, (size_t)($a0).len); _h ? (int32_t)((const char *)_h - ($obj).data) : -1; }})"
+                return "({ const void *_h = memmem(($obj).data, (size_t)($obj).len, ($a0).data, (size_t)($a0).len); _h ? (int32_t)((const char *)_h - ($obj).data) : -1; })"
             }
             if {$method eq "slice" && $na == 2} {
-                return "(PakStr){{.data = ($obj).data + ($a0), .len = ($a1)}}"
+                return "(PakStr){ .data = ($obj).data + ($a0), .len = ($a1) }"
             }
             if {$method eq "starts_with" && $na == 1} {
                 return "(($obj).len >= ($a0).len && memcmp(($obj).data, ($a0).data, (size_t)($a0).len) == 0)"
@@ -2066,6 +2222,84 @@ oo::class create pak::Codegen {
             }
         }
 
+        # Slice (fat-pointer) typedefs.
+        if {[llength $slice_typedefs] > 0} {
+            lappend out ""
+            foreach td $slice_typedefs {
+                lassign $td tdname c_inner
+                lappend out "typedef struct { $c_inner *data; int32_t len; } ${tdname};"
+            }
+        }
+
+        # Tuple typedefs.
+        if {[llength $tuple_typedefs] > 0} {
+            lappend out ""
+            lappend out "/* -- Tuple types -- */"
+            foreach td $tuple_typedefs {
+                lassign $td tdname ctypes
+                lappend out "typedef struct {"
+                set i 0
+                foreach ct $ctypes { lappend out "    $ct f$i;"; incr i }
+                lappend out "} ${tdname};"
+            }
+        }
+
+        # Vec(T) dynamic vector typedefs + _PAK_VEC_PUSH macro.
+        if {$vec_used} {
+            lappend out ""
+            lappend out "/* -- Vec(T) dynamic vector -- */"
+            lappend out "#include <stdlib.h>"
+            lappend out "#define _PAK_VEC_PUSH(v, item) do { \\"
+            lappend out "    if ((v)->len >= (v)->cap) { \\"
+            lappend out "        (v)->cap = (v)->cap ? (v)->cap * 2 : 8; \\"
+            lappend out "        (v)->data = realloc((v)->data, (size_t)(v)->cap * sizeof(*(v)->data)); \\"
+            lappend out "    } \\"
+            lappend out "    (v)->data\[(v)->len++\] = (item); \\"
+            lappend out "} while(0)"
+            foreach td $vec_typedefs {
+                lassign $td tdname elem_c_type
+                lappend out "typedef struct {"
+                lappend out "    $elem_c_type *data;"
+                lappend out "    int32_t len;"
+                lappend out "    int32_t cap;"
+                lappend out "} ${tdname};"
+            }
+        }
+
+        # Container typedefs (FixedList, RingBuffer, FixedMap, Pool).
+        if {[llength $container_typedefs] > 0} {
+            lappend out ""
+            lappend out "/* -- Container types -- */"
+            foreach entry $container_typedefs {
+                lassign $entry tname kind et1 et2 cap
+                switch -- $kind {
+                    FixedMap {
+                        lappend out "typedef struct {"
+                        lappend out "    $et1 keys\[$cap\];"
+                        lappend out "    $et2 values\[$cap\];"
+                        lappend out "    bool occupied\[$cap\];"
+                        lappend out "    int32_t len;"
+                        lappend out "} ${tname};"
+                        lappend out ""
+                    }
+                    RingBuffer {
+                        lappend out "typedef struct {"
+                        lappend out "    $et1 data\[$cap\];"
+                        lappend out "    int32_t head, tail, len;"
+                        lappend out "} ${tname};"
+                        lappend out ""
+                    }
+                    default {
+                        lappend out "typedef struct {"
+                        lappend out "    $et1 data\[$cap\];"
+                        lappend out "    int32_t len;"
+                        lappend out "} ${tname};"
+                        lappend out ""
+                    }
+                }
+            }
+        }
+
         # Emit closures (non-capturing fn literals) as static functions.
         if {[llength $closures] > 0} {
             set closure_lines [my emit_closures]
@@ -2167,6 +2401,9 @@ proc pak::cg_api_lambda {mod fn arglist} {
         "math rand_seed"   { return "__pak_srand([lindex $arglist 0])" }
         "math rand_range"  { return "__pak_rand_range([lindex $arglist 0], [lindex $arglist 1])" }
         "math rand_f"      { return "__pak_rand_f()" }
+        "str from_cstr"    { return "pak_str_from_cstr([lindex $arglist 0])" }
+        "str len"          { return "([lindex $arglist 0]).len" }
+        "str eq"           { return "pak_str_eq([lindex $arglist 0], [lindex $arglist 1])" }
         default { pak::cg_unported "api-lambda:$mod $fn" }
     }
 }

@@ -943,6 +943,24 @@ oo::class create pak::Parser {
                     my expect RBRACKET
                     set expr [pak::N IndexAccess obj $expr index $idx]
                 }
+            } elseif {[my check LBRACE] \
+                      && [pak::kindof $expr] eq "DotAccess" \
+                      && [pak::kindof [pak::nfield $expr obj]] eq "Ident" \
+                      && [my is_struct_lit_ctx]} {
+                # Named-field variant construction: TypeName.case_name { field: val }
+                set vtype [pak::fval [pak::nfield $expr obj] name]
+                set vcase [pak::fval $expr field]
+                my advance
+                set fields {}
+                while {![my check RBRACE] && ![my check EOF]} {
+                    set fn [my expectv IDENT]
+                    my expect COLON
+                    set fv [my parse_expr]
+                    lappend fields [pak::Seq [list [pak::Lit $fn] $fv]]
+                    my match COMMA
+                }
+                my expect RBRACE
+                set expr [pak::N VariantLit variant_type $vtype case_name $vcase fields $fields]
             } else break
         }
         return $expr
