@@ -192,7 +192,11 @@ class PakEmitter:
                 return None
             # Extern forward declarations
             if decl.sig.is_extern:
-                return [f'extern {self._sig_line(decl.sig)}']
+                lines = []
+                if decl.sig.is_variadic:
+                    lines.append('-- c2pak: variadic function (trailing args not expressible in Pak)')
+                lines.append(f'extern {self._sig_line(decl.sig)}')
+                return lines
             # Skip non-extern forward decls (body will be emitted)
             return None
 
