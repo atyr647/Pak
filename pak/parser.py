@@ -910,6 +910,9 @@ class Parser:
     def parse_match_arm(self) -> ast.MatchArm:
         line, col = self.loc()
         pattern = self.parse_pattern()
+        guard = None
+        if self.match(TT.IF):
+            guard = self.parse_expr()
         self.expect(TT.FAT_ARROW)
         if self.check(TT.LBRACE):
             body = self.parse_block()
@@ -917,7 +920,7 @@ class Parser:
             # Single-statement arm: => stmt (no braces)
             stmt = self.parse_stmt()
             body = ast.Block(stmts=[stmt], line=line, col=col)
-        return ast.MatchArm(pattern=pattern, guard=None, body=body, line=line, col=col)
+        return ast.MatchArm(pattern=pattern, guard=guard, body=body, line=line, col=col)
 
     def parse_pattern(self) -> Any:
         line, col = self.loc()

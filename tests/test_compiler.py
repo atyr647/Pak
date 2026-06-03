@@ -4161,3 +4161,134 @@ class TestEepromAPI:
         ''')
         c = codegen(src)
         assert 'eeprom_type_detect()' in c
+
+
+class TestUseAlias:
+    def test_alias_resolves_to_module_api(self):
+        src = textwrap.dedent('''
+            use n64.display as disp
+            entry {
+                disp.init(0, 2, 3, 0, 1)
+            }
+        ''')
+        c = codegen(src)
+        assert 'display_init(0, 2, 3, 0, 1)' in c
+
+    def test_alias_include_still_emitted(self):
+        src = textwrap.dedent('''
+            use n64.display as disp
+            entry {
+                let fb = disp.get()
+            }
+        ''')
+        c = codegen(src)
+        assert '#include <display.h>' in c
+
+    def test_alias_multiple_modules(self):
+        src = textwrap.dedent('''
+            use n64.display as disp
+            use n64.controller as ctrl
+            entry {
+                disp.init(0, 2, 3, 0, 1)
+                ctrl.init()
+            }
+        ''')
+        c = codegen(src)
+        assert 'display_init' in c
+        assert 'joypad_init' in c
+
+    def test_unaliased_use_still_works(self):
+        src = textwrap.dedent('''
+            use n64.display
+            entry {
+                display.init(0, 2, 3, 0, 1)
+            }
+        ''')
+        c = codegen(src)
+        assert 'display_init(0, 2, 3, 0, 1)' in c
+
+
+class TestMatchGuard:
+    def test_guard_parses_and_emits_condition(self):
+        src = textwrap.dedent('''
+            variant Opt {
+                some(i32)
+                none
+            }
+            fn check(v: Opt) -> i32 {
+                match v {
+                    .some(x) if x > 0 => { return x }
+                    .some(x) => { return 0 }
+                    .none => { return -1 }
+                }
+            }
+            entry {}
+        ''')
+        c = codegen(src)
+        assert 'field0 > 0' in c
+
+    def test_guard_binding_substituted_in_condition(self):
+        src = textwrap.dedent('''
+            variant Opt {
+                some(i32)
+                none
+            }
+            fn check(v: Opt) -> i32 {
+                match v {
+                    .some(x) if x > 0 => { return x }
+                    .none => { return -1 }
+                    _ => { return 0 }
+                }
+            }
+            entry {}
+        ''')
+        c = codegen(src)
+        # binding 'x' must be substituted with the field access in the guard
+        assert 'tag == Opt_tag_some' in c
+        assert 'data.some.field0 > 0' in c
+
+    def test_guard_uses_else_if_chain(self):
+        src = textwrap.dedent('''
+            variant Opt {
+                some(i32)
+                none
+            }
+            fn f(v: Opt) -> i32 {
+                match v {
+                    .some(x) if x > 10 => { return 2 }
+                    .some(x) if x > 0  => { return 1 }
+                    .some(x) => { return 0 }
+                    .none => { return -1 }
+                }
+            }
+            entry {}
+        ''')
+        c = codegen(src)
+        assert 'else if' in c
+
+    def test_guard_wildcard_becomes_else(self):
+        src = textwrap.dedent('''
+            fn classify(x: i32) -> i32 {
+                match x {
+                    1 if x > 0 => { return 10 }
+                    _ => { return 0 }
+                }
+            }
+            entry {}
+        ''')
+        c = codegen(src)
+        assert 'else {' in c or 'else{' in c
+
+    def test_no_guard_uses_switch(self):
+        src = textwrap.dedent('''
+            enum Dir { north, south }
+            fn f(d: Dir) -> i32 {
+                match d {
+                    .north => { return 1 }
+                    .south => { return 2 }
+                }
+            }
+            entry {}
+        ''')
+        c = codegen(src)
+        assert 'switch' in c

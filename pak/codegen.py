@@ -688,6 +688,7 @@ class Codegen:
         self.includes: List[str] = []
         self.forward_decls: List[str] = []
         self.uses: List[str] = []
+        self.use_aliases: dict = {}  # alias → short module name
         self.assets: List[ast.AssetDecl] = []
         self.module_name: str = ''
         self.fn_names: List[str] = []
@@ -1081,7 +1082,8 @@ class Codegen:
                 if e.field in self.enum_variants:
                     return f'{obj_str}_{e.field}'
                 # Module namespace — not a variable, keep as-is (resolved in Call)
-                if (n, e.field) in MODULE_API:
+                resolved_n = self.use_aliases.get(n, n)
+                if (resolved_n, e.field) in MODULE_API:
                     return f'{obj_str}.{e.field}'  # placeholder; Call handles it
                 # Pointer variable: p.field → p->field
                 if self.is_pointer(n):
@@ -1219,7 +1221,7 @@ class Codegen:
                     return result
             # Module API call: module.function(args) → C API
             if isinstance(e.func, ast.DotAccess) and isinstance(e.func.obj, ast.Ident):
-                mod = e.func.obj.name
+                mod = self.use_aliases.get(e.func.obj.name, e.func.obj.name)
                 fn = e.func.field
                 key = (mod, fn)
                 if key in MODULE_API:
@@ -1906,6 +1908,8 @@ class Codegen:
         for decl in program.decls:
             if isinstance(decl, ast.UseDecl):
                 self.uses.append(decl.path)
+                if decl.alias:
+                    self.use_aliases[decl.alias] = decl.path.split('.')[-1]
             elif isinstance(decl, ast.AssetDecl):
                 self.assets.append(decl)
             elif isinstance(decl, ast.ModuleDecl):
@@ -3130,7 +3134,103 @@ class Codegen:
         lines.append(f'{pad}}}')
         return '\n'.join(l for l in lines if l is not None)
 
+    def _pattern_cond(self, pat, expr_var: str, is_variant: bool, match_type: str) -> str:
+        """C condition string: does expr_var match this pattern?"""
+        if isinstance(pat, ast.Ident) and pat.name == '_':
+            return '1'
+        if isinstance(pat, ast.Call) and isinstance(pat.func, ast.EnumVariantAccess):
+            # .case(bindings) — check tag only
+            type_name = self.enum_variants.get(pat.func.name, '')
+            if type_name in self.variant_types:
+                return f'{expr_var}.tag == {type_name}_tag_{pat.func.name}'
+            elif type_name:
+                return f'{expr_var} == {type_name}_{pat.func.name}'
+            return f'{expr_var} == {pat.func.name}'
+        if isinstance(pat, ast.EnumVariantAccess):
+            type_name = self.enum_variants.get(pat.name, '')
+            if type_name in self.variant_types:
+                return f'{expr_var}.tag == {type_name}_tag_{pat.name}'
+            elif type_name:
+                return f'{expr_var} == {type_name}_{pat.name}'
+            return f'{expr_var} == {pat.name}'
+        if isinstance(pat, ast.DotAccess):
+            obj_name = self.gen_expr(pat.obj)
+            if obj_name in self.variant_types:
+                return f'{expr_var}.tag == {obj_name}_tag_{pat.field}'
+            return f'{expr_var} == {obj_name}_{pat.field}'
+        if isinstance(pat, ast.IntLit):
+            return f'{expr_var} == {pat.value}'
+        if isinstance(pat, ast.BoolLit):
+            return f'{expr_var} == {"1" if pat.value else "0"}'
+        return '1'
+
+    def _pattern_bindings(self, pat, expr_var: str) -> list:
+        """Return [(c_name, field_access)] pairs for binding variables in a pattern."""
+        import re as _re
+        if isinstance(pat, ast.Call) and isinstance(pat.func, ast.EnumVariantAccess):
+            case = pat.func.name
+            return [(arg.name, f'{expr_var}.data.{case}.field{i}')
+                    for i, arg in enumerate(pat.args)
+                    if isinstance(arg, ast.Ident) and arg.name != '_']
+        if isinstance(pat, ast.DotAccess) and pat.binding:
+            obj_name = self.gen_expr(pat.obj)
+            if obj_name in self.variant_types:
+                return [(pat.binding, f'{expr_var}.data.{pat.field.lower()}')]
+        return []
+
+    def _subst_guard(self, guard_c: str, bindings: list) -> str:
+        """Replace binding variable names with their field-access expressions."""
+        import re as _re
+        for var_name, field_access in bindings:
+            guard_c = _re.sub(r'\b' + _re.escape(var_name) + r'\b', field_access, guard_c)
+        return guard_c
+
+    def gen_match_guarded(self, s: ast.MatchStmt, pad: str, indent: int) -> str:
+        """Emit match with guard conditions as if/else-if chains."""
+        self._tmp_counter = getattr(self, '_tmp_counter', 0) + 1
+        expr_var = f'_pak_match_{self._tmp_counter}'
+        inner_pad = '    ' * (indent + 1)
+        inner2_pad = '    ' * (indent + 2)
+        match_type = self._match_type_name(s.expr)
+        is_variant = match_type in self.variant_types
+        lines = [f'{pad}{{']
+        lines.append(f'{inner_pad}__auto_type {expr_var} = {self.gen_expr(s.expr)};')
+        first = True
+        for arm in s.arms:
+            pat = arm.pattern
+            is_wildcard = isinstance(pat, ast.Ident) and pat.name == '_'
+            cond = self._pattern_cond(pat, expr_var, is_variant, match_type)
+            bindings = self._pattern_bindings(pat, expr_var)
+            if arm.guard:
+                guard_c = self._subst_guard(self.gen_expr(arm.guard), bindings)
+                guard_str = f' && ({guard_c})'
+            else:
+                guard_str = ''
+            if is_wildcard and arm.guard is None:
+                lines.append(f'{inner_pad}else {{')
+            else:
+                kw = 'if' if first else 'else if'
+                lines.append(f'{inner_pad}{kw} ({cond}{guard_str}) {{')
+            self.scope_push()
+            for var_name, field_access in bindings:
+                lines.append(f'{inner2_pad}__auto_type {var_name} = {field_access};')
+                self.scope_set(var_name, ast.TypeName(name='auto'))
+            if isinstance(arm.body, ast.Block):
+                for stmt in arm.body.stmts:
+                    lines.append(self.gen_stmt(stmt, indent + 2))
+            else:
+                lines.append(f'{inner2_pad}{self.gen_expr(arm.body)};')
+            for d_line in self._emit_defers_for_scope(-1, inner2_pad, indent + 2):
+                lines.append(d_line)
+            self.scope_pop()
+            lines.append(f'{inner_pad}}}')
+            first = False
+        lines.append(f'{pad}}}')
+        return '\n'.join(l for l in lines if l is not None)
+
     def gen_match(self, s: ast.MatchStmt, pad: str, indent: int) -> str:
+        if any(arm.guard is not None for arm in s.arms):
+            return self.gen_match_guarded(s, pad, indent)
         expr = self.gen_expr(s.expr)
         inner_pad = '    ' * (indent + 1)
         inner2_pad = '    ' * (indent + 2)

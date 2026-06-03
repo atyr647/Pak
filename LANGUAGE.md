@@ -869,7 +869,7 @@ match entity {
 }
 ```
 
-### Match with Guard [PLANNED]
+### Match with Guard [IMPLEMENTED]
 
 ```pak
 match value {
@@ -879,8 +879,9 @@ match value {
 }
 ```
 
-Guard conditions (`if expr`) are parsed as a reserved syntax but not yet evaluated;
-the guard field is always `none` in the current implementation.
+Guard conditions (`if expr`) after the pattern are fully evaluated. When any arm has a
+guard the match lowers to if/else-if chains; binding variables (e.g. `x`) are substituted
+with their field-access expressions in the guard condition and declared inside the arm body.
 
 ### Wildcard Pattern [IMPLEMENTED]
 
@@ -915,14 +916,19 @@ use t3d              -- 3D library
 
 After `use n64.display`, call functions as `display.init(...)`, `display.get()`, etc.
 
-### Use with Alias [PARTIAL]
+### Use with Alias [IMPLEMENTED]
 
 ```pak
 use n64.display as disp
+
+entry {
+    disp.init(0, 2, 3, 0, 1)   -- resolves to display_init(...)
+    let fb = disp.get()         -- resolves to display_get()
+}
 ```
 
-The alias is parsed and stored but the code generator does not yet remap
-module-qualified calls through it. Use the canonical module name for now.
+The alias remaps all module-qualified calls through the code generator. The C include
+for the underlying module is still emitted correctly.
 
 ### Module Declaration [IMPLEMENTED]
 
