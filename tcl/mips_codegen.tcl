@@ -36,33 +36,45 @@ set ::pak::ARG_GPRS {{$a0} {$a1} {$a2} {$a3}}
 
 # ── Emitter — accumulates assembly lines (port of mips/emit.py) ─────────────────
 oo::class create pak::Emitter {
-    variable buf indent
-    constructor {} { set buf {}; set indent "    " }
+    variable buf indent recs
+    constructor {} { set buf {}; set indent "    "; set recs {} }
     method getvalue {} { return "[join $buf \n]\n" }
     method buf {} { return $buf }
     method setbuf {b} { set buf $b }
+    method getrecords {} { return $recs }
+    method setrecords {r} { set recs $r }
     method len {} { return [llength $buf] }
     method raw {line} { lappend buf $line }
-    method instr {args} { lappend buf "$indent[join $args { }]" }
+    method instr {args} {
+        lappend buf "$indent[join $args { }]"
+        set cleaned [lindex $args 0]
+        foreach tok [lrange $args 1 end] { lappend cleaned [string trimright $tok ,] }
+        lappend recs [list i {*}$cleaned]
+    }
     method blank {} { lappend buf "" }
     method comment {t} { lappend buf "$indent# $t" }
-    method label {name} { lappend buf "${name}:" }
-    method section_text {}   { my raw "\t.section .text" }
-    method section_data {}   { my raw "\t.section .data" }
-    method section_rodata {} { my raw "\t.section .rodata" }
-    method section_bss {}    { my raw "\t.section .bss" }
-    method globl {s}     { my raw "\t.globl $s" }
-    method type_func {s} { my raw "\t.type $s, @function" }
-    method size_sym {s e} { my raw "\t.size $s, $e" }
-    method align {n}     { my raw "\t.align $n" }
-    method word {v}      { my raw "\t.word $v" }
-    method half {v}      { my raw "\t.half $v" }
-    method byte {v}      { my raw "\t.byte $v" }
-    method space {n}     { my raw "\t.space $n" }
-    method extern {s}    { my raw "\t.extern $s" }
+    # A splice point patched later (e.g. prologue callee-saves). Emits a comment
+    # line in the text buffer AND a structured sentinel in the record stream so
+    # patch_prologue can rewrite both consistently.
+    method placeholder {tag} { my raw "    # $tag"; lappend recs [list placeholder $tag] }
+    method label {name} { lappend buf "${name}:"; lappend recs [list label $name] }
+    method section_text {}   { my raw "\t.section .text";   lappend recs [list d section .text] }
+    method section_data {}   { my raw "\t.section .data";   lappend recs [list d section .data] }
+    method section_rodata {} { my raw "\t.section .rodata"; lappend recs [list d section .rodata] }
+    method section_bss {}    { my raw "\t.section .bss";    lappend recs [list d section .bss] }
+    method globl {s}     { my raw "\t.globl $s";          lappend recs [list d globl $s] }
+    method type_func {s} { my raw "\t.type $s, @function"; lappend recs [list d type $s @function] }
+    method size_sym {s e} { my raw "\t.size $s, $e";       lappend recs [list d size $s $e] }
+    method align {n}     { my raw "\t.align $n";           lappend recs [list d align $n] }
+    method word {v}      { my raw "\t.word $v";            lappend recs [list d word $v] }
+    method half {v}      { my raw "\t.half $v";            lappend recs [list d half $v] }
+    method byte {v}      { my raw "\t.byte $v";            lappend recs [list d byte $v] }
+    method space {n}     { my raw "\t.space $n";           lappend recs [list d space $n] }
+    method extern {s}    { my raw "\t.extern $s";          lappend recs [list d extern $s] }
     method asciiz {s} {
         set e [string map [list "\\" "\\\\" "\"" "\\\"" "\n" "\\n" "\r" "\\r" "\t" "\\t"] $s]
         my raw "\t.asciiz \"$e\""
+        lappend recs [list d asciiz $s]
     }
     method nop {}          { my instr "nop" }
     method move {dst src}  { my instr "move" "$dst," $src }
@@ -133,7 +145,10 @@ oo::class create pak::Emitter {
     method div_s {fd fs ft} { my instr "div.s" "$fd," "$fs," $ft }
     method sync {} { my instr "sync" }
     method verbatim {asm_text} {
-        foreach line [split $asm_text "\n"] { lappend buf "$indent$line" }
+        foreach line [split $asm_text "\n"] {
+            lappend buf "$indent$line"
+            lappend recs [list verbatim $line]
+        }
     }
 }
 
@@ -853,6 +868,12 @@ oo::class create pak::MipsCodegen {
         return [$em getvalue]
     }
 
+    # Structured record stream for the in-process binary encoder. Must be called
+    # after `generate`. The records mirror the (unoptimized) text output; the
+    # peephole/scheduler passes run only on text, so the encoded binary is
+    # correct but not delay-slot-optimized (see tcl/n64enc.tcl).
+    method getrecords {} { return [$em getrecords] }
+
     method emit_externs {} {
         foreach sym $::pak::MIPS_EXTERNS { $em extern $sym }
     }
@@ -948,17 +969,22 @@ oo::class create pak::MipsCodegen {
         $em sw {$ra} [expr {$frame_size - 4}] {$sp}
         $em sw {$fp} [expr {$frame_size - 8}] {$sp}
         $em addiu {$fp} {$sp} $frame_size
-        $em raw "    # callee-saves-placeholder"
+        $em placeholder "callee-saves-placeholder"
     }
 
     method patch_prologue {frame_size pstart pend} {
         set callee [$ra used_callee_gprs]
         set lines {}
+        set rlines {}
         set i 0
         foreach reg $callee {
-            lappend lines "    sw $reg, [expr {$frame_size - 12 - $i * 4}](\$sp)"
+            set off [expr {$frame_size - 12 - $i * 4}]
+            lappend lines "    sw $reg, ${off}(\$sp)"
+            lappend rlines [list i sw $reg "${off}(\$sp)"]
             incr i
         }
+        # Patch the text buffer: replace the placeholder comment within the
+        # current function's prologue region [pstart, pend).
         set buf [$em buf]
         for {set idx $pstart} {$idx < $pend} {incr idx} {
             if {[string match "*callee-saves-placeholder*" [lindex $buf $idx]]} {
@@ -967,6 +993,17 @@ oo::class create pak::MipsCodegen {
             }
         }
         $em setbuf $buf
+        # Patch the record stream: the first unconsumed placeholder sentinel is
+        # this function's (prior functions' sentinels were already replaced).
+        set recs [$em getrecords]
+        for {set idx 0} {$idx < [llength $recs]} {incr idx} {
+            set r [lindex $recs $idx]
+            if {[lindex $r 0] eq "placeholder" && [lindex $r 1] eq "callee-saves-placeholder"} {
+                set recs [concat [lrange $recs 0 [expr {$idx-1}]] $rlines [lrange $recs [expr {$idx+1}] end]]
+                break
+            }
+        }
+        $em setrecords $recs
     }
 
     method emit_epilogue {frame_size} {
@@ -3043,4 +3080,14 @@ proc pak::mips_generate {program} {
     set out [$cg generate $program]
     $cg destroy
     return $out
+}
+
+# Generate the structured record stream (for the binary encoder). Returns the
+# same instruction/directive records that back the text output.
+proc pak::mips_generate_records {program} {
+    set cg [pak::MipsCodegen new]
+    $cg generate $program
+    set recs [$cg getrecords]
+    $cg destroy
+    return $recs
 }

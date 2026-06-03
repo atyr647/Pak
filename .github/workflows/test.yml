@@ -24,6 +24,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Install Tcl (for objgen end-to-end test)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tcl tcllib
+
       - name: Install Pak compiler
         run: pip install -e ".[dev]"
 
@@ -147,6 +152,24 @@ jobs:
       # The Python MIPS backend has been deprecated; the Tcl backend is now authoritative.
       - name: MIPS assembly (all 29 canonical examples compile)
         run: bash tcl/tools/mips_parity.sh
+
+      # Toolchain-free binary path: the Tcl encoder turns the codegen's
+      # structured record stream into machine code (no mips64-elf-as needed).
+      - name: MIPS binary encoder (golden encodings)
+        run: tclsh tcl/tools/n64enc_test.tcl
+
+      - name: Object generation (all 29 canonical examples → .pakobj)
+        run: |
+          failed=0
+          for f in examples/canonical/*.pk64; do
+            if ! tclsh tcl/cli.tcl objgen "$f" -o /tmp/obj.pakobj > /dev/null 2>&1; then
+              echo "OBJGEN FAIL: $f"
+              tclsh tcl/cli.tcl objgen "$f" -o /tmp/obj.pakobj
+              failed=1
+            fi
+          done
+          [ "$failed" -eq 0 ] && echo "All canonical examples produced object files."
+          exit $failed
 
       - name: Static-lint Tcl sources (nagelfar)
         run: bash tcl/tools/lint.sh
