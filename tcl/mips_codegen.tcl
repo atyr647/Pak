@@ -424,6 +424,31 @@ oo::class create pak::MipsCodegen {
                     is_float $fl is_signed 1 is_ptr 0 fields {} frac_bits 0]
             }
         }
+        # ButtonState: 14 bool fields at consecutive byte offsets 0-13, size=14, align=1
+        if {![dict exists $tenv_layouts ButtonState]} {
+            set bs_fields [dict create]
+            set bs_off 0
+            foreach fname {a b z start up down left right l r c_up c_down c_left c_right} {
+                dict set bs_fields $fname [dict create name $fname offset $bs_off \
+                    size 1 align 1 type_node ""]
+                incr bs_off
+            }
+            dict set tenv_layouts ButtonState [dict create size 14 align 1 \
+                is_float 0 is_signed 0 is_ptr 0 fields $bs_fields \
+                field_order {a b z start up down left right l r c_up c_down c_left c_right}]
+        }
+        # ControllerState: held/pressed/released (*ButtonState pointers) + stick_x/y (i32)
+        if {![dict exists $tenv_layouts ControllerState]} {
+            set cs_fields [dict create]
+            dict set cs_fields held     [dict create name held     offset 0  size 4 align 4 type_node ""]
+            dict set cs_fields pressed  [dict create name pressed  offset 4  size 4 align 4 type_node ""]
+            dict set cs_fields released [dict create name released offset 8  size 4 align 4 type_node ""]
+            dict set cs_fields stick_x  [dict create name stick_x  offset 12 size 4 align 4 type_node ""]
+            dict set cs_fields stick_y  [dict create name stick_y  offset 16 size 4 align 4 type_node ""]
+            dict set tenv_layouts ControllerState [dict create size 20 align 4 \
+                is_float 0 is_signed 1 is_ptr 0 fields $cs_fields \
+                field_order {held pressed released stick_x stick_y}]
+        }
     }
 
     method register_program {program} {

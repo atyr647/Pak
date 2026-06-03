@@ -378,8 +378,12 @@ def test_end_to_end_boot_runtime_game(tmp_path):
     assert res.symbols["main"] > BASE_ADDR
     assert res.symbols["display_init"] > BASE_ADDR
     assert res.symbols["rdpq_fill_rectangle"] > BASE_ADDR
-    # Linker-defined bss bounds exist (equal here: no .bss).
-    assert res.symbols["__bss_start"] == res.symbols["__bss_end"]
+    # Linker-defined bss bounds exist; runtime now has static buffers so
+    # __bss_end > __bss_start.  Joypad symbols must be present.
+    assert res.symbols["__bss_end"] >= res.symbols["__bss_start"]
+    assert res.symbols["joypad_get_status"] > BASE_ADDR
+    assert res.symbols["joypad_poll"] > BASE_ADDR
+    assert res.symbols["g_pif_buf"] >= res.symbols["__bss_start"]
 
     # _start begins with the CP0 status read (mfc0 $8,$12 = 0x40086000).
     assert struct.unpack_from(">I", res.image, 0)[0] == 0x4008_6000

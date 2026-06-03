@@ -121,6 +121,47 @@ check_eq ".rodata asciiz bytes (padded to 4)" \
 check_eq ".rodata word0 = 'h''i'0x00 pad" \
     [format 0x%08X [word_at $ctx .rodata 0]] 0x68690000
 
+puts "== CACHE instruction =="
+# cache 0x19, 0($a0) -> op=0x2F(47) rs=$a0(4) rt=0x19(25) imm=0
+# 0b10_1111_00100_11001_0000000000000000 = 0xBC990000
+check {i cache 0x19 0($a0)} 0xBC990000
+# cache 0x14, 0($a0) -> rt=0x14(20)
+# 0b10_1111_00100_10100_0000000000000000 = 0xBC940000
+check {i cache 0x14 0($a0)} 0xBC940000
+
+puts "== BGTZ / BLEZ local-label branches =="
+set ctx [pak::enc::encode {
+    {d section .text}
+    {label .Lloop}
+    {i nop}
+    {i bgtz {$a1} .Lloop}
+}]
+# bgtz at byte offset 4: target=0, off=(0-(4+4))>>2 = -2 = 0xFFFE
+# op=0x07 rs=$a1(5) rt=0 imm=-2: 0b000_0111_00101_00000_1111111111111110
+# = 0x1CA0FFFE
+check_eq "bgtz \$a1,.Lloop" \
+    [format 0x%08X [word_at $ctx .text 1]] 0x1CA0FFFE
+
+set ctx [pak::enc::encode {
+    {d section .text}
+    {label .Lloop}
+    {i nop}
+    {i blez {$a1} .Lloop}
+}]
+# blez op=0x06: 0b000_0110_00101_00000_1111111111111110 = 0x18A0FFFE
+check_eq "blez \$a1,.Lloop" \
+    [format 0x%08X [word_at $ctx .text 1]] 0x18A0FFFE
+
+puts "== verbatim label detection =="
+set ctx [pak::enc::encode {
+    {d section .text}
+    {verbatim .Ldcwb_1:}
+    {i nop}
+    {verbatim {bgtz $a1, .Ldcwb_1}}
+}]
+check_eq "verbatim label .Ldcwb_1 resolves" \
+    [format 0x%08X [word_at $ctx .text 1]] 0x1CA0FFFE
+
 puts "== extra: more real-instruction sanity =="
 check {i subu {$t0} {$t1} {$t2}}   0x012A4023
 check {i sltiu {$t0} {$t0} 1}      0x2D080001

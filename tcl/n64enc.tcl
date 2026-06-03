@@ -356,6 +356,33 @@ proc pak::enc::emit_real {ctxVar mnem args} {
         emit_word ctx [R 0x11 $fmt 0 [fpr $fs] [fpr $fd] $funct]
         return
     }
+    # CACHE instruction: cache hint, off(base)  op=0x2F (47)
+    if {$mnem eq "cache"} {
+        lassign $ops hint m
+        lassign [mem $m] off base
+        emit_word ctx [I 0x2F $base [imm $hint] $off]
+        return
+    }
+    # BGTZ: bgtz $rs, label  op=0x07, rt=0
+    if {$mnem eq "bgtz"} {
+        lassign $ops s label
+        set woff [cur_off ctx]
+        emit_word ctx [I 0x07 [gpr $s] 0 0]
+        add_branch_fixup ctx $woff $label
+        set sec [dict get $ctx cur]
+        dict set ctx secdata $sec brmeta $woff [list 0x07 [gpr $s] 0]
+        return
+    }
+    # BLEZ: blez $rs, label  op=0x06, rt=0
+    if {$mnem eq "blez"} {
+        lassign $ops s label
+        set woff [cur_off ctx]
+        emit_word ctx [I 0x06 [gpr $s] 0 0]
+        add_branch_fixup ctx $woff $label
+        set sec [dict get $ctx cur]
+        dict set ctx secdata $sec brmeta $woff [list 0x06 [gpr $s] 0]
+        return
+    }
     error "n64enc: unknown/unsupported instruction '$mnem $ops'"
 }
 
@@ -544,6 +571,13 @@ proc pak::enc::do_verbatim {ctxVar line} {
     upvar 1 $ctxVar ctx
     set line [string trim $line]
     if {$line eq "" || [string index $line 0] eq "#"} { return }
+    # Label definition: "name:" with nothing else on the line
+    if {[regexp {^([A-Za-z_.][A-Za-z0-9_.$]*):\s*$} $line -> lbl]} {
+        add_label ctx $lbl
+        return
+    }
+    # Assembler directives (.set noreorder, etc.) — skip silently
+    if {[string index $line 0] eq "."} { return }
     # tokenize: mnemonic then operands separated by commas/space
     set parts [regexp -all -inline {[^ \t,]+} $line]
     if {[llength $parts] == 0} { return }

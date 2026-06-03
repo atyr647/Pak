@@ -112,12 +112,6 @@ references (`la`, `j`/`jal`, `.word sym`) become relocations the linker patches.
 
 ## Current limitations
 
-* **Controller / joypad not yet ported.** `controller.read()` lowers to
-  `joypad_get_status`, which returns libdragon's nested `joypad_inputs_t`
-  (`.held`/`.pressed`) by value — that needs SI DMA plus a struct-return ABI
-  matching the codegen's input type. The display + software-`rdpq` path is fully
-  ported (`pak/runtime/runtime.pk64`); a game that polls the controller will
-  fail to link against the current runtime until those symbols are added.
 * **Optimization.** The peephole/scheduler/delay-slot passes in
   `tcl/optimize.tcl` operate on assembly *text*, not records. The encoded binary
   is therefore correct but **not** delay-slot-optimized (the codegen emits
