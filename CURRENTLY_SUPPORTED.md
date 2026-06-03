@@ -203,7 +203,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Array indexing | ✅ Full | Bounds checking available |
 | Function calls (o32 ABI) | ✅ Full | |
 | N64 API calls via `jal` | ✅ Full | All modules |
-| Register allocation | ✅ Full | Spill logic included |
+| Register allocation | ⚠️ Partial | Named-variable spill to callee-saved regs included; expression-temporary pool limited to ~9 chained operators per expression (use intermediate `let` bindings for deeper chains) |
 | Peephole optimization | ✅ Full | |
 | Delay slot filling | ✅ Full | |
 | `defer` | ✅ Full | |
@@ -224,6 +224,8 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 
 | Bug | Fix |
 |-----|-----|
+| `pak check` crashes with `key "filename" not known` on files with `@cfg` annotations | Fixed — Tcl `Checker.err`/`warn` now include `filename` in diagnostic dicts; `diag_str` also hardened against missing key |
+| MIPS `GPR temporary pool exhausted` on deeply-nested binary expressions (e.g. 8+ chained `\|`) | Fixed — `emit_binop` now allocates the RHS temp *after* evaluating the LHS, reducing peak register pressure from O(depth×2) to O(depth+2) |
 | Asset names not in typechecker scope (E010) | Fixed — `AssetDecl` now registered in `_check_top` |
 | DMA checker fires on address/size argument names (false-positive E201/E202) | Fixed — checker now only inspects `args[0]` (the buffer); also `&buf[0]` form now detected |
 | `.ok(v)` / `.err(e)` match patterns fail to parse (E002) | Fixed — `parse_pattern()` uses `expect_name()` to accept keyword names after `.` |

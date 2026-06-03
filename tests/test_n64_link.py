@@ -4,6 +4,7 @@ All object files are synthetic text — no MIPS toolchain required.
 """
 
 import struct
+import textwrap
 
 import pytest
 
@@ -334,6 +335,48 @@ def _tcl(*args, cwd):
         [_TCLSH, str(_ROOT / "tcl" / "cli.tcl"), *args],
         capture_output=True, text=True, cwd=str(cwd),
     )
+
+
+@pytest.mark.skipif(_TCLSH is None, reason="tclsh required for objgen/asmobj")
+def test_tcl_check_cfg_annotation_no_crash(tmp_path):
+    """Regression: Tcl checker produced diag dicts without 'filename', crashing
+    diag_str with 'key filename not known in dictionary' when a W103 warning
+    was emitted for an unknown @cfg feature. pak check must not crash."""
+    src = tmp_path / "cfg.pk64"
+    src.write_text(textwrap.dedent("""\
+        @cfg(UNKNOWN_FEATURE_XYZ)
+        fn maybe() { }
+        entry { }
+    """))
+    r = _tcl("check", str(src), cwd=_ROOT)
+    # Should exit 0 (warning only, not an error) and must not crash.
+    assert r.returncode == 0, f"crash or hard error: {r.stderr}"
+    assert "W103" in r.stdout or "W103" in r.stderr
+
+
+@pytest.mark.skipif(_TCLSH is None, reason="tclsh required for objgen/asmobj")
+def test_mips_deep_nested_binop(tmp_path):
+    """Regression: emit_binop pre-allocated both lhs/rhs temps before evaluating
+    either sub-expression, exhausting the 10-register temp pool for deeply nested
+    binary op chains.  A balanced tree of 8+ OR operands must compile."""
+    src = tmp_path / "deep.pk64"
+    src.write_text(textwrap.dedent("""\
+        entry {
+            let a: u32 = 1
+            let b: u32 = 2
+            let c: u32 = 3
+            let d: u32 = 4
+            let e: u32 = 5
+            let f: u32 = 6
+            let g: u32 = 7
+            let h: u32 = 8
+            let result: u32 = ((a | b) | (c | d)) | ((e | f) | (g | h))
+        }
+    """))
+    obj = tmp_path / "deep.pakobj"
+    r = _tcl("objgen", str(src), "-o", str(obj), cwd=_ROOT)
+    assert r.returncode == 0, f"MIPS codegen failed: {r.stderr}"
+    assert obj.exists()
 
 
 @pytest.mark.skipif(_TCLSH is None, reason="tclsh required for objgen/asmobj")

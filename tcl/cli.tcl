@@ -128,7 +128,7 @@ proc pak::_errmsg {err} {
 
 # Format a diagnostic dict exactly like PakError/CheckDiag.__str__.
 proc pak::diag_str {d} {
-    set fn [dict get $d filename]
+    set fn [expr {[dict exists $d filename] ? [dict get $d filename] : ""}]
     if {$fn ne ""} { set loc "$fn:[dict get $d line]:[dict get $d col]" } \
     else { set loc "[dict get $d line]:[dict get $d col]" }
     set prefix [expr {[dict get $d severity] eq "warning" ? "warning" : "error"}]

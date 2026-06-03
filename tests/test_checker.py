@@ -416,6 +416,30 @@ class TestMultipleErrors:
 # Severity filtering
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════════════════════════
+# W103 — Unknown @cfg feature name
+# Regression: Tcl checker produced diag dicts without "filename", crashing
+# diag_str with "key 'filename' not known in dictionary".
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestW103:
+    def test_known_cfg_feature_no_warning(self):
+        _, warns = check("""
+            @cfg(debug)
+            fn hot_path() { }
+            entry { }
+        """)
+        assert 'W103' not in {w.code for w in warns}
+
+    def test_unknown_cfg_feature_warns(self):
+        _, warns = check("""
+            @cfg(UNKNOWN_FEATURE_XYZ)
+            fn maybe() { }
+            entry { }
+        """)
+        assert 'W103' in {w.code for w in warns}
+
+
 class TestSeverity:
     def test_warnings_not_in_errors(self):
         errs, warns = check("""

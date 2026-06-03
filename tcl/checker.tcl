@@ -37,11 +37,11 @@ oo::class create pak::Checker {
     # ── diagnostic helpers ────────────────────────────────────────────────────
     method err {code msg hint node} {
         lappend diags [dict create code $code severity error \
-            message $msg hint $hint line 0 col 0]
+            message $msg hint $hint line 0 col 0 filename $filename]
     }
     method warn {code msg hint node} {
         lappend diags [dict create code $code severity warning \
-            message $msg hint $hint line 0 col 0]
+            message $msg hint $hint line 0 col 0 filename $filename]
     }
 
     # ── top-level program walk ────────────────────────────────────────────────

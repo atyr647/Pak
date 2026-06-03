@@ -2189,8 +2189,8 @@ oo::class create pak::MipsCodegen {
         set frac [my infer_frac_bits [pak::nfield $expr left]]
         if {$frac == 0} { set frac [my infer_frac_bits [pak::nfield $expr right]] }
         set lhs [$ra alloc_temp]
-        set rhs [$ra alloc_temp]
         my emit_expr [pak::nfield $expr left] $lhs
+        set rhs [$ra alloc_temp]
         my emit_expr [pak::nfield $expr right] $rhs
         if {$frac > 0 && $op eq "*"} {
             my emit_fixmul $dst $lhs $rhs $frac
