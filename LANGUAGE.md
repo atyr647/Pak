@@ -40,7 +40,7 @@ Every feature is tagged:
 
 ## 1. File Structure
 
-A `.pak` file is a flat sequence of top-level declarations. There is no mandatory
+A `.pk64` file is a flat sequence of top-level declarations. There is no mandatory
 header or boilerplate. Order of declarations matters for forward references.
 
 ```pak
@@ -56,7 +56,7 @@ asset bg: Sprite from "bg.png"
 -- entry point (entry { ... })
 ```
 
-Multiple source files are linked via `module` declarations. [PARTIAL]
+Multiple source files are linked via `module` declarations. [IMPLEMENTED]
 
 ---
 
@@ -149,22 +149,24 @@ volatile T   -- volatile value type
 
 `N` must be a compile-time integer constant.
 
-### Slice Types [PARTIAL]
+### Slice Types [IMPLEMENTED]
 
 ```pak
 []T          -- immutable slice (pointer + length)
 []mut T      -- mutable slice
 ```
 
-### Tuple Types [PARTIAL]
+Lowers to a struct `{ T *data; int32_t len; }`. Access `.data` and `.len` directly.
+Create with slice expression `arr[start..end]`.
+
+### Tuple Types [IMPLEMENTED]
 
 ```pak
 (T1, T2)     -- two-element tuple
 (T1, T2, T3) -- three-element tuple
-()           -- unit / empty tuple
 ```
 
-Access elements with `.0`, `.1`, etc.
+Access elements with `.0`, `.1`, etc. Lowers to a named C struct per unique type signature.
 
 ### Result Type [IMPLEMENTED]
 
@@ -174,21 +176,25 @@ Result(OkType, ErrType)
 
 Constructed with `ok(value)` and `err(value)`. See [Section 20](#20-error-handling-result).
 
-### Option Type [PARTIAL]
+### Option Type [IMPLEMENTED]
 
 ```pak
 Option(T)    -- T or none
 ?T           -- shorthand for Option(T) (nullable value)
 ```
 
-### Function Pointer Types [PARTIAL]
+Lowers to `T *` in C; `none` becomes `NULL`.
+
+### Function Pointer Types [IMPLEMENTED]
 
 ```pak
 fn(A, B) -> R     -- function pointer taking A, B returning R
 fn(A)             -- function pointer with no return
 ```
 
-### Generic Container Types [PARTIAL]
+Lowers to C function pointer syntax: `R (*)(A, B)`.
+
+### Generic Container Types [IMPLEMENTED]
 
 Built-in parameterized types (do NOT invent others):
 
@@ -200,12 +206,17 @@ FixedMap(K, V, N)   -- fixed-capacity hash map
 Pool(T, N)          -- object pool, capacity N
 ```
 
-### Trait Objects [PARTIAL]
+N must be a compile-time integer literal. See `examples/canonical/23_containers.pk64`.
+
+### Trait Objects [IMPLEMENTED]
 
 ```pak
 dyn TraitName        -- dynamic dispatch trait object
 *dyn TraitName       -- pointer to trait object
 ```
+
+Lowers to a vtable-based struct pair. Construct with `TraitName_from_TypeName(&obj)`.
+See `examples/canonical/27_dyn_trait.pk64`.
 
 ---
 
@@ -292,7 +303,7 @@ variant Event {
 }
 ```
 
-### Union (Untagged) [PARTIAL]
+### Union (Untagged) [IMPLEMENTED]
 
 ```pak
 union Name {
@@ -303,14 +314,21 @@ union Name {
 
 Untagged C-style union. Use `variant` for safe tagged unions.
 
-### Trait [PARTIAL]
+### Trait [IMPLEMENTED]
 
 ```pak
 trait Name {
-    fn method_name(self: *Self) -> RetType
+    fn method_name(self: *Self) -> RetType      -- required (no body)
     fn other_method(self: *Self, arg: i32)
+    fn with_default(self: *Self) -> i32 {        -- default method (has a body)
+        return 0
+    }
 }
 ```
+
+A trait method **with a body** is a *default*: an `impl` may omit it and inherit
+the default (specialized for the implementing type). A trait method **without a
+body** is *required* — an `impl` that omits it raises `E602`.
 
 ### Impl Block [IMPLEMENTED]
 
@@ -326,11 +344,12 @@ impl TypeName<T> {
 }
 ```
 
-### Impl Trait [PARTIAL]
+### Impl Trait [IMPLEMENTED]
 
 ```pak
 impl TypeName for TraitName {
     fn required_method(self: *TypeName) -> i32 { ... }
+    -- methods with a default body in the trait may be omitted here
 }
 ```
 
@@ -393,8 +412,8 @@ fn critical_path(data: *u8, len: i32) {
 
 - Parameters are immutable by default.
 - `mut param: Type` makes the parameter mutable (copy-on-write for value types).
-- Default values: `fn foo(x: i32 = 0)` [PARTIAL]
-- Named arguments at call site: `foo(x: 5, y: 10)` [PARTIAL]
+- Default values: `fn foo(x: i32 = 0)` [IMPLEMENTED]
+- Named arguments at call site: `foo(x: 5, y: 10)` [IMPLEMENTED]
 
 ### Methods (inside `impl`)
 
@@ -493,10 +512,10 @@ All fields must be specified (no partial struct init unless defaults exist).
 
 ```pak
 [1, 2, 3]               -- array literal
-[0; 256]                -- repeat: 256 zeros (PARTIAL)
+[0; 256]                -- repeat: 256 zeros
 ```
 
-### Tuple Literal [PARTIAL]
+### Tuple Literal [IMPLEMENTED]
 
 ```pak
 (1, 2)
@@ -525,7 +544,7 @@ arr[i]
 buf[offset]
 ```
 
-### Slice Expression [PARTIAL]
+### Slice Expression [IMPLEMENTED]
 
 ```pak
 arr[start..end]
@@ -570,7 +589,7 @@ ok(value)
 err(error_value)
 ```
 
-### Catch Expression [PARTIAL]
+### Catch Expression [IMPLEMENTED]
 
 ```pak
 result catch |err| { fallback_value }
@@ -578,7 +597,7 @@ result catch |err| { fallback_value }
 
 Unwraps a `Result`, running the handler block on `err`.
 
-### Null Check Expression [PARTIAL]
+### Null Check Expression [IMPLEMENTED]
 
 ```pak
 ptr? binding { fallback }
@@ -599,22 +618,42 @@ sizeof(Type)          -- byte size of a type
 sizeof(expr)          -- byte size of expression's type
 offsetof(Struct, field)   -- byte offset of a field
 alignof(Type)         -- alignment requirement
-align_of(Type)        -- alias
-size_of(Type)         -- alias
 ```
 
-### Closures / Lambda [PARTIAL]
+### Closures / Lambda
+
+Non-capturing function literals [IMPLEMENTED]:
 
 ```pak
 fn(x: i32) -> i32 { x + 1 }
 fn(x: i32) -> i32 = x + 1    -- expression body
 ```
 
-### Turbofish [PARTIAL]
+Lowers to a static file-scope C function; the name decays to a function pointer.
+
+Capturing closures (referencing outer variables) [PLANNED]:
 
 ```pak
-foo::<i32>(arg)     -- explicit type argument at call site
+let base = 10
+let add_base: fn(i32) -> i32 = fn(x: i32) -> i32 { return x + base }
 ```
+
+Capturing closures require GCC nested functions (a non-standard extension).
+Not recommended for N64 toolchain targets.
+
+### Explicit Type Arguments [IMPLEMENTED]
+
+Generic functions and generic struct literals accept explicit type arguments
+with angle-bracket syntax directly before the call/braces. (Rust-style `::<>`
+turbofish is **not** supported.)
+
+```pak
+foo<i32>(arg)            -- explicit type argument on a generic call
+pair<i32, f32>(a, b)     -- multiple type arguments
+Box<i32> { value: 42 }   -- explicit type argument on a generic struct literal
+```
+
+When omitted, type arguments are inferred from the call arguments.
 
 ### Inline Assembly Expression [IMPLEMENTED]
 
@@ -740,7 +779,18 @@ See [Section 12](#12-pattern-matching).
 ```pak
 break           -- exit loop
 continue        -- next iteration
-break value     -- break with value (PARTIAL)
+break value     -- break with value (loop-as-expression) [IMPLEMENTED]
+```
+
+Loop-as-expression: `loop` and `while` blocks can appear as the right-hand
+side of a `let` binding. The `break value` exits with a value that becomes
+the binding's initial value:
+
+```pak
+let found: i32 = loop {
+    if condition { break 42 }
+    break 0
+}
 ```
 
 ### Return [IMPLEMENTED]
@@ -759,14 +809,14 @@ defer { cleanup() }
 defer free(ptr)
 ```
 
-### Goto / Label [PARTIAL]
+### Goto / Label [IMPLEMENTED]
 
 ```pak
 goto label_name
 label_name:
 ```
 
-### Comptime If [PARTIAL]
+### Comptime If [IMPLEMENTED]
 
 ```pak
 comptime if FEATURE_FLAG {
@@ -819,7 +869,7 @@ match entity {
 }
 ```
 
-### Match with Guard [PARTIAL]
+### Match with Guard [IMPLEMENTED]
 
 ```pak
 match value {
@@ -828,6 +878,10 @@ match value {
     .none              => {}
 }
 ```
+
+Guard conditions (`if expr`) after the pattern are fully evaluated. When any arm has a
+guard the match lowers to if/else-if chains; binding variables (e.g. `x`) are substituted
+with their field-access expressions in the guard condition and declared inside the arm body.
 
 ### Wildcard Pattern [IMPLEMENTED]
 
@@ -862,19 +916,36 @@ use t3d              -- 3D library
 
 After `use n64.display`, call functions as `display.init(...)`, `display.get()`, etc.
 
-### Use with Alias [PARTIAL]
+### Use with Alias [IMPLEMENTED]
 
 ```pak
 use n64.display as disp
+
+entry {
+    disp.init(0, 2, 3, 0, 1)   -- resolves to display_init(...)
+    let fb = disp.get()         -- resolves to display_get()
+}
 ```
 
-### Module Declaration [PARTIAL]
+The alias remaps all module-qualified calls through the code generator. The C include
+for the underlying module is still emitted correctly.
+
+### Module Declaration [IMPLEMENTED]
 
 ```pak
 module my.module.name
 ```
 
-Declares the current file as belonging to a module. Used for multi-file projects.
+Declares the current file as belonging to a module. In a multi-file project,
+every `.pk64` file under the project root is parsed, type-checked against a
+shared symbol environment, and compiled. A `use my.module.name` brings another
+file's module into scope; functions and types are shared via a flat namespace.
+
+- Exactly one `entry` block may exist across the whole project (`E103`).
+- A `use path` that matches no declared `module path` raises `E105`.
+- Each module compiles to its own `.c` plus a generated `pakmod_<path>.h`
+  header (the `pakmod_` prefix avoids colliding with C standard-library
+  headers such as `<math.h>`).
 
 ---
 

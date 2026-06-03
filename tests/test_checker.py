@@ -25,7 +25,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from pak.lexer import Lexer
 from pak.parser import Parser
-from pak.checker import semantic_check, check_entry_blocks, assert_checked
+from pak.checker import (
+    semantic_check, check_entry_blocks, check_module_imports, assert_checked,
+)
+from pak.headergen import module_to_filename, module_to_guard
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -37,7 +40,7 @@ def parse(source: str):
 
 def check(source: str):
     prog = parse(source)
-    errors, warnings = semantic_check(prog, filename='test.pak')
+    errors, warnings = semantic_check(prog, filename='test.pk64')
     return errors, warnings
 
 
@@ -291,31 +294,67 @@ class TestW101:
 class TestE103:
     def test_single_entry_ok(self):
         prog = parse("fn foo() { }\nentry { }")
-        diags = check_entry_blocks([('main.pak', prog)])
+        diags = check_entry_blocks([('main.pk64', prog)])
         assert not diags
 
     def test_no_entry_with_fns_errors(self):
         prog = parse("fn foo() { }")
-        diags = check_entry_blocks([('main.pak', prog)])
+        diags = check_entry_blocks([('main.pk64', prog)])
         assert any(d.code == 'E103' for d in diags)
 
     def test_no_entry_no_fns_no_error(self):
         # A file with only struct declarations is a library module — no entry needed
         prog = parse("struct Vec2 { x: i32, y: i32 }")
-        diags = check_entry_blocks([('vec2.pak', prog)])
+        diags = check_entry_blocks([('vec2.pk64', prog)])
         assert not diags
 
     def test_duplicate_entry_across_files_errors(self):
         prog1 = parse("entry { }")
         prog2 = parse("entry { }")
-        diags = check_entry_blocks([('a.pak', prog1), ('b.pak', prog2)])
+        diags = check_entry_blocks([('a.pk64', prog1), ('b.pk64', prog2)])
         assert any(d.code == 'E103' for d in diags)
 
     def test_single_entry_across_two_files_ok(self):
         prog1 = parse("fn helper() { }")
         prog2 = parse("entry { helper() }")
-        diags = check_entry_blocks([('helpers.pak', prog1), ('main.pak', prog2)])
+        diags = check_entry_blocks([('helpers.pk64', prog1), ('main.pk64', prog2)])
         assert not diags
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# E105 — Module import resolution (cross-file) + header naming
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestE105:
+    def test_resolved_module_import_ok(self):
+        prog1 = parse("module math\nfn sq(x: i32) -> i32 { return x * x }")
+        prog2 = parse("module main\nuse math\nentry { }")
+        diags = check_module_imports([('math.pk64', prog1), ('main.pk64', prog2)])
+        assert not diags
+
+    def test_unknown_module_import_errors(self):
+        prog1 = parse("module math\nfn sq(x: i32) -> i32 { return x * x }")
+        prog2 = parse("module main\nuse maths\nentry { }")
+        diags = check_module_imports([('math.pk64', prog1), ('main.pk64', prog2)])
+        assert any(d.code == 'E105' for d in diags)
+
+    def test_builtin_namespaces_not_flagged(self):
+        prog = parse("module main\nuse n64.display\nuse t3d.core\nentry { }")
+        diags = check_module_imports([('main.pk64', prog)])
+        assert not diags
+
+
+class TestModuleHeaderNaming:
+    """Generated module headers must not collide with C stdlib headers."""
+
+    def test_header_filename_prefixed(self):
+        # `module math` must not produce math.h (collides with <math.h>).
+        assert module_to_filename('math') == 'pakmod_math.h'
+        assert module_to_filename('game.player') == 'pakmod_game_player.h'
+
+    def test_header_guard_prefixed(self):
+        assert module_to_guard('math') == 'PAKMOD_MATH_H'
+        assert module_to_guard('game.player') == 'PAKMOD_GAME_PLAYER_H'
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -325,7 +364,7 @@ class TestE103:
 class TestAssertChecked:
     def test_clean_program_does_not_raise(self):
         prog = parse("fn foo() -> i32 { return 42 }\nentry { }")
-        assert_checked(prog, 'test.pak')   # should not raise
+        assert_checked(prog, 'test.pk64')   # should not raise
 
     def test_e106_const_raises(self):
         prog = parse("""
@@ -334,12 +373,12 @@ class TestAssertChecked:
             entry { }
         """)
         with pytest.raises(RuntimeError, match='E106'):
-            assert_checked(prog, 'test.pak')
+            assert_checked(prog, 'test.pk64')
 
     def test_e107_duplicate_raises(self):
         prog = parse("fn foo() { }\nfn foo() { }\nentry { }")
         with pytest.raises(RuntimeError, match='E107'):
-            assert_checked(prog, 'test.pak')
+            assert_checked(prog, 'test.pk64')
 
 
 # ══════════════════════════════════════════════════════════════════════════════

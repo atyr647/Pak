@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# validate_pak.sh — Run the Pak compiler checker on one or more .pak files.
+# validate_pak.sh — Run the Pak compiler checker on one or more .pk64 files.
 #
 # Usage:
-#   tools/validate_pak.sh file.pak            # check one file
-#   tools/validate_pak.sh src/*.pak           # check multiple files individually
+#   tools/validate_pak.sh file.pk64            # check one file
+#   tools/validate_pak.sh src/*.pk64           # check multiple files individually
 #   tools/validate_pak.sh                     # check whole project (pak.toml required)
 #
 # Exit codes:

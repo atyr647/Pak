@@ -3,8 +3,8 @@
 Registered in the main pak CLI as the 'convert' subcommand.
 
 Usage:
-    pak convert path/to/file.c               # print .pak to stdout
-    pak convert path/to/file.c -o out.pak    # write to file
+    pak convert path/to/file.c               # print .pk64 to stdout
+    pak convert path/to/file.c -o out.pk64    # write to file
     pak convert src/ -o out/                 # batch convert directory
     pak convert file.c --preserve-comments
     pak convert file.c --no-idioms
@@ -98,7 +98,7 @@ def _batch_convert(input_dir: Path, output_dir: Optional[Path], options):
 
     for c_file in sorted(c_files):
         rel = c_file.relative_to(input_dir)
-        out_path = output_dir / rel.with_suffix('.pak')
+        out_path = output_dir / rel.with_suffix('.pk64')
         out_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             pak_source = transpile_file(c_file, options)
@@ -120,7 +120,7 @@ def register_subcommand(subparsers):
     )
     p.add_argument('input', help='Input .c file or directory')
     p.add_argument('-o', '--output', default=None,
-                   help='Output .pak file or directory (default: stdout)')
+                   help='Output .pk64 file or directory (default: stdout)')
     p.add_argument('--preserve-comments', action='store_true',
                    dest='preserve_comments',
                    help='Preserve C comments in output (not yet implemented)')

@@ -1,0 +1,27 @@
+-- INVALID: wrong_operators.pk64
+-- NOTE: This file is DOCUMENTATION ONLY. The bad code is commented out.
+-- For actual failing test cases, see tests/invalid/ (verified by pak check).
+-- Error: Pak uses 'and', 'or', 'not' — not &&, ||, !
+
+entry {
+    let a: bool = true
+    let b: bool = false
+
+    -- WRONG: C/Java/Rust operators
+    -- if a && b { }       -- syntax error: && not valid
+    -- if a || b { }       -- syntax error: || not valid
+    -- if !a { }           -- syntax error: ! as logical not
+
+    -- CORRECT:
+    if a and b { }
+    if a or b { }
+    if not a { }
+
+    -- Note: & and | ARE valid but as bitwise operators on integers:
+    let x: i32 = 0xFF
+    let y: i32 = 0x0F
+    let bitwise_and = x & y    -- OK: bitwise AND on integers
+    let bitwise_or  = x | y    -- OK: bitwise OR on integers
+    let _ = bitwise_and
+    let _ = bitwise_or
+}

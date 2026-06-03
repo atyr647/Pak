@@ -1,5 +1,5 @@
 #!/usr/bin/env tclsh
-# Emit the Tcl MIPS backend's assembly for a .pak file. On any unported
+# Emit the Tcl MIPS backend's assembly for a .pk64 file. On any unported
 # construct the backend raises MIPSUNPORTED; print a marker so mips_parity.sh
 # classifies the file as UNPORTED rather than a content mismatch.
 

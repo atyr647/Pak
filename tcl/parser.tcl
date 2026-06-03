@@ -832,9 +832,18 @@ oo::class create pak::Parser {
         return $expr
     }
 
+    # True if the current token begins on a later source line than the previous
+    # token. Pak is newline-delimited: a binary op that is also a valid prefix
+    # (* deref, - negate, & address-of) must not continue the previous
+    # expression when it opens a new line (mirrors Parser._newline_before).
+    method _newline_before {} {
+        if {$pos <= 0} { return 0 }
+        return [expr {[dict get [my peek] line] > [dict get [lindex $toks [expr {$pos-1}]] line]}]
+    }
     method binop_chain {next types} {
         set left [my $next]
         while {[my check {*}[dict keys $types]]} {
+            if {[my ptype] in {STAR MINUS AMP} && [my _newline_before]} { break }
             set op [dict get $types [my ptype]]
             my advance
             set right [my $next]
@@ -1085,10 +1094,19 @@ oo::class create pak::Parser {
             }
             IDENT {
                 set name [my advancev]
+                # Parse call-site / struct-literal type arguments as real types
+                # (mirror of Python _try_parse_type_args) so explicit args like
+                # foo<i32>(x) and Box<i32>{ .. } carry AST type nodes.
                 set targs {}
+                set save $pos
                 if {[my check LT]} {
-                    set save $pos
-                    set targs [my parse_generic_params]
+                    set parsed [my try_type_args]
+                    if {$parsed eq "NONE"} {
+                        set pos $save
+                        set targs {}
+                    } else {
+                        set targs $parsed
+                    }
                 }
                 if {[my check LBRACE] && [my is_struct_lit_ctx]} {
                     my advance
@@ -1101,7 +1119,7 @@ oo::class create pak::Parser {
                         my match COMMA
                     }
                     my expect RBRACE
-                    return [pak::N StructLit type_name $name fields $fields]
+                    return [pak::N StructLit type_name $name fields $fields type_args $targs]
                 }
                 if {[my check DOTDOT] && [llength $targs] == 0} {
                     my advance
@@ -1109,11 +1127,13 @@ oo::class create pak::Parser {
                     if {![my check RBRACE] && ![my check COMMA] && ![my check RPAREN]} { set end [my parse_primary] }
                     return [pak::N RangeExpr start [pak::N Ident name $name type_args {}] end $end]
                 }
-                set taseq {}
-                if {[llength $targs] > 0 && [my check LPAREN]} {
-                    foreach tp $targs { lappend taseq [pak::Lit $tp] }
+                # If type args weren't followed by a call/struct, the '<...>' was
+                # a comparison — rewind so they re-parse as binary operators.
+                if {[llength $targs] > 0 && !([my check LPAREN] || [my check LBRACE])} {
+                    set pos $save
+                    set targs {}
                 }
-                return [pak::N Ident name $name type_args $taseq]
+                return [pak::N Ident name $name type_args $targs]
             }
             default {
                 set tk [my peek]
@@ -1143,8 +1163,62 @@ oo::class create pak::Parser {
         if {[string first "\{" $escaped] < 0} {
             return [pak::N StringLit value [string map [list "\{\{" "\{" "\}\}" "\}"] $raw]]
         }
-        # Interpolation (FmtStr) not yet ported.
-        return -code error "PARSEERROR\t0\t0\tFmtStr interpolation not yet ported"
+        # Interpolation: walk char-by-char, parsing {expr} segments, skipping
+        # {{ and }} escapes. Mirrors pak/parser._parse_string_or_fmtstr.
+        set parts {}
+        set seg ""
+        set n [string length $raw]
+        set i 0
+        while {$i < $n} {
+            set ch [string index $raw $i]
+            if {$ch eq "\{"} {
+                if {$i + 1 < $n && [string index $raw [expr {$i+1}]] eq "\{"} {
+                    append seg "\{"
+                    incr i 2
+                } else {
+                    set j [expr {$i + 1}]
+                    set depth 1
+                    while {$j < $n && $depth > 0} {
+                        set cj [string index $raw $j]
+                        if {$cj eq "\{"} { incr depth } elseif {$cj eq "\}"} { incr depth -1 }
+                        incr j
+                    }
+                    set expr_src [string trim [string range $raw [expr {$i+1}] [expr {$j-2}]]]
+                    if {$seg ne ""} { lappend parts [pak::Lit $seg]; set seg "" }
+                    if {[catch {
+                        set sublex [pak::Lexer new $expr_src]
+                        set subp [pak::Parser new [$sublex tokenize]]
+                        set sub_expr [$subp parse_expr]
+                    }]} {
+                        lappend parts [pak::Lit "\{$expr_src\}"]
+                    } else {
+                        lappend parts $sub_expr
+                    }
+                    set i $j
+                }
+            } elseif {$ch eq "\}"} {
+                if {$i + 1 < $n && [string index $raw [expr {$i+1}]] eq "\}"} {
+                    append seg "\}"
+                    incr i 2
+                } else {
+                    append seg $ch
+                    incr i
+                }
+            } else {
+                append seg $ch
+                incr i
+            }
+        }
+        if {$seg ne ""} { lappend parts [pak::Lit $seg] }
+        # If every part is a plain string, collapse to a single StringLit.
+        set all_str 1
+        foreach p $parts { if {[lindex $p 0] ne "lit"} { set all_str 0; break } }
+        if {$all_str} {
+            set joined ""
+            foreach p $parts { append joined [lindex $p 1] }
+            return [pak::N StringLit value $joined]
+        }
+        return [pak::N FmtStr parts $parts]
     }
 }
 

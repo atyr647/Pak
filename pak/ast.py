@@ -173,6 +173,7 @@ class Call:
 class StructLit:
     type_name: str
     fields: List[Any]   # list of (name, expr) tuples
+    type_args: List[Any] = field(default_factory=list)  # explicit <T,...> for generic structs
     line: int = 0
     col: int = 0
 

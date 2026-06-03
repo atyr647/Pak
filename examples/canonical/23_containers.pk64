@@ -1,0 +1,89 @@
+-- 23_containers.pk64
+-- Demonstrates: FixedList, RingBuffer, FixedMap, Pool, Vec built-in containers.
+-- Status: [IMPLEMENTED] — typedefs emitted, all instance methods lowered.
+
+struct Bullet {
+    x: f32
+    y: f32
+    active: i32
+}
+
+-- Capacity must be a compile-time integer literal.
+const MAX_BULLETS: i32 = 32
+const MAX_RING: i32 = 8
+const MAP_CAP: i32 = 16
+
+static sink_i: i32 = 0
+static sink_f: f32 = 0.0
+
+entry {
+    -- ── FixedList(T, N) ─────────────────────────────────────────────────────
+    -- Fixed-capacity list; push/pop/remove/len/is_empty.
+    let mut bullets: FixedList(Bullet, 32) = FixedList.init()
+    bullets.push(Bullet { x: 10.0, y: 20.0, active: 1 })
+    bullets.push(Bullet { x: 5.0,  y: 15.0, active: 1 })
+    sink_i = bullets.len()              -- 2
+    let chk = bullets.is_empty()        -- false
+    let b = bullets.pop()
+    sink_f = b.x                        -- 5.0
+    sink_i = bullets.len()              -- 1
+    bullets.remove(0)
+    sink_i = bullets.len()              -- 0
+
+    -- ── RingBuffer(T, N) ────────────────────────────────────────────────────
+    -- Ring buffer of capacity N; push overwrites oldest when full.
+    let mut ring: RingBuffer(f32, 8) = RingBuffer.init()
+    ring.push(1.0)
+    ring.push(2.0)
+    ring.push(3.0)
+    sink_i = ring.len()                 -- 3
+    let last = ring.peek_back(0)        -- most-recent: 3.0
+    sink_f = last
+    let oldest = ring.pop()             -- 1.0 (FIFO)
+    sink_f = oldest
+    sink_i = ring.is_empty() as i32    -- 0 (not empty)
+
+    -- ── FixedMap(K, V, N) ───────────────────────────────────────────────────
+    -- Fixed-capacity linear-probe hash map.
+    let mut scores: FixedMap(i32, i32, 16) = FixedMap.init()
+    scores.set(1, 100)
+    scores.set(2, 200)
+    scores.set(3, 300)
+    sink_i = scores.len()               -- 3
+    let ptr = scores.get(2)             -- *i32 pointer to 200 (or none)
+    if ptr != none {
+        sink_i = *ptr                   -- 200
+    }
+    let has_key = scores.has(3)         -- true
+    scores.remove(1)
+    sink_i = scores.len()               -- 2
+
+    -- ── Pool(T, N) ──────────────────────────────────────────────────────────
+    -- Object pool; acquire returns a zeroed *T slot, release returns it.
+    let mut pool: Pool(Bullet, 16) = Pool.init()
+    let slot: *Bullet = pool.acquire()  -- *Bullet, zeroed
+    if slot != none {
+        slot.x = 7.0
+        slot.active = 1
+        sink_f = slot.x                -- 7.0
+        pool.release(slot)
+    }
+    sink_i = pool.len()                 -- 0 after release
+
+    -- ── Vec(T) ──────────────────────────────────────────────────────────────
+    -- Growable heap-backed array (requires malloc/free at runtime).
+    let mut nums: Vec(i32) = Vec.init()
+    nums.push(10)
+    nums.push(20)
+    nums.push(30)
+    sink_i = nums.len()                 -- 3
+    let first = nums.get(0)             -- 10
+    sink_i = first
+    let empty_v = nums.is_empty()       -- false
+    nums.clear()
+    sink_i = nums.len()                 -- 0
+    nums.push(99)
+    nums.reserve(64)
+    sink_i = nums.len()                 -- 1
+    nums.free()
+}

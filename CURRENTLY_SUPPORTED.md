@@ -113,7 +113,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `catch` expression | ✅ Full | |
 | Null-check expression `ptr?` | ✅ Full | |
 | Tuple access `t.0` | ✅ Full | |
-| Format string `"text {var}"` | ⚠️ Partial | Parsed; codegen may be incomplete |
+| Format string `"text {var}"` | ✅ Full | Lowers to `snprintf` into a static buffer |
 
 ---
 
@@ -184,10 +184,11 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `comptime if` | ✅ Full | Maps to `#if` |
 | Inline `asm` | ✅ Full | |
 | Generic functions | ⚠️ Partial | Monomorphised at call sites, not all cases covered |
-| Closures capturing environment | ⚠️ Partial | Simple lambdas work; captured variables may not |
+| Non-capturing closures | ✅ Full | Lowered to a top-level fn + function pointer |
+| Closures capturing environment | ✅ Full | Emitted as a GCC nested function; captures by reference within the enclosing frame |
 | Trait object dispatch (`dyn`) | ⚠️ Partial | |
 | `goto` / labels | ✅ Full | |
-| Format strings | ⚠️ Partial | |
+| Format strings | ✅ Full | `"x={n}"` → `snprintf` into static buffer |
 
 ---
 
@@ -216,7 +217,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Bug | Workaround |
 |-----|------------|
 | `let _ = expr` — `_` is a keyword, not a valid `let` target | Assign to a named variable or static |
-| Writing through alloc'd pointer then calling free may trigger move tracker E010 | Avoid deref-write before free; keep alloc/free simple |
+| (fixed) Capturing closures — now emitted as GCC nested functions | — |
 | Named-field variant construction as expression (`Event.move { x: 1 }`) | Use positional payloads: `Event.move(1, 2)` |
 
 ## Recently Fixed Bugs
@@ -227,6 +228,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | DMA checker fires on address/size argument names (false-positive E201/E202) | Fixed — checker now only inspects `args[0]` (the buffer); also `&buf[0]` form now detected |
 | `.ok(v)` / `.err(e)` match patterns fail to parse (E002) | Fixed — `parse_pattern()` uses `expect_name()` to accept keyword names after `.` |
 | Variant payload bindings not in scope (E010) | Fixed — `_check_match()` declares binding variables from `.Case(x, y)` arms |
+| Writing through an alloc'd pointer (`*p = 42`) then `free(p)` reported E010 | Fixed — parser newline handling no longer treats the deref-write as a move |
 
 ---
 

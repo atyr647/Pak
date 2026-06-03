@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Serialize the Python checker's diagnostics to a canonical form for parity.
 
-For each .pak file: parse, run semantic_check, and print one line per
+For each .pk64 file: parse, run semantic_check, and print one line per
 diagnostic in walk order, errors first then warnings (mirroring the
 (errors, warnings) split semantic_check returns):
 

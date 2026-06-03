@@ -184,17 +184,49 @@ fn add_one(a: i32) -> i32 { return a + 1 }
 let x = add_one(5)
 ```
 
-### No Closures Capturing Environment [Currently]
-Lambda syntax exists (`fn(x: i32) -> i32 = x + 1`) but closures that
-capture variables from outer scope are not fully implemented.
-Do not generate code relying on captured variables in function literals.
+### Closures Capture Environment — Supported (within the enclosing frame)
+Lambda syntax works (`fn(x: i32) -> i32 { return x + 1 }`). A closure used inside
+a function body **may capture** outer locals/params: it lowers to a GCC nested
+function in the enclosing block and decays to a plain function pointer. Capture is
+**by reference** and valid only while the enclosing call frame is alive (consistent
+with Pak's manual-lifetime model) — do not store a capturing closure and call it
+after its defining function returns. Top-level closures (in global/`static`
+initializers) have no frame to capture and must be non-capturing.
+```
+-- WORKS (non-capturing):
+let f: fn(i32) -> i32 = fn(x: i32) -> i32 { return x + 1 }
 
-### No String Interpolation with `$` or `{}`
-Pak may have format strings but the standard way to print formatted
-output is via `debug.log(...)`. Do not invent `"${var}"` or `f"..."` syntax.
+-- WORKS (captures `base` — emitted as a GCC nested function):
+let base: i32 = 10
+let g = fn(x: i32) -> i32 { return x + base }
+```
 
-### No Trait Default Methods [Currently]
-Traits can declare method signatures but not provide default implementations.
+### String Interpolation `{name}` IS Supported
+A string literal containing `{name}` is a format string: the named locals are
+interpolated via `snprintf` into a static buffer at codegen. Use it anywhere a
+`*c_char` is expected. (There is no `$`-style or `f"..."` prefix syntax — just
+`{name}` inside an ordinary string.)
+```
+-- WORKS:
+let n: i32 = 42
+debug.print("x={n}")      -- emits snprintf(..., "x=%ld", (long)(n))
+```
+
+### Trait Default Methods [Supported]
+Traits **can** provide default method bodies; an `impl` may omit a method that
+has a default. A method **without** a body is required — omitting it raises
+`E602`. See LANGUAGE.md § Trait.
+
+### No `::<>` Turbofish
+```
+-- WRONG:
+foo::<i32>(arg)
+-- RIGHT:
+foo<i32>(arg)
+```
+Explicit type arguments use angle brackets directly before the call or struct
+braces (`foo<i32>(arg)`, `Box<i32> { value: 1 }`). The Rust-style `::<>` form
+is not recognized.
 
 ### No `impl Trait` Return Type
 ```
@@ -262,32 +294,49 @@ let b = my_tuple.1
 ## Standard Library / API Rules
 
 ### Do Not Invent Module Names
-The only valid N64 module names (after `use n64.X`) are:
-`display`, `controller`, `rdpq`, `sprite`, `timer`, `audio`, `debug`,
-`dma`, `cache`, `eeprom`, `rumble`, `cpak`, `tpak`
+There are **37** valid module namespaces, all listed in `STDLIB.md`. The valid
+N64 modules (after `use n64.X`) are:
+`display`, `controller`, `joypad`, `rdpq`, `rdpq_mode`, `rdpq_tex`,
+`rdpq_font`, `sprite`, `surface`, `timer`, `system`, `math`, `mem`, `dma`,
+`cache`, `rsp`, `vi`, `audio`, `mixer`, `xm64`, `wav64`, `eeprom`, `sram`,
+`flashram`, `backup`, `rumble`, `cpak`, `tpak`, `mouse`, `vru`, `rtc`, `disk`,
+`debug`, `exception`.
 
-The only valid 3D module is `t3d`.
+The Pak runtime modules are `pak.str` and `pak.arena` (namespaces `str`, `arena`).
 
-There is no `n64.math`, `n64.memory`, `n64.string`, `n64.input`,
-`n64.graphics`, `n64.sound`, `n64.file`, `n64.network`, or any other module
-not listed in `STDLIB.md`.
+All Tiny3D submodules (`use t3d`, `use t3d.core`, `use t3d.model`,
+`use t3d.math`, `use t3d.anim`, `use t3d.light`, `use t3d.viewport`,
+`use t3d.skeleton`, `use t3d.fog`, `use t3d.state`, `use t3d.particles`) map
+to the single `t3d` API namespace.
+
+There IS an `n64.math` module — it provides `abs_*`, `min_*`, `max_*`,
+`clamp_*`, `sin_f`/`cos_f`/`tan_f`/`sqrt_f`/`atan2_f`, `lerp_f`, fixed-point
+conversions, and `rand*`. See `STDLIB.md`.
+
+There is still no `n64.memory` (it is `n64.mem`), `n64.string` (use `pak.str`),
+`n64.input`, `n64.graphics`, `n64.sound`, `n64.file`, or `n64.network`. If a
+module is not in `STDLIB.md` / `MODULE_API`, it does not exist.
 
 ### Do Not Invent Function Signatures
 If a function is not in `STDLIB.md`, it doesn't exist. Do not invent:
 - `display.clear()` — use `rdpq.attach_clear()`
 - `controller.button_pressed(btn)` — use the struct fields on the return of `controller.read()`
 - `timer.sleep(ms)` — does not exist
-- `debug.print(...)` — use `debug.log(...)`
-- Any `string.*` module — does not exist
-- Any `math.*` module functions beyond what's documented
+- Any `string.*` module — does not exist (use `pak.str` + `Str`/`CStr` methods)
+- Any `math.*` function beyond the list in `STDLIB.md`
 
-### Do Not Invent Container Methods
-There are no `.push()`, `.pop()`, `.len()`, `.append()`, `.insert()`, etc.
-methods on built-in container types unless explicitly documented.
+### Container Methods Exist — Use Only the Documented Ones
+Built-in containers DO have methods (e.g. `Vec(T)` has `.push()` / `.pop()` /
+`.len()`; `FixedList`, `RingBuffer`, `FixedMap`, `Pool` have their own sets).
+See `STDLIB.md` → "Built-in String / Slice / Container Methods". Do not invent
+methods not listed there (e.g. there is no `.append()` or `.insert()`).
 
-### No Standard String Type
-Pak uses `*c_char` for C-compatible strings. There is no heap `String` type,
-no `.to_string()`, no string concatenation with `+`, no `.length` property.
+### String Types and Methods
+Pak uses `*c_char` (`CStr`) for C-compatible strings and `Str` (a fat string)
+for the runtime string type. Both have built-in methods (`.len()`, `.eq()`,
+`.contains()`, `.slice()`, etc. — see `STDLIB.md`). There is still no string
+concatenation with `+`, no `.to_string()`, and no `.length` property (it is
+`.len()`).
 
 ### No Standard Print / IO
 There is no `print()`, `println()`, `printf()`, `puts()`, `std.out.write()`.
@@ -310,33 +359,26 @@ let _ = some_value
 some_global = some_value
 ```
 
-### Variant Payload Binding in Match Is Not Typechecked
-Parsing `.case(x) => { use x }` succeeds, but the bound name `x` is not
-tracked by the typechecker, causing E010 (unknown name).
+### Variant Payload Binding in Match — WORKS
+`.case(x) => { use x }` now type-checks: the bound names are declared in the
+arm's scope. This pattern is fully supported.
 ```
--- COMPILES but typechecker rejects the binding variable:
+-- WORKS:
 match shape {
-    .circle(r) => { return r * r * 3.14 }  -- 'r' unknown to typechecker
-}
-
--- WORKAROUND: dispatch only, store data in structs
-match shape {
-    .circle => { return self.radius * self.radius * 3.14 }
+    .circle(r)  => { return r * r * 3.14 }
+    .rect(w, h) => { return w * h }
 }
 ```
 
-### `.ok(val)` and `.err(e)` Cannot Be Used as Match Patterns
-`ok` and `err` are reserved keywords. The pattern parser only accepts
-identifiers, so `.ok(val)` fails with E002.
+### `.ok(val)` / `.err(e)` Match Patterns — WORK
+The pattern parser now accepts keyword names after `.`, so matching on a
+`Result` directly is supported (and the bound payload is in scope).
 ```
--- WRONG (parse error E002):
+-- WORKS:
 match result {
     .ok(v)  => { use(v) }
     .err(e) => { handle(e) }
 }
-
--- WORKAROUND: use a struct with a success flag, or restructure
--- to avoid branching on Result in the current implementation
 ```
 
 ### Keyword Names Cannot Be Used as Variant Cases
@@ -350,18 +392,15 @@ variant Foo { none, ok, err }
 variant Foo { empty, success, failure }
 ```
 
-### Writing Through `alloc`'d Pointer Then `free` May Fail
-The move tracker can consider a pointer consumed after a deref-write,
-making `free(ptr)` fail with E010. Keep alloc/free patterns simple.
+### Writing Through `alloc`'d Pointer Then `free` — FIXED
+This previously failed: a deref-write was treated as a move, so a later
+`free(ptr)` reported E010. The underlying parser/move-tracker bug is fixed and
+the pattern now checks cleanly.
 ```
--- MAY FAIL:
+-- NOW OK:
 let p: *mut i32 = alloc(i32)
-*p = 42         -- deref-write may move p in tracker
-free(p)         -- E010: unknown name 'p'
-
--- SAFE:
-let p: *mut u8 = alloc(u8, 64)
-free(p)         -- no intermediate deref-write
+*p = 42
+free(p)
 ```
 
 ---
@@ -378,8 +417,10 @@ free(p)         -- no intermediate deref-write
 | `ptr == null`              | No `null`                              | `ptr == none`                     |
 | `-> void`                  | No void type                           | omit return type                  |
 | `enum E { A, B, C }`       | Commas optional, not required          | `enum E { a\n b\n c }` (valid either way) |
-| `match x { 0 => ... }`     | No int patterns in match               | `if x == 0 { ... }`               |
-| `x.len()`                  | No `.len()` method on arrays/slices    | pass length separately             |
+| `match x { 0..10 => ... }` | No range patterns in match             | `if x >= 0 and x < 10 { ... }`    |
+| `let { x, y } = p`         | No struct destructuring in `let`       | `let x = p.x` / `let y = p.y`     |
 | `alloc<T>()`               | Wrong alloc syntax                     | `alloc(T)`                        |
 | `Result<T, E>`             | Wrong Result syntax                    | `Result(T, E)`                    |
 | `Option<T>`                | Wrong Option syntax                    | `Option(T)` or `?T`               |
+| `size_of(T)`               | Removed alias                          | `sizeof(T)`                       |
+| `align_of(T)`              | Removed alias                          | `alignof(T)`                      |

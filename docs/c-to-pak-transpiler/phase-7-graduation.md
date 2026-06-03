@@ -51,10 +51,10 @@ The converted code compiles after reasonable human intervention (<1 hour per 100
 
 ```
 for each .c file in project:
-    1. pak convert file.c -o file.pak --decomp
-    2. pak check file.pak            # parse + type-check
+    1. pak convert file.c -o file.pk64 --decomp
+    2. pak check file.pk64            # parse + type-check
     3. Record: PASS / PARSE_FAIL / TYPE_FAIL / CONVERT_FAIL
-    4. If PASS: pak build file.pak --backend mips
+    4. If PASS: pak build file.pk64 --backend mips
     5. Record: BUILD_PASS / BUILD_FAIL
 ```
 
@@ -64,10 +64,10 @@ Track per-project:
 
 | Metric | Target |
 |--------|--------|
-| **Conversion rate** | % of .c files that produce valid .pak | ≥90% |
-| **Parse rate** | % of .pak files that parse without errors | ≥95% |
-| **Type-check rate** | % of .pak files that type-check | ≥85% |
-| **Build rate** | % of .pak files that compile to MIPS | ≥80% |
+| **Conversion rate** | % of .c files that produce valid .pk64 | ≥90% |
+| **Parse rate** | % of .pk64 files that parse without errors | ≥95% |
+| **Type-check rate** | % of .pk64 files that type-check | ≥85% |
+| **Build rate** | % of .pk64 files that compile to MIPS | ≥80% |
 | **Idiom hit rate** | % of tagged unions correctly detected | ≥70% |
 | **Comment preservation** | % of comments retained | ≥80% |
 | **Manual fixup ratio** | Lines manually edited / total lines | ≤5% |

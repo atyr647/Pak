@@ -1,0 +1,100 @@
+-- 22_eeprom.pk64
+-- Demonstrates: EEPROM save/load for persistent game data.
+--
+-- RULES:
+-- 1. Always check eeprom.present() before any operation.
+-- 2. Each EEPROM block is exactly 8 bytes.
+-- 3. EEPROM 4K = 64 blocks (512 bytes). EEPROM 16K = 256 blocks (2048 bytes).
+-- 4. Writes are slow (~15 ms/block) — only write on save events, not every frame.
+-- 5. Use a magic number to detect valid saves vs. uninitialized EEPROM.
+
+use n64.eeprom
+use n64.display
+use n64.rdpq
+
+-- Magic number to identify our save format (choose something unique per game)
+const SAVE_MAGIC_HI: u8 = 0xDE
+const SAVE_MAGIC_LO: u8 = 0xAD
+const SAVE_BLOCK: i32 = 0           -- EEPROM block index (0-indexed, each block = 8 bytes)
+
+-- Persistent data structure — must fit in multiples of 8 bytes
+-- This struct packs into exactly 8 bytes:
+--   magic[2] + score[4] + level[1] + flags[1] = 8 bytes
+static save_magic_0: u8 = 0
+static save_magic_1: u8 = 0
+static save_score_0: u8 = 0
+static save_score_1: u8 = 0
+static save_score_2: u8 = 0
+static save_score_3: u8 = 0
+static save_level:   u8 = 0
+static save_flags:   u8 = 0
+
+-- Raw 8-byte buffer for EEPROM read/write (must be @aligned(8))
+@aligned(8)
+static eeprom_buf: [8]u8 = undefined
+
+-- Current game state (loaded from EEPROM or defaults)
+static score: i32 = 0
+static level: u8 = 1
+
+fn save_game() {
+    if not eeprom.present() { return }
+
+    -- Pack game state into 8-byte buffer (big-endian, N64 is big-endian)
+    eeprom_buf[0] = SAVE_MAGIC_HI
+    eeprom_buf[1] = SAVE_MAGIC_LO
+    eeprom_buf[2] = (score >> 24) as u8
+    eeprom_buf[3] = (score >> 16) as u8
+    eeprom_buf[4] = (score >> 8)  as u8
+    eeprom_buf[5] =  score        as u8
+    eeprom_buf[6] = level
+    eeprom_buf[7] = 0              -- reserved / flags
+
+    eeprom.write(SAVE_BLOCK, &eeprom_buf[0])
+}
+
+fn load_game() -> bool {
+    if not eeprom.present() { return false }
+
+    eeprom.read(SAVE_BLOCK, &eeprom_buf[0])
+
+    -- Validate magic number
+    if eeprom_buf[0] != SAVE_MAGIC_HI { return false }
+    if eeprom_buf[1] != SAVE_MAGIC_LO { return false }
+
+    -- Unpack game state (big-endian)
+    score = (eeprom_buf[2] as i32 << 24)
+          | (eeprom_buf[3] as i32 << 16)
+          | (eeprom_buf[4] as i32 << 8)
+          |  eeprom_buf[5] as i32
+
+    level = eeprom_buf[6]
+    return true
+}
+
+entry {
+    display.init(0, 2, 2, 0, 0)
+    rdpq.init()
+
+    -- Try to load save; use defaults if no valid save found
+    let loaded = load_game()
+    if not loaded {
+        score = 0
+        level = 1
+    }
+
+    -- Simulate gaining score
+    score = score + 100
+    level = level + 1
+
+    -- Save on game event (not every frame)
+    save_game()
+
+    loop {
+        let fb = display.get()
+        rdpq.attach_clear(fb)
+        rdpq.set_mode_fill(0x1A1A2EFF)
+        rdpq.fill_rectangle(0, 0, 320, 240)
+        rdpq.detach_show()
+    }
+}

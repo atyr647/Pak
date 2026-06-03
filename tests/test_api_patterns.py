@@ -25,7 +25,7 @@ pytestmark = pytest.mark.requires_pak
 
 
 def _check(source: str) -> tuple[int, str]:
-    with tempfile.NamedTemporaryFile(suffix=".pak", mode="w",
+    with tempfile.NamedTemporaryFile(suffix=".pk64", mode="w",
                                      encoding="utf-8", delete=False) as f:
         f.write(textwrap.dedent(source).strip())
         tmp = Path(f.name)
@@ -538,3 +538,38 @@ class TestInitializationOrder:
                 }
             }
         """, "full game init sequence")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# math module — fixed-point trig/sqrt, float helpers, deterministic RNG
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestMathPatterns:
+    def test_math_float_and_fixed_and_rng(self):
+        assert_passes("""
+            use n64.math
+            entry {
+                let a: f32 = 2.0
+                let s: f32 = math.sqrt_f(a)
+                let c: f32 = math.clamp_f(a, 0.0, 1.0)
+                let p: f32 = math.pow_f(a, 3.0)
+                let fl: f32 = math.floor_f(a)
+                let fs: fix16.16 = math.fix_sin(1)
+                let fq: fix16.16 = math.fix_sqrt(4)
+                math.rand_seed(42)
+                let r: i32 = math.rand_range(0, 10)
+                let rf: f32 = math.rand_f()
+                let n: u32 = math.rand()
+            }
+        """, "math builtins: fixed/float/rng")
+
+    def test_deref_write_then_free(self):
+        # Regression: newline-delimited parsing — `*p = v` then `free(p)`.
+        assert_passes("""
+            entry {
+                let p: *mut i32 = alloc(i32)
+                *p = 42
+                *p = *p * 2
+                free(p)
+            }
+        """, "deref-write then free no longer triggers spurious E010")

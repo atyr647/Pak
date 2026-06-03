@@ -28,7 +28,7 @@ pytestmark = pytest.mark.requires_pak
 
 def _check(source: str) -> tuple[int, str]:
     """Run pak check on a source string. Returns (exit_code, combined_output)."""
-    with tempfile.NamedTemporaryFile(suffix=".pak", mode="w",
+    with tempfile.NamedTemporaryFile(suffix=".pk64", mode="w",
                                      encoding="utf-8", delete=False) as f:
         f.write(source)
         tmp = Path(f.name)

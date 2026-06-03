@@ -1,0 +1,191 @@
+-- collision.pk64
+-- Self-contained collision-detection primitives for Pak 3D/2D games.
+--
+-- Shapes: Aabb (axis-aligned box, min/max corners), Sphere (center + radius),
+-- Circle (2D center + radius), and Ray (origin + direction). Tests return a
+-- plain bool, except ray_vs_aabb which fills a RayHit with hit/distance.
+--
+-- The Vec2 / Vec3 here are redeclared locally so this file checks standalone;
+-- they are field-compatible with vec.pk64's Vec2 / Vec3.
+--
+-- Usage:
+--     let a = Aabb { min: Vec3{x:0.0,y:0.0,z:0.0}, max: Vec3{x:1.0,y:1.0,z:1.0} }
+--     let b = Aabb { min: Vec3{x:0.5,y:0.5,z:0.5}, max: Vec3{x:2.0,y:2.0,z:2.0} }
+--     if aabb_vs_aabb(a, b) { ... overlapping ... }
+
+use n64.math
+
+struct Vec2 {
+    x: f32
+    y: f32
+}
+
+struct Vec3 {
+    x: f32
+    y: f32
+    z: f32
+}
+
+struct Aabb {
+    min: Vec3
+    max: Vec3
+}
+
+struct Sphere {
+    center: Vec3
+    radius: f32
+}
+
+struct Circle {
+    center: Vec2
+    radius: f32
+}
+
+struct Ray {
+    origin: Vec3
+    dir: Vec3
+}
+
+struct RayHit {
+    hit: bool
+    distance: f32
+}
+
+-- Two axis-aligned boxes overlap on every axis.
+fn aabb_vs_aabb(a: Aabb, b: Aabb) -> bool {
+    if a.max.x < b.min.x or a.min.x > b.max.x { return false }
+    if a.max.y < b.min.y or a.min.y > b.max.y { return false }
+    if a.max.z < b.min.z or a.min.z > b.max.z { return false }
+    return true
+}
+
+-- Point lies within (or on) the box bounds.
+fn aabb_contains_point(box: Aabb, p: Vec3) -> bool {
+    if p.x < box.min.x or p.x > box.max.x { return false }
+    if p.y < box.min.y or p.y > box.max.y { return false }
+    if p.z < box.min.z or p.z > box.max.z { return false }
+    return true
+}
+
+-- Two spheres overlap when center distance is within the radius sum.
+fn sphere_vs_sphere(a: Sphere, b: Sphere) -> bool {
+    let dx = a.center.x - b.center.x
+    let dy = a.center.y - b.center.y
+    let dz = a.center.z - b.center.z
+    let dist_sq = dx * dx + dy * dy + dz * dz
+    let r = a.radius + b.radius
+    return dist_sq <= r * r
+}
+
+-- Sphere overlaps a box by clamping the center into the box and measuring.
+fn aabb_vs_sphere(box: Aabb, s: Sphere) -> bool {
+    let cx = math.clamp_f(s.center.x, box.min.x, box.max.x)
+    let cy = math.clamp_f(s.center.y, box.min.y, box.max.y)
+    let cz = math.clamp_f(s.center.z, box.min.z, box.max.z)
+    let dx = cx - s.center.x
+    let dy = cy - s.center.y
+    let dz = cz - s.center.z
+    let dist_sq = dx * dx + dy * dy + dz * dz
+    return dist_sq <= s.radius * s.radius
+}
+
+-- Slab method: returns the nearest positive intersection distance, if any.
+fn ray_vs_aabb(ray: Ray, box: Aabb) -> RayHit {
+    let mut tmin: f32 = 0.0
+    let mut tmax: f32 = 1000000.0
+
+    -- X slab
+    if math.abs_f(ray.dir.x) < 0.000001 {
+        if ray.origin.x < box.min.x or ray.origin.x > box.max.x {
+            return RayHit { hit: false, distance: 0.0 }
+        }
+    } else {
+        let inv = 1.0 / ray.dir.x
+        let mut t1 = (box.min.x - ray.origin.x) * inv
+        let mut t2 = (box.max.x - ray.origin.x) * inv
+        if t1 > t2 {
+            let tmp = t1
+            t1 = t2
+            t2 = tmp
+        }
+        tmin = math.max_f(tmin, t1)
+        tmax = math.min_f(tmax, t2)
+        if tmin > tmax { return RayHit { hit: false, distance: 0.0 } }
+    }
+
+    -- Y slab
+    if math.abs_f(ray.dir.y) < 0.000001 {
+        if ray.origin.y < box.min.y or ray.origin.y > box.max.y {
+            return RayHit { hit: false, distance: 0.0 }
+        }
+    } else {
+        let inv = 1.0 / ray.dir.y
+        let mut t1 = (box.min.y - ray.origin.y) * inv
+        let mut t2 = (box.max.y - ray.origin.y) * inv
+        if t1 > t2 {
+            let tmp = t1
+            t1 = t2
+            t2 = tmp
+        }
+        tmin = math.max_f(tmin, t1)
+        tmax = math.min_f(tmax, t2)
+        if tmin > tmax { return RayHit { hit: false, distance: 0.0 } }
+    }
+
+    -- Z slab
+    if math.abs_f(ray.dir.z) < 0.000001 {
+        if ray.origin.z < box.min.z or ray.origin.z > box.max.z {
+            return RayHit { hit: false, distance: 0.0 }
+        }
+    } else {
+        let inv = 1.0 / ray.dir.z
+        let mut t1 = (box.min.z - ray.origin.z) * inv
+        let mut t2 = (box.max.z - ray.origin.z) * inv
+        if t1 > t2 {
+            let tmp = t1
+            t1 = t2
+            t2 = tmp
+        }
+        tmin = math.max_f(tmin, t1)
+        tmax = math.min_f(tmax, t2)
+        if tmin > tmax { return RayHit { hit: false, distance: 0.0 } }
+    }
+
+    return RayHit { hit: true, distance: tmin }
+}
+
+-- 2D circle overlap test.
+fn circle_vs_circle(a: Circle, b: Circle) -> bool {
+    let dx = a.center.x - b.center.x
+    let dy = a.center.y - b.center.y
+    let dist_sq = dx * dx + dy * dy
+    let r = a.radius + b.radius
+    return dist_sq <= r * r
+}
+
+static sink: bool = false
+
+-- Usage demo / self-test. A standalone library file needs an entry block to
+-- satisfy `pak check`; in a real project you delete this and `use` the module.
+entry {
+    let a = Aabb { min: Vec3 { x: 0.0, y: 0.0, z: 0.0 }, max: Vec3 { x: 1.0, y: 1.0, z: 1.0 } }
+    let b = Aabb { min: Vec3 { x: 0.5, y: 0.5, z: 0.5 }, max: Vec3 { x: 2.0, y: 2.0, z: 2.0 } }
+    sink = aabb_vs_aabb(a, b)
+    sink = aabb_contains_point(a, Vec3 { x: 0.5, y: 0.5, z: 0.5 })
+
+    let s1 = Sphere { center: Vec3 { x: 0.0, y: 0.0, z: 0.0 }, radius: 1.0 }
+    let s2 = Sphere { center: Vec3 { x: 1.0, y: 0.0, z: 0.0 }, radius: 0.5 }
+    sink = sphere_vs_sphere(s1, s2)
+    sink = aabb_vs_sphere(a, s1)
+
+    let ray = Ray {
+        origin: Vec3 { x: -5.0, y: 0.5, z: 0.5 },
+        dir: Vec3 { x: 1.0, y: 0.0, z: 0.0 },
+    }
+    let hit = ray_vs_aabb(ray, a)
+    sink = hit.hit
+
+    let c1 = Circle { center: Vec2 { x: 0.0, y: 0.0 }, radius: 1.0 }
+    let c2 = Circle { center: Vec2 { x: 1.0, y: 1.0 }, radius: 1.0 }
+    sink = circle_vs_circle(c1, c2)
+}

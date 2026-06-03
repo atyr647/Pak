@@ -285,17 +285,17 @@ For larger projects, split by system:
 
 ```
 src/
-  main.pak        -- entry block only, module main
-  player.pak      -- module game.player
-  enemies.pak     -- module game.enemies
-  render.pak      -- module game.render
-  ui.pak          -- module game.ui
+  main.pk64        -- entry block only, module main
+  player.pk64      -- module game.player
+  enemies.pk64     -- module game.enemies
+  render.pk64      -- module game.render
+  ui.pk64          -- module game.ui
 ```
 
 Each non-entry file starts with `module`:
 
 ```pak
--- player.pak
+-- player.pk64
 module game.player
 
 struct Player { ... }
@@ -306,7 +306,7 @@ fn player_update(p: *Player, dt: f32) { ... }
 Main file uses them:
 
 ```pak
--- main.pak
+-- main.pk64
 module main
 
 use game.player

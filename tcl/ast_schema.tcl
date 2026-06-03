@@ -69,7 +69,7 @@ struct::record define StaticDecl {name type value annotations}
 struct::record define StringLit {value}
 struct::record define StructDecl {name fields type_params annotations}
 struct::record define StructField {name type annotations default_value bit_width}
-struct::record define StructLit {type_name fields}
+struct::record define StructLit {type_name fields type_args}
 struct::record define TraitDecl {name methods annotations}
 struct::record define TupleAccess {obj index}
 struct::record define TupleLit {elements}
@@ -162,7 +162,7 @@ set ::pak::FKIND [dict create \
     StringLit {value s} \
     StructDecl {name s fields L type_params Ls annotations Ls} \
     StructField {name s type n annotations Ls default_value n bit_width n} \
-    StructLit {type_name s fields L} \
+    StructLit {type_name s fields L type_args L} \
     TraitDecl {name s methods L annotations Ls} \
     TupleAccess {obj n index i} \
     TupleLit {elements L} \

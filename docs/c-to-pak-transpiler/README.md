@@ -7,7 +7,7 @@ converted into idiomatic PAK source code. Today if you want to use PAK, you star
 scratch. This transpiler lets you bring existing C codebases into the PAK ecosystem:
 
 ```
-C source (.c/.h) → C parser → C AST → PAK AST → PAK source (.pak)
+C source (.c/.h) → C parser → C AST → PAK AST → PAK source (.pk64)
 ```
 
 ### What This Unlocks
@@ -33,7 +33,7 @@ Same approach as the PAK-to-MIPS transpiler — **differential testing**:
 ### Key Difference from PAK-to-MIPS
 
 The PAK-to-MIPS transpiler was a **backend** (AST → machine code). This is a **frontend**
-(foreign source → AST). The output is human-readable `.pak` files, not assembly:
+(foreign source → AST). The output is human-readable `.pk64` files, not assembly:
 
 - **Readability matters**: Output should look like code a human would write. Variable names
   preserved, comments preserved, idioms translated (e.g., `if (ptr != NULL)` → `if ptr != none`).
@@ -87,6 +87,6 @@ pak/c2pak/
 ├── stmt_mapper.py       # C statements → PAK AST nodes
 ├── decl_mapper.py       # C declarations → PAK declarations
 ├── idiom_detector.py    # Pattern-match C idioms → idiomatic PAK
-├── pak_emitter.py       # PAK AST → formatted .pak source text
-└── cli.py               # CLI: pak convert <file.c> [--output file.pak]
+├── pak_emitter.py       # PAK AST → formatted .pk64 source text
+└── cli.py               # CLI: pak convert <file.c> [--output file.pk64]
 ```

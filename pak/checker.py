@@ -25,7 +25,7 @@ Usage::
 
     from pak.checker import semantic_check, CheckError
 
-    errors, warnings = semantic_check(program, filename="src/main.pak")
+    errors, warnings = semantic_check(program, filename="src/main.pk64")
     for e in errors:
         print(e)        # hard error — abort build
     for w in warnings:
@@ -521,6 +521,52 @@ def _is_const_expr(expr) -> bool:
 
 
 # ── Cross-file entry-block check (used by cli.py) ────────────────────────────
+
+def check_module_imports(
+    parsed: List[Tuple[str, ast.Program]],
+) -> List[CheckDiag]:
+    """Verify every project-local `use` path resolves to a declared module.
+
+    Builtin namespaces (n64.*, t3d.*, std) are validated per-file by the
+    semantic checker. This cross-file pass catches `use foo.bar` statements
+    that don't correspond to any `module foo.bar` declaration anywhere in the
+    project — typically a typo or a missing file.
+    """
+    # Collect every module path declared across the project.
+    declared: Set[str] = set()
+    for _, program in parsed:
+        for decl in program.decls:
+            if isinstance(decl, ast.ModuleDecl):
+                declared.add(decl.path)
+
+    builtin_prefixes = {'n64', 't3d', 'std'}
+    diags: List[CheckDiag] = []
+    for filename, program in parsed:
+        for decl in program.decls:
+            if not isinstance(decl, ast.UseDecl):
+                continue
+            prefix = decl.path.split('.')[0]
+            if prefix in builtin_prefixes:
+                continue  # builtin namespace — handled by semantic_check
+            if decl.path not in declared:
+                hint = (
+                    f'Known project modules: {", ".join(sorted(declared))}'
+                    if declared else
+                    'No project modules are declared. Add `module '
+                    f'{decl.path}` to the file that defines it.'
+                )
+                diags.append(CheckDiag(
+                    code='E105',
+                    message=f'Unknown module {decl.path!r} — no matching '
+                            f'`module {decl.path}` declaration found',
+                    hint=hint,
+                    line=getattr(decl, 'line', 0),
+                    col=getattr(decl, 'col', 0),
+                    filename=filename,
+                    severity='error',
+                ))
+    return diags
+
 
 def check_entry_blocks(
     parsed: List[Tuple[str, ast.Program]],

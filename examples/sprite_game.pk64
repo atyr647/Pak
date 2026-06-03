@@ -1,0 +1,45 @@
+-- sprite_game.pk64
+-- Complete example: 2D sprite game (from Pak spec)
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.sprite
+use n64.timer
+
+asset hero_sprite from "hero.sprite"
+
+struct Player {
+    x: f32
+    y: f32
+    speed: f32
+}
+
+entry {
+    let player = Player { x: 160, y: 120, speed: 2.0 }
+
+    loop {
+        -- Read controller input
+        let input = controller.read(0)
+        let dt = timer.delta()
+
+        -- Move player
+        if input.held.right { player.x += player.speed }
+        if input.held.left  { player.x -= player.speed }
+        if input.held.up    { player.y -= player.speed }
+        if input.held.down  { player.y += player.speed }
+
+        -- Clamp to screen
+        if player.x < 0 { player.x = 0 }
+        if player.x > 320 { player.x = 320 }
+        if player.y < 0 { player.y = 0 }
+        if player.y > 240 { player.y = 240 }
+
+        -- Draw
+        let disp = display.get()
+        rdpq.attach_clear(disp, none)
+        rdpq.set_mode_standard()
+        sprite.blit(hero_sprite, player.x, player.y)
+        rdpq.detach_show()
+    }
+}

@@ -161,13 +161,11 @@ KEYWORDS = {
     'ok': TT.OK,
     'err': TT.ERR,
     'sizeof':  TT.SIZEOF,
-    'size_of': TT.SIZEOF,    # spec alias
     'elif': TT.ELIF,
     'volatile': TT.VOLATILE,
     'const': TT.CONST,
     'asm': TT.ASM,
     'offsetof': TT.OFFSETOF,
-    'align_of': TT.ALIGNOF,  # spec alias
     'alignof': TT.ALIGNOF,
     'trait': TT.TRAIT,
     'dyn': TT.DYN,
@@ -349,6 +347,15 @@ class Lexer:
                 if is_float:
                     tok(TT.FLOAT, val)
                 else:
+                    # Consume optional integer type suffix: u8/u16/u32/u64/i8/i16/i32/i64
+                    _INT_SUFFIXES = {'u8', 'u16', 'u32', 'u64', 'i8', 'i16', 'i32', 'i64'}
+                    if self.pos < len(self.source) and self.peek() in ('u', 'i', 'U', 'I'):
+                        save = self.pos
+                        suf = []
+                        while self.pos < len(self.source) and (self.peek().isalnum() or self.peek() == '_'):
+                            suf.append(self.advance())
+                        if ''.join(suf) not in _INT_SUFFIXES:
+                            self.pos = save  # not a recognised suffix, put it back
                     tok(TT.INT, val)
 
             # Identifiers and keywords

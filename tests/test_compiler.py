@@ -757,7 +757,7 @@ class TestTypechecker:
         ''')
         prog1 = parse(src1)
         prog2 = parse(src2)
-        results = typecheck_multi([('math.pak', prog1), ('main.pak', prog2)])
+        results = typecheck_multi([('math.pk64', prog1), ('main.pk64', prog2)])
         # add() should be found — no E010 or E012 in either file
         all_errs = [e for errs in results.values() for e in errs]
         codes = [e.code for e in all_errs]
@@ -1604,23 +1604,23 @@ class TestOkErr:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# features.pak end-to-end
+# features.pk64 end-to-end
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestFeaturesPak:
 
     def test_features_pak_compiles(self):
-        """examples/features.pak should parse and codegen without errors."""
+        """examples/features.pk64 should parse and codegen without errors."""
         import pathlib
-        src = pathlib.Path('examples/features.pak').read_text()
+        src = pathlib.Path('examples/features.pk64').read_text()
         c = codegen(src)
         assert 'Player' in c
         assert 'update_player' in c
 
     def test_features_pak_no_type_errors(self):
-        """examples/features.pak should produce no type errors."""
+        """examples/features.pk64 should produce no type errors."""
         import pathlib
-        src = pathlib.Path('examples/features.pak').read_text()
+        src = pathlib.Path('examples/features.pk64').read_text()
         errors = check(src)
         # Filter out module-related false positives from use declarations
         real_errors = [e for e in errors if e.code not in ('E010',)]
@@ -1851,6 +1851,73 @@ class TestContainers:
         ''')
         c = codegen(src)
         assert 'len' in c
+
+    def test_vec_init_lowers_to_zero(self):
+        """Vec.init() must lower to {0}, not the literal string Vec.init()."""
+        src = textwrap.dedent('''
+            entry {
+                let mut v: Vec(i32) = Vec.init()
+            }
+        ''')
+        c = codegen(src)
+        assert 'Vec.init()' not in c
+        assert '{0}' in c
+
+    def test_ring_buffer_uses_len_field(self):
+        """RingBuffer struct must use .len (not .count) for consistency."""
+        src = textwrap.dedent('''
+            entry {
+                let mut rb: RingBuffer(i32, 8) = RingBuffer.init()
+                rb.push(1)
+                let n = rb.len()
+            }
+        ''')
+        c = codegen(src)
+        assert 'int32_t head, tail, len;' in c
+        assert '(rb).len' in c
+
+    def test_fixedmap_get_typed_cast(self):
+        """FixedMap.get() result should be cast to V* (not void*)."""
+        src = textwrap.dedent('''
+            entry {
+                let mut m: FixedMap(i32, i32, 8) = FixedMap.init()
+                m.set(1, 42)
+                let p = m.get(1)
+            }
+        ''')
+        c = codegen(src)
+        assert '(int32_t *)pak_map_get' in c
+
+    def test_pool_acquire_typed_cast(self):
+        """Pool.acquire() result should be cast to T* for the pool element type."""
+        src = textwrap.dedent('''
+            struct Item { v: i32 }
+            entry {
+                let mut pool: Pool(Item, 4) = Pool.init()
+                let p: *Item = pool.acquire()
+            }
+        ''')
+        c = codegen(src)
+        assert '(Item *)pak_pool_acquire' in c
+
+    def test_is_empty_all_containers(self):
+        """All container types support .is_empty()."""
+        src = textwrap.dedent('''
+            entry {
+                let mut fl: FixedList(i32, 4) = FixedList.init()
+                let a = fl.is_empty()
+                let mut rb: RingBuffer(i32, 4) = RingBuffer.init()
+                let b = rb.is_empty()
+                let mut fm: FixedMap(i32, i32, 4) = FixedMap.init()
+                let c = fm.is_empty()
+                let mut p: Pool(i32, 4) = Pool.init()
+                let d = p.is_empty()
+                let mut v: Vec(i32) = Vec.init()
+                let e = v.is_empty()
+            }
+        ''')
+        c = codegen(src)
+        assert c.count('.len == 0') >= 5
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2324,7 +2391,7 @@ class TestConstDeclarations:
         src = textwrap.dedent('''
             struct Player { x: f32  y: f32  health: i32 }
             entry {
-                comptime_assert(size_of(Player) <= 64, "Player too large")
+                comptime_assert(sizeof(Player) <= 64, "Player too large")
             }
         ''')
         c = codegen(src)
@@ -2531,6 +2598,99 @@ class TestGenericFunctions:
         errors = check(src)
         real = [e for e in errors if not e.is_warning]
         assert not real
+
+    def test_generic_fn_explicit_type_args(self):
+        """foo<i32>(x) must monomorphize to foo_int32_t, not foo_void_p."""
+        src = textwrap.dedent('''
+            fn id<T>(x: T) -> T { return x }
+            static s: i32 = 0
+            entry { s = id<i32>(42) }
+        ''')
+        c = codegen(src)
+        assert 'id_int32_t' in c
+        assert 'id_void_p' not in c
+
+    def test_generic_fn_explicit_multi_type_args(self):
+        src = textwrap.dedent('''
+            fn pair<A, B>(a: A, b: B) -> A { return a }
+            static s: i32 = 0
+            entry { s = pair<i32, f32>(7, 3.5) }
+        ''')
+        c = codegen(src)
+        assert 'pair_int32_t_float' in c
+
+    def test_explicit_type_args_dont_break_comparison(self):
+        """`a < b` must still parse as a comparison, not type args."""
+        src = textwrap.dedent('''
+            fn lt(a: i32, b: i32) -> bool { return a < b }
+            entry { }
+        ''')
+        errors = check(src)
+        real = [e for e in errors if not e.is_warning]
+        assert not real
+
+    def test_generic_struct_literal_monomorphized(self):
+        """Box<i32> { .. } emits a specialized struct typedef + cast."""
+        src = textwrap.dedent('''
+            struct Box<T> { value: T }
+            static r: i32 = 0
+            entry {
+                let mut b = Box<i32> { value: 42 }
+                r = b.value
+            }
+        ''')
+        c = codegen(src)
+        assert 'Box_int32_t' in c
+        assert '(Box_int32_t){' in c
+        # The unsubstituted template must not leak into output.
+        assert 'T value;' not in c
+
+    def test_generic_impl_method_specialized(self):
+        """A method on a generic struct lowers to Box_i32_get(&b)."""
+        src = textwrap.dedent('''
+            struct Box<T> { value: T }
+            impl Box<T> { fn get(self: *Box<T>) -> T { return self.value } }
+            static r: i32 = 0
+            entry {
+                let mut b = Box<i32> { value: 42 }
+                r = b.get()
+            }
+        ''')
+        c = codegen(src)
+        assert 'Box_int32_t_get(Box_int32_t * self)' in c
+        assert 'Box_int32_t_get(&b)' in c
+
+    def test_generic_struct_two_instantiations(self):
+        src = textwrap.dedent('''
+            struct Box<T> { value: T }
+            impl Box<T> { fn get(self: *Box<T>) -> T { return self.value } }
+            static a: i32 = 0
+            static b: f32 = 0.0
+            entry {
+                let mut bi = Box<i32> { value: 7 }
+                let mut bf = Box<f32> { value: 1.5 }
+                a = bi.get()
+                b = bf.get()
+            }
+        ''')
+        c = codegen(src)
+        assert 'Box_int32_t_get(&bi)' in c
+        assert 'Box_float_get(&bf)' in c
+
+    def test_struct_literal_method_call_lowered(self):
+        """Method calls on a let-bound struct literal lower to Type_method(&v)."""
+        src = textwrap.dedent('''
+            struct P { x: i32 }
+            impl P { fn get(self: *P) -> i32 { return self.x } }
+            static r: i32 = 0
+            entry {
+                let mut p = P { x: 9 }
+                r = p.get()
+            }
+        ''')
+        c = codegen(src)
+        assert 'P_get(&p)' in c
+        assert 'p.get()' not in c
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3036,6 +3196,55 @@ class TestTraits:
         assert '_pak_Drawable_draw_Sprite' in c
         assert '_pak_Drawable_vtable_Sprite' in c
         assert 'Drawable_from_Sprite' in c
+
+    def test_trait_default_method_synthesized(self):
+        """A trait default body is emitted for an impl that omits it."""
+        src = textwrap.dedent('''
+            trait Greeter {
+                fn name(self: *Self) -> i32
+                fn greet(self: *Self) -> i32 { return self.name() + 100 }
+            }
+            struct Bot { id: i32 }
+            impl Bot for Greeter {
+                fn name(self: *Bot) -> i32 { return self.id }
+            }
+        ''')
+        c = codegen(src)
+        # The default greet() is specialized for Bot and calls Bot_name.
+        assert 'Bot_greet(Bot * self)' in c
+        assert 'Bot_name(self)' in c
+
+    def test_trait_default_method_ok(self):
+        """Omitting a method that has a default body must type-check."""
+        src = textwrap.dedent('''
+            trait Greeter {
+                fn name(self: *Self) -> i32
+                fn greet(self: *Self) -> i32 { return self.name() + 100 }
+            }
+            struct Bot { id: i32 }
+            impl Bot for Greeter {
+                fn name(self: *Bot) -> i32 { return self.id }
+            }
+        ''')
+        errors = check(src)
+        real = [e for e in errors if not e.is_warning]
+        assert not real
+
+    def test_trait_missing_required_method_errors(self):
+        """Omitting a required (body-less) trait method raises E602."""
+        src = textwrap.dedent('''
+            trait Greeter {
+                fn name(self: *Self) -> i32
+                fn greet(self: *Self) -> i32 { return self.name() + 100 }
+            }
+            struct Bot { id: i32 }
+            impl Bot for Greeter {
+                fn greet(self: *Bot) -> i32 { return 5 }
+            }
+        ''')
+        errors = check(src)
+        codes = [e.code for e in errors]
+        assert 'E602' in codes
 
     def test_dyn_trait_type(self):
         src = textwrap.dedent('''
@@ -3788,3 +3997,298 @@ class TestReturnTypeCheck:
         diags = check(src)
         codes = [d.code for d in diags]
         assert 'W201' not in codes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Default parameters and named arguments
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestDefaultParams:
+
+    def test_default_param_filled_when_omitted(self):
+        src = textwrap.dedent('''
+            fn greet(x: i32, y: i32 = 99) -> i32 {
+                return x + y
+            }
+            entry {
+                let r = greet(1)
+            }
+        ''')
+        c = codegen(src)
+        assert 'greet(1, 99)' in c
+
+    def test_default_param_overridable(self):
+        src = textwrap.dedent('''
+            fn greet(x: i32, y: i32 = 99) -> i32 {
+                return x + y
+            }
+            entry {
+                let r = greet(1, 2)
+            }
+        ''')
+        c = codegen(src)
+        assert 'greet(1, 2)' in c
+
+    def test_multiple_defaults_partially_supplied(self):
+        src = textwrap.dedent('''
+            fn foo(a: i32, b: i32 = 10, c: i32 = 20) -> i32 {
+                return a + b + c
+            }
+            entry {
+                let r = foo(5, 15)
+            }
+        ''')
+        c = codegen(src)
+        assert 'foo(5, 15, 20)' in c
+
+    def test_all_defaults_omitted(self):
+        src = textwrap.dedent('''
+            fn zero_or(x: i32 = 0) -> i32 {
+                return x
+            }
+            entry {
+                let r = zero_or()
+            }
+        ''')
+        c = codegen(src)
+        assert 'zero_or(0)' in c
+
+
+class TestNamedArgs:
+
+    def test_named_args_reordered_to_declaration_order(self):
+        src = textwrap.dedent('''
+            fn sub(a: i32, b: i32) -> i32 {
+                return a - b
+            }
+            entry {
+                let r = sub(b: 3, a: 10)
+            }
+        ''')
+        c = codegen(src)
+        assert 'sub(10, 3)' in c
+
+    def test_named_args_with_default_fill(self):
+        src = textwrap.dedent('''
+            fn scale(val: i32, factor: i32 = 2) -> i32 {
+                return val * factor
+            }
+            entry {
+                let r = scale(val: 5)
+            }
+        ''')
+        c = codegen(src)
+        assert 'scale(5, 2)' in c
+
+    def test_positional_before_named(self):
+        src = textwrap.dedent('''
+            fn f(a: i32, b: i32, c: i32 = 0) -> i32 {
+                return a + b + c
+            }
+            entry {
+                let r = f(1, c: 3, b: 2)
+            }
+        ''')
+        c = codegen(src)
+        assert 'f(1, 2, 3)' in c
+
+
+class TestBreakValue:
+
+    def test_break_value_assigns_result(self):
+        src = textwrap.dedent('''
+            entry {
+                let found: i32 = loop {
+                    break 42
+                }
+            }
+        ''')
+        c = codegen(src)
+        assert '_loop_res_' in c
+        assert '= 42' in c
+
+    def test_break_value_with_condition(self):
+        src = textwrap.dedent('''
+            entry {
+                let mut i: i32 = 0
+                let result: i32 = loop {
+                    if i >= 5 {
+                        break i
+                    }
+                    i = i + 1
+                    break 0
+                }
+            }
+        ''')
+        c = codegen(src)
+        assert '_loop_res_' in c
+        assert 'while (true)' in c
+
+    def test_plain_break_unchanged(self):
+        src = textwrap.dedent('''
+            entry {
+                let mut i: i32 = 0
+                loop {
+                    if i > 3 { break }
+                    i = i + 1
+                }
+            }
+        ''')
+        c = codegen(src)
+        assert '_loop_res_' not in c
+        assert 'break;' in c
+
+
+class TestEepromAPI:
+
+    def test_eeprom_present_lowered(self):
+        src = textwrap.dedent('''
+            use n64.eeprom
+            entry {
+                let is_present = eeprom.present()
+            }
+        ''')
+        c = codegen(src)
+        assert 'eeprom_present()' in c
+        assert 'eeprom.present()' not in c
+
+    def test_eeprom_type_detect_lowered(self):
+        src = textwrap.dedent('''
+            use n64.eeprom
+            entry {
+                let t = eeprom.type_detect()
+            }
+        ''')
+        c = codegen(src)
+        assert 'eeprom_type_detect()' in c
+
+
+class TestUseAlias:
+    def test_alias_resolves_to_module_api(self):
+        src = textwrap.dedent('''
+            use n64.display as disp
+            entry {
+                disp.init(0, 2, 3, 0, 1)
+            }
+        ''')
+        c = codegen(src)
+        assert 'display_init(0, 2, 3, 0, 1)' in c
+
+    def test_alias_include_still_emitted(self):
+        src = textwrap.dedent('''
+            use n64.display as disp
+            entry {
+                let fb = disp.get()
+            }
+        ''')
+        c = codegen(src)
+        assert '#include <display.h>' in c
+
+    def test_alias_multiple_modules(self):
+        src = textwrap.dedent('''
+            use n64.display as disp
+            use n64.controller as ctrl
+            entry {
+                disp.init(0, 2, 3, 0, 1)
+                ctrl.init()
+            }
+        ''')
+        c = codegen(src)
+        assert 'display_init' in c
+        assert 'joypad_init' in c
+
+    def test_unaliased_use_still_works(self):
+        src = textwrap.dedent('''
+            use n64.display
+            entry {
+                display.init(0, 2, 3, 0, 1)
+            }
+        ''')
+        c = codegen(src)
+        assert 'display_init(0, 2, 3, 0, 1)' in c
+
+
+class TestMatchGuard:
+    def test_guard_parses_and_emits_condition(self):
+        src = textwrap.dedent('''
+            variant Opt {
+                some(i32)
+                none
+            }
+            fn check(v: Opt) -> i32 {
+                match v {
+                    .some(x) if x > 0 => { return x }
+                    .some(x) => { return 0 }
+                    .none => { return -1 }
+                }
+            }
+            entry {}
+        ''')
+        c = codegen(src)
+        assert 'field0 > 0' in c
+
+    def test_guard_binding_substituted_in_condition(self):
+        src = textwrap.dedent('''
+            variant Opt {
+                some(i32)
+                none
+            }
+            fn check(v: Opt) -> i32 {
+                match v {
+                    .some(x) if x > 0 => { return x }
+                    .none => { return -1 }
+                    _ => { return 0 }
+                }
+            }
+            entry {}
+        ''')
+        c = codegen(src)
+        # binding 'x' must be substituted with the field access in the guard
+        assert 'tag == Opt_tag_some' in c
+        assert 'data.some.field0 > 0' in c
+
+    def test_guard_uses_else_if_chain(self):
+        src = textwrap.dedent('''
+            variant Opt {
+                some(i32)
+                none
+            }
+            fn f(v: Opt) -> i32 {
+                match v {
+                    .some(x) if x > 10 => { return 2 }
+                    .some(x) if x > 0  => { return 1 }
+                    .some(x) => { return 0 }
+                    .none => { return -1 }
+                }
+            }
+            entry {}
+        ''')
+        c = codegen(src)
+        assert 'else if' in c
+
+    def test_guard_wildcard_becomes_else(self):
+        src = textwrap.dedent('''
+            fn classify(x: i32) -> i32 {
+                match x {
+                    1 if x > 0 => { return 10 }
+                    _ => { return 0 }
+                }
+            }
+            entry {}
+        ''')
+        c = codegen(src)
+        assert 'else {' in c or 'else{' in c
+
+    def test_no_guard_uses_switch(self):
+        src = textwrap.dedent('''
+            enum Dir { north, south }
+            fn f(d: Dir) -> i32 {
+                match d {
+                    .north => { return 1 }
+                    .south => { return 2 }
+                }
+            }
+            entry {}
+        ''')
+        c = codegen(src)
+        assert 'switch' in c

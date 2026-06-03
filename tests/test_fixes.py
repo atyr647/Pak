@@ -34,7 +34,7 @@ def parse_ok(src: str):
 def tc_errors(src: str):
     """Return list of (code, message) tuples from the typechecker."""
     prog = parse_ok(src)
-    errors = typecheck(prog, filename='test.pak')
+    errors = typecheck(prog, filename='test.pk64')
     return [(e.code, e.message) for e in errors]
 
 

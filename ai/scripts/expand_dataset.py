@@ -8,7 +8,7 @@ Merges:
   - Bug-fix pairs (broken code + fix)
   - Exhaustive hardware knowledge
   - API usage combos for every module/function
-  - Full game .pak files from ai/dataset/games/
+  - Full game .pk64 files from ai/dataset/games/
 
 Output: ai/dataset/full_dataset.jsonl
 
@@ -96,7 +96,7 @@ def validate_outputs(pairs: list[dict]) -> list[dict]:
     for p in pairs:
         for code, kind in code_units(p["output"], p.get("category", "")):
             checked += 1
-            with tempfile.NamedTemporaryFile(suffix=".pak", mode="w", delete=False) as f:
+            with tempfile.NamedTemporaryFile(suffix=".pk64", mode="w", delete=False) as f:
                 f.write(code)
                 tmp = f.name
             try:
@@ -133,7 +133,7 @@ def main():
         ("Bug Fixes", gen_bugfixes),
         ("Hardware Knowledge", gen_hardware),
         ("API Usage Combos", gen_api_combos),
-        ("Game Examples (.pak files)", gen_game_examples),
+        ("Game Examples (.pk64 files)", gen_game_examples),
         ("Game Dev Patterns", gen_patterns),
         ("Libdragon Deep (rdpq, sprites, FS, save)", gen_libdragon_deep),
         ("Libdragon Audio (mixer, wav64, xm64)", gen_libdragon_audio),

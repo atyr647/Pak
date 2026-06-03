@@ -14,8 +14,8 @@ Create `pak/c2pak/` with these modules:
 | `stmt_mapper.py` | Map C statements → PAK AST statement nodes |
 | `decl_mapper.py` | Map C declarations (structs, enums, unions, functions, typedefs) → PAK declarations |
 | `idiom_detector.py` | Pattern-match C idioms and emit idiomatic PAK (tagged unions, Result types, fixed-point) |
-| `pak_emitter.py` | PAK AST → formatted `.pak` source text (pretty-printer) |
-| `cli.py` | CLI entry point: `pak convert <file.c> [--output file.pak]` |
+| `pak_emitter.py` | PAK AST → formatted `.pk64` source text (pretty-printer) |
+| `cli.py` | CLI entry point: `pak convert <file.c> [--output file.pk64]` |
 
 ## 0.2 — C Parser Strategy
 
@@ -99,9 +99,9 @@ tests/c2pak/
 │   ├── enums.c
 │   ├── control_flow.c
 │   └── ...
-├── expected/        # expected .pak output
-│   ├── basic_types.pak
-│   ├── structs.pak
+├── expected/        # expected .pk64 output
+│   ├── basic_types.pk64
+│   ├── structs.pk64
 │   └── ...
 └── test_c2pak.py    # pytest runner
 ```
@@ -110,15 +110,15 @@ Test modes:
 - **Syntax check**: transpiled PAK parses without errors (use existing PAK parser).
 - **Semantic check**: transpiled PAK type-checks without errors.
 - **Behavioral check**: compile both C and transpiled PAK → compare runtime output.
-- **Snapshot check**: transpiled PAK matches expected `.pak` file exactly.
+- **Snapshot check**: transpiled PAK matches expected `.pk64` file exactly.
 
 ## 0.5 — CLI Integration
 
 Add a `convert` subcommand to the existing PAK CLI:
 
 ```
-pak convert path/to/file.c                    # prints .pak to stdout
-pak convert path/to/file.c -o output.pak      # writes to file
+pak convert path/to/file.c                    # prints .pk64 to stdout
+pak convert path/to/file.c -o output.pk64      # writes to file
 pak convert path/to/project/ -o output_dir/   # batch convert directory
 pak convert file.c --preserve-comments        # keep C comments
 pak convert file.c --no-idioms                # skip idiom detection (literal translation)

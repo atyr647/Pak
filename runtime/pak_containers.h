@@ -34,7 +34,7 @@
 static inline bool pak_map_set_raw(void *map_ptr, int32_t cap,
                                    const void *key_ptr, const void *val_ptr,
                                    int32_t key_sz, int32_t val_sz) {
-    /* Layout: keys[cap], values[cap], occupied[cap], count */
+    /* Layout: keys[cap], values[cap], occupied[cap], len */
     uint8_t *keys     = (uint8_t *)map_ptr;
     uint8_t *values   = keys + (size_t)cap * (size_t)key_sz;
     bool    *occupied = (bool *)(values + (size_t)cap * (size_t)val_sz);
@@ -92,7 +92,121 @@ static inline void *pak_map_get_raw(void *map_ptr, int32_t cap,
 #define pak_map_get(map_ptr, cap, key) \
     pak_map_get_raw((map_ptr), (cap), &(key), \
                     (int32_t)sizeof(key), \
-                    (int32_t)sizeof(*(__typeof__((map_ptr)->values)){{0}}))
+                    (int32_t)sizeof((map_ptr)->values[0]))
+
+#define pak_map_remove(map_ptr, cap, key) \
+    pak_map_remove_raw((map_ptr), (cap), &(key), \
+                       (int32_t)sizeof(key), (int32_t)sizeof((map_ptr)->values[0]))
+#define pak_map_has(map_ptr, cap, key) \
+    pak_map_has_raw((map_ptr), (cap), &(key), \
+                    (int32_t)sizeof(key), (int32_t)sizeof((map_ptr)->values[0]))
+
+/* String-keyed variants (FixedMap with *c_char keys) */
+#define pak_map_set_str(map_ptr, cap, key, val) \
+    pak_map_set_str_raw((map_ptr), (cap), &(key), &(val), \
+                        (int32_t)sizeof((map_ptr)->keys[0]), (int32_t)sizeof(val))
+#define pak_map_get_str(map_ptr, cap, key) \
+    pak_map_get_str_raw((map_ptr), (cap), &(key), \
+                        (int32_t)sizeof((map_ptr)->keys[0]), (int32_t)sizeof((map_ptr)->values[0]))
+#define pak_map_remove_str(map_ptr, cap, key) \
+    pak_map_remove_str_raw((map_ptr), (cap), &(key), \
+                           (int32_t)sizeof((map_ptr)->keys[0]), (int32_t)sizeof((map_ptr)->values[0]))
+#define pak_map_has_str(map_ptr, cap, key) \
+    pak_map_has_str_raw((map_ptr), (cap), &(key), \
+                        (int32_t)sizeof((map_ptr)->keys[0]), (int32_t)sizeof((map_ptr)->values[0]))
+
+/** Remove a key (memcmp keys). Returns true if a key was removed. */
+static inline bool pak_map_remove_raw(void *map_ptr, int32_t cap,
+                                      const void *key_ptr,
+                                      int32_t key_sz, int32_t val_sz) {
+    uint8_t *keys     = (uint8_t *)map_ptr;
+    uint8_t *values   = keys + (size_t)cap * (size_t)key_sz;
+    bool    *occupied = (bool *)(values + (size_t)cap * (size_t)val_sz);
+    int32_t *count    = (int32_t *)(occupied + (size_t)cap);
+    for (int32_t i = 0; i < cap; i++) {
+        if (occupied[i] && memcmp(keys + (size_t)i * (size_t)key_sz, key_ptr, (size_t)key_sz) == 0) {
+            occupied[i] = false;
+            (*count)--;
+            return true;
+        }
+    }
+    return false;
+}
+
+static inline bool pak_map_has_raw(void *map_ptr, int32_t cap,
+                                   const void *key_ptr,
+                                   int32_t key_sz, int32_t val_sz) {
+    return pak_map_get_raw(map_ptr, cap, key_ptr, key_sz, val_sz) != NULL;
+}
+
+/* ── String-keyed FixedMap (keys are char*, compared by content) ──────────────
+ * For FixedMap(*c_char, V, N): keys[] holds char* and the *content* must be
+ * compared (strcmp), not the pointer. key_ptr points to the char* variable.
+ */
+static inline bool pak_map_set_str_raw(void *map_ptr, int32_t cap,
+                                       const void *key_ptr, const void *val_ptr,
+                                       int32_t key_sz, int32_t val_sz) {
+    char  **keys     = (char **)map_ptr;
+    uint8_t *values  = (uint8_t *)map_ptr + (size_t)cap * (size_t)key_sz;
+    bool    *occupied = (bool *)(values + (size_t)cap * (size_t)val_sz);
+    int32_t *count    = (int32_t *)(occupied + (size_t)cap);
+    const char *k = *(const char *const *)key_ptr;
+    for (int32_t i = 0; i < cap; i++) {
+        if (occupied[i] && keys[i] && k && strcmp(keys[i], k) == 0) {
+            memcpy(values + (size_t)i * (size_t)val_sz, val_ptr, (size_t)val_sz);
+            return true;
+        }
+    }
+    for (int32_t i = 0; i < cap; i++) {
+        if (!occupied[i]) {
+            keys[i] = (char *)k;
+            memcpy(values + (size_t)i * (size_t)val_sz, val_ptr, (size_t)val_sz);
+            occupied[i] = true;
+            (*count)++;
+            return true;
+        }
+    }
+    return false;
+}
+
+static inline void *pak_map_get_str_raw(void *map_ptr, int32_t cap,
+                                        const void *key_ptr,
+                                        int32_t key_sz, int32_t val_sz) {
+    char  **keys     = (char **)map_ptr;
+    uint8_t *values  = (uint8_t *)map_ptr + (size_t)cap * (size_t)key_sz;
+    bool    *occupied = (bool *)(values + (size_t)cap * (size_t)val_sz);
+    const char *k = *(const char *const *)key_ptr;
+    for (int32_t i = 0; i < cap; i++) {
+        if (occupied[i] && keys[i] && k && strcmp(keys[i], k) == 0) {
+            return values + (size_t)i * (size_t)val_sz;
+        }
+    }
+    return NULL;
+}
+
+static inline bool pak_map_remove_str_raw(void *map_ptr, int32_t cap,
+                                          const void *key_ptr,
+                                          int32_t key_sz, int32_t val_sz) {
+    char  **keys     = (char **)map_ptr;
+    uint8_t *values  = (uint8_t *)map_ptr + (size_t)cap * (size_t)key_sz;
+    bool    *occupied = (bool *)(values + (size_t)cap * (size_t)val_sz);
+    int32_t *count    = (int32_t *)(occupied + (size_t)cap);
+    const char *k = *(const char *const *)key_ptr;
+    for (int32_t i = 0; i < cap; i++) {
+        if (occupied[i] && keys[i] && k && strcmp(keys[i], k) == 0) {
+            occupied[i] = false;
+            (*count)--;
+            return true;
+        }
+    }
+    return false;
+}
+
+static inline bool pak_map_has_str_raw(void *map_ptr, int32_t cap,
+                                       const void *key_ptr,
+                                       int32_t key_sz, int32_t val_sz) {
+    return pak_map_get_str_raw(map_ptr, cap, key_ptr, key_sz, val_sz) != NULL;
+}
 
 /* ── Pool helpers ────────────────────────────────────────────────────────────
  *

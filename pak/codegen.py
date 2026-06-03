@@ -211,6 +211,8 @@ MODULE_API: dict = {
     ('backup', 'size'):            'backup_size',
 
     # n64.eeprom — Direct EEPROM access
+    ('eeprom', 'present'):         'eeprom_present',
+    ('eeprom', 'type_detect'):     'eeprom_type_detect',
     ('eeprom', 'init'):            'eeprom_init',
     ('eeprom', 'read'):            'eeprom_read',
     ('eeprom', 'write'):           'eeprom_write',
@@ -333,6 +335,24 @@ MODULE_API: dict = {
     ('math', 'lerp_f'):            lambda args: f'({args[0]} + ({args[1]} - {args[0]}) * {args[2]})',
     ('math', 'fix_to_f'):          lambda args: f'((float)({args[0]}) / 65536.0f)',
     ('math', 'f_to_fix'):          lambda args: f'((int32_t)(({args[0]}) * 65536.0f))',
+    # float scalar helpers
+    ('math', 'abs_f'):             lambda args: f'fabsf({args[0]})',
+    ('math', 'min_f'):             lambda args: f'fminf({args[0]}, {args[1]})',
+    ('math', 'max_f'):             lambda args: f'fmaxf({args[0]}, {args[1]})',
+    ('math', 'clamp_f'):           lambda args: f'fminf(fmaxf({args[0]}, {args[1]}), {args[2]})',
+    ('math', 'floor_f'):           lambda args: f'floorf({args[0]})',
+    ('math', 'ceil_f'):            lambda args: f'ceilf({args[0]})',
+    ('math', 'pow_f'):             lambda args: f'powf({args[0]}, {args[1]})',
+    ('math', 'tan_f'):             lambda args: f'tanf({args[0]})',
+    # fixed-point (fix16.16) trig / sqrt — routed through libm, fix<->float at the edges
+    ('math', 'fix_sin'):           lambda args: f'((int32_t)(sinf((float)({args[0]}) / 65536.0f) * 65536.0f))',
+    ('math', 'fix_cos'):           lambda args: f'((int32_t)(cosf((float)({args[0]}) / 65536.0f) * 65536.0f))',
+    ('math', 'fix_sqrt'):          lambda args: f'((int32_t)(sqrtf((float)({args[0]}) / 65536.0f) * 65536.0f))',
+    # deterministic PRNG (xorshift32, see runtime/pak_rand.h)
+    ('math', 'rand'):              lambda args: f'__pak_rand()',
+    ('math', 'rand_seed'):         lambda args: f'__pak_srand({args[0]})',
+    ('math', 'rand_range'):        lambda args: f'__pak_rand_range({args[0]}, {args[1]})',
+    ('math', 'rand_f'):            lambda args: f'__pak_rand_f()',
 
     # n64.rdpq — full RDP command queue API
     ('rdpq', 'triangle'):            'rdpq_triangle',
@@ -476,6 +496,8 @@ MODULE_API: dict = {
     ('flashram', 'write'):         'flashram_write',
     ('flashram', 'erase_sector'):  'flashram_erase_sector',
 
+    ('eeprom', 'present'):         'eeprom_present',
+    ('eeprom', 'type_detect'):     'eeprom_type_detect',
     ('eeprom', 'init'):            'eeprom_init',
     ('eeprom', 'read'):            'eeprom_read',
     ('eeprom', 'write'):           'eeprom_write',
@@ -598,7 +620,7 @@ USE_INCLUDES = {
     'n64.dma':          '#include <dma.h>',
     'n64.cache':        '#include <n64sys.h>',
     'n64.debug':        '#include <debug.h>',
-    'n64.math':         '#include <n64sys.h>\n#include <math.h>',
+    'n64.math':         '#include <n64sys.h>\n#include <math.h>\n#include "pak_rand.h"',
     'n64.mem':          '#include <malloc.h>',
     'n64.rsp':          '#include <rspq.h>',
 
@@ -666,6 +688,7 @@ class Codegen:
         self.includes: List[str] = []
         self.forward_decls: List[str] = []
         self.uses: List[str] = []
+        self.use_aliases: dict = {}  # alias → short module name
         self.assets: List[ast.AssetDecl] = []
         self.module_name: str = ''
         self.fn_names: List[str] = []
@@ -698,10 +721,19 @@ class Codegen:
         # Generic functions/structs registered for monomorphization
         self._generic_fns: dict = {}   # name → FnDecl
         self._generic_structs: dict = {}  # name → StructDecl
+        # Generic impl blocks: base type name → ImplBlock (with type_params)
+        self._generic_impls: dict = {}
+        # specialized struct name → (base_name, [type_arg nodes])
+        self._mono_struct_origin: dict = {}
         # Monomorphization cache: (fn_name, tuple(type_args)) → specialized C name
         self._mono_cache: dict = {}
         # Closure registry: list of (c_name, Closure) — emitted as static fns
         self._closures: List[tuple] = []
+        # Capturing closures hoisted as GCC nested functions inside the current
+        # statement's enclosing block: list of (c_name, Closure). Flushed (and
+        # emitted just before the using statement) by the gen_stmt wrapper.
+        self._pending_nested: List[tuple] = []
+        self._in_stmt: bool = False
         # Const values visible to all scopes (name → expr string)
         self.const_values: dict = {}
         # Trait declarations: name → TraitDecl
@@ -714,6 +746,11 @@ class Codegen:
         self._vec_typedef_names: set = set()
         self._vec_used: bool = False
         self._allocator_used: bool = False
+        # Function declarations registry: name → FnDecl (for default params + named args)
+        self.fn_decls: dict = {}
+        # Break-as-expression support: stack of result var names (None if loop not an expr)
+        self._loop_result_stack: list = []
+        self._loop_result_counter: int = 0
 
     # ── Scope helpers ─────────────────────────────────────────────────────────
 
@@ -775,6 +812,20 @@ class Codegen:
             if struct_name and struct_name in self.struct_fields:
                 return self.struct_fields[struct_name].get(e.field)
         return None
+
+    def _container_kind(self, t):
+        """Return the container kind name (Vec/FixedList/RingBuffer/FixedMap/Pool)
+        if t is one of the built-in generic containers, else None."""
+        if isinstance(t, ast.TypeGeneric) and t.name in (
+                'Vec', 'FixedList', 'RingBuffer', 'FixedMap', 'Pool'):
+            return t.name
+        return None
+
+    def _is_cstr_type(self, t) -> bool:
+        """True if t is a C-string type (*c_char / *mut c_char)."""
+        return (isinstance(t, ast.TypePointer)
+                and isinstance(t.inner, ast.TypeName)
+                and t.inner.name == 'c_char')
 
     def _match_type_name(self, expr) -> str:
         """Return the base type name of a match expression (for variant/enum detection)."""
@@ -970,7 +1021,7 @@ class Codegen:
                     f'    {k_type} keys[{cap}];',
                     f'    {v_type} values[{cap}];',
                     f'    bool occupied[{cap}];',
-                    f'    int32_t count;',
+                    f'    int32_t len;',
                     f'}} {tname};',
                 ]
             elif kind == 'RingBuffer':
@@ -978,7 +1029,7 @@ class Codegen:
                 lines += [
                     f'typedef struct {{',
                     f'    {elem_type} data[{cap}];',
-                    f'    int32_t head, tail, count;',
+                    f'    int32_t head, tail, len;',
                     f'}} {tname};',
                 ]
             else:  # FixedList / Pool
@@ -1031,7 +1082,8 @@ class Codegen:
                 if e.field in self.enum_variants:
                     return f'{obj_str}_{e.field}'
                 # Module namespace — not a variable, keep as-is (resolved in Call)
-                if (n, e.field) in MODULE_API:
+                resolved_n = self.use_aliases.get(n, n)
+                if (resolved_n, e.field) in MODULE_API:
                     return f'{obj_str}.{e.field}'  # placeholder; Call handles it
                 # Pointer variable: p.field → p->field
                 if self.is_pointer(n):
@@ -1043,6 +1095,9 @@ class Codegen:
             obj_type = self._expr_type(e.obj)
             idx_str = self.gen_expr(e.index)
             if isinstance(obj_type, ast.TypeSlice):
+                return f'({obj_str}).data[{idx_str}]'
+            # Container index: Vec/FixedList/Pool hold a `.data` array.
+            if self._container_kind(obj_type) in ('Vec', 'FixedList', 'Pool'):
                 return f'({obj_str}).data[{idx_str}]'
             return f'{obj_str}[{idx_str}]'
         if isinstance(e, ast.SliceExpr):
@@ -1078,7 +1133,10 @@ class Codegen:
                 return f'__alignof__({self.gen_type(op)})'
             return f'__alignof__({self.gen_expr(op)})'
         if isinstance(e, ast.Call):
-            args_strs = [self.gen_expr(a) for a in e.args]
+            # Default: generate args positionally (may be overridden at each dispatch
+            # point when we know the callee's param list for named-arg / default handling)
+            args_strs = [self.gen_expr(a) if not isinstance(a, ast.NamedArg)
+                         else self.gen_expr(a.value) for a in e.args]
             # comptime_assert(cond, msg) → _Static_assert(cond, msg)
             if isinstance(e.func, ast.Ident) and e.func.name == 'comptime_assert':
                 cond = args_strs[0] if args_strs else 'true'
@@ -1110,6 +1168,11 @@ class Codegen:
                     type_name = obj_type.name
                 elif isinstance(obj_type, ast.TypePointer) and isinstance(obj_type.inner, ast.TypeName):
                     type_name = obj_type.inner.name
+                # Instance of a monomorphized generic struct (Box_i32): specialize
+                # its impl methods on first use so they resolve like any other.
+                if type_name and type_name not in self.method_registry \
+                        and type_name in self._mono_struct_origin:
+                    self._monomorphize_impl_methods(type_name)
                 if type_name and type_name in self.method_registry:
                     if method_name in self.method_registry[type_name]:
                         fn_decl = self.method_registry[type_name][method_name]
@@ -1127,7 +1190,10 @@ class Codegen:
                                 self_arg = obj_name
                         else:
                             self_arg = f'&{obj_name}'
-                        all_args = [self_arg] + args_strs
+                        # Apply named-arg reordering / default fill for non-self params
+                        user_params = fn_decl.params[1:] if fn_decl.params else []
+                        user_args = self._apply_named_args_and_defaults(user_params, e.args)
+                        all_args = [self_arg] + user_args
                         return f'{c_fn}({", ".join(all_args)})'
             # Trait-object method dispatch: d.method(args) → d.vtable->method(d.self, args)
             if isinstance(e.func, ast.DotAccess) and isinstance(e.func.obj, ast.Ident):
@@ -1155,7 +1221,7 @@ class Codegen:
                     return result
             # Module API call: module.function(args) → C API
             if isinstance(e.func, ast.DotAccess) and isinstance(e.func.obj, ast.Ident):
-                mod = e.func.obj.name
+                mod = self.use_aliases.get(e.func.obj.name, e.func.obj.name)
                 fn = e.func.field
                 key = (mod, fn)
                 if key in MODULE_API:
@@ -1177,11 +1243,18 @@ class Codegen:
                         args = ', '.join(args_strs)
                         return f'{specialized}({args})'
             func = self.gen_expr(e.func)
+            # Apply named-arg reordering / default fill for known direct functions
+            if isinstance(e.func, ast.Ident) and e.func.name in self.fn_decls:
+                fn_decl = self.fn_decls[e.func.name]
+                if fn_decl.params and (any(isinstance(a, ast.NamedArg) for a in e.args)
+                                        or len(e.args) < len(fn_decl.params)):
+                    args_strs = self._apply_named_args_and_defaults(fn_decl.params, e.args)
             args = ', '.join(args_strs)
             return f'{func}({args})'
         if isinstance(e, ast.StructLit):
+            type_name = self._struct_lit_c_name(e)
             fields = ', '.join(f'.{name} = {self.gen_expr(val)}' for name, val in e.fields)
-            return f'({e.type_name}){{{fields}}}'
+            return f'({type_name}){{{fields}}}'
         if isinstance(e, ast.ArrayLit):
             if e.repeat is not None:
                 val_expr = e.elements[0] if e.elements else ast.IntLit(value=0)
@@ -1332,12 +1405,39 @@ class Codegen:
         return f'({typedef_name}){{{fields}}}'
 
     def _gen_closure(self, e: ast.Closure) -> str:
-        """Emit a non-capturing closure as a static function + function pointer.
-        The closure is registered and emitted as a top-level static fn.
+        """Emit a closure as a function pointer.
+
+        Inside a statement (function body), emit it as a GCC nested function in
+        the enclosing block: it lexically captures any outer locals it uses and
+        decays to a plain function pointer (trampoline), so no ABI change is
+        needed. At top level (global/static initializers, no enclosing frame),
+        fall back to a top-level static function (non-capturing).
         """
+        if self._in_stmt:
+            name = f'_pak_clo_{len(self._closures) + len(self._pending_nested)}'
+            self._pending_nested.append((name, e))
+            return name
         name = f'_pak_closure_{len(self._closures)}'
         self._closures.append((name, e))
         return name  # use function pointer directly (decays to fn ptr)
+
+    def _emit_nested_closure(self, name: str, e: ast.Closure, indent: int) -> List[str]:
+        """Emit a capturing closure as a GCC nested function at the given indent."""
+        pad = '    ' * indent
+        inner = '    ' * (indent + 1)
+        ret = self.gen_type(e.ret_type) if e.ret_type else 'void'
+        params = ', '.join(f'{self.gen_type(p.type)} {p.name}' for p in e.params)
+        lines = [f'{pad}{ret} {name}({params or "void"}) {{']
+        self.scope_push()
+        for p in e.params:
+            self.scope_set(p.name, p.type)
+        for stmt in e.body.stmts:
+            s = self.gen_stmt(stmt, indent + 1)
+            if s:
+                lines.append(s)
+        self.scope_pop()
+        lines.append(f'{pad}}}')
+        return lines
 
     def _emit_closures(self) -> List[str]:
         """Emit all registered closures as static functions."""
@@ -1447,8 +1547,8 @@ class Codegen:
         if type_name in ('Mat4Fp', 'T3DMat4FP'):
             if method == 'create':
                 return 'malloc_uncached(sizeof(T3DMat4FP))'
-        # FixedList / RingBuffer / FixedMap static init
-        if type_name in ('FixedList', 'RingBuffer', 'FixedMap', 'Pool'):
+        # FixedList / RingBuffer / FixedMap / Vec / Pool static init
+        if type_name in ('FixedList', 'RingBuffer', 'FixedMap', 'Pool', 'Vec'):
             if method == 'init':
                 return '{0}'
         return None
@@ -1504,6 +1604,47 @@ class Codegen:
     # Known Vec3 method names: if receiver type is unknown but method is a known
     # Vec3 method, still dispatch (handles chained calls like pos.add(v).normalize())
     _KNOWN_VEC3_METHODS = set(_VEC3_INSTANCE.keys())
+
+    def _apply_named_args_and_defaults(self, params, arg_nodes: list) -> List[str]:
+        """Resolve a call's argument list against a known function's param list.
+
+        Handles:
+        - Named args (NamedArg nodes) — placed by name, not position
+        - Default values — filled in for omitted trailing params
+
+        Returns an ordered list of generated C argument strings.
+        Falls back to simple positional generation if no NamedArg nodes are
+        present and no defaults are needed.
+        """
+        # Fast path: purely positional, all params covered, no defaults needed
+        has_named = any(isinstance(a, ast.NamedArg) for a in arg_nodes)
+        if not has_named and len(arg_nodes) >= len(params):
+            return [self.gen_expr(a) for a in arg_nodes]
+
+        # Slow path: build slot list indexed by param position
+        result: List[Optional[str]] = [None] * len(params)
+        positional_idx = 0
+
+        for arg_node in arg_nodes:
+            if isinstance(arg_node, ast.NamedArg):
+                for pi, p in enumerate(params):
+                    if p.name == arg_node.name:
+                        result[pi] = self.gen_expr(arg_node.value)
+                        break
+            else:
+                # Advance past already-filled named slots
+                while positional_idx < len(result) and result[positional_idx] is not None:
+                    positional_idx += 1
+                if positional_idx < len(result):
+                    result[positional_idx] = self.gen_expr(arg_node)
+                    positional_idx += 1
+
+        # Fill in defaults for any remaining None slots
+        for i, p in enumerate(params):
+            if result[i] is None and p.default_value is not None:
+                result[i] = self.gen_expr(p.default_value)
+
+        return [r for r in result if r is not None]
 
     def _gen_builtin_method(self, obj: str, c_type: str, method: str,
                              args: List[str], obj_type) -> Optional[str]:
@@ -1602,8 +1743,11 @@ class Codegen:
                 return f'({td}){{.data = ({obj}).data, .len = ({obj}).len}}'
             if method == 'len' and not a:
                 return f'({obj}).len'
-            if method in ('acquire',):    # Pool-specific
-                return f'pak_pool_acquire(&({obj}))'
+            if method == 'is_empty' and not a:
+                return f'(({obj}).len == 0)'
+            if method in ('acquire',):    # Pool-specific — cast to elem type pointer
+                elem_t = self.gen_type(obj_type.args[0]) if obj_type.args else 'void'
+                return f'(({elem_t} *)pak_pool_acquire(&({obj})))'
             if method in ('release',) and a:
                 return f'pak_pool_release(&({obj}), {a[0]})'
 
@@ -1615,25 +1759,36 @@ class Codegen:
             if method == 'push' and a:
                 return (f'({{ ({obj}).data[({obj}).tail] = ({a[0]}); '
                         f'({obj}).tail = (({obj}).tail + 1) % {cap}; '
-                        f'if (({obj}).count < {cap}) ({obj}).count++; }})')
+                        f'if (({obj}).len < {cap}) ({obj}).len++; }})')
             if method == 'peek_back' and a:
                 return (f'({obj}).data[(({obj}).tail - ({a[0]}) - 1 + {cap}) % {cap}]')
             if method == 'pop':
                 return (f'({{ __auto_type _v = ({obj}).data[({obj}).head]; '
                         f'({obj}).head = (({obj}).head + 1) % {cap}; '
-                        f'if (({obj}).count > 0) ({obj}).count--; _v; }})')
-            if method == 'len' and not a:
-                return f'({obj}).count'
+                        f'if (({obj}).len > 0) ({obj}).len--; _v; }})')
+            if method == 'is_empty' and not a:
+                return f'(({obj}).len == 0)'
 
         # ── FixedMap instance methods ─────────────────────────────────────────
         if isinstance(obj_type, ast.TypeGeneric) and obj_type.name == 'FixedMap':
             cap = obj_type.args[2].value if len(obj_type.args) > 2 else 0
+            # String keys (*c_char) compare by content (strcmp); others memcmp.
+            ksuf = '_str' if (len(obj_type.args) > 0 and self._is_cstr_type(obj_type.args[0])) else ''
+            v_type = self.gen_type(obj_type.args[1]) if len(obj_type.args) > 1 else 'int32_t'
             if method == 'init':
                 return f'memset(&({obj}), 0, sizeof({obj}))'
             if method == 'set' and len(a) == 2:
-                return (f'pak_map_set(&({obj}), {cap}, {a[0]}, {a[1]})')
+                return (f'pak_map_set{ksuf}(&({obj}), {cap}, {a[0]}, {a[1]})')
             if method == 'get' and a:
-                return f'pak_map_get(&({obj}), {cap}, {a[0]})'
+                return f'(({v_type} *)pak_map_get{ksuf}(&({obj}), {cap}, {a[0]}))'
+            if method in ('has', 'contains') and a:
+                return f'pak_map_has{ksuf}(&({obj}), {cap}, {a[0]})'
+            if method == 'remove' and a:
+                return f'pak_map_remove{ksuf}(&({obj}), {cap}, {a[0]})'
+            if method in ('len', 'count') and not a:
+                return f'({obj}).len'
+            if method == 'is_empty' and not a:
+                return f'(({obj}).len == 0)'
 
         # ── Vec(T) dynamic vector methods ─────────────────────────────────────
         if isinstance(obj_type, ast.TypeGeneric) and obj_type.name == 'Vec':
@@ -1753,12 +1908,15 @@ class Codegen:
         for decl in program.decls:
             if isinstance(decl, ast.UseDecl):
                 self.uses.append(decl.path)
+                if decl.alias:
+                    self.use_aliases[decl.alias] = decl.path.split('.')[-1]
             elif isinstance(decl, ast.AssetDecl):
                 self.assets.append(decl)
             elif isinstance(decl, ast.ModuleDecl):
                 self.module_name = decl.path
             elif isinstance(decl, ast.FnDecl):
                 self.fn_names.append(decl.name)
+                self.fn_decls[decl.name] = decl
                 if decl.type_params:
                     self._generic_fns[decl.name] = decl
                 if decl.is_method and decl.self_type:
@@ -1779,10 +1937,15 @@ class Codegen:
                     self.enum_variants[c.name] = decl.name
             elif isinstance(decl, ast.ImplBlock):
                 tname = decl.type_name
-                if tname not in self.method_registry:
-                    self.method_registry[tname] = {}
-                for m in decl.methods:
-                    self.method_registry[tname][m.name] = m
+                if decl.type_params:
+                    # Generic impl (impl Box<T> { ... }): keep it whole so its
+                    # methods can be monomorphized per instantiation on demand.
+                    self._generic_impls[tname] = decl
+                else:
+                    if tname not in self.method_registry:
+                        self.method_registry[tname] = {}
+                    for m in decl.methods:
+                        self.method_registry[tname][m.name] = m
             elif isinstance(decl, ast.TraitDecl):
                 self.trait_decls[decl.name] = decl
             elif isinstance(decl, ast.ImplTraitBlock):
@@ -1952,24 +2115,38 @@ class Codegen:
             out_lines.append('/* -- Closures -- */')
             out_lines.extend(closure_lines)
 
-        out_lines.extend(body_lines)
-
-        # Emit any monomorphized generic specializations generated during body codegen
+        # Emit monomorphized generic specializations discovered during body
+        # codegen. These must precede body_lines so that specialized struct
+        # typedefs and function definitions are visible where main/other code
+        # uses them. The index-based loop also picks up specializations that
+        # are themselves triggered while emitting an earlier one.
         if hasattr(self, '_pending_mono') and self._pending_mono:
             out_lines.append('')
             out_lines.append('/* -- Generic specializations -- */')
-            for decl in self._pending_mono:
-                if isinstance(decl, ast.FnDecl):
-                    out_lines.append(self.gen_fn(decl))
-                elif isinstance(decl, ast.StructDecl):
+            i = 0
+            while i < len(self._pending_mono):
+                decl = self._pending_mono[i]
+                if isinstance(decl, ast.StructDecl):
                     out_lines.append(self.gen_struct(decl))
+                elif isinstance(decl, ast.FnDecl):
+                    out_lines.append(self.gen_fn(decl))
+                elif isinstance(decl, tuple) and decl[0] == 'impl_method':
+                    _, spec_struct, spec_m = decl
+                    out_lines.append(self.gen_fn(spec_m, prefix=spec_struct))
                 out_lines.append('')
+                i += 1
             self._pending_mono.clear()
+
+        out_lines.extend(body_lines)
 
         return '\n'.join(out_lines)
 
     def gen_decl(self, decl) -> str:
         if isinstance(decl, ast.StructDecl):
+            # Skip generic struct templates — emitted only when specialized
+            # (the unsubstituted `T` field would not be valid C).
+            if decl.type_params:
+                return None
             return self.gen_struct(decl)
         if isinstance(decl, ast.EnumDecl):
             return self.gen_enum(decl)
@@ -2023,6 +2200,10 @@ class Codegen:
         return f'/* unhandled decl: {type(decl).__name__} */'
 
     def gen_impl(self, impl: ast.ImplBlock) -> str:
+        # Generic impls are emitted lazily, specialized per instantiation
+        # (see _monomorphize_impl_methods). Emit nothing eagerly here.
+        if impl.type_params:
+            return ''
         parts = []
         for method in impl.methods:
             parts.append(self.gen_fn(method, prefix=impl.type_name))
@@ -2056,18 +2237,50 @@ class Codegen:
 
         return '\n'.join(lines)
 
+    def _trait_default_method(self, tm: ast.FnDecl, type_name: str) -> ast.FnDecl:
+        """Specialize a trait default method for a concrete impl type: copy the
+        FnDecl and retype its `self` parameter to *type_name so the body's
+        self.field / self.other() resolve against the implementing type."""
+        import copy as _copy
+        new_params = []
+        for p in tm.params:
+            if p.name == 'self':
+                p = ast.Param(name='self',
+                              type=ast.TypePointer(inner=ast.TypeName(name=type_name),
+                                                   nullable=False, mutable=True),
+                              mutable=getattr(p, 'mutable', False))
+            new_params.append(p)
+        return ast.FnDecl(name=tm.name, params=new_params, ret_type=tm.ret_type,
+                          body=_copy.deepcopy(tm.body), type_params=[], annotations=[],
+                          is_method=True, self_type=type_name)
+
     def gen_impl_trait(self, impl: ast.ImplTraitBlock) -> str:
-        """Emit thunk wrappers, vtable instance, and constructor for an impl."""
+        """Emit the real method bodies, thunk wrappers, vtable instance, and
+        constructor for an `impl Type for Trait` block. Trait methods the impl
+        omits but the trait provides a default body for are synthesized here."""
         lines = [f'/* impl {impl.type_name} for {impl.trait_name} */']
         trait = self.trait_decls.get(impl.trait_name)
 
-        # Register impl methods so obj.method() dispatch works
+        # Full method set = impl methods + non-overridden trait defaults.
+        impl_names = {m.name for m in impl.methods}
+        methods = list(impl.methods)
+        if trait:
+            for tm in trait.methods:
+                if tm.name not in impl_names and tm.body is not None:
+                    methods.append(self._trait_default_method(tm, impl.type_name))
+
+        # Register methods so obj.method() direct dispatch works
         if impl.type_name not in self.method_registry:
             self.method_registry[impl.type_name] = {}
-        for m in impl.methods:
+        for m in methods:
             self.method_registry[impl.type_name][m.name] = m
 
-        for m in impl.methods:
+        # Emit the concrete method bodies: TypeName_method(...)
+        for m in methods:
+            lines.append(self.gen_fn(m, prefix=impl.type_name))
+            lines.append('')
+
+        for m in methods:
             ret = self.gen_type(m.ret_type)
             thunk = f'_pak_{impl.trait_name}_{m.name}_{impl.type_name}'
             # Thunk params: void *_self, then other params
@@ -2092,7 +2305,7 @@ class Codegen:
         # Vtable instance
         vtable_var = f'_pak_{impl.trait_name}_vtable_{impl.type_name}'
         lines.append(f'static const {impl.trait_name}_vtable {vtable_var} = {{')
-        for m in impl.methods:
+        for m in methods:
             thunk = f'_pak_{impl.trait_name}_{m.name}_{impl.type_name}'
             lines.append(f'    .{m.name} = {thunk},')
         lines.append('};')
@@ -2223,7 +2436,53 @@ class Codegen:
         if not hasattr(self, '_pending_mono'):
             self._pending_mono = []
         self._pending_mono.append(spec_decl)
+        # Record field types and the (base, type_args) origin so method calls
+        # on instances of this specialization can lazily monomorphize the impl.
+        self.struct_fields[specialized_name] = {f.name: f.type for f in spec_decl.fields}
+        self._mono_struct_origin[specialized_name] = (struct_name, list(type_args))
         return specialized_name
+
+    def _struct_lit_c_name(self, e: ast.StructLit) -> str:
+        """Resolve the C type name for a struct literal, monomorphizing the
+        struct when explicit type args are present (Box<i32> { ... } -> Box_i32)."""
+        if getattr(e, 'type_args', None) and e.type_name in self._generic_structs:
+            return self._monomorphize_struct(e.type_name, list(e.type_args))
+        return e.type_name
+
+    def _monomorphize_impl_methods(self, spec_struct: str) -> None:
+        """Lazily specialize the methods of a generic impl for an instantiated
+        struct (e.g. Box_i32). Emits Box_i32_method functions and registers them
+        in method_registry[spec_struct] so ordinary method-call lowering works."""
+        import copy
+        if spec_struct in self.method_registry:
+            return  # already done
+        origin = self._mono_struct_origin.get(spec_struct)
+        if origin is None:
+            return
+        base, type_args = origin
+        impl = self._generic_impls.get(base)
+        if impl is None:
+            return
+        subst = {}
+        for i, tp in enumerate(impl.type_params):
+            if i < len(type_args):
+                subst[tp] = type_args[i]
+        self.method_registry[spec_struct] = {}
+        if not hasattr(self, '_pending_mono'):
+            self._pending_mono = []
+        for m in impl.methods:
+            spec_m = copy.deepcopy(m)
+            spec_m.type_params = []
+            spec_m.self_type = spec_struct
+            _subst_types_in_fn(spec_m, subst)
+            # Retype the self parameter's pointer target to the specialized struct
+            if spec_m.params:
+                sp = spec_m.params[0]
+                if sp.name == 'self' and isinstance(sp.type, ast.TypePointer):
+                    sp.type = ast.TypePointer(inner=ast.TypeName(name=spec_struct))
+            # Mark so gen_fn emits it with the spec_struct prefix.
+            self.method_registry[spec_struct][spec_m.name] = spec_m
+            self._pending_mono.append(('impl_method', spec_struct, spec_m))
 
     def gen_struct(self, s: ast.StructDecl) -> str:
         attrs = []
@@ -2447,6 +2706,23 @@ class Codegen:
         return f'{decl};'
 
     def gen_stmt(self, stmt, indent: int = 0) -> str:
+        # Wrapper: emit any capturing closures used by this statement as GCC
+        # nested-function definitions in the enclosing block, just before the
+        # statement that references them (so lexical capture is in scope).
+        saved_pending, saved_in = self._pending_nested, self._in_stmt
+        self._pending_nested, self._in_stmt = [], True
+        body = self._gen_stmt_body(stmt, indent)
+        hoisted = self._pending_nested
+        self._pending_nested, self._in_stmt = saved_pending, saved_in
+        if hoisted:
+            pad = '    ' * indent
+            defs = []
+            for name, e in hoisted:
+                defs.extend(self._emit_nested_closure(name, e, indent))
+            return '\n'.join(defs) + '\n' + (body if body else f'{pad};')
+        return body
+
+    def _gen_stmt_body(self, stmt, indent: int = 0) -> str:
         pad = '    ' * indent
 
         if isinstance(stmt, ast.LetDecl):
@@ -2460,6 +2736,10 @@ class Codegen:
             lines = defers + [f'{pad}return{val};']
             return '\n'.join(lines)
         if isinstance(stmt, ast.Break):
+            if stmt.value is not None and self._loop_result_stack and self._loop_result_stack[-1]:
+                rv = self._loop_result_stack[-1]
+                val = self.gen_expr(stmt.value)
+                return f'{pad}{rv} = {val};\n{pad}break;'
             return f'{pad}break;'
         if isinstance(stmt, ast.Continue):
             return f'{pad}continue;'
@@ -2566,11 +2846,20 @@ class Codegen:
             # Infer pointer type from value if possible
             if isinstance(s.value, ast.AddrOf):
                 self.scope_set(s.name, ast.TypePointer(inner=ast.TypeName(name='auto')))
+            # Record the concrete struct type for a struct-literal binding so
+            # that later method calls (obj.method()) resolve. For generic
+            # literals this is the monomorphized name (Box<i32> -> Box_i32).
+            elif isinstance(s.value, ast.StructLit):
+                self.scope_set(s.name, ast.TypeName(name=self._struct_lit_c_name(s.value)))
 
         if s.value is not None and not isinstance(s.value, ast.UndefinedLit):
             # CatchExpr: multi-statement emit
             if isinstance(s.value, ast.CatchExpr):
                 return self._gen_catch_let(s, s.value, pad, prefix, decl)
+            # Loop / while used as expression via `break value`
+            # e.g. `let x: i32 = loop { ...; break result }`
+            if isinstance(s.value, (ast.LoopStmt, ast.WhileStmt)):
+                return self._gen_loop_expr_let(s, pad, prefix, decl)
             # ArrayLit repeat with large/dynamic N: declare then loop fill
             if isinstance(s.value, ast.ArrayLit) and s.value.repeat is not None:
                 val_expr = s.value.elements[0] if s.value.elements else ast.IntLit(value=0)
@@ -2760,6 +3049,27 @@ class Codegen:
             lines.append(f'{pad}}}')
         return '\n'.join(l for l in lines if l is not None)
 
+    def _gen_loop_expr_let(self, s: ast.LetDecl, pad: str, prefix: str, decl: str) -> str:
+        """Emit `let x: T = loop { ...; break val }` as a C block with result var.
+
+        Generates:
+            T _loop_res_N = 0;
+            while (true) { ...; _loop_res_N = val; break; }
+            T x = _loop_res_N;
+        """
+        self._loop_result_counter += 1
+        rv = f'_loop_res_{self._loop_result_counter}'
+        c_type = self.gen_type(s.type) if s.type else 'int32_t'
+        self._loop_result_stack.append(rv)
+        if isinstance(s.value, ast.LoopStmt):
+            loop_str = self.gen_loop(s.value, pad, 1)
+        else:
+            loop_str = self.gen_while(s.value, pad, 1)
+        self._loop_result_stack.pop()
+        lines = [f'{pad}{c_type} {rv} = ({c_type})0;', loop_str,
+                 f'{pad}{prefix}{decl} = {rv};']
+        return '\n'.join(lines)
+
     def gen_loop(self, s: ast.LoopStmt, pad: str, indent: int) -> str:
         lines = [f'{pad}while (true) {{']
         self.scope_push()
@@ -2802,8 +3112,9 @@ class Codegen:
             coll_type = self._expr_type(iterable)
             self.scope_set(s.binding, ast.TypeName(name='auto'))
 
-            if isinstance(coll_type, ast.TypeSlice):
-                # Fat slice: iterate via .data and .len
+            if isinstance(coll_type, ast.TypeSlice) or \
+                    self._container_kind(coll_type) in ('Vec', 'FixedList', 'Pool'):
+                # Fat slice or .data/.len container: iterate via .data up to .len
                 idx = s.index if s.index else f'_i_{s.binding}'
                 lines.append(f'{pad}for (int {idx} = 0; {idx} < ({coll}).len; {idx}++) {{')
                 lines.append(f'{inner_pad}__typeof__(({coll}).data[0]) {s.binding} = ({coll}).data[{idx}];')
@@ -2823,7 +3134,103 @@ class Codegen:
         lines.append(f'{pad}}}')
         return '\n'.join(l for l in lines if l is not None)
 
+    def _pattern_cond(self, pat, expr_var: str, is_variant: bool, match_type: str) -> str:
+        """C condition string: does expr_var match this pattern?"""
+        if isinstance(pat, ast.Ident) and pat.name == '_':
+            return '1'
+        if isinstance(pat, ast.Call) and isinstance(pat.func, ast.EnumVariantAccess):
+            # .case(bindings) — check tag only
+            type_name = self.enum_variants.get(pat.func.name, '')
+            if type_name in self.variant_types:
+                return f'{expr_var}.tag == {type_name}_tag_{pat.func.name}'
+            elif type_name:
+                return f'{expr_var} == {type_name}_{pat.func.name}'
+            return f'{expr_var} == {pat.func.name}'
+        if isinstance(pat, ast.EnumVariantAccess):
+            type_name = self.enum_variants.get(pat.name, '')
+            if type_name in self.variant_types:
+                return f'{expr_var}.tag == {type_name}_tag_{pat.name}'
+            elif type_name:
+                return f'{expr_var} == {type_name}_{pat.name}'
+            return f'{expr_var} == {pat.name}'
+        if isinstance(pat, ast.DotAccess):
+            obj_name = self.gen_expr(pat.obj)
+            if obj_name in self.variant_types:
+                return f'{expr_var}.tag == {obj_name}_tag_{pat.field}'
+            return f'{expr_var} == {obj_name}_{pat.field}'
+        if isinstance(pat, ast.IntLit):
+            return f'{expr_var} == {pat.value}'
+        if isinstance(pat, ast.BoolLit):
+            return f'{expr_var} == {"1" if pat.value else "0"}'
+        return '1'
+
+    def _pattern_bindings(self, pat, expr_var: str) -> list:
+        """Return [(c_name, field_access)] pairs for binding variables in a pattern."""
+        import re as _re
+        if isinstance(pat, ast.Call) and isinstance(pat.func, ast.EnumVariantAccess):
+            case = pat.func.name
+            return [(arg.name, f'{expr_var}.data.{case}.field{i}')
+                    for i, arg in enumerate(pat.args)
+                    if isinstance(arg, ast.Ident) and arg.name != '_']
+        if isinstance(pat, ast.DotAccess) and pat.binding:
+            obj_name = self.gen_expr(pat.obj)
+            if obj_name in self.variant_types:
+                return [(pat.binding, f'{expr_var}.data.{pat.field.lower()}')]
+        return []
+
+    def _subst_guard(self, guard_c: str, bindings: list) -> str:
+        """Replace binding variable names with their field-access expressions."""
+        import re as _re
+        for var_name, field_access in bindings:
+            guard_c = _re.sub(r'\b' + _re.escape(var_name) + r'\b', field_access, guard_c)
+        return guard_c
+
+    def gen_match_guarded(self, s: ast.MatchStmt, pad: str, indent: int) -> str:
+        """Emit match with guard conditions as if/else-if chains."""
+        self._tmp_counter = getattr(self, '_tmp_counter', 0) + 1
+        expr_var = f'_pak_match_{self._tmp_counter}'
+        inner_pad = '    ' * (indent + 1)
+        inner2_pad = '    ' * (indent + 2)
+        match_type = self._match_type_name(s.expr)
+        is_variant = match_type in self.variant_types
+        lines = [f'{pad}{{']
+        lines.append(f'{inner_pad}__auto_type {expr_var} = {self.gen_expr(s.expr)};')
+        first = True
+        for arm in s.arms:
+            pat = arm.pattern
+            is_wildcard = isinstance(pat, ast.Ident) and pat.name == '_'
+            cond = self._pattern_cond(pat, expr_var, is_variant, match_type)
+            bindings = self._pattern_bindings(pat, expr_var)
+            if arm.guard:
+                guard_c = self._subst_guard(self.gen_expr(arm.guard), bindings)
+                guard_str = f' && ({guard_c})'
+            else:
+                guard_str = ''
+            if is_wildcard and arm.guard is None:
+                lines.append(f'{inner_pad}else {{')
+            else:
+                kw = 'if' if first else 'else if'
+                lines.append(f'{inner_pad}{kw} ({cond}{guard_str}) {{')
+            self.scope_push()
+            for var_name, field_access in bindings:
+                lines.append(f'{inner2_pad}__auto_type {var_name} = {field_access};')
+                self.scope_set(var_name, ast.TypeName(name='auto'))
+            if isinstance(arm.body, ast.Block):
+                for stmt in arm.body.stmts:
+                    lines.append(self.gen_stmt(stmt, indent + 2))
+            else:
+                lines.append(f'{inner2_pad}{self.gen_expr(arm.body)};')
+            for d_line in self._emit_defers_for_scope(-1, inner2_pad, indent + 2):
+                lines.append(d_line)
+            self.scope_pop()
+            lines.append(f'{inner_pad}}}')
+            first = False
+        lines.append(f'{pad}}}')
+        return '\n'.join(l for l in lines if l is not None)
+
     def gen_match(self, s: ast.MatchStmt, pad: str, indent: int) -> str:
+        if any(arm.guard is not None for arm in s.arms):
+            return self.gen_match_guarded(s, pad, indent)
         expr = self.gen_expr(s.expr)
         inner_pad = '    ' * (indent + 1)
         inner2_pad = '    ' * (indent + 2)

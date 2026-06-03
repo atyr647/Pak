@@ -7,17 +7,17 @@ Follow these instructions when working in this repository.
 
 ## Automatic Validation (read this first)
 
-**Every `.pak` file you write or edit is automatically validated by the Pak
+**Every `.pk64` file you write or edit is automatically validated by the Pak
 compiler via a PostToolUse hook.** You do not need to run it manually.
 
 When a file fails validation, you will see output like:
 
 ```
 ============================================================
-PAK VALIDATION FAILED: path/to/file.pak
+PAK VALIDATION FAILED: path/to/file.pk64
 ============================================================
 error[E002]: 1:4: Expected identifier (got FN 'fn')
-  --> path/to/file.pak
+  --> path/to/file.pk64
   help: ...
 
 Fix the errors above before proceeding.
@@ -32,19 +32,19 @@ Reference LANGUAGE.md and NOT_SUPPORTED.md.
 4. Fix the file. The hook will re-run automatically on the next write.
 5. Repeat until the hook exits cleanly (no output).
 
-**Do not move on until the file passes.** A `.pak` file that does not pass
+**Do not move on until the file passes.** A `.pk64` file that does not pass
 `pak check` is incorrect Pak code, regardless of how plausible it looks.
 
 You can also run the validator manually at any time:
 ```
-tools/validate_pak.sh file.pak
-pak check file.pak
+tools/validate_pak.sh file.pk64
+pak check file.pk64
 ```
 
 For deeper verification — especially when the logic seems right but something
 feels off — use `pak explain` to see the generated C output:
 ```
-pak explain file.pak
+pak explain file.pk64
 ```
 If the C looks wrong (wrong struct layout, missing operations, bad control flow),
 the Pak code has a semantic issue even if it passes `pak check`. Fix the Pak and
@@ -54,7 +54,7 @@ re-explain until the C matches your intent.
 
 ## Before Generating Any Pak Code
 
-Read these files **in order** before writing or modifying `.pak` files:
+Read these files **in order** before writing or modifying `.pk64` files:
 
 1. **`LANGUAGE.md`** — the canonical syntax reference. Every construct you write must appear here.
 2. **`NOT_SUPPORTED.md`** — hard list of things Pak does not have. If something is on this list, do not use it.
@@ -111,11 +111,14 @@ When the compiler reports an error, use this table to understand it:
 | E002 | Parse error — syntax is wrong |
 | E010 | Undefined variable or function |
 | E102 | Wrong number of arguments |
-| E103 | No `entry` block found |
+| E103 | No `entry` block found (or more than one across the project) |
+| E105 | `use path` has no matching `module path` declaration in the project |
 | E201 | DMA used without `cache.writeback` first |
 | E202 | DMA buffer not `@aligned(16)` |
 | E301 | Non-exhaustive match — missing cases |
 | E401 | Use-after-move |
+| E601 | Method in `impl ... for Trait` is not declared in the trait |
+| E602 | `impl ... for Trait` omits a required trait method (no default body) |
 | W001–W003 | Style warnings (naming conventions) |
 
 ---

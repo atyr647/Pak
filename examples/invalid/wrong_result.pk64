@@ -1,0 +1,39 @@
+-- INVALID: wrong_result.pk64
+-- NOTE: This file is DOCUMENTATION ONLY. The bad code is commented out.
+-- For actual failing test cases, see tests/invalid/ (verified by pak check).
+-- Error: Wrong syntax for Result and Option types.
+
+-- WRONG: Rust/generic angle-bracket syntax
+-- fn foo() -> Result<i32, MyError> { }
+-- fn bar() -> Option<i32> { }
+
+-- WRONG: Trying to use ? operator for propagation
+-- fn risky() -> Result(i32, MyError) {
+--     let v = might_fail()?    -- ? does not exist in Pak
+-- }
+
+-- CORRECT: Result uses parentheses
+enum MyError: u8 { bad_input, overflow }
+
+fn divide(a: i32, b: i32) -> Result(i32, MyError) {
+    if b == 0 {
+        return err(MyError.bad_input)
+    }
+    return ok(a / b)
+}
+
+-- CORRECT: Option uses parentheses
+fn find(arr: *i32, len: i32, val: i32) -> Option(i32) {
+    for i in 0..len {
+        if arr[i] == val { return ok(i) }   -- Option uses ok/none
+    }
+    return none
+}
+
+entry {
+    let r = divide(10, 2)
+    match r {
+        .ok(v)  => { let _ = v }
+        .err(e) => { let _ = e }
+    }
+}

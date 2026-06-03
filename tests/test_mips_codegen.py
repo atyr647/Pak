@@ -2219,3 +2219,53 @@ class TestPhase7RegAlloc:
         assert 'pressure:' in asm
         # Should contain a return
         assert 'jr $ra' in asm
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Typed pointer deref — width- and volatile-aware load/store
+# ══════════════════════════════════════════════════════════════════════════════
+class TestTypedPointerDeref:
+    """A `*u16` store must lower to `sh`, not `sw`: a word store to a 2-byte
+    aligned address raises an unaligned-store address-error on the VR4300.
+    Volatile pointer accesses must be fenced with `sync`."""
+
+    def test_volatile_u16_store_uses_sh_not_sw(self):
+        src = """
+        fn fb() {
+            let px: *volatile u16 = (0xA0100000) as *volatile u16
+            *px = 0xF81F as u16
+        }
+        """
+        asm = compile_mips(src)
+        # The framebuffer store must be a halfword store, not a word store.
+        assert any(l.strip().startswith('sh ') for l in asm.splitlines()), asm
+        assert 'sync' in asm  # volatile fence
+
+    def test_volatile_u16_via_cast_target_uses_sh(self):
+        src = """
+        fn fb() {
+            *((0xA0100000) as *volatile u16) = 0xF81F as u16
+        }
+        """
+        asm = compile_mips(src)
+        assert any(l.strip().startswith('sh ') for l in asm.splitlines()), asm
+
+    def test_volatile_u32_store_uses_sw_with_sync(self):
+        src = """
+        fn vi() {
+            *((0xA4400004) as *volatile u32) = 0x00100000
+        }
+        """
+        asm = compile_mips(src)
+        assert 'sync' in asm
+        assert any(l.strip().startswith('sw ') for l in asm.splitlines()), asm
+
+    def test_volatile_u16_load_uses_lhu(self):
+        src = """
+        fn rd() -> u16 {
+            let px: *volatile u16 = (0xA0100000) as *volatile u16
+            return *px
+        }
+        """
+        asm = compile_mips(src)
+        assert any(l.strip().startswith('lhu ') for l in asm.splitlines()), asm

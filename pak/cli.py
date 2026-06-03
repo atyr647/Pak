@@ -13,7 +13,7 @@ from .lexer import Lexer, LexError
 from .parser import Parser, ParseError, parse
 from .codegen import generate
 from .typechecker import typecheck_multi, TypeEnv, PakError
-from .checker import semantic_check, check_entry_blocks, CheckDiag
+from .checker import semantic_check, check_entry_blocks, check_module_imports, CheckDiag
 from .headergen import generate_header, module_to_filename, collect_module_includes
 from . import ast as pak_ast
 from .mips import MipsCodegen, CodegenError
@@ -35,7 +35,7 @@ def runtime_dir() -> Path:
 
 
 def parse_file(pak_file: Path, verbose: bool = False) -> Optional[pak_ast.Program]:
-    """Parse a .pak file and return the AST, or None on error."""
+    """Parse a .pk64 file and return the AST, or None on error."""
     source = pak_file.read_text(encoding='utf-8')
     if verbose:
         print(f'  Parsing {pak_file.name}...')
@@ -53,7 +53,7 @@ def parse_file(pak_file: Path, verbose: bool = False) -> Optional[pak_ast.Progra
 
 def compile_file(pak_file: Path, verbose: bool = False,
                  module_headers: dict = None) -> tuple:
-    """Parse and generate C for a .pak file. Returns (c_source, program) or exits."""
+    """Parse and generate C for a .pk64 file. Returns (c_source, program) or exits."""
     program = parse_file(pak_file, verbose)
     if program is None:
         sys.exit(1)
@@ -86,7 +86,7 @@ def _get_module_path(program: pak_ast.Program) -> Optional[str]:
 
 
 def cmd_build(args):
-    """Compile .pak → C, pack assets, and generate Makefile."""
+    """Compile .pk64 → C, pack assets, and generate Makefile."""
     root = find_project_root()
     if root is None:
         print('error: no pak.toml found. Run `pak init <name>` to create a project.', file=sys.stderr)
@@ -118,10 +118,10 @@ def cmd_build(args):
     build_dir = root / 'build'
     build_dir.mkdir(exist_ok=True)
 
-    # ── 1. Parse all .pak files ───────────────────────────────────────────────
-    src_files = sorted(f for f in root.glob('**/*.pak') if 'build' not in f.parts)
+    # ── 1. Parse all .pk64 files ───────────────────────────────────────────────
+    src_files = sorted(f for f in root.glob('**/*.pk64') if 'build' not in f.parts)
     if not src_files:
-        print('error: no .pak source files found', file=sys.stderr)
+        print('error: no .pk64 source files found', file=sys.stderr)
         sys.exit(1)
 
     parsed: list = []  # [(pak_file, program)]
@@ -186,7 +186,7 @@ def cmd_build(args):
                         packable.append((arch_name, converted.read_bytes()))
                     # else: skip — make has not converted yet
                 else:
-                    # Non-convertible asset (e.g. .pak data files): pack as-is
+                    # Non-convertible asset (e.g. .pk64 data files): pack as-is
                     name = str(f.relative_to(root)).replace(os.sep, '/')
                     packable.append((name, f.read_bytes()))
 
@@ -247,7 +247,7 @@ def _build_c(parsed, root, build_dir, verbose):
                 rel = pak_file.relative_to(root)
                 print(f'  Header  {rel} -> {h_file.relative_to(root)}')
 
-    # Compile .pak → .c
+    # Compile .pk64 → .c
     c_rel_paths = []
     for pak_file, program in parsed:
         rel = pak_file.relative_to(root)
@@ -335,6 +335,12 @@ def _run_full_check(
         hard_errors += 1
         print(str(d), file=sys.stderr)
 
+    # ── 3b. Cross-file module-import resolution ───────────────────────────────
+    import_diags = check_module_imports(parsed)
+    for d in import_diags:
+        hard_errors += 1
+        print(str(d), file=sys.stderr)
+
     # ── 4. Per-file output ────────────────────────────────────────────────────
     for filename, program in parsed:
         rel = Path(filename).relative_to(root) if root else Path(filename)
@@ -371,14 +377,14 @@ def cmd_check(args):
         files_arg = getattr(args, 'files', None) or []
         if not files_arg:
             print('error: no pak.toml found and no files specified', file=sys.stderr)
-            print('  hint: run `pak check file.pak` or `cd` to a project directory',
+            print('  hint: run `pak check file.pk64` or `cd` to a project directory',
                   file=sys.stderr)
             sys.exit(1)
         src_files = [Path(f) for f in files_arg]
     else:
-        src_files = sorted(f for f in root.glob('**/*.pak') if 'build' not in f.parts)
+        src_files = sorted(f for f in root.glob('**/*.pk64') if 'build' not in f.parts)
         if not src_files:
-            print('error: no .pak source files found', file=sys.stderr)
+            print('error: no .pk64 source files found', file=sys.stderr)
             sys.exit(1)
 
     # ── Parse ─────────────────────────────────────────────────────────────────
@@ -414,7 +420,7 @@ def cmd_check(args):
 
 
 def cmd_explain(args):
-    """Show generated code for a .pak file."""
+    """Show generated code for a .pk64 file."""
     pak_file = Path(args.file)
     if not pak_file.exists():
         print(f'error: file not found: {pak_file}', file=sys.stderr)
@@ -532,8 +538,8 @@ tiny3d = false
 optimization = "debug"
 ''', encoding='utf-8')
 
-    # ── src/main.pak ──────────────────────────────────────────────────────────
-    (project_dir / 'src' / 'main.pak').write_text(f'''\
+    # ── src/main.pk64 ──────────────────────────────────────────────────────────
+    (project_dir / 'src' / 'main.pk64').write_text(f'''\
 -- {name}
 -- Created with: pak init {name}
 
@@ -576,7 +582,7 @@ Makefile
 
     print(f"Created project '{name}'")
     print(f'  {name}/pak.toml')
-    print(f'  {name}/src/main.pak')
+    print(f'  {name}/src/main.pk64')
     print(f'  {name}/assets/sprites/')
     print(f'  {name}/assets/models/')
     print(f'  {name}/assets/audio/')
@@ -632,7 +638,7 @@ def main():
     sub = parser.add_subparsers(dest='command', metavar='COMMAND')
 
     # build
-    p_build = sub.add_parser('build', help='Compile .pak to C or MIPS assembly, pack assets, generate Makefile')
+    p_build = sub.add_parser('build', help='Compile .pk64 to C or MIPS assembly, pack assets, generate Makefile')
     p_build.add_argument('-v', '--verbose', action='store_true')
     p_build.add_argument('--backend', choices=['c', 'mips'], default='c',
                          help='Code generation backend (default: c)')
@@ -650,8 +656,8 @@ def main():
     p_check.set_defaults(func=cmd_check)
 
     # explain
-    p_explain = sub.add_parser('explain', help='Show generated code for a .pak file')
-    p_explain.add_argument('file', help='.pak file')
+    p_explain = sub.add_parser('explain', help='Show generated code for a .pk64 file')
+    p_explain.add_argument('file', help='.pk64 file')
     p_explain.add_argument('--backend', choices=['c', 'mips'], default='c',
                            help='Code generation backend (default: c)')
     p_explain.set_defaults(func=cmd_explain)

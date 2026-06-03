@@ -1,0 +1,44 @@
+-- Bare-metal N64 demo, entirely in Pak: no libdragon. Writes the VI registers
+-- and a 320x240 16bpp framebuffer directly via MMIO (uncached KSEG1).
+entry {
+    -- Fill framebuffer at uncached 0xA0100000 (phys 0x00100000): a color pattern.
+    let mut i: i32 = 0
+    while i < 76800 {
+        let row: i32 = i / 320
+        let col: i32 = i - row * 320
+        -- RGBA5551: red ramp by column, green ramp by row
+        let r5: i32 = (col / 10) & 0x1F
+        let g5: i32 = (row / 8) & 0x1F
+        let c: i32 = (r5 << 11) | (g5 << 6) | 0x1
+        let px: *volatile u16 = (0xA0100000 + i * 2) as *volatile u16
+        *px = c as u16
+        i = i + 1
+    }
+    -- A solid white box in the middle (rows 100..140, cols 130..190)
+    let mut y: i32 = 100
+    while y < 140 {
+        let mut x: i32 = 130
+        while x < 190 {
+            let off: i32 = (y * 320 + x) * 2
+            let p2: *volatile u16 = (0xA0100000 + off) as *volatile u16
+            *p2 = 0xFFFF as u16
+            x = x + 1
+        }
+        y = y + 1
+    }
+    -- Program the VI for NTSC 320x240 16bpp (origin/width/timing, control last).
+    *((0xA4400004) as *volatile u32) = 0x00100000
+    *((0xA4400008) as *volatile u32) = 0x00000140
+    *((0xA440000C) as *volatile u32) = 0x00000200
+    *((0xA4400014) as *volatile u32) = 0x03E52239
+    *((0xA4400018) as *volatile u32) = 0x0000020D
+    *((0xA440001C) as *volatile u32) = 0x00000C15
+    *((0xA4400020) as *volatile u32) = 0x0C150C15
+    *((0xA4400024) as *volatile u32) = 0x006C02EC
+    *((0xA4400028) as *volatile u32) = 0x002501FF
+    *((0xA440002C) as *volatile u32) = 0x000E0204
+    *((0xA4400030) as *volatile u32) = 0x00000200
+    *((0xA4400034) as *volatile u32) = 0x00000400
+    *((0xA4400000) as *volatile u32) = 0x0000320E
+    loop { }
+}

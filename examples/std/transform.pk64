@@ -1,0 +1,131 @@
+-- transform.pk64
+-- Self-contained transform + flat scene graph for Pak games.
+--
+-- A Transform is position (Vec3), euler rotation in radians (Vec3: pitch/yaw/roll),
+-- and per-axis scale (Vec3). transform_identity() gives the neutral transform and
+-- transform_compose() combines a parent and child (the common case of stacking a
+-- local transform onto a parent's world transform).
+--
+-- The scene graph is data-oriented: a flat array of SceneNode, each storing its
+-- local Transform and a parent index (-1 for a root). This layout is cache-friendly
+-- and avoids pointers, which suits the N64. scene_world() walks parent indices to
+-- produce a node's world transform; callers should keep parents earlier in the
+-- array than children so a single forward pass resolves the whole tree.
+--
+-- The Vec3 here is redeclared locally so this file checks standalone; it is
+-- field-compatible with vec.pk64's Vec3.
+--
+-- Usage:
+--     let mut t = transform_identity()
+--     t.position.x = 5.0
+--     let world = transform_compose(parent_world, t)
+
+const NO_PARENT: i32 = -1
+const MAX_NODES: i32 = 64
+
+struct Vec3 {
+    x: f32
+    y: f32
+    z: f32
+}
+
+struct Transform {
+    position: Vec3
+    rotation: Vec3
+    scale: Vec3
+}
+
+struct SceneNode {
+    local: Transform
+    parent: i32
+}
+
+struct Scene {
+    nodes: [64]SceneNode
+    count: i32
+}
+
+-- Neutral transform: at origin, no rotation, unit scale.
+fn transform_identity() -> Transform {
+    return Transform {
+        position: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+        rotation: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+        scale: Vec3 { x: 1.0, y: 1.0, z: 1.0 },
+    }
+}
+
+-- Stack a child transform onto a parent. Scales multiply, rotations add (euler),
+-- and the child position is scaled by the parent scale then offset by the parent
+-- position. This is the cheap TRS approximation games use when axes stay aligned;
+-- for full rotated parenting, build a matrix in your renderer instead.
+fn transform_compose(parent: Transform, child: Transform) -> Transform {
+    return Transform {
+        position: Vec3 {
+            x: parent.position.x + child.position.x * parent.scale.x,
+            y: parent.position.y + child.position.y * parent.scale.y,
+            z: parent.position.z + child.position.z * parent.scale.z,
+        },
+        rotation: Vec3 {
+            x: parent.rotation.x + child.rotation.x,
+            y: parent.rotation.y + child.rotation.y,
+            z: parent.rotation.z + child.rotation.z,
+        },
+        scale: Vec3 {
+            x: parent.scale.x * child.scale.x,
+            y: parent.scale.y * child.scale.y,
+            z: parent.scale.z * child.scale.z,
+        },
+    }
+}
+
+-- Start an empty scene.
+fn scene_new() -> Scene {
+    return Scene {
+        nodes: undefined,
+        count: 0,
+    }
+}
+
+-- Append a node with the given local transform and parent index (NO_PARENT for a
+-- root). Returns the new node's index, or NO_PARENT if the scene is full.
+fn scene_add(scene: *mut Scene, local: Transform, parent: i32) -> i32 {
+    if scene.count >= MAX_NODES {
+        return NO_PARENT
+    }
+    let idx = scene.count
+    scene.nodes[idx] = SceneNode { local: local, parent: parent }
+    scene.count += 1
+    return idx
+}
+
+-- Resolve a node's world transform by composing up the parent chain. Parents are
+-- expected to sit earlier in the array; the walk stops at a root (NO_PARENT).
+fn scene_world(scene: *Scene, index: i32) -> Transform {
+    let mut result = scene.nodes[index].local
+    let mut p = scene.nodes[index].parent
+    while p != NO_PARENT {
+        result = transform_compose(scene.nodes[p].local, result)
+        p = scene.nodes[p].parent
+    }
+    return result
+}
+
+static sink: f32 = 0.0
+
+-- Usage demo / self-test. A library file with free functions needs an entry
+-- block to satisfy `pak check`; delete it when you `use` this as a module.
+entry {
+    let mut scene = scene_new()
+
+    let mut root_t = transform_identity()
+    root_t.position.x = 5.0
+    let root = scene_add(&mut scene, root_t, NO_PARENT)
+
+    let mut child_t = transform_identity()
+    child_t.position.y = 2.0
+    let child = scene_add(&mut scene, child_t, root)
+
+    let world = scene_world(&scene, child)
+    sink = world.position.x
+    sink = world.position.y
+}

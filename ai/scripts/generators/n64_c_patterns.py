@@ -117,7 +117,7 @@ def gen_n64_c_patterns() -> list[dict]:
         "    x = *(float*)&i;\n"
         "    x = x * (1.5f - xhalf * x * x);\n"
         "    return x;\n}\n```\n\n"
-        "**game.pak:**\n"
+        "**game.pk64:**\n"
         "```pak\nextern \"C\" {\n"
         "    fn fast_invsqrt(x: f32) -> f32\n}\n\n"
         "fn normalize_2d(x: *f32, y: *f32) {\n"

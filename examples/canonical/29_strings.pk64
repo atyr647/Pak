@@ -1,0 +1,81 @@
+-- 29_strings.pk64
+-- Demonstrates: CStr (*c_char) and Str (PakStr) string operations.
+-- CStr wraps a null-terminated C string; Str is a fat string with data + len.
+-- str.from_cstr() and Str methods are available without an explicit `use` import.
+-- Status: [IMPLEMENTED]
+
+-- Function that takes a CStr and checks some properties
+fn check_greeting(s: CStr) -> bool {
+    return s.starts_with("hello") and s.contains("world")
+}
+
+-- Function that compares two CStr values
+fn same_string(a: CStr, b: CStr) -> bool {
+    return a.eq(b)
+}
+
+-- Function that finds a needle in a haystack and returns the offset
+fn find_offset(haystack: CStr, needle: CStr) -> i32 {
+    return haystack.find(needle)
+}
+
+-- Function demonstrating Str (PakStr fat string) operations
+fn check_pakstr(s: Str) -> i32 {
+    return s.len()
+}
+
+static sink_i: i32 = 0
+static sink_b: bool = false
+
+entry {
+    -- CStr literal (null-terminated C string)
+    let s: CStr = "hello world"
+
+    -- Substring check: s.contains("world") → strstr != NULL
+    sink_b = s.contains("world")         -- true
+
+    -- Prefix check: s.starts_with("hello") → strncmp
+    sink_b = s.starts_with("hello")      -- true
+
+    -- Suffix check
+    sink_b = s.ends_with("world")        -- true
+
+    -- Equality: s.eq("hello world") → strcmp == 0
+    sink_b = s.eq("hello world")         -- true
+    sink_b = s.eq("goodbye")             -- false
+
+    -- Find: returns byte offset of first occurrence, or -1
+    sink_i = s.find("world")             -- 6
+    sink_i = s.find("hello")             -- 0
+    sink_i = s.find("xyz")               -- -1
+
+    -- Is-empty check
+    sink_b = s.is_empty()                -- false
+    let empty: CStr = ""
+    sink_b = empty.is_empty()            -- true
+
+    -- Length
+    sink_i = s.len()                     -- 11
+
+    -- Pass CStr to a function
+    sink_b = check_greeting(s)           -- true
+    sink_b = same_string(s, "hello world")  -- true
+    sink_b = same_string(s, "other")        -- false
+
+    -- find_offset via function call
+    sink_i = find_offset(s, "world")     -- 6
+
+    -- Str (PakStr fat string) via pak.str module
+    let ps: Str = str.from_cstr("pak string")
+    sink_i = check_pakstr(ps)            -- 10 (length)
+    sink_b = ps.is_empty()               -- false
+
+    -- Convert CStr to Str and check
+    let ps2: Str = s.to_pakstr()
+    sink_i = ps2.len()                   -- 11
+
+    -- CStr slice (pointer offset into string)
+    let tail: CStr = s.slice(6)          -- points to "world"
+    sink_b = tail.eq("world")            -- true
+    sink_b = tail.starts_with("world")   -- true
+}

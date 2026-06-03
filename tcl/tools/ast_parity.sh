@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compare the Tcl parser's AST against the Python parser (oracle) on every .pak
+# Compare the Tcl parser's AST against the Python parser (oracle) on every .pk64
 # file. A file "ports" when both produce identical structural ASTs. Files the
 # Tcl parser can't yet handle show as UNPORTED (Tcl emits PARSEERROR/ERROR).
 set -uo pipefail
@@ -24,7 +24,7 @@ while IFS= read -r f; do
             diff <(printf '%s' "$py") <(printf '%s' "$tcl") | head -25
         fi
     fi
-done < <(find examples ai tests -name '*.pak' | sort)
+done < <(find examples ai tests -name '*.pk64' | sort)
 
 total=$((match+unported+mismatch))
 echo "parser parity: MATCH=$match  UNPORTED=$unported  MISMATCH=$mismatch  (of $total)"

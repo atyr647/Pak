@@ -313,6 +313,21 @@ oo::class create pak::TypeChecker {
                                 "Remove this method or add it to trait '$trait_name'"
                         }
                     }
+                    # A trait method must be implemented here or have a default
+                    # body in the trait. Flag any required (body-less) method
+                    # the impl omits.
+                    set impl_names [dict create]
+                    foreach m [pak::items [pak::nfield $decl methods]] {
+                        dict set impl_names [pak::fval $m name] 1
+                    }
+                    set tyname [pak::fval $decl type_name]
+                    foreach tm [pak::items [pak::nfield [$env get_trait $trait_name] methods]] {
+                        set tmn [pak::fval $tm name]
+                        if {![dict exists $impl_names $tmn] && [pak::isnil [pak::nfield $tm body]]} {
+                            my err E602 "impl of trait '$trait_name' for '$tyname' is missing method '$tmn'" $decl \
+                                "Implement '$tmn', or give it a default body in trait '$trait_name'"
+                        }
+                    }
                 }
                 foreach m [pak::items [pak::nfield $decl methods]] { my check_fn $m }
             }

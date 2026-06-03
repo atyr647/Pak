@@ -1,0 +1,44 @@
+-- 16_fixed_point.pk64
+-- Demonstrates: fix16.16 fixed-point arithmetic for N64.
+-- Use fix16.16 instead of f32 for performance on MIPS without FPU.
+
+struct Vec2fx {
+    x: fix16.16
+    y: fix16.16
+}
+
+fn vec2fx_add(a: Vec2fx, b: Vec2fx) -> Vec2fx {
+    return Vec2fx { x: a.x + b.x, y: a.y + b.y }
+}
+
+fn vec2fx_scale(v: Vec2fx, s: fix16.16) -> Vec2fx {
+    return Vec2fx { x: v.x * s, y: v.y * s }
+}
+
+static sink_x: fix16.16 = 0.0
+static sink_i: i32 = 0
+
+entry {
+    -- fixed-point literals
+    let a: fix16.16 = 1.5
+    let b: fix16.16 = 2.0
+    let c: fix16.16 = 0.5
+
+    -- arithmetic (same type)
+    let sum  = a + b          -- 3.5
+    let diff = a - c          -- 1.0
+    let prod = a * b          -- 3.0  (uses MIPS mult sequence)
+    let quot = b / a          -- ~1.333
+
+    -- cast to/from integer
+    sink_i = a as i32         -- 1 (truncates)
+    sink_x = 3 as fix16.16   -- 3.0
+
+    -- struct usage
+    let pos = Vec2fx { x: 10.0, y: 5.0 }
+    let vel = Vec2fx { x: 1.5, y: 0.5 }
+    let next_pos = vec2fx_add(pos, vel)
+    let scaled = vec2fx_scale(vel, 2.0)
+
+    sink_x = sum + diff + prod + quot + next_pos.x + scaled.x
+}

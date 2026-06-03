@@ -34,7 +34,7 @@ def _source(name: str) -> str:
 
 def _check(source: str) -> tuple[int, str]:
     """Run pak check on a source string. Returns (exit_code, output)."""
-    with tempfile.NamedTemporaryFile(suffix=".pak", mode="w",
+    with tempfile.NamedTemporaryFile(suffix=".pk64", mode="w",
                                      encoding="utf-8", delete=False) as f:
         f.write(source)
         tmp = Path(f.name)
@@ -394,7 +394,7 @@ class TestSemanticMutations:
     """
 
     def _explain(self, source: str) -> str:
-        with tempfile.NamedTemporaryFile(suffix=".pak", mode="w",
+        with tempfile.NamedTemporaryFile(suffix=".pk64", mode="w",
                                          encoding="utf-8", delete=False) as f:
             f.write(source)
             tmp = Path(f.name)

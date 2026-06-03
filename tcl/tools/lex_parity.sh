@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compare the Tcl lexer against the Python lexer (the oracle) on every .pak
+# Compare the Tcl lexer against the Python lexer (the oracle) on every .pk64
 # file in the repo. Exits non-zero if any token stream differs.
 set -uo pipefail
 
@@ -21,7 +21,7 @@ while IFS= read -r f; do
             diff <(printf '%s' "$py") <(printf '%s' "$tcl") | head -20
         fi
     fi
-done < <(find examples ai tests -name '*.pak' | sort)
+done < <(find examples ai tests -name '*.pk64' | sort)
 
 echo "lexer parity: PASS=$pass FAIL=$fail"
 if [ "$fail" -ne 0 ]; then

@@ -316,6 +316,18 @@ class TypeChecker:
                                  f"method '{m.name}' is not declared in trait '{decl.trait_name}'",
                                  m,
                                  hint=f"Remove this method or add it to trait '{decl.trait_name}'")
+                # A trait method must either be implemented here or have a
+                # default body in the trait. Flag any required (body-less)
+                # trait method that the impl omits.
+                impl_method_names = {m.name for m in decl.methods}
+                for tm in trait.methods:
+                    if tm.name not in impl_method_names and tm.body is None:
+                        self.err('E602',
+                                 f"impl of trait '{decl.trait_name}' for "
+                                 f"'{decl.type_name}' is missing method '{tm.name}'",
+                                 decl,
+                                 hint=f"Implement '{tm.name}', or give it a "
+                                      f"default body in trait '{decl.trait_name}'")
             for m in decl.methods:
                 self._check_fn(m)
         elif isinstance(decl, (ast.TraitDecl, ast.UnionDecl)):

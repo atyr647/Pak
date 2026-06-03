@@ -7,7 +7,7 @@ tool input as JSON on stdin. This script:
 
   1. Reads the tool input JSON from stdin.
   2. Extracts the file path.
-  3. Skips non-.pak files silently.
+  3. Skips non-.pk64 files silently.
   4. Runs `pak check` on the file.
   5. If errors are found, prints them and exits with code 2.
      Claude Code surfaces the output to Claude, which must fix the
@@ -16,7 +16,7 @@ tool input as JSON on stdin. This script:
      can verify the semantics match intent, then exits 0.
 
 Exit codes:
-  0 — file is valid (or not a .pak file, no action needed)
+  0 — file is valid (or not a .pk64 file, no action needed)
   2 — pak check failed; errors printed to stdout for Claude to read
 
 Environment variables:
@@ -81,8 +81,8 @@ def main():
 
     path = Path(file_path)
 
-    # Only act on .pak files
-    if path.suffix != ".pak":
+    # Only act on .pk64 files
+    if path.suffix != ".pk64":
         sys.exit(0)
 
     # Run pak check on the file
@@ -132,7 +132,7 @@ def main():
             print(user_code.strip())
             print("=" * 60)
             print("Generated C above is your code only (preamble omitted).")
-            print("If the output does not match intent, fix the .pak source.")
+            print("If the output does not match intent, fix the .pk64 source.")
             print("=" * 60)
 
     sys.exit(0)

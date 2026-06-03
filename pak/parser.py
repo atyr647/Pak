@@ -31,6 +31,16 @@ class Parser:
     def check(self, *types) -> bool:
         return self.peek().type in types
 
+    def _newline_before(self) -> bool:
+        """True if the current token begins on a later source line than the
+        previous token. Pak is newline-delimited: a binary operator that is
+        also a valid prefix/statement-starter (* deref, - negate, & address-of)
+        must NOT continue the previous expression when it opens a new line —
+        otherwise `let p = alloc(T)` / `*p = v` parses as `alloc(T) * p = v`."""
+        if self.pos <= 0:
+            return False
+        return self.peek().line > self.tokens[self.pos - 1].line
+
     def match(self, *types) -> Optional[Token]:
         if self.check(*types):
             return self.advance()
@@ -705,7 +715,16 @@ class Parser:
             return ast.Return(value=val, line=line, col=col)
         elif tok.type == TT.BREAK:
             self.advance()
-            return ast.Break(line=line, col=col)
+            # Optional break value: `break expr` — used for loop-as-expression.
+            # Value is only present if the next token is on the same line as break.
+            val = None
+            next_tok = self.peek()
+            if (next_tok.line == line
+                    and not self.check(TT.RBRACE)
+                    and not self.check(TT.EOF)
+                    and not self.check(TT.SEMICOLON)):
+                val = self.parse_expr()
+            return ast.Break(value=val, line=line, col=col)
         elif tok.type == TT.CONTINUE:
             self.advance()
             return ast.Continue(line=line, col=col)
@@ -891,6 +910,9 @@ class Parser:
     def parse_match_arm(self) -> ast.MatchArm:
         line, col = self.loc()
         pattern = self.parse_pattern()
+        guard = None
+        if self.match(TT.IF):
+            guard = self.parse_expr()
         self.expect(TT.FAT_ARROW)
         if self.check(TT.LBRACE):
             body = self.parse_block()
@@ -898,7 +920,7 @@ class Parser:
             # Single-statement arm: => stmt (no braces)
             stmt = self.parse_stmt()
             body = ast.Block(stmts=[stmt], line=line, col=col)
-        return ast.MatchArm(pattern=pattern, guard=None, body=body, line=line, col=col)
+        return ast.MatchArm(pattern=pattern, guard=guard, body=body, line=line, col=col)
 
     def parse_pattern(self) -> Any:
         line, col = self.loc()
@@ -1040,6 +1062,8 @@ class Parser:
         line, col = self.loc()
         left = self.parse_eq()
         while self.check(TT.AMP):
+            if self._newline_before():
+                break  # leading '&' on a new line is address-of, a new statement
             self.advance()
             right = self.parse_eq()
             left = ast.BinaryOp(op='&', left=left, right=right, line=line, col=col)
@@ -1076,6 +1100,8 @@ class Parser:
         line, col = self.loc()
         left = self.parse_mul()
         while self.check(TT.PLUS, TT.MINUS):
+            if self.check(TT.MINUS) and self._newline_before():
+                break  # leading '-' on a new line is unary, a new statement
             op = self.advance().value
             right = self.parse_mul()
             left = ast.BinaryOp(op=op, left=left, right=right, line=line, col=col)
@@ -1085,6 +1111,8 @@ class Parser:
         line, col = self.loc()
         left = self.parse_unary()
         while self.check(TT.STAR, TT.SLASH, TT.PERCENT):
+            if self.check(TT.STAR) and self._newline_before():
+                break  # leading '*' on a new line is a deref, a new statement
             op = self.advance().value
             right = self.parse_unary()
             left = ast.BinaryOp(op=op, left=left, right=right, line=line, col=col)
@@ -1413,15 +1441,23 @@ class Parser:
         if tok.type == TT.IDENT:
             name = self.advance().value
 
-            # Generic struct literal: TypeName<T> { field: val, ... }
+            # Generic call / struct literal: TypeName<T>(...) or TypeName<T> { ... }
+            # Parse the type arguments as real types (not bare identifiers) so
+            # that explicit args like foo<i32>(x) carry an AST type node the
+            # code generator can monomorphize against — matching what the
+            # inference path produces.
             type_args = []
+            saved = self.pos
             if self.check(TT.LT):
-                saved = self.pos
                 try:
-                    type_args = self._parse_generic_params()
+                    parsed_args = self._try_parse_type_args()
                 except Exception:
+                    parsed_args = None
+                if parsed_args is None:
                     self.pos = saved
                     type_args = []
+                else:
+                    type_args = parsed_args
 
             # Look ahead: Struct literal: TypeName { field: val, ... }
             if self.check(TT.LBRACE) and self._is_struct_literal_context():
@@ -1434,7 +1470,8 @@ class Parser:
                     fields.append((fname, fval))
                     self.match(TT.COMMA)
                 self.expect(TT.RBRACE)
-                return ast.StructLit(type_name=name, fields=fields, line=line, col=col)
+                return ast.StructLit(type_name=name, fields=fields,
+                                     type_args=type_args, line=line, col=col)
 
             # Range: name..end
             if self.check(TT.DOTDOT) and not type_args:
@@ -1445,11 +1482,11 @@ class Parser:
                 return ast.RangeExpr(start=ast.Ident(name=name, line=line, col=col), end=end, line=line, col=col)
 
             ident = ast.Ident(name=name, line=line, col=col)
-            # If we parsed type args but the next token isn't (, back off the type args
-            # They'll be used if we see ( in parse_postfix
-            if type_args and not self.check(TT.LPAREN):
-                # Discard type args, they were probably a comparison
-                pass
+            # If we parsed type args but the next token isn't '(' or '{', the
+            # '<...>' was almost certainly a comparison — rewind so the tokens
+            # are re-parsed as binary operators rather than silently dropped.
+            if type_args and not (self.check(TT.LPAREN) or self.check(TT.LBRACE)):
+                self.pos = saved
             elif type_args:
                 ident.type_args = type_args
             return ident
@@ -1465,6 +1502,18 @@ class Parser:
                     end = self.parse_primary()
                 return ast.RangeExpr(start=ast.IntLit(value=ival, raw=raw, line=line, col=col), end=end, line=line, col=col)
             return ast.IntLit(value=ival, raw=raw, line=line, col=col)
+
+        # loop { ... } and while cond { ... } as expressions (break-with-value)
+        if tok.type == TT.LOOP:
+            self.advance()
+            body = self.parse_block()
+            return ast.LoopStmt(body=body, line=line, col=col)
+
+        if tok.type == TT.WHILE:
+            self.advance()
+            cond = self.parse_expr()
+            body = self.parse_block()
+            return ast.WhileStmt(condition=cond, body=body, line=line, col=col)
 
         raise ParseError(f'Unexpected token in expression', tok)
 

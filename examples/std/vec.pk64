@@ -1,0 +1,125 @@
+-- vec.pk64
+-- Self-contained 2D/3D float vector math for Pak games.
+--
+-- Provides Vec2 and Vec3 structs (f32 fields) with the operations a 3D game
+-- needs: add, sub, scale, dot, cross (Vec3), length, normalize, distance, lerp.
+-- Uses the n64.math module for sqrt. These types are standalone; to feed a
+-- value into Tiny3D, copy the .x/.y/.z fields into a T3DVec3.
+--
+-- Usage:
+--     let a = Vec3 { x: 1.0, y: 2.0, z: 3.0 }
+--     let b = Vec3 { x: 0.0, y: 1.0, z: 0.0 }
+--     let c = a.add(b)
+--     let n = a.normalize()
+--     let d = a.distance(b)
+
+use n64.math
+
+struct Vec2 {
+    x: f32
+    y: f32
+}
+
+struct Vec3 {
+    x: f32
+    y: f32
+    z: f32
+}
+
+impl Vec2 {
+    fn add(self: *Vec2, other: Vec2) -> Vec2 {
+        return Vec2 { x: self.x + other.x, y: self.y + other.y }
+    }
+
+    fn sub(self: *Vec2, other: Vec2) -> Vec2 {
+        return Vec2 { x: self.x - other.x, y: self.y - other.y }
+    }
+
+    fn scale(self: *Vec2, s: f32) -> Vec2 {
+        return Vec2 { x: self.x * s, y: self.y * s }
+    }
+
+    fn dot(self: *Vec2, other: Vec2) -> f32 {
+        return self.x * other.x + self.y * other.y
+    }
+
+    fn length(self: *Vec2) -> f32 {
+        return math.sqrt_f(self.x * self.x + self.y * self.y)
+    }
+
+    fn normalize(self: *Vec2) -> Vec2 {
+        let len = self.length()
+        if len <= 0.0 {
+            return Vec2 { x: 0.0, y: 0.0 }
+        }
+        let inv = 1.0 / len
+        return Vec2 { x: self.x * inv, y: self.y * inv }
+    }
+
+    fn distance(self: *Vec2, other: Vec2) -> f32 {
+        let dx = self.x - other.x
+        let dy = self.y - other.y
+        return math.sqrt_f(dx * dx + dy * dy)
+    }
+
+    fn lerp(self: *Vec2, other: Vec2, t: f32) -> Vec2 {
+        return Vec2 {
+            x: self.x + (other.x - self.x) * t,
+            y: self.y + (other.y - self.y) * t,
+        }
+    }
+}
+
+impl Vec3 {
+    fn add(self: *Vec3, other: Vec3) -> Vec3 {
+        return Vec3 { x: self.x + other.x, y: self.y + other.y, z: self.z + other.z }
+    }
+
+    fn sub(self: *Vec3, other: Vec3) -> Vec3 {
+        return Vec3 { x: self.x - other.x, y: self.y - other.y, z: self.z - other.z }
+    }
+
+    fn scale(self: *Vec3, s: f32) -> Vec3 {
+        return Vec3 { x: self.x * s, y: self.y * s, z: self.z * s }
+    }
+
+    fn dot(self: *Vec3, other: Vec3) -> f32 {
+        return self.x * other.x + self.y * other.y + self.z * other.z
+    }
+
+    fn cross(self: *Vec3, other: Vec3) -> Vec3 {
+        return Vec3 {
+            x: self.y * other.z - self.z * other.y,
+            y: self.z * other.x - self.x * other.z,
+            z: self.x * other.y - self.y * other.x,
+        }
+    }
+
+    fn length(self: *Vec3) -> f32 {
+        return math.sqrt_f(self.x * self.x + self.y * self.y + self.z * self.z)
+    }
+
+    fn normalize(self: *Vec3) -> Vec3 {
+        let len = self.length()
+        if len <= 0.0 {
+            return Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+        }
+        let inv = 1.0 / len
+        return Vec3 { x: self.x * inv, y: self.y * inv, z: self.z * inv }
+    }
+
+    fn distance(self: *Vec3, other: Vec3) -> f32 {
+        let dx = self.x - other.x
+        let dy = self.y - other.y
+        let dz = self.z - other.z
+        return math.sqrt_f(dx * dx + dy * dy + dz * dz)
+    }
+
+    fn lerp(self: *Vec3, other: Vec3, t: f32) -> Vec3 {
+        return Vec3 {
+            x: self.x + (other.x - self.x) * t,
+            y: self.y + (other.y - self.y) * t,
+            z: self.z + (other.z - self.z) * t,
+        }
+    }
+}

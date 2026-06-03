@@ -50,7 +50,9 @@ set ::pak::CG_API [dict create \
     {dma wait} {dma_wait} \
     {dma write} {dma_write} \
     {eeprom init} {eeprom_init} \
+    {eeprom present} {eeprom_present} \
     {eeprom read} {eeprom_read} \
+    {eeprom type_detect} {eeprom_type_detect} \
     {eeprom write} {eeprom_write} \
     {exception get_handler} {exception_get_handler} \
     {exception set_handler} {exception_set_handler} \
@@ -231,17 +233,32 @@ set ::pak::CG_API_LAMBDA [dict create \
     {arena reset} {1} \
     {controller read} {1} \
     {joypad is_connected} {1} \
+    {math abs_f} {1} \
     {math abs_i32} {1} \
     {math atan2_f} {1} \
+    {math ceil_f} {1} \
+    {math clamp_f} {1} \
     {math clamp_i32} {1} \
     {math cos_f} {1} \
     {math f_to_fix} {1} \
+    {math fix_cos} {1} \
+    {math fix_sin} {1} \
+    {math fix_sqrt} {1} \
     {math fix_to_f} {1} \
+    {math floor_f} {1} \
     {math lerp_f} {1} \
+    {math max_f} {1} \
     {math max_i32} {1} \
+    {math min_f} {1} \
     {math min_i32} {1} \
+    {math pow_f} {1} \
+    {math rand} {1} \
+    {math rand_f} {1} \
+    {math rand_range} {1} \
+    {math rand_seed} {1} \
     {math sin_f} {1} \
     {math sqrt_f} {1} \
+    {math tan_f} {1} \
     {mem alloc} {1} \
     {mem alloc_aligned} {1} \
     {mem copy} {1} \
@@ -317,7 +334,8 @@ set ::pak::CG_USE_INCLUDES [dict create \
     {n64.flashram} {#include <backup.h>} \
     {n64.joypad} {#include <joypad.h>} \
     {n64.math} {#include <n64sys.h>
-#include <math.h>} \
+#include <math.h>
+#include "pak_rand.h"} \
     {n64.mem} {#include <malloc.h>
 #include <string.h>} \
     {n64.mixer} {#include <audio.h>
