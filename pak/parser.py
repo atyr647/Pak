@@ -813,7 +813,11 @@ class Parser:
         line, col = self.loc()
         self.expect(TT.LET)
         mutable = self.match(TT.MUT)
-        name = self.expect(TT.IDENT).value
+        if self.check(TT.UNDERSCORE):
+            self.advance()
+            name = '_'
+        else:
+            name = self.expect(TT.IDENT).value
         typ = None
         if self.match(TT.COLON):
             typ = self.parse_type()
@@ -1200,6 +1204,24 @@ class Parser:
                 else:
                     self.expect(TT.RBRACKET)
                     expr = ast.IndexAccess(obj=expr, index=idx, line=line, col=col)
+            elif (self.check(TT.LBRACE)
+                  and isinstance(expr, ast.DotAccess)
+                  and isinstance(expr.obj, ast.Ident)
+                  and self._is_struct_literal_context()):
+                # Named-field variant construction: TypeName.case_name { field: val }
+                vtype = expr.obj.name
+                vcase = expr.field
+                self.advance()  # consume '{'
+                fields = []
+                while not self.check(TT.RBRACE) and not self.check(TT.EOF):
+                    fname = self.expect(TT.IDENT).value
+                    self.expect(TT.COLON)
+                    fval = self.parse_expr()
+                    fields.append((fname, fval))
+                    self.match(TT.COMMA)
+                self.expect(TT.RBRACE)
+                expr = ast.VariantLit(variant_type=vtype, case_name=vcase,
+                                      fields=fields, line=line, col=col)
             else:
                 break
         return expr

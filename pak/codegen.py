@@ -1255,6 +1255,11 @@ class Codegen:
             type_name = self._struct_lit_c_name(e)
             fields = ', '.join(f'.{name} = {self.gen_expr(val)}' for name, val in e.fields)
             return f'({type_name}){{{fields}}}'
+        if isinstance(e, ast.VariantLit):
+            vt = e.variant_type
+            vc = e.case_name
+            inner = ', '.join(f'.{name} = {self.gen_expr(val)}' for name, val in e.fields)
+            return f'({vt}){{.tag = {vt}_tag_{vc}, .data.{vc} = {{{inner}}}}}'
         if isinstance(e, ast.ArrayLit):
             if e.repeat is not None:
                 val_expr = e.elements[0] if e.elements else ast.IntLit(value=0)
@@ -2817,6 +2822,10 @@ class Codegen:
         return f'{pad}/* unhandled stmt: {type(stmt).__name__} */'
 
     def gen_let_stmt(self, s: ast.LetDecl, pad: str) -> str:
+        if s.name == '_':
+            if s.value is not None:
+                return f'{pad}(void)({self.gen_expr(s.value)});'
+            return ''
         annotations = s.annotations or []
         prefix = ''
         if '@aligned' in ' '.join(annotations):

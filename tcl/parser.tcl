@@ -183,7 +183,11 @@ oo::class create pak::Parser {
         my expect LET
         set mutable [pak::Nil]
         if {[my accept MUT]} { set mutable [pak::Lit mut] }
-        set name [my expectv IDENT]
+        if {[my accept UNDERSCORE]} {
+            set name "_"
+        } else {
+            set name [my expectv IDENT]
+        }
         set typ [pak::Nil]
         if {[my accept COLON]} { set typ [my parse_type] }
         set val [pak::Nil]

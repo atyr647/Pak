@@ -40,7 +40,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `enum Name { case }` | ✅ Full | |
 | `enum Name: BaseType { case = val }` | ✅ Full | |
 | `variant Name { case(Type) }` | ✅ Full | Positional payloads |
-| `variant Name { case { field: T } }` | ⚠️ Partial | Parsed; named field construction not supported as expression |
+| `variant Name { case { field: T } }` | ✅ Full | `Type.case { field: val }` construction now supported |
 | `union Name { field: Type }` | ✅ Full | Untagged C union |
 | `fn name(params) -> ret { }` | ✅ Full | |
 | `fn name<T>(params)` (generic) | ✅ Full | Params parsed |
@@ -216,9 +216,9 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 
 | Bug | Workaround |
 |-----|------------|
-| `let _ = expr` — `_` is a keyword, not a valid `let` target | Assign to a named variable or static |
+| (fixed) `let _ = expr` — expression evaluated, result discarded | — |
 | (fixed) Capturing closures — now emitted as GCC nested functions | — |
-| Named-field variant construction as expression (`Event.move { x: 1 }`) | Use positional payloads: `Event.move(1, 2)` |
+| (fixed) Named-field variant construction (`Event.move { x: 1 }`) | — |
 
 ## Recently Fixed Bugs
 

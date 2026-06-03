@@ -513,6 +513,8 @@ class TypeChecker:
     def _check_let(self, s: ast.LetDecl):
         if s.value:
             self._check_expr(s.value)
+        if s.name == '_':
+            return
         typ = s.type
         if typ is None and s.value:
             typ = self._infer_type(s.value)

@@ -178,6 +178,15 @@ class StructLit:
     col: int = 0
 
 @dataclass
+class VariantLit:
+    """Named-field variant construction: TypeName.case_name { field: val, ... }"""
+    variant_type: str   # the outer variant type name, e.g. "Shape"
+    case_name: str      # the case name, e.g. "rect"
+    fields: List[Any]   # list of (name, expr) tuples
+    line: int = 0
+    col: int = 0
+
+@dataclass
 class ArrayLit:
     elements: List[Any]
     repeat: Optional[Any] = None

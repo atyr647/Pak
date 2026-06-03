@@ -453,6 +453,11 @@ let mut name: Type = value -- explicit mutable (all lets are mutable by default)
 
 Variables in Pak are **mutable by default**. The `mut` keyword is redundant but valid.
 
+Use `_` as the binding name to evaluate an expression for side-effects and discard the result:
+```pak
+let _ = some_fn_call()    -- evaluates, result discarded
+```
+
 ### Static (global variable) [IMPLEMENTED]
 
 ```pak
@@ -507,6 +512,31 @@ TypeName { x: 1.0, y: 0.0, health: 100 }
 ```
 
 All fields must be specified (no partial struct init unless defaults exist).
+
+### Variant Construction [IMPLEMENTED]
+
+Positional payloads use a call-like syntax:
+```pak
+TypeName.case_name(val1, val2)    -- positional fields
+TypeName.unit_case                -- unit case (no data)
+```
+
+Named-field payloads use a struct-like brace syntax:
+```pak
+TypeName.case_name { field: val, field2: val2 }
+```
+
+Example:
+```pak
+variant Event {
+    quit
+    key_press { key: u8, shift: bool }
+    resize(i32, i32)
+}
+
+let e1 = Event.key_press { key: 13, shift: false }
+let e2 = Event.resize(320, 240)
+```
 
 ### Array Literal [IMPLEMENTED]
 
@@ -631,15 +661,16 @@ fn(x: i32) -> i32 = x + 1    -- expression body
 
 Lowers to a static file-scope C function; the name decays to a function pointer.
 
-Capturing closures (referencing outer variables) [PLANNED]:
+Capturing closures (referencing outer variables) [IMPLEMENTED]:
 
 ```pak
 let base = 10
 let add_base: fn(i32) -> i32 = fn(x: i32) -> i32 { return x + base }
 ```
 
-Capturing closures require GCC nested functions (a non-standard extension).
-Not recommended for N64 toolchain targets.
+Capturing closures are emitted as GCC nested functions (a non-standard GCC extension).
+Captures are by reference within the enclosing stack frame. Supported by the libdragon
+GCC toolchain. Do not store or call the closure after the enclosing function returns.
 
 ### Explicit Type Arguments [IMPLEMENTED]
 

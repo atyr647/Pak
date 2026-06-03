@@ -1121,8 +1121,16 @@ oo::class create pak::MipsCodegen {
                 set typ [pak::nfield $stmt type]
                 if {![pak::isnil $typ]} { set layout [my mips_layout $typ] } else { set layout [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}] }
                 set tn [expr {[pak::isnil $typ] ? "" : $typ}]
-                set off [my declare_local [pak::fval $stmt name] $layout $tn]
                 set v [pak::nfield $stmt value]
+                if {[pak::fval $stmt name] eq "_"} {
+                    if {![pak::isnil $v]} {
+                        set tmp [$ra alloc_temp]
+                        my emit_expr $v $tmp
+                        $ra free_temp $tmp
+                    }
+                    continue
+                }
+                set off [my declare_local [pak::fval $stmt name] $layout $tn]
                 if {![pak::isnil $v]} {
                     set lsz [dict get $layout size]
                     set lfields [expr {[dict exists $layout fields] ? [dict size [dict get $layout fields]] : 0}]

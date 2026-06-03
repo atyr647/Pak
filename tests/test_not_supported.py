@@ -117,26 +117,26 @@ class TestNoIfLet:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# No `let _` — underscore is not a valid identifier
+# `let _` — discard binding (now supported)
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestNoLetUnderscore:
-    def test_wrong_let_underscore_fails(self):
-        """`let _ = expr` is a parse error — _ is a keyword token."""
-        assert_fails(textwrap.dedent("""
+class TestLetUnderscore:
+    def test_let_underscore_passes(self):
+        """`let _ = expr` is now valid — evaluates expr and discards the result."""
+        assert_passes(textwrap.dedent("""
+            fn side_effect() -> i32 { return 42 }
+            entry {
+                let _ = side_effect()
+            }
+        """).strip(), "let _ discards result")
+
+    def test_let_underscore_typed_passes(self):
+        """`let _: T = expr` with explicit type is also valid."""
+        assert_passes(textwrap.dedent("""
             entry {
                 let _: i32 = 42
             }
-        """).strip(), "let _ is not valid")
-
-    def test_correct_named_sink_passes(self):
-        """Use a named variable or static sink instead."""
-        assert_passes(textwrap.dedent("""
-            static sink: i32 = 0
-            entry {
-                sink = 42
-            }
-        """).strip(), "named sink is valid")
+        """).strip(), "let _: T is valid")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
