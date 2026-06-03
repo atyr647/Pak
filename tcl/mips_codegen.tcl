@@ -152,21 +152,45 @@ oo::class create pak::Emitter {
     }
 }
 
-# ── Linear-scan register allocator (port of mips/registers.py RegAlloc) ─────────
+# ── Linear-scan register allocator with stack spilling ────────────────────────
 # Temp pool is consumed from the END (pop) and returned by append, so the first
 # borrowed temp is $t9 — this ordering is load-bearing for byte parity.
+#
+# Spilling design: when all 18 GPRs are in use, the OLDEST allocated register
+# (alloc_order[0]) is saved to a pre-reserved stack slot and returned to the
+# caller as if it were a fresh register. When the borrower calls free_temp on
+# that register, the original value is restored from the slot and the reg
+# goes back to alloc_order (for the original owner's eventual use). This
+# works correctly for the LIFO allocation pattern used by emit_expr: deeper
+# recursion always frees borrowed regs before the outer level uses them.
+#
+# 8 spill slots (32 bytes) are pre-reserved in each function's stack frame
+# at offsets spill_base..spill_base+28. This supports up to 26 simultaneous
+# live temporaries (18 regs + 8 spill slots) — sufficient for any real code.
 oo::class create pak::RegAlloc {
     variable free_temps free_saved used_saved promoted_saved
-    constructor {} {
+    variable alloc_order spill_locs free_spill_slots host
+
+    constructor {host_obj spill_base} {
         set free_temps $::pak::CALLER_SAVED_GPRS
         set free_saved $::pak::CALLEE_SAVED_GPRS
         set used_saved {}
         set promoted_saved {}
+        set alloc_order {}
+        set spill_locs [dict create]
+        set host $host_obj
+        # Pre-reserve 8 spill slots in the function's stack frame.
+        set free_spill_slots {}
+        for {set i 0} {$i < 8} {incr i} {
+            lappend free_spill_slots [expr {$spill_base + $i * 4}]
+        }
     }
+
     method alloc_temp {} {
         if {[llength $free_temps] > 0} {
             set r [lindex $free_temps end]
             set free_temps [lrange $free_temps 0 end-1]
+            lappend alloc_order $r
             return $r
         }
         if {[llength $free_saved] > 0} {
@@ -174,11 +198,44 @@ oo::class create pak::RegAlloc {
             set free_saved [lrange $free_saved 0 end-1]
             if {$r ni $used_saved} { lappend used_saved $r }
             if {$r ni $promoted_saved} { lappend promoted_saved $r }
+            lappend alloc_order $r
             return $r
         }
-        return -code error "GPR temporary pool exhausted — need spilling logic"
+        # All 18 GPRs in use — spill the oldest allocated register.
+        if {[llength $alloc_order] > 0 && [llength $free_spill_slots] > 0} {
+            set victim [lindex $alloc_order 0]
+            set slot   [lindex $free_spill_slots 0]
+            set free_spill_slots [lrange $free_spill_slots 1 end]
+            dict set spill_locs $victim $slot
+            # Remove victim from front of alloc_order (original owner's slot)
+            set alloc_order [lrange $alloc_order 1 end]
+            # Emit the save — borrower will overwrite victim's contents.
+            $host emit_spill_store $victim $slot
+            # Borrower "allocates" victim — add to end of alloc_order.
+            lappend alloc_order $victim
+            return $victim
+        }
+        return -code error "GPR temporary pool exhausted (18 regs + 8 spill slots all in use)"
     }
+
     method free_temp {r} {
+        # Check if this free is a spill release (borrower is done with a stolen reg).
+        if {[dict exists $spill_locs $r]} {
+            set slot [dict get $spill_locs $r]
+            dict unset spill_locs $r
+            # Restore original value from spill slot.
+            $host emit_spill_load $r $slot
+            lappend free_spill_slots $slot
+            # Remove borrower's entry from alloc_order.
+            set idx [lsearch -exact $alloc_order $r]
+            if {$idx >= 0} { set alloc_order [lreplace $alloc_order $idx $idx] }
+            # Re-insert at front — original owner is "oldest" again.
+            set alloc_order [linsert $alloc_order 0 $r]
+            return
+        }
+        # Normal free: remove from alloc_order, return to proper pool.
+        set idx [lsearch -exact $alloc_order $r]
+        if {$idx >= 0} { set alloc_order [lreplace $alloc_order $idx $idx] }
         set i [lsearch -exact $promoted_saved $r]
         if {$i >= 0} {
             set promoted_saved [lreplace $promoted_saved $i $i]
@@ -187,10 +244,12 @@ oo::class create pak::RegAlloc {
             if {$r ni $free_temps} { lappend free_temps $r }
         }
     }
+
     method used_callee_gprs {} {
         return [lsort -command pak::gpr_cmp $used_saved]
     }
     method used_callee_fprs {} { return {} }
+    method spill_count {} { return [expr {8 - [llength $free_spill_slots]}] }
 }
 set ::pak::GPR_NUMBER [dict create {$s0} 16 {$s1} 17 {$s2} 18 {$s3} 19 \
     {$s4} 20 {$s5} 21 {$s6} 22 {$s7} 23]
@@ -962,10 +1021,13 @@ oo::class create pak::MipsCodegen {
         $em type_func $name
         $em label $name
         if {$ra ne ""} { catch {$ra destroy} }
-        set ra [pak::RegAlloc new]
+        # Pre-reserve 8 spill slots (32 bytes) at offsets 16..47 in the frame.
+        # All local variables and parameters start at offset 48.
+        set spill_base 16
+        set ra [pak::RegAlloc new [self] $spill_base]
         set scopes {}
         set defers {}
-        set next_local 16
+        set next_local [expr {$spill_base + 8 * 4}]
         my push_scope
         # params: store $a0-$a3 into stack slots (BEFORE prologue, matching backend)
         set i 0
@@ -988,6 +1050,10 @@ oo::class create pak::MipsCodegen {
         my emit_epilogue $frame_size
         $em size_sym $name ". - $name"
     }
+
+    # Called by RegAlloc during alloc_temp / free_temp when spilling.
+    method emit_spill_store {reg slot} { $em sw $reg $slot {$sp} }
+    method emit_spill_load  {reg slot} { $em lw $reg $slot {$sp} }
 
     method emit_prologue_placeholder {frame_size} {
         $em addiu {$sp} {$sp} -$frame_size

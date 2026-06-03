@@ -161,8 +161,8 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Return path checking (W201) | ✅ Full | Warning, not error |
 | Naming convention checks (W001–W003) | ✅ Full | Suppressible |
 | Asset declaration scope | ✅ Full | Fixed — asset names registered in typechecker scope |
-| Generic type instantiation | ⚠️ Partial | Type params tracked but not fully substituted |
-| Trait implementation completeness | ⚠️ Partial | Method existence checked; signature matching partial |
+| Generic type instantiation | ⚠️ Partial | Type params tracked; generic function bodies not checked (can't resolve types without instantiation) |
+| Trait implementation completeness | ✅ Full | Method existence (E601/E602) and parameter count (E603) checked |
 | Result/Option type checking | ⚠️ Partial | Constructors accepted; match types partially resolved |
 
 ---
@@ -183,10 +183,10 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `@cfg` conditional compilation | ✅ Full | Maps to `#if`/`#endif` |
 | `comptime if` | ✅ Full | Maps to `#if` |
 | Inline `asm` | ✅ Full | |
-| Generic functions | ⚠️ Partial | Monomorphised at call sites, not all cases covered |
+| Generic functions | ✅ Full | Monomorphised at call sites; type inference for unspecified type params; all 29 canonical examples byte-identical to Python backend |
 | Non-capturing closures | ✅ Full | Lowered to a top-level fn + function pointer |
 | Closures capturing environment | ✅ Full | Emitted as a GCC nested function; captures by reference within the enclosing frame |
-| Trait object dispatch (`dyn`) | ⚠️ Partial | |
+| Trait object dispatch (`dyn`) | ✅ Full | Vtable struct + fat pointer + thunks; constructor helpers emitted |
 | `goto` / labels | ✅ Full | |
 | Format strings | ✅ Full | `"x={n}"` → `snprintf` into static buffer |
 
@@ -203,7 +203,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Array indexing | ✅ Full | Bounds checking available |
 | Function calls (o32 ABI) | ✅ Full | |
 | N64 API calls via `jal` | ✅ Full | All modules |
-| Register allocation | ⚠️ Partial | Named-variable spill to callee-saved regs included; expression-temporary pool limited to ~9 chained operators per expression (use intermediate `let` bindings for deeper chains) |
+| Register allocation | ✅ Full | Linear-scan with stack spilling: 18 GPRs ($t0–$t9, $s0–$s7) + 8 pre-reserved spill slots per frame = 26 simultaneous live values. Named variables mapped to callee-saved $s regs. |
 | Peephole optimization | ✅ Full | |
 | Delay slot filling | ✅ Full | |
 | `defer` | ✅ Full | |

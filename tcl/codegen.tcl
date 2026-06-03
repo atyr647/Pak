@@ -121,7 +121,8 @@ proc pak::cg_subst_type {t subst} {
 oo::class create pak::Codegen {
     variable filename uses assets module_name fn_names enum_variants variant_types \
              struct_fields scopes method_registry trait_decls const_values \
-             generic_fns generic_structs module_headers defer_stack result_typedefs \
+             generic_fns generic_structs generic_impls mono_struct_origin \
+             module_headers defer_stack result_typedefs \
              result_typedef_names slice_typedefs slice_typedef_names \
              tuple_typedefs tuple_typedef_names vec_typedefs vec_typedef_names vec_used \
              container_typedefs container_typedef_names \
@@ -144,6 +145,8 @@ oo::class create pak::Codegen {
         set const_values [dict create]
         set generic_fns [dict create]
         set generic_structs [dict create]
+        set generic_impls [dict create]
+        set mono_struct_origin [dict create]
         set module_headers $mod_headers
         set result_typedefs {}
         set result_typedef_names [dict create]
@@ -456,12 +459,13 @@ oo::class create pak::Codegen {
             }
             Call      { return [my gen_call $e] }
             StructLit {
+                set type_name [my struct_lit_c_name $e]
                 set parts {}
                 foreach pair [pak::items [pak::nfield $e fields]] {
                     set p [pak::items $pair]
                     lappend parts ".[pak::sval [lindex $p 0]] = [my gen_expr [lindex $p 1]]"
                 }
-                return "([pak::fval $e type_name]){[join $parts {, }]}"
+                return "($type_name){[join $parts {, }]}"
             }
             VariantLit {
                 set vt [pak::fval $e variant_type]
@@ -830,6 +834,84 @@ oo::class create pak::Codegen {
         return $specialized_name
     }
 
+    method monomorphize_struct {struct_name type_args} {
+        set struct_decl [dict get $generic_structs $struct_name]
+        set c_type_args [lmap t $type_args {my gen_type $t}]
+        set cache_key "${struct_name}:[join $c_type_args ,]"
+        if {[dict exists $mono_cache $cache_key]} { return [dict get $mono_cache $cache_key] }
+        set safe [join [lmap t $c_type_args {string map {" " _ "*" p "," ""} $t}] _]
+        set specialized_name "${struct_name}_${safe}"
+        dict set mono_cache $cache_key $specialized_name
+        set subst [dict create]
+        set type_params [pak::items [pak::nfield $struct_decl type_params]]
+        for {set i 0} {$i < [llength $type_params]} {incr i} {
+            if {$i < [llength $type_args]} {
+                dict set subst [pak::sval [lindex $type_params $i]] [lindex $type_args $i]
+            }
+        }
+        set new_fields {}
+        foreach f [pak::items [pak::nfield $struct_decl fields]] {
+            lappend new_fields [pak::N StructField \
+                name [pak::fval $f name] \
+                type [pak::cg_subst_type [pak::nfield $f type] $subst] \
+                annotations {} default_value [pak::Nil] bit_width [pak::Nil]]
+        }
+        set spec_decl [pak::N StructDecl \
+            name $specialized_name fields $new_fields \
+            type_params {} annotations [pak::nfield $struct_decl annotations]]
+        lappend pending_mono $spec_decl
+        foreach f $new_fields {
+            dict set struct_fields $specialized_name [pak::fval $f name] [pak::nfield $f type]
+        }
+        dict set mono_struct_origin $specialized_name [list $struct_name $type_args]
+        return $specialized_name
+    }
+
+    method struct_lit_c_name {e} {
+        set tname [pak::fval $e type_name]
+        set type_args [pak::items [pak::nfield $e type_args]]
+        if {[llength $type_args] > 0 && [dict exists $generic_structs $tname]} {
+            return [my monomorphize_struct $tname $type_args]
+        }
+        return $tname
+    }
+
+    method monomorphize_impl_methods {spec_struct} {
+        if {[dict exists $method_registry $spec_struct]} { return }
+        if {![dict exists $mono_struct_origin $spec_struct]} { return }
+        lassign [dict get $mono_struct_origin $spec_struct] base type_args
+        if {![dict exists $generic_impls $base]} { return }
+        set impl [dict get $generic_impls $base]
+        set subst [dict create]
+        set impl_type_params [pak::items [pak::nfield $impl type_params]]
+        for {set i 0} {$i < [llength $impl_type_params]} {incr i} {
+            if {$i < [llength $type_args]} {
+                dict set subst [pak::sval [lindex $impl_type_params $i]] [lindex $type_args $i]
+            }
+        }
+        dict set method_registry $spec_struct [dict create]
+        foreach m [pak::items [pak::nfield $impl methods]] {
+            set new_params {}
+            foreach p [pak::items [pak::nfield $m params]] {
+                if {[pak::fval $p name] eq "self"} {
+                    set new_type [pak::N TypePointer inner [pak::N TypeName name $spec_struct] nullable 0 mutable 1]
+                } else {
+                    set new_type [pak::cg_subst_type [pak::nfield $p type] $subst]
+                }
+                lappend new_params [pak::N Param \
+                    name [pak::fval $p name] type $new_type \
+                    mutable [pak::fval $p mutable] default_value [pak::nfield $p default_value]]
+            }
+            set new_ret [pak::cg_subst_type [pak::nfield $m ret_type] $subst]
+            set spec_m [pak::N FnDecl \
+                name [pak::fval $m name] params $new_params ret_type $new_ret \
+                body [pak::nfield $m body] type_params {} annotations {} \
+                is_method 1 self_type [pak::N TypeName name $spec_struct] variadic 0]
+            dict set method_registry $spec_struct [pak::fval $m name] $spec_m
+            lappend pending_mono [list impl_method $spec_struct $spec_m]
+        }
+    }
+
     # Static type-method calls: Vec3.zero(), Mat4.identity(), Vec3.from(...) etc.
     # Mirror codegen._gen_static_type_method. Returns "" if not handled.
     method gen_static_type_method {type_name method arglist} {
@@ -1166,6 +1248,9 @@ oo::class create pak::Codegen {
             } elseif {[pak::kindof $obj_type] eq "TypePointer" && [pak::kindof [pak::nfield $obj_type inner]] eq "TypeName"} {
                 set tname [pak::fval [pak::nfield $obj_type inner] name]
             }
+            if {$tname ne "" && ![dict exists $method_registry $tname] && [dict exists $mono_struct_origin $tname]} {
+                my monomorphize_impl_methods $tname
+            }
             if {$tname ne "" && [dict exists $method_registry $tname] && [dict exists [dict get $method_registry $tname] $method_name]} {
                 set fn_decl [dict get [dict get $method_registry $tname] $method_name]
                 set c_fn "${tname}_${method_name}"
@@ -1350,11 +1435,7 @@ oo::class create pak::Codegen {
             if {[pak::kindof [pak::nfield $s value]] eq "AddrOf"} {
                 my scope_set $name [pak::N TypePointer inner [pak::N TypeName name auto] nullable 0 mutable 0]
             } elseif {[pak::kindof [pak::nfield $s value]] eq "StructLit"} {
-                # Record the concrete struct type for a struct-literal binding so
-                # later method calls (obj.method()) resolve. (Generic-struct
-                # monomorphization is not yet ported here; canonical files use
-                # plain struct names, matching the Python output.)
-                my scope_set $name [pak::N TypeName name [pak::fval [pak::nfield $s value] type_name]]
+                my scope_set $name [pak::N TypeName name [my struct_lit_c_name [pak::nfield $s value]]]
             }
         }
         set val [pak::nfield $s value]
@@ -1684,7 +1765,10 @@ oo::class create pak::Codegen {
     # ── declarations ──────────────────────────────────────────────────────────
     method gen_decl {decl} {
         switch -- [pak::kindof $decl] {
-            StructDecl  { return [my gen_struct $decl] }
+            StructDecl {
+                if {[llength [pak::items [pak::nfield $decl type_params]]] > 0} { return "" }
+                return [my gen_struct $decl]
+            }
             EnumDecl    { return [my gen_enum $decl] }
             UnionDecl   { return [my gen_union $decl] }
             FnDecl {
@@ -1803,6 +1887,7 @@ oo::class create pak::Codegen {
     }
 
     method gen_impl {impl} {
+        if {[llength [pak::items [pak::nfield $impl type_params]]] > 0} { return "" }
         set parts {}
         foreach m [pak::items [pak::nfield $impl methods]] {
             lappend parts [my gen_fn $m [pak::fval $impl type_name]]
@@ -2115,8 +2200,12 @@ oo::class create pak::Codegen {
                 }
                 ImplBlock - ImplTraitBlock {
                     set tname [pak::fval $decl type_name]
-                    foreach m [pak::items [pak::nfield $decl methods]] {
-                        dict set method_registry $tname [pak::fval $m name] $m
+                    if {[pak::kindof $decl] eq "ImplBlock" && [llength [pak::items [pak::nfield $decl type_params]]] > 0} {
+                        dict set generic_impls $tname $decl
+                    } else {
+                        foreach m [pak::items [pak::nfield $decl methods]] {
+                            dict set method_registry $tname [pak::fval $m name] $m
+                        }
                     }
                 }
                 TraitDecl { dict set trait_decls [pak::fval $decl name] $decl }
@@ -2309,21 +2398,32 @@ oo::class create pak::Codegen {
             foreach cl $closure_lines { lappend out $cl }
         }
 
-        foreach b $body { lappend out $b }
-
         # Emit monomorphized generic specializations generated during body codegen.
+        # These must precede body so that specialized struct typedefs and function
+        # definitions are visible where main/other code uses them.
         if {[llength $pending_mono] > 0} {
             lappend out ""
             lappend out "/* -- Generic specializations -- */"
-            foreach decl $pending_mono {
-                switch -- [pak::kindof $decl] {
-                    FnDecl     { lappend out [my gen_fn $decl ""] }
-                    StructDecl { lappend out [my gen_struct $decl] }
+            set i 0
+            while {$i < [llength $pending_mono]} {
+                set decl [lindex $pending_mono $i]
+                if {[llength $decl] == 3 && [lindex $decl 0] eq "impl_method"} {
+                    lassign $decl _ spec_struct spec_m
+                    lappend out [my gen_fn $spec_m $spec_struct]
+                } else {
+                    switch -- [pak::kindof $decl] {
+                        FnDecl     { lappend out [my gen_fn $decl ""] }
+                        StructDecl { lappend out [my gen_struct $decl] }
+                    }
                 }
                 lappend out ""
+                incr i
             }
             set pending_mono {}
         }
+
+        foreach b $body { lappend out $b }
+
         return [join $out \n]
     }
 }

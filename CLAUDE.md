@@ -119,6 +119,7 @@ When the compiler reports an error, use this table to understand it:
 | E401 | Use-after-move |
 | E601 | Method in `impl ... for Trait` is not declared in the trait |
 | E602 | `impl ... for Trait` omits a required trait method (no default body) |
+| E603 | Method signature mismatch — wrong number of parameters in trait impl |
 | W001–W003 | Style warnings (naming conventions) |
 
 ---

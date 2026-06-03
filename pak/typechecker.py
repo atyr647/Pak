@@ -306,19 +306,28 @@ class TypeChecker:
             for m in decl.methods:
                 self._check_fn(m)
         elif isinstance(decl, ast.ImplTraitBlock):
-            # Validate each method implementation against the trait signature
             trait = self.env.traits.get(decl.trait_name)
             if trait:
-                trait_method_names = {m.name for m in trait.methods}
+                trait_method_map = {m.name: m for m in trait.methods}
                 for m in decl.methods:
-                    if m.name not in trait_method_names:
+                    if m.name not in trait_method_map:
                         self.err('E601',
                                  f"method '{m.name}' is not declared in trait '{decl.trait_name}'",
                                  m,
                                  hint=f"Remove this method or add it to trait '{decl.trait_name}'")
-                # A trait method must either be implemented here or have a
-                # default body in the trait. Flag any required (body-less)
-                # trait method that the impl omits.
+                    else:
+                        tm = trait_method_map[m.name]
+                        # Compare non-self param counts
+                        impl_params = [p for p in m.params if p.name != 'self']
+                        trait_params = [p for p in tm.params if p.name != 'self']
+                        if len(impl_params) != len(trait_params):
+                            self.err('E603',
+                                     f"method '{m.name}' in impl of '{decl.trait_name}' for "
+                                     f"'{decl.type_name}' has {len(impl_params)} parameter(s) "
+                                     f"but trait declares {len(trait_params)}",
+                                     m,
+                                     hint=f"Match the trait's signature: "
+                                          f"{', '.join(p.name + ': ...' for p in trait_params) or '(none)'}")
                 impl_method_names = {m.name for m in decl.methods}
                 for tm in trait.methods:
                     if tm.name not in impl_method_names and tm.body is None:
@@ -352,6 +361,10 @@ class TypeChecker:
 
     def _check_fn(self, fn: ast.FnDecl):
         if not fn.body:
+            return
+        # Generic functions can't be meaningfully type-checked without
+        # knowing the concrete type arguments. Skip body checking.
+        if fn.type_params:
             return
         old_fn = self._current_fn
         self._current_fn = fn
