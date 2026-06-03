@@ -1,0 +1,248 @@
+-- pak/runtime/runtime.pk64 — N64 runtime HAL, written entirely in Pak.
+--
+-- Replaces the C runtime (vi.c, pak_hal.c) so a ROM can be built with no
+-- external MIPS toolchain: this file is compiled by the Pak MIPS backend,
+-- assembled by tcl/n64enc.tcl, and linked by pak/tools/n64_link.py.
+--
+-- Free functions emit bare symbol names (display_init, rdpq_fill_rectangle,
+-- memset, ...) matching the calls the codegen lowers game code into.
+--
+-- Framebuffers live in uncached RDRAM (KSEG1, 0xA02.....) so CPU writes are
+-- immediately visible to the Video Interface with no cache writeback.
+
+-- ── VI registers (uncached MMIO) ──────────────────────────────────────────
+const VI_CTRL: u32      = 0xA4400000
+const VI_ORIGIN: u32    = 0xA4400004
+const VI_WIDTH: u32     = 0xA4400008
+const VI_V_INTR: u32    = 0xA440000C
+const VI_V_CURRENT: u32 = 0xA4400010
+const VI_BURST: u32     = 0xA4400014
+const VI_V_SYNC: u32    = 0xA4400018
+const VI_H_SYNC: u32    = 0xA440001C
+const VI_LEAP: u32      = 0xA4400020
+const VI_H_START: u32   = 0xA4400024
+const VI_V_START: u32   = 0xA4400028
+const VI_V_BURST: u32   = 0xA440002C
+const VI_X_SCALE: u32   = 0xA4400030
+const VI_Y_SCALE: u32   = 0xA4400034
+
+const VI_CTRL_BLANK: u32 = 0x00000000
+const VI_CTRL_16BPP: u32 = 0x00003202   -- 16bpp RGBA5551, AA off, non-interlaced
+
+-- ── Framebuffers (uncached KSEG1; phys = addr & 0x00FFFFFF) ────────────────
+-- 320 x 240 x 2 bytes = 153600 (0x25800) bytes each.
+const SCREEN_W: i32  = 320
+const SCREEN_H: i32  = 240
+const FB_PIXELS: i32 = 76800            -- 320 * 240
+const FB0: u32 = 0xA0200000
+const FB1: u32 = 0xA0225800
+const FB2: u32 = 0xA024B000
+const NUM_BUFS: i32 = 3
+
+static g_draw: i32       = 1
+static g_shown: i32      = 0
+static g_fill_color: u16 = 0xFFFF
+static g_current_fb: u32 = 0
+
+-- ── MMIO helpers ───────────────────────────────────────────────────────────
+fn vi_write(reg: u32, val: u32) {
+    let p: *volatile u32 = reg as *volatile u32
+    *p = val
+}
+
+fn vi_read(reg: u32) -> u32 {
+    let p: *volatile u32 = reg as *volatile u32
+    return *p
+}
+
+fn fb_addr(idx: i32) -> u32 {
+    if idx == 0 { return FB0 }
+    if idx == 1 { return FB1 }
+    return FB2
+}
+
+-- RGBA8888 -> RGBA5551 (matches the C runtime's color32_to_16).
+fn color32_to_16(c: u32) -> u16 {
+    let r5: u32 = (c >> 27) & 0x1F
+    let g5: u32 = (c >> 19) & 0x1F
+    let b5: u32 = (c >> 11) & 0x1F
+    return ((r5 << 11) | (g5 << 6) | (b5 << 1) | 1) as u16
+}
+
+fn fb_fill(base: u32, px: u16) {
+    let mut i: i32 = 0
+    while i < FB_PIXELS {
+        let p: *volatile u16 = (base + (i * 2) as u32) as *volatile u16
+        *p = px
+        i = i + 1
+    }
+}
+
+-- ── VI core ────────────────────────────────────────────────────────────────
+fn vi_init() {
+    vi_write(VI_CTRL,    VI_CTRL_BLANK)
+    vi_write(VI_ORIGIN,  FB0 & 0x00FFFFFF)
+    vi_write(VI_WIDTH,   SCREEN_W as u32)
+    vi_write(VI_V_INTR,  0x00000200)
+    vi_write(VI_V_CURRENT, 0x00000000)
+    vi_write(VI_BURST,   0x03E52239)
+    vi_write(VI_V_SYNC,  0x0000020D)
+    vi_write(VI_H_SYNC,  0x00000C15)
+    vi_write(VI_LEAP,    0x0C150C15)
+    vi_write(VI_H_START, 0x006C02EC)
+    vi_write(VI_V_START, 0x002501FF)
+    vi_write(VI_V_BURST, 0x000E0204)
+    vi_write(VI_X_SCALE, 0x00000200)
+    vi_write(VI_Y_SCALE, 0x00000400)
+    vi_write(VI_CTRL,    VI_CTRL_16BPP)
+
+    -- Clear all buffers to black.
+    fb_fill(FB0, 0x0000 as u16)
+    fb_fill(FB1, 0x0000 as u16)
+    fb_fill(FB2, 0x0000 as u16)
+}
+
+fn vi_wait_vblank() {
+    -- Wait until past the active region (line >= 480), then for the new frame.
+    loop {
+        let line: u32 = vi_read(VI_V_CURRENT) & 0x3FF
+        if line >= 0x1E0 { break }
+    }
+    loop {
+        let line: u32 = vi_read(VI_V_CURRENT) & 0x3FF
+        if line < 0x1E0 { break }
+    }
+}
+
+fn vi_show(fb: u32) {
+    vi_wait_vblank()
+    vi_write(VI_ORIGIN, fb & 0x00FFFFFF)
+    -- Advance the draw index, skipping the buffer now on screen.
+    if fb == FB0 { g_shown = 0 }
+    elif fb == FB1 { g_shown = 1 }
+    else { g_shown = 2 }
+    g_draw = (g_shown + 1) % NUM_BUFS
+}
+
+-- ── display API (called by generated game code) ────────────────────────────
+fn display_init(res: i32, bpp: i32, bufs: i32, gamma: i32, filters: i32) {
+    vi_init()
+}
+
+fn display_get() -> u32 {
+    return fb_addr(g_draw)
+}
+
+fn display_show(fb: u32) {
+    vi_show(fb)
+}
+
+fn display_close() {
+}
+
+-- ── joypad / controller ────────────────────────────────────────────────────
+-- NOT YET PORTED. The controller path (controller.read -> joypad_get_status)
+-- returns libdragon's nested joypad_inputs_t (.held/.pressed) by value, which
+-- needs SI DMA (si.c) plus a struct-return ABI matching the codegen's input
+-- type. Tracked as a follow-up; a game using the controller will fail to link
+-- against this runtime until those symbols are provided.
+
+-- ── rdpq software renderer ──────────────────────────────────────────────────
+fn rdpq_init() {
+}
+
+fn rdpq_close() {
+}
+
+fn rdpq_attach(fb: u32) {
+    g_current_fb = fb
+}
+
+fn rdpq_attach_clear(fb: u32, color: u32) {
+    g_current_fb = fb
+    fb_fill(fb, color32_to_16(color))
+}
+
+fn rdpq_detach() {
+    g_current_fb = 0
+}
+
+fn rdpq_detach_show() {
+    let fb: u32 = g_current_fb
+    g_current_fb = 0
+    if fb != 0 {
+        vi_show(fb)
+    }
+}
+
+fn rdpq_set_mode_fill(color: u32) {
+    g_fill_color = color32_to_16(color)
+}
+
+fn rdpq_fill_rectangle(x0: i32, y0: i32, x1: i32, y1: i32) {
+    if g_current_fb == 0 { return }
+
+    let mut xa: i32 = x0
+    let mut ya: i32 = y0
+    let mut xb: i32 = x1
+    let mut yb: i32 = y1
+    if xa < 0 { xa = 0 }
+    if ya < 0 { ya = 0 }
+    if xb > SCREEN_W { xb = SCREEN_W }
+    if yb > SCREEN_H { yb = SCREEN_H }
+    if xa >= xb { return }
+    if ya >= yb { return }
+
+    let base: u32 = g_current_fb
+    let px: u16 = g_fill_color
+    let mut y: i32 = ya
+    while y < yb {
+        let mut x: i32 = xa
+        while x < xb {
+            let off: i32 = (y * SCREEN_W + x) * 2
+            let p: *volatile u16 = (base + off as u32) as *volatile u16
+            *p = px
+            x = x + 1
+        }
+        y = y + 1
+    }
+}
+
+-- No-op rendering-mode stubs (match the C runtime).
+fn rdpq_set_mode_standard() {
+}
+
+fn rdpq_set_mode_copy() {
+}
+
+fn rdpq_sync_full() {
+}
+
+fn rdpq_sync_pipe() {
+}
+
+fn rdpq_sync_tile() {
+}
+
+fn rdpq_sync_load() {
+}
+
+-- ── libc-style memory helpers (no libc in the standalone build) ─────────────
+fn memset(dst: *u8, val: i32, n: i32) -> *u8 {
+    let b: u8 = (val & 0xFF) as u8
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = b
+        i = i + 1
+    }
+    return dst
+}
+
+fn memcpy(dst: *u8, src: *u8, n: i32) -> *u8 {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = src[i]
+        i = i + 1
+    }
+    return dst
+}

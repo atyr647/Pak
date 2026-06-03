@@ -305,3 +305,92 @@ def test_end_to_end_pk64_to_z64(tmp_path):
     z64 = tmp_path / "standalone.z64"
     link_to_rom([str(obj)], str(z64), name="STANDALONE", entry="main")
     assert z64.exists() and z64.stat().st_size > 0
+
+
+# ── Full runtime build: hand-asm boot + Pak HAL + game → linked ROM ──────────
+
+_DISPLAY_DEMO_PK = """\
+use n64.display
+use n64.rdpq
+
+entry {
+    display.init(0, 0, 2, 0, 0)
+    rdpq.init()
+    let mut t: i32 = 0
+    loop {
+        let fb = display.get()
+        rdpq.attach_clear(fb, 0x0000FFFF)
+        rdpq.set_mode_fill(0xFF0000FF)
+        rdpq.fill_rectangle(40, 100, 80, 140)
+        rdpq.detach_show()
+        t = t + 1
+    }
+}
+"""
+
+
+def _tcl(*args, cwd):
+    return subprocess.run(
+        [_TCLSH, str(_ROOT / "tcl" / "cli.tcl"), *args],
+        capture_output=True, text=True, cwd=str(cwd),
+    )
+
+
+@pytest.mark.skipif(_TCLSH is None, reason="tclsh required for objgen/asmobj")
+def test_runtime_compiles_and_exports_hal(tmp_path):
+    """pak/runtime/runtime.pk64 compiles and exports the HAL symbols."""
+    obj = tmp_path / "runtime.pakobj"
+    r = _tcl("objgen", str(_ROOT / "pak" / "runtime" / "runtime.pk64"),
+             "-o", str(obj), cwd=_ROOT)
+    assert r.returncode == 0, r.stderr
+    text = obj.read_text()
+    for sym in ("display_init", "display_get", "display_show",
+                "rdpq_init", "rdpq_attach_clear", "rdpq_set_mode_fill",
+                "rdpq_fill_rectangle", "rdpq_detach_show", "memset", "memcpy"):
+        assert f"sym {sym} " in text, f"missing runtime symbol {sym}"
+
+
+@pytest.mark.skipif(_TCLSH is None, reason="tclsh required for objgen/asmobj")
+def test_end_to_end_boot_runtime_game(tmp_path):
+    """boot.S (hand-asm) + runtime.pk64 (Pak HAL) + game → linked ROM.
+
+    Proves the complete toolchain-free path including the crt0 cross-object
+    `jal main` fixup and the linker-defined __bss_start/__bss_end symbols.
+    """
+    boot_obj = tmp_path / "boot.pakobj"
+    rt_obj = tmp_path / "runtime.pakobj"
+    game_src = tmp_path / "demo.pk64"
+    game_obj = tmp_path / "demo.pakobj"
+    game_src.write_text(_DISPLAY_DEMO_PK)
+
+    assert _tcl("asmobj", str(_ROOT / "pak" / "runtime" / "boot.S"),
+                "-o", str(boot_obj), cwd=_ROOT).returncode == 0
+    assert _tcl("objgen", str(_ROOT / "pak" / "runtime" / "runtime.pk64"),
+                "-o", str(rt_obj), cwd=_ROOT).returncode == 0
+    assert _tcl("objgen", str(game_src),
+                "-o", str(game_obj), cwd=_ROOT).returncode == 0
+
+    res = link_objects([str(boot_obj), str(rt_obj), str(game_obj)],
+                       entry="_start")
+    # crt0 entry sits at the image base.
+    assert res.symbols["_start"] == BASE_ADDR
+    # Cross-object symbols resolve: boot -> game main, game -> runtime HAL.
+    assert res.symbols["main"] > BASE_ADDR
+    assert res.symbols["display_init"] > BASE_ADDR
+    assert res.symbols["rdpq_fill_rectangle"] > BASE_ADDR
+    # Linker-defined bss bounds exist (equal here: no .bss).
+    assert res.symbols["__bss_start"] == res.symbols["__bss_end"]
+
+    # _start begins with the CP0 status read (mfc0 $8,$12 = 0x40086000).
+    assert struct.unpack_from(">I", res.image, 0)[0] == 0x4008_6000
+
+    # boot's `jal main` (byte 64) targets exactly the game's main symbol.
+    jal = struct.unpack_from(">I", res.image, 64)[0]
+    assert jal >> 26 == 0x03  # jal opcode
+    target = ((jal & 0x03FF_FFFF) << 2) | 0x8000_0000
+    assert target == res.symbols["main"]
+
+    z64 = tmp_path / "demo.z64"
+    link_to_rom([str(boot_obj), str(rt_obj), str(game_obj)],
+                str(z64), name="DEMO", entry="_start")
+    assert z64.exists() and z64.stat().st_size > 0

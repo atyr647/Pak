@@ -8,10 +8,10 @@ source to machine code.
 ## Pipeline
 
 ```
-.pk64
-  → Tcl MIPS codegen (tcl/mips_codegen.tcl)
-      emits a structured RECORD stream alongside the assembly text
-  → Tcl binary encoder (tcl/n64enc.tcl)
+.pk64  (game + pak/runtime/runtime.pk64)      boot.S (hand-written crt0)
+  → Tcl MIPS codegen (tcl/mips_codegen.tcl)     → Tcl asm front-end
+      structured RECORD stream                       (tcl/n64enc.tcl parse_asm)
+  → Tcl binary encoder (tcl/n64enc.tcl) ───────────────┘
       records → machine-code words + relocations → .pakobj object file
   → Python flat linker (pak/tools/n64_link.py)
       .pakobj(s) → laid-out flat RDRAM image, relocations patched
@@ -20,6 +20,31 @@ source to machine code.
 ```
 
 No GCC, no `as`, no `ld`, no `objcopy`, no `n64tool`.
+
+## The runtime is Pak + a tiny hand-written crt0
+
+* **`pak/runtime/runtime.pk64`** — the HAL (display, framebuffers, software
+  `rdpq` fill, `memset`/`memcpy`) written entirely in Pak. Free functions emit
+  bare symbol names (`display_init`, `rdpq_fill_rectangle`, …) matching the
+  calls the codegen lowers game code into. MMIO is done with
+  `(0xA4400000 as *volatile u32)` writes; framebuffers live in uncached KSEG1
+  RDRAM so CPU writes are immediately visible to the Video Interface.
+* **`pak/runtime/boot.S`** — the crt0 (~12 instructions). It needs CP0 access
+  (`mfc0`/`mtc0`) which Pak cannot express, so it stays hand-written assembly
+  and is assembled by the encoder's `.s` front-end (`pak asmobj`). The linker
+  supplies `__bss_start`/`__bss_end` so boot can zero `.bss`, and boot's
+  `jal main` is resolved to the game's `entry` block across objects.
+
+A full ROM is three objects linked in order — **boot first** so `_start` lands
+at `0x80000400`:
+
+```sh
+pak asmobj pak/runtime/boot.S        -o boot.pakobj      # crt0
+pak objgen pak/runtime/runtime.pk64  -o runtime.pakobj   # HAL
+pak objgen game.pk64                 -o game.pakobj      # the game
+python -m pak.tools.n64_link boot.pakobj runtime.pakobj game.pakobj \
+    -o game.z64 --name GAME
+```
 
 ## Why records instead of re-parsing assembly text
 
@@ -87,13 +112,12 @@ references (`la`, `j`/`jal`, `.word sym`) become relocations the linker patches.
 
 ## Current limitations
 
-* **Runtime objects.** A real game references runtime symbols
-  (`display_init`, `joypad_poll`, `rdpq_fill_rectangle`, `memcpy`, …) provided by
-  `pak/runtime/` (`boot.S`, `vi.c`, `si.c`, `pak_hal.c`). Those are still C/asm.
-  Until they ship as pre-encoded `.pakobj`s (a one-time step) or are ported to
-  Pak, linking a full game still needs those object inputs. Self-contained
-  programs (pure compute, no I/O) link end-to-end with no runtime today — see
-  `tests/test_n64_link.py::test_end_to_end_pk64_to_z64`.
+* **Controller / joypad not yet ported.** `controller.read()` lowers to
+  `joypad_get_status`, which returns libdragon's nested `joypad_inputs_t`
+  (`.held`/`.pressed`) by value — that needs SI DMA plus a struct-return ABI
+  matching the codegen's input type. The display + software-`rdpq` path is fully
+  ported (`pak/runtime/runtime.pk64`); a game that polls the controller will
+  fail to link against the current runtime until those symbols are added.
 * **Optimization.** The peephole/scheduler/delay-slot passes in
   `tcl/optimize.tcl` operate on assembly *text*, not records. The encoded binary
   is therefore correct but **not** delay-slot-optimized (the codegen emits

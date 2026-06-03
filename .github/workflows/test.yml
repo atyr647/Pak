@@ -171,6 +171,14 @@ jobs:
           [ "$failed" -eq 0 ] && echo "All canonical examples produced object files."
           exit $failed
 
+      # The runtime is now Pak (+ a hand-asm crt0), not C — assemble both with
+      # the encoder so they stay buildable with no MIPS toolchain.
+      - name: Runtime builds toolchain-free (boot.S + runtime.pk64)
+        run: |
+          tclsh tcl/cli.tcl asmobj pak/runtime/boot.S        -o /tmp/boot.pakobj
+          tclsh tcl/cli.tcl objgen pak/runtime/runtime.pk64  -o /tmp/runtime.pakobj
+          echo "boot + runtime assembled."
+
       - name: Static-lint Tcl sources (nagelfar)
         run: bash tcl/tools/lint.sh
 

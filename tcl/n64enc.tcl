@@ -36,10 +36,15 @@ set ::pak::enc::GPR [dict create \
 
 proc pak::enc::gpr {r} {
     set r [string trim $r ,]
-    if {![dict exists $::pak::enc::GPR $r]} {
-        error "n64enc: unknown GPR register '$r'"
+    if {[dict exists $::pak::enc::GPR $r]} {
+        return [dict get $::pak::enc::GPR $r]
     }
-    return [dict get $::pak::enc::GPR $r]
+    # Numeric register form ($0..$31) — used by hand-written assembly (boot.S)
+    # and CP0 register operands (e.g. mfc0 $8, $12).
+    if {[regexp {^\$([0-9]+)$} $r -> n] && $n >= 0 && $n <= 31} {
+        return $n
+    }
+    error "n64enc: unknown GPR register '$r'"
 }
 
 # Coprocessor-1 register slot -> register NUMBER (0-31).
@@ -74,6 +79,14 @@ proc pak::enc::imm {tok} {
     }
     if {[regexp {^-?[0-9]+$} $t]} {
         return [expr {$t}]
+    }
+    # Constant expression on a restricted charset (e.g. ~1, 1<<8, 0xFF|0x100) —
+    # used by hand-written assembly. The charset excludes [ $ so `expr` cannot
+    # perform command/variable substitution.
+    if {[regexp {^[-+~()0-9xXa-fA-F<>&|*/ ]+$} $t]} {
+        if {![catch {expr $t} v] && [string is integer -strict $v]} {
+            return [expr {int($v)}]
+        }
     }
     error "n64enc: not an immediate: '$tok'"
 }
@@ -302,6 +315,13 @@ proc pak::enc::emit_real {ctxVar mnem args} {
         set woff [cur_off ctx]
         emit_word ctx [J $op 0]
         add_reloc ctx $woff R_MIPS_26 $target
+        return
+    }
+    # CP0: mfc0/mtc0 $gpr,$creg  (COP0 op=0x10, rs=MF(0)/MT(4), rt=$gpr, rd=creg)
+    if {$mnem eq "mfc0" || $mnem eq "mtc0"} {
+        lassign $ops g c
+        set rs [expr {$mnem eq "mfc0" ? 0x00 : 0x04}]
+        emit_word ctx [R 0x10 $rs [gpr $g] [gpr $c] 0 0]
         return
     }
     # FPU: mtc1/mfc1
@@ -634,6 +654,115 @@ proc pak::enc::write_object {records outfile} {
     puts -nonewline $fh $txt
     close $fh
     return $outfile
+}
+
+# ── GNU-as text front-end: .s/.S source -> record stream ─────────────────────
+# A thin assembler front-end so hand-written assembly (e.g. boot.S, which needs
+# CP0 access not expressible in Pak) can be encoded by the same backend. It
+# produces the SAME record format the Emitter emits, then feeds `encode`.
+#
+# Supported: labels, instructions (comma/space-separated operands), and the
+# directives .text/.data/.rodata/.bss/.section, .globl/.global, .type, .size,
+# .align/.p2align, .word/.half/.byte/.space, .ascii(z)/.asciz, .set (ignored).
+proc pak::enc::parse_asm {text} {
+    # Strip /* ... */ block comments (possibly multi-line).
+    regsub -all {/\*.*?\*/} $text " " text
+    set recs {}
+    foreach raw [split $text "\n"] {
+        # Strip line comments: # ... and // ...
+        regsub {#.*$} $raw "" raw
+        regsub {//.*$} $raw "" raw
+        set line [string trim $raw]
+        while {$line ne ""} {
+            # Leading label?  NAME:
+            if {[regexp {^([.\w$]+):\s*(.*)$} $line -> lbl rest]} {
+                lappend recs [list label $lbl]
+                set line [string trim $rest]
+                continue
+            }
+            break
+        }
+        if {$line eq ""} continue
+        if {[string index $line 0] eq "."} {
+            set r [pak::enc::parse_directive $line]
+            foreach rec $r { lappend recs $rec }
+            continue
+        }
+        # Instruction: mnemonic then operands split on commas.
+        if {[regexp {^(\S+)\s*(.*)$} $line -> mnem rest]} {
+            set ops {}
+            foreach o [split $rest ,] {
+                set o [string trim $o]
+                if {$o ne ""} { lappend ops $o }
+            }
+            lappend recs [list i $mnem {*}$ops]
+        }
+    }
+    return $recs
+}
+
+# Map a GNU-as directive line to zero or more records.
+proc pak::enc::parse_directive {line} {
+    set toks [regexp -all -inline {\S+} $line]
+    set d [lindex $toks 0]
+    set rest [lrange $toks 1 end]
+    switch -glob -- $d {
+        .text   { return [list {d section .text}] }
+        .data   { return [list {d section .data}] }
+        .rodata { return [list {d section .rodata}] }
+        .bss    { return [list {d section .bss}] }
+        .section {
+            # .section .text.boot,"ax",@progbits -> map to base section.
+            set name [lindex [split [lindex $rest 0] ,] 0]
+            switch -glob -- $name {
+                .text*   { set base .text }
+                .rodata* { set base .rodata }
+                .data*   { set base .data }
+                .bss*    { set base .bss }
+                default  { set base $name }
+            }
+            return [list [list d section $base]]
+        }
+        .globl - .global { return [list [list d globl [lindex $rest 0]]] }
+        .type {
+            # .type NAME, @function
+            set nm [string trimright [lindex $rest 0] ,]
+            return [list [list d type $nm @function]]
+        }
+        .size {
+            set nm [string trimright [lindex $rest 0] ,]
+            set expr [lrange $rest 1 end]
+            return [list [list d size $nm {*}$expr]]
+        }
+        .align - .p2align { return [list [list d align [lindex $rest 0]]] }
+        .word {
+            set out {}
+            foreach v [split [join $rest " "] ,] {
+                set v [string trim $v]
+                if {$v ne ""} { lappend out [list d word $v] }
+            }
+            return $out
+        }
+        .half - .short { return [list [list d half [string trimright [lindex $rest 0] ,]]] }
+        .byte { return [list [list d byte [string trimright [lindex $rest 0] ,]]] }
+        .space - .skip { return [list [list d space [lindex $rest 0]]] }
+        .ascii - .asciz - .asciiz - .string {
+            # Recover the quoted string from the original line.
+            if {[regexp {\"(.*)\"} $line -> s]} {
+                set s [subst -nocommands -novariables $s]
+            } else { set s "" }
+            return [list [list d asciiz $s]]
+        }
+        .set    { return {} }
+        .ent - .end - .frame - .mask - .fmask - .cpload - .cprestore - .gpword - .nan - .module - .abicalls - .option {
+            return {}
+        }
+        default { error "n64enc: unsupported assembler directive '$d'" }
+    }
+}
+
+proc pak::enc::write_object_from_asm {asm_text outfile} {
+    return [pak::enc::write_object [pak::enc::parse_asm $asm_text] $outfile]
 }
 
 # Helper for tests: encode a single instruction in a fresh .text section and

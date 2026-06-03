@@ -144,6 +144,22 @@ puts -nonewline $obj
 puts "-----------------------"
 check_eq "object header line" [lindex [split $obj "\n"] 0] "# pak object v1"
 
+# ── CP0, numeric registers, and constant-expression immediates (boot.S) ──────
+# mfc0 $8,$12 -> COP0 op=0x10 rs=0(MF) rt=8 rd=12
+check {i mfc0 $8 $12} 0x40086000
+# mtc0 $8,$12 -> rs=4(MT)
+check {i mtc0 $8 $12} 0x40886000
+# numeric GPRs: addu $8,$8,$9
+check {i addu $8 $8 $9} 0x01094021
+# sw $0, 0($8) — zero register by number
+check {i sw $0 0($8)} 0xAD000000
+# li with a C-style constant expression ~1 == -2 -> addiu $9,$zero,-2
+check {i li $9 ~1} 0x2409FFFE
+# li with a shift expression 1<<10 == 1024 (fits unsigned16 path? -> addiu)
+check {i li $8 (1<<10)} 0x24080400
+# lui with numeric dest
+check {i lui $29 0x8040} 0x3C1D8040
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

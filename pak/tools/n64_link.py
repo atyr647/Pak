@@ -292,6 +292,24 @@ def link_parsed_objects(objects: list[ParsedObject], entry: str = "_start") -> L
                 symbols[name] = vaddr
                 sym_origin[name] = f"{obj.path} (section {sec})"
 
+    # 3b. Linker-defined symbols. boot.S zero-fills .bss between these; the
+    #     classic GNU-ld names are provided so the hand-written crt0 links.
+    #     A user object defining them is an error (they are reserved).
+    bss_start = section_bases[".bss"]
+    bss_end = section_bases[".bss"] + section_sizes[".bss"]
+    for name, value in (
+        ("__bss_start", bss_start),
+        ("_fbss", bss_start),
+        ("__bss_end", bss_end),
+        ("_end", bss_end),
+    ):
+        if name in symbols:
+            raise LinkError(
+                f"reserved linker symbol {name!r} is also defined in "
+                f"{sym_origin[name]}"
+            )
+        symbols[name] = value
+
     # 4. Apply relocations (collecting all undefined symbols for one report).
     undefined: list[str] = []
     for sec in SECTION_ORDER:
