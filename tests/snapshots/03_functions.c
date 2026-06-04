@@ -62,3 +62,4 @@ int main(void) {
     result_sink = ((count + (int32_t)m) + (int32_t)c);
     return 0;
 }
+
