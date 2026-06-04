@@ -1660,7 +1660,7 @@ oo::class create pak::Codegen {
             set coll_type [my expr_type $iterable]
             my scope_set $binding [pak::N TypeName name auto]
             set idx [expr {$has_index ? $index : "_i_$binding"}]
-            if {[pak::kindof $coll_type] eq "TypeSlice" || [my container_kind $coll_type] in {Vec FixedList Pool}} {
+            if {[pak::kindof $coll_type] eq "TypeSlice" || [my container_kind $coll_type] in {Vec FixedList Pool RingBuffer}} {
                 lappend lines "${pad}for (int $idx = 0; $idx < ($coll).len; $idx++) \{"
                 lappend lines "${inner_pad}__typeof__(($coll).data\[0\]) $binding = ($coll).data\[$idx\];"
             } else {
