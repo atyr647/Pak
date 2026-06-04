@@ -1890,9 +1890,7 @@ oo::class create pak::MipsCodegen {
                 $ra free_temp $val
                 $em addiu $dst {$sp} $err_off
             }
-            RangeExpr {
-                my emit_expr [pak::nfield $expr start] $dst
-            }
+            RangeExpr { pak::mips_unported "RangeExpr-as-expr (only valid in for-loop)" }
             EnumVariantAccess {
                 set val [my resolve_enum_case_value [pak::fval $expr name]]
                 $em li $dst $val
@@ -1939,11 +1937,17 @@ oo::class create pak::MipsCodegen {
     }
 
     method emit_fmtstr {expr dst} {
-        foreach part [pak::items [pak::nfield $expr parts]] {
+        set parts [pak::items [pak::nfield $expr parts]]
+        # Check for interpolated (non-literal) parts
+        foreach part $parts {
+            if {[lindex $part 0] ne "lit"} { pak::mips_unported "fmtstr:interpolated" }
+        }
+        # Pure literal format string: load the string address
+        foreach part $parts {
             if {[lindex $part 0] eq "lit"} {
                 set lbl [$pool intern_string [lindex $part 1]]
                 $em la $dst $lbl
-                break
+                return
             }
         }
     }

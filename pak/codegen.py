@@ -1308,10 +1308,7 @@ class Codegen:
         if isinstance(e, ast.Cast):
             return f'({self.gen_type(e.type)}){self.gen_expr(e.expr)}'
         if isinstance(e, ast.RangeExpr):
-            # Used in for loops - handled specially
-            start = self.gen_expr(e.start)
-            end = self.gen_expr(e.end) if e.end else ''
-            return f'{start}..{end}'
+            raise CodegenError('RangeExpr used as expression (only valid as for-loop iterable or slice bounds)')
         if isinstance(e, ast.EnumVariantAccess):
             # .variant → EnumName_variant if we know the enum
             if e.name in self.enum_variants:

@@ -1242,7 +1242,7 @@ class Parser:
                 self.advance()
                 end = None
                 if not self.check(TT.RBRACE) and not self.check(TT.COMMA) and not self.check(TT.RPAREN) and not self.check(TT.RBRACKET):
-                    end = self.parse_primary()
+                    end = self.parse_postfix()
                 return ast.RangeExpr(start=lit, end=end, line=line, col=col)
             return lit
 
@@ -1503,7 +1503,7 @@ class Parser:
                 self.advance()
                 end = None
                 if not self.check(TT.RBRACE) and not self.check(TT.COMMA) and not self.check(TT.RPAREN):
-                    end = self.parse_primary()
+                    end = self.parse_postfix()
                 return ast.RangeExpr(start=ast.Ident(name=name, line=line, col=col), end=end, line=line, col=col)
 
             ident = ast.Ident(name=name, line=line, col=col)
@@ -1524,7 +1524,7 @@ class Parser:
                 self.advance()
                 end = None
                 if not self.check(TT.RBRACE) and not self.check(TT.COMMA) and not self.check(TT.RPAREN) and not self.check(TT.RBRACKET):
-                    end = self.parse_primary()
+                    end = self.parse_postfix()
                 return ast.RangeExpr(start=ast.IntLit(value=ival, raw=raw, line=line, col=col), end=end, line=line, col=col)
             return ast.IntLit(value=ival, raw=raw, line=line, col=col)
 

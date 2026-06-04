@@ -50,8 +50,7 @@ int32_t find_max(PakSlice_int32_t s) {
 }
 
 void double_all(PakSlice_int32_t s) {
-    for (int _i_i = 0; _i_i < (int)(sizeof(0..s.len)/sizeof((0..s.len)[0])); _i_i++) {
-        __typeof__((0..s.len)[0]) i = (0..s.len)[_i_i];
+    for (int i = 0; i < s.len; i++) {
         (s).data[i] = ((s).data[i] * 2);
     }
 }

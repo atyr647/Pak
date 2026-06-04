@@ -578,12 +578,7 @@ oo::class create pak::Codegen {
             Closure   { return [my gen_closure $e] }
             CatchExpr { return [my gen_expr [pak::nfield $e expr]] }
             NullCheck { return [my gen_expr [pak::nfield $e expr]] }
-            RangeExpr {
-                set start [my gen_expr [pak::nfield $e start]]
-                set end_node [pak::nfield $e end]
-                set end [expr {[pak::isnil $end_node] ? "" : [my gen_expr $end_node]}]
-                return "$start..$end"
-            }
+            RangeExpr { pak::cg_unported "RangeExpr-as-expr (only valid in for-loop or slice)" }
             default { pak::cg_unported "expr:[pak::kindof $e]" }
         }
     }
@@ -2207,10 +2202,28 @@ oo::class create pak::Codegen {
 
     method gen_static_global {s} {
         set anns [pak::annlist_or $s]
-        if {"@uncached" in $anns} { pak::cg_unported "static:uncached" }
-        set typ [pak::nfield $s type]
-        if {![pak::isnil $typ]} { set decl [my gen_array_decl [pak::fval $s name] $typ] } \
-        else { set decl "__auto_type [pak::fval $s name]" }
+        set name [pak::fval $s name]
+        set typ  [pak::nfield $s type]
+        if {"@uncached" in $anns} {
+            # @uncached: cached backing buffer + uncached pointer alias (mirrors Python)
+            set raw_name "_pak_raw_$name"
+            set align_n [my aligned_n $anns]
+            set align_attr [expr {$align_n ne "" ? "__attribute__((aligned($align_n)))" : "__attribute__((aligned(16)))"}]
+            if {![pak::isnil $typ]} {
+                set raw_decl [my gen_array_decl $raw_name $typ]
+                if {[pak::kindof $typ] eq "TypeArray"} {
+                    set ptr_type [my gen_type [pak::nfield $typ inner]]
+                } else {
+                    set ptr_type [my gen_type $typ]
+                }
+            } else {
+                set raw_decl "uint8_t ${raw_name}\[0\]"
+                set ptr_type "uint8_t"
+            }
+            return "static $align_attr $raw_decl;\nstatic $ptr_type * const $name = ($ptr_type *)UncachedAddr($raw_name);"
+        }
+        if {![pak::isnil $typ]} { set decl [my gen_array_decl $name $typ] } \
+        else { set decl "__auto_type $name" }
         set n [my aligned_n $anns]
         if {$n ne ""} { set decl "__attribute__((aligned($n))) $decl" }
         set val [pak::nfield $s value]

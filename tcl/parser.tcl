@@ -980,7 +980,7 @@ oo::class create pak::Parser {
                 if {[my check DOTDOT]} {
                     my advance
                     set end [pak::Nil]
-                    if {![my check RBRACE] && ![my check COMMA] && ![my check RPAREN] && ![my check RBRACKET]} { set end [my parse_primary] }
+                    if {![my check RBRACE] && ![my check COMMA] && ![my check RPAREN] && ![my check RBRACKET]} { set end [my parse_postfix] }
                     return [pak::N RangeExpr start $lit end $end]
                 }
                 return $lit
@@ -1151,7 +1151,7 @@ oo::class create pak::Parser {
                 if {[my check DOTDOT] && [llength $targs] == 0} {
                     my advance
                     set end [pak::Nil]
-                    if {![my check RBRACE] && ![my check COMMA] && ![my check RPAREN]} { set end [my parse_primary] }
+                    if {![my check RBRACE] && ![my check COMMA] && ![my check RPAREN]} { set end [my parse_postfix] }
                     return [pak::N RangeExpr start [pak::N Ident name $name type_args {}] end $end]
                 }
                 # If type args weren't followed by a call/struct, the '<...>' was

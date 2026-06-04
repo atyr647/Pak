@@ -258,41 +258,33 @@ double_all:
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
-    li $t8, 0
-    lw $t9, 0($t8)
+    li $t9, 0
     sw $t9, 104($sp)
-    lw $t8, 4($t9)
-    sw $t8, 108($sp)
-    sw $zero, 112($sp)
-.Lfeach_h_8:
-    lw $t9, 112($sp)
-    lw $t8, 108($sp)
-    bge $t9, $t8, .Lfeach_x_9
-    nop
+    lw $t7, 96($sp)
+    lw $t8, 4($t7)
+.Lfor_h_8:
     lw $t7, 104($sp)
-    sll $t6, $t9, 2
-    addu $t7, $t7, $t6
-    lw $t6, 0($t7)
-    sw $t6, 116($sp)
+    bge $t7, $t8, .Lfor_x_9
+    nop
+    lw $t3, 96($sp)
+    lw $t2, 104($sp)
+    sll $t2, $t2, 2
+    addu $t3, $t3, $t2
+    lw $t4, 0($t3)
+    li $t3, 2
+    mul $t5, $t4, $t3
     lw $t4, 96($sp)
-    lw $t3, 116($sp)
+    lw $t3, 104($sp)
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
-    lw $t5, 0($t4)
-    li $t4, 2
-    mul $t6, $t5, $t4
-    lw $t5, 96($sp)
-    lw $t4, 116($sp)
-    sll $t4, $t4, 2
-    addu $t5, $t5, $t4
-    sw $t6, 0($t5)
-    move $t7, $t6
-    lw $t9, 112($sp)
-    addiu $t9, $t9, 1
-    sw $t9, 112($sp)
-    j .Lfeach_h_8
+    sw $t5, 0($t4)
+    move $t6, $t5
+    lw $t7, 104($sp)
+    addiu $t7, $t7, 1
+    sw $t7, 104($sp)
+    j .Lfor_h_8
     nop
-.Lfeach_x_9:
+.Lfor_x_9:
 .Ldouble_all_ret_7:
     lw $fp, 248($sp)
     lw $ra, 252($sp)
