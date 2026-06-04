@@ -208,6 +208,8 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Delay slot filling | ✅ Full | |
 | `defer` | ✅ Full | |
 | `match` on enums | ✅ Full | |
+| Named-field variant construction (`Type.case { f: v }`) | ✅ Full | Stack-allocated with tag + payload stores |
+| Compound-assign `/=`, `%=`, `<<=`, `>>=` | ✅ Full | `/=` → `div`/`mflo`; `%=` → `div`/`mfhi`; shifts → `sllv`/`srav` |
 | Generics / traits | ⚠️ Partial | Same as C backend |
 
 ---
@@ -239,6 +241,13 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `?*mut T` and `?*volatile T` failed to parse | Fixed — `parse_type` handles `mut`/`volatile` after `?*` |
 | Tcl parser missing match arm guard support (`pattern if cond =>`) | Fixed — `parse_match_arm` now checks for `IF` token before `FAT_ARROW` |
 | `if expr -> binding { }` null-check evaluated `expr` twice when side-effecting | Fixed — `gen_null_check` emits an outer block with `__auto_type binding = (expr)` then checks binding |
+| Tcl parser `start..end` range — end expression used stale `end` variable | Fixed — `parse_range_end` now correctly reads the end expression from tokens |
+| MIPS `DotAccess` match pattern fell through to wrong emit path | Fixed — `emit_match` arm dispatch now handles `DotAccess` pattern before the wildcard branch |
+| MIPS `emit_stmt`/`emit_expr` had silent `default {}` / `move $dst $zero` fallbacks | Fixed — both now raise `mips_unported` for any unrecognised node kind, surfacing bugs instead of silently emitting wrong code |
+| MIPS `emit_binop` had a silent no-op default for unhandled operators | Fixed — now raises `mips_unported` |
+| Tcl C codegen `gen_match` Ident binding pattern emitted invalid C `case /* name */:` | Fixed — now raises `cg_unported`; only the wildcard (`_`) is accepted as a default arm |
+| MIPS named-field variant construction (`Type.case { field: val }`) silently emitted `$zero` | Fixed — `emit_expr` now handles `VariantLit`: stack-allocates a properly-aligned struct, stores the discriminant tag, then stores each named payload field at the correct offset |
+| MIPS compound-assign `/=`, `%=`, `<<=`, `>>=` were silently discarded | Fixed — `/=` uses `div`/`mflo`, `%=` uses `div`/`mfhi`, `<<=` uses `sllv`, `>>=` uses `srav`; unrecognised operators now raise `mips_unported` |
 
 ---
 
