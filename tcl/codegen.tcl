@@ -454,7 +454,7 @@ oo::class create pak::Codegen {
                 set ot [my expr_type [pak::nfield $e obj]]
                 set idx [my gen_expr [pak::nfield $e index]]
                 if {[pak::kindof $ot] eq "TypeSlice"} { return "($obj).data\[$idx\]" }
-                if {[my container_kind $ot] in {Vec FixedList Pool}} { return "($obj).data\[$idx\]" }
+                if {[my container_kind $ot] in {Vec FixedList Pool RingBuffer}} { return "($obj).data\[$idx\]" }
                 return "$obj\[$idx\]"
             }
             Call      { return [my gen_call $e] }
@@ -1686,7 +1686,132 @@ oo::class create pak::Codegen {
         return ""
     }
 
+    method pattern_cond {pat expr_var is_variant match_type} {
+        switch -- [pak::kindof $pat] {
+            Ident { return "1" }
+            Call {
+                set fn [pak::nfield $pat func]
+                if {[pak::kindof $fn] eq "EnumVariantAccess"} {
+                    set pn [pak::fval $fn name]
+                    set tn [expr {[dict exists $enum_variants $pn] ? [dict get $enum_variants $pn] : ""}]
+                    if {[dict exists $variant_types $tn]} { return "${expr_var}.tag == ${tn}_tag_${pn}" }
+                    if {$tn ne ""} { return "${expr_var} == ${tn}_${pn}" }
+                    return "${expr_var} == ${pn}"
+                }
+                return "1"
+            }
+            EnumVariantAccess {
+                set pn [pak::fval $pat name]
+                set tn [expr {[dict exists $enum_variants $pn] ? [dict get $enum_variants $pn] : ""}]
+                if {[dict exists $variant_types $tn]} { return "${expr_var}.tag == ${tn}_tag_${pn}" }
+                if {$tn ne ""} { return "${expr_var} == ${tn}_${pn}" }
+                return "${expr_var} == ${pn}"
+            }
+            DotAccess {
+                set obj_name [my gen_expr [pak::nfield $pat obj]]
+                if {[dict exists $variant_types $obj_name]} {
+                    return "${expr_var}.tag == ${obj_name}_tag_[pak::fval $pat field]"
+                }
+                return "${expr_var} == ${obj_name}_[pak::fval $pat field]"
+            }
+            IntLit  { return "${expr_var} == [pak::fval $pat value]" }
+            BoolLit { return "${expr_var} == [expr {[pak::fval $pat value] ? 1 : 0}]" }
+        }
+        return "1"
+    }
+
+    method pattern_bindings {pat expr_var} {
+        switch -- [pak::kindof $pat] {
+            Call {
+                set fn [pak::nfield $pat func]
+                if {[pak::kindof $fn] ne "EnumVariantAccess"} { return {} }
+                set case_name [pak::fval $fn name]
+                set tn [expr {[dict exists $enum_variants $case_name] ? [dict get $enum_variants $case_name] : ""}]
+                if {![dict exists $variant_types $tn]} { return {} }
+                set result {}
+                set args [pak::items [pak::nfield $pat args]]
+                for {set i 0} {$i < [llength $args]} {incr i} {
+                    set arg [lindex $args $i]
+                    set arg_name [pak::fval $arg name]
+                    if {$arg_name ne "_"} {
+                        lappend result [list $arg_name "${expr_var}.data.${case_name}.field${i}"]
+                    }
+                }
+                return $result
+            }
+            DotAccess {
+                if {[pak::isnil [pak::nfield $pat binding]]} { return {} }
+                set obj_name [my gen_expr [pak::nfield $pat obj]]
+                if {![dict exists $variant_types $obj_name]} { return {} }
+                return [list [list [pak::sval [pak::nfield $pat binding]] "${expr_var}.data.[string tolower [pak::fval $pat field]]"]]
+            }
+        }
+        return {}
+    }
+
+    method gen_match_guarded {s pad indent} {
+        variable _tmp_counter
+        if {![info exists _tmp_counter]} { set _tmp_counter 0 }
+        incr _tmp_counter
+        set expr_var "_pak_match_${_tmp_counter}"
+        set inner_pad [string repeat "    " [expr {$indent+1}]]
+        set inner2_pad [string repeat "    " [expr {$indent+2}]]
+        set match_type [my match_type_name [pak::nfield $s expr]]
+        set is_variant [dict exists $variant_types $match_type]
+        set lines [list "${pad}\{"]
+        lappend lines "${inner_pad}__auto_type ${expr_var} = [my gen_expr [pak::nfield $s expr]];"
+        set first 1
+        foreach arm [pak::items [pak::nfield $s arms]] {
+            set pat [pak::nfield $arm pattern]
+            set guard [pak::nfield $arm guard]
+            set is_wildcard [expr {[pak::kindof $pat] eq "Ident" && [pak::fval $pat name] eq "_"}]
+            set cond [my pattern_cond $pat $expr_var $is_variant $match_type]
+            set bindings [my pattern_bindings $pat $expr_var]
+            set guard_str ""
+            if {![pak::isnil $guard]} {
+                set gc [my gen_expr $guard]
+                foreach binding $bindings {
+                    set vname [lindex $binding 0]
+                    set facc  [lindex $binding 1]
+                    regsub -all "\\b${vname}\\b" $gc $facc gc
+                }
+                set guard_str " && ($gc)"
+            }
+            if {$is_wildcard && [pak::isnil $guard]} {
+                lappend lines "${inner_pad}else \{"
+            } else {
+                set kw [expr {$first ? "if" : "else if"}]
+                lappend lines "${inner_pad}${kw} (${cond}${guard_str}) \{"
+            }
+            my scope_push
+            foreach binding $bindings {
+                set vname [lindex $binding 0]
+                set facc  [lindex $binding 1]
+                lappend lines "${inner2_pad}__auto_type $vname = $facc;"
+                my scope_set $vname [pak::N TypeName name auto]
+            }
+            set body [pak::nfield $arm body]
+            if {[pak::kindof $body] eq "Block"} {
+                foreach st [pak::items [pak::nfield $body stmts]] { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
+            } else {
+                lappend lines "${inner2_pad}[my gen_expr $body];"
+            }
+            foreach d [my emit_defers_for_scope [expr {$indent+2}]] { lappend lines $d }
+            my scope_pop
+            lappend lines "${inner_pad}\}"
+            set first 0
+        }
+        lappend lines "${pad}\}"
+        return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
+    }
+
     method gen_match {s pad indent} {
+        set arms [pak::items [pak::nfield $s arms]]
+        foreach arm $arms {
+            if {![pak::isnil [pak::nfield $arm guard]]} {
+                return [my gen_match_guarded $s $pad $indent]
+            }
+        }
         set expr [my gen_expr [pak::nfield $s expr]]
         set inner_pad [string repeat "    " [expr {$indent+1}]]
         set inner2_pad [string repeat "    " [expr {$indent+2}]]
@@ -1694,7 +1819,7 @@ oo::class create pak::Codegen {
         set is_variant [dict exists $variant_types $match_type]
         set switch_expr [expr {$is_variant ? "${expr}.tag" : $expr}]
         set lines [list "${pad}switch ($switch_expr) {"]
-        foreach arm [pak::items [pak::nfield $s arms]] {
+        foreach arm $arms {
             set pat [pak::nfield $arm pattern]
             switch -- [pak::kindof $pat] {
                 Ident {
@@ -1724,9 +1849,22 @@ oo::class create pak::Codegen {
                         lappend lines "${inner_pad}case ${obj_name}_${variant}:"
                     }
                 }
+                Call {
+                    set fn [pak::nfield $pat func]
+                    if {[pak::kindof $fn] ne "EnumVariantAccess"} { pak::cg_unported "match-pat:Call-non-variant" }
+                    set case_name [pak::fval $fn name]
+                    set tn [expr {[dict exists $enum_variants $case_name] ? [dict get $enum_variants $case_name] : ""}]
+                    if {[dict exists $variant_types $tn]} {
+                        lappend lines "${inner_pad}case ${tn}_tag_${case_name}:"
+                    } elseif {$tn ne ""} {
+                        lappend lines "${inner_pad}case ${tn}_${case_name}:"
+                    } else {
+                        lappend lines "${inner_pad}case ${case_name}:"
+                    }
+                }
                 IntLit  { lappend lines "${inner_pad}case [pak::fval $pat value]:" }
                 BoolLit { lappend lines "${inner_pad}case [expr {[pak::fval $pat value] ? 1 : 0}]:" }
-                default { lappend lines "${inner_pad}case /* [my gen_expr $pat] */:" }
+                default { pak::cg_unported "match-pat:[pak::kindof $pat]" }
             }
             lappend lines "${inner_pad}{"
             my scope_push
@@ -1737,6 +1875,23 @@ oo::class create pak::Codegen {
                     set field_name [string tolower [pak::fval $pat field]]
                     lappend lines "${inner2_pad}__auto_type $bind = ${expr}.data.${field_name};"
                     my scope_set $bind [pak::N TypeName name auto]
+                }
+            } elseif {[pak::kindof $pat] eq "Call"} {
+                set fn [pak::nfield $pat func]
+                if {[pak::kindof $fn] eq "EnumVariantAccess"} {
+                    set case_name [pak::fval $fn name]
+                    set tn [expr {[dict exists $enum_variants $case_name] ? [dict get $enum_variants $case_name] : ""}]
+                    if {[dict exists $variant_types $tn]} {
+                        set args [pak::items [pak::nfield $pat args]]
+                        for {set i 0} {$i < [llength $args]} {incr i} {
+                            set arg [lindex $args $i]
+                            set arg_name [pak::fval $arg name]
+                            if {$arg_name ne "_"} {
+                                lappend lines "${inner2_pad}__auto_type $arg_name = ${expr}.data.${case_name}.field${i};"
+                                my scope_set $arg_name [pak::N TypeName name auto]
+                            }
+                        }
+                    }
                 }
             }
             set body [pak::nfield $arm body]

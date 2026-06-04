@@ -1376,7 +1376,7 @@ class Codegen:
                 alloc_c = self.gen_expr(e.allocator)
                 return f'({alloc_c}).vtable->dealloc_bytes(({alloc_c}).self, {ptr})'
             return f'free({ptr})'
-        return '/* unknown expr */'
+        raise CodegenError(f'unhandled expression type in codegen: {type(e).__name__}')
 
     def _gen_asm_expr(self, e: ast.AsmExpr) -> str:
         parts = [f'__asm__ {"__volatile__" if e.volatile else ""}("{e.template}"']
@@ -2205,7 +2205,7 @@ class Codegen:
                 result += f'\n#else\n' + '\n'.join(else_lines)
             result += f'\n#endif'
             return result
-        return f'/* unhandled decl: {type(decl).__name__} */'
+        raise CodegenError(f'unhandled declaration type in codegen: {type(decl).__name__}')
 
     def gen_impl(self, impl: ast.ImplBlock) -> str:
         # Generic impls are emitted lazily, specialized per instantiation
@@ -2822,7 +2822,7 @@ class Codegen:
             return result
         if isinstance(stmt, ast.UnionDecl):
             return self.gen_union(stmt)
-        return f'{pad}/* unhandled stmt: {type(stmt).__name__} */'
+        raise CodegenError(f'unhandled statement type in codegen: {type(stmt).__name__}')
 
     def gen_let_stmt(self, s: ast.LetDecl, pad: str) -> str:
         if s.name == '_':
@@ -3280,23 +3280,40 @@ class Codegen:
                     lines.append(f'{inner_pad}case {obj_name}_tag_{variant}:')
                 else:
                     lines.append(f'{inner_pad}case {obj_name}_{variant}:')
+            elif isinstance(pat, ast.Call) and isinstance(pat.func, ast.EnumVariantAccess):
+                case_name = pat.func.name
+                type_name = self.enum_variants.get(case_name, '')
+                if type_name in self.variant_types:
+                    lines.append(f'{inner_pad}case {type_name}_tag_{case_name}:')
+                elif type_name:
+                    lines.append(f'{inner_pad}case {type_name}_{case_name}:')
+                else:
+                    lines.append(f'{inner_pad}case {case_name}:')
             elif isinstance(pat, ast.IntLit):
                 lines.append(f'{inner_pad}case {pat.value}:')
             elif isinstance(pat, ast.BoolLit):
                 lines.append(f'{inner_pad}case {"1" if pat.value else "0"}:')
             else:
-                lines.append(f'{inner_pad}case /* {self.gen_expr(pat)} */:')
+                raise CodegenError(f'unhandled match pattern type: {type(pat).__name__}')
 
             # Wrap body in {} so variable declarations are always valid in C
             lines.append(f'{inner_pad}{{')
             self.scope_push()
-            # Emit variant binding if pattern has one: Type.Case(binding)
+            # Emit payload bindings: Type.Case(binding) or .case(x, y)
             if isinstance(pat, ast.DotAccess) and pat.binding:
                 obj_name = self.gen_expr(pat.obj)
                 if obj_name in self.variant_types:
                     field_name = pat.field.lower()
                     lines.append(f'{inner2_pad}__auto_type {pat.binding} = {expr}.data.{field_name};')
                     self.scope_set(pat.binding, ast.TypeName(name='auto'))
+            elif isinstance(pat, ast.Call) and isinstance(pat.func, ast.EnumVariantAccess):
+                case_name = pat.func.name
+                type_name = self.enum_variants.get(case_name, '')
+                if type_name in self.variant_types:
+                    for i, arg in enumerate(pat.args):
+                        if isinstance(arg, ast.Ident) and arg.name != '_':
+                            lines.append(f'{inner2_pad}__auto_type {arg.name} = {expr}.data.{case_name}.field{i};')
+                            self.scope_set(arg.name, ast.TypeName(name='auto'))
             if isinstance(arm.body, ast.Block):
                 for stmt in arm.body.stmts:
                     lines.append(self.gen_stmt(stmt, indent + 2))
