@@ -91,7 +91,7 @@ struct::record define UnionDecl {name fields annotations}
 struct::record define UseDecl {path alias}
 struct::record define VariantCase {name fields}
 struct::record define VariantDecl {name cases annotations}
-struct::record define VariantLit {case_name fields variant_type}
+struct::record define VariantLit {variant_type case_name fields}
 struct::record define WhileStmt {condition body}
 
 # Per-field wrap kinds consumed by pak::N (see header).
@@ -185,6 +185,6 @@ set ::pak::FKIND [dict create \
     UseDecl {path s alias n} \
     VariantCase {name s fields L} \
     VariantDecl {name s cases L annotations Ls} \
-    VariantLit {case_name s fields L variant_type s} \
+    VariantLit {variant_type s case_name s fields L} \
     WhileStmt {condition n body n} \
 ]
