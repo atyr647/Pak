@@ -153,8 +153,8 @@ main:
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
-    la $t9, rx_buffer
-    lw $t7, 0($t9)
+    la $t7, rx_buffer
+    lw $t7, 0($t7)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
@@ -165,8 +165,8 @@ main:
     jal data_cache_hit_writeback
     nop
     move $t9, $v0
-    la $t9, rx_buffer
-    lw $t7, 0($t9)
+    la $t7, rx_buffer
+    lw $t7, 0($t7)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
@@ -181,8 +181,8 @@ main:
     jal dma_wait
     nop
     move $t9, $v0
-    la $t9, rx_buffer
-    lw $t7, 0($t9)
+    la $t7, rx_buffer
+    lw $t7, 0($t7)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
@@ -193,16 +193,16 @@ main:
     jal data_cache_hit_invalidate
     nop
     move $t9, $v0
-    la $t9, rx_buffer
-    lw $t8, 0($t9)
+    la $t8, rx_buffer
+    lw $t8, 0($t8)
     li $t7, 0
     sll $t7, $t7, 2
     addu $t8, $t8, $t7
     lw $t9, 0($t8)
     sw $t9, 108($sp)
     lw $t8, 108($sp)
-    la $t9, rx_buffer
-    lw $t7, 0($t9)
+    la $t7, rx_buffer
+    lw $t7, 0($t7)
     li $t6, 1
     sll $t6, $t6, 2
     addu $t7, $t7, $t6

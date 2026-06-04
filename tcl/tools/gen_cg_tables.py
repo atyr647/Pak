@@ -21,6 +21,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 from pak.codegen import MODULE_API, USE_INCLUDES, PRIMITIVE_TYPES  # noqa: E402
+from pak.codegen import Codegen  # noqa: E402
 
 
 def tcl_dict(name, items):
@@ -55,10 +56,13 @@ lines.append("")
 lines += tcl_dict("CG_USE_INCLUDES", sorted(USE_INCLUDES.items()))
 lines.append("")
 lines += tcl_dict("CG_PRIM", sorted(PRIMITIVE_TYPES.items()))
+lines.append("")
+lines += tcl_dict("CG_FMT_SPEC", sorted(Codegen._FMT_SPEC.items()))
 
 dest = REPO / "tcl" / "cg_tables.tcl"
 dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
 print(
     f"wrote {dest} ({len(api_str)} api strings, {len(api_lam)} api lambdas, "
-    f"{len(USE_INCLUDES)} includes, {len(PRIMITIVE_TYPES)} primitives)"
+    f"{len(USE_INCLUDES)} includes, {len(PRIMITIVE_TYPES)} primitives, "
+    f"{len(Codegen._FMT_SPEC)} fmt specs)"
 )

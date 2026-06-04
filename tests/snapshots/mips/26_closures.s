@@ -276,8 +276,8 @@ __closure_6:
     jal double
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
 
 	.section .text
@@ -307,8 +307,8 @@ __closure_8:
     jal square
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
 
 	.section .text
@@ -338,24 +338,24 @@ __closure_10:
     jal negate
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $a0, 96($sp)
     li $a1, 6
     jal apply
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $a0, 100($sp)
     li $a1, 3
     jal apply
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $a0, 96($sp)
     lw $a1, 100($sp)
@@ -363,8 +363,8 @@ __closure_10:
     jal compose
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
 
 	.section .text
@@ -393,8 +393,8 @@ __closure_12:
     jal apply
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $a0, 96($sp)
     li $a1, 1
@@ -402,8 +402,8 @@ __closure_12:
     jal map_sum
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     li $t9, 10
     sw $t9, 108($sp)
@@ -418,8 +418,8 @@ __closure_14:
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
     lw $t9, 96($sp)
-    la $t9, base
-    lw $t8, 0($t9)
+    la $t8, base
+    lw $t8, 0($t8)
     addu $v0, $t9, $t8
     j .L__closure_14_ret_15
     nop
@@ -436,16 +436,16 @@ __closure_14:
     jal add_base
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $a0, 112($sp)
     li $a1, 3
     jal apply
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_5:
     lw $fp, 248($sp)

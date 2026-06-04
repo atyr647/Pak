@@ -156,19 +156,19 @@ main:
     li $t7, 160
     li $t6, 120
     addu $t8, $t7, $t6
-    la $t9, enemy_count
-    sw $t8, 0($t9)
+    la $t7, enemy_count
+    sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 1
-    la $t9, enemy_count
-    lw $t7, 0($t9)
+    la $t7, enemy_count
+    lw $t7, 0($t7)
     addu $t8, $t7, $t8
-    la $t9, enemy_count
-    sw $t8, 0($t9)
+    la $t7, enemy_count
+    sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 100
-    la $t9, score_table
-    lw $t7, 0($t9)
+    la $t7, score_table
+    lw $t7, 0($t7)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
@@ -177,22 +177,22 @@ main:
     li $t7, 1
     li $t6, 0
     sne $t8, $t7, $t6
-    la $t9, game_running
-    sw $t8, 0($t9)
+    la $t7, game_running
+    sw $t8, 0($t7)
     move $t9, $t8
-    la $t9, PI
-    lw $t7, 0($t9)
+    la $t7, PI
+    lw $t7, 0($t7)
     andi $t8, $t7, 255
-    la $t9, dma_buffer
-    lw $t7, 0($t9)
+    la $t7, dma_buffer
+    lw $t7, 0($t7)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 16
-    la $t9, score_table
-    lw $t7, 0($t9)
+    la $t7, score_table
+    lw $t7, 0($t7)
     li $t6, 1
     sll $t6, $t6, 2
     addu $t7, $t7, $t6

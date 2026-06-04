@@ -199,16 +199,16 @@ Player_move:
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
     lwc1 $f12, 100($sp)
-    la $t9, __cur
-    lw $t7, 0($t9)
+    la $t7, __cur
+    lw $t7, 0($t7)
     addu $t8, $t7, $t8
     lw $t6, 96($sp)
     lw $t7, 0($t6)
     swc1 $f12, 0($t7)
     move $t9, $t8
     lwc1 $f12, 104($sp)
-    la $t9, __cur
-    lw $t7, 0($t9)
+    la $t7, __cur
+    lw $t7, 0($t7)
     addu $t8, $t7, $t8
     lw $t6, 96($sp)
     lw $t7, 0($t6)
@@ -256,8 +256,8 @@ Player_take_damage:
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
     lw $t8, 100($sp)
-    la $t9, __cur
-    lw $t7, 0($t9)
+    la $t7, __cur
+    lw $t7, 0($t7)
     subu $t8, $t7, $t8
     lw $t7, 96($sp)
     sw $t8, 8($t7)
@@ -316,13 +316,13 @@ main:
     lw $t6, 96($sp)
     lw $t7, 0($t6)
     lwc1 $f12, 0($t7)
-    la $t9, sink_x
-    sw $t8, 0($t9)
+    la $t7, sink_x
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 96($sp)
     lw $t8, 8($t7)
-    la $t9, sink_hp
-    sw $t8, 0($t9)
+    la $t7, sink_hp
+    sw $t8, 0($t7)
     move $t9, $t8
     addiu $t8, $sp, 96
     move $a0, $t8
@@ -341,8 +341,8 @@ main:
     move $t9, $v0
     lw $t7, 96($sp)
     lw $t8, 8($t7)
-    la $t9, sink_hp
-    sw $t8, 0($t9)
+    la $t7, sink_hp
+    sw $t8, 0($t7)
     move $t9, $t8
     addiu $t8, $sp, 96
     move $a0, $t8
@@ -353,8 +353,8 @@ main:
     nop
     lw $t7, 96($sp)
     lw $t8, 8($t7)
-    la $t9, sink_hp
-    sw $t8, 0($t9)
+    la $t7, sink_hp
+    sw $t8, 0($t7)
     move $t9, $t8
 .Lif_end_6:
 .Lmain_ret_5:

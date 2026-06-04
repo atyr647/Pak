@@ -1604,9 +1604,11 @@ oo::class create pak::MipsCodegen {
         if {$tag_size == 1} { $em lbu $tag_r 0 $val_reg } \
         elseif {$tag_size == 2} { $em lhu $tag_r 0 $val_reg } \
         else { $em lw $tag_r 0 $val_reg }
-        $em li {$t9} $tag_val
-        $em bne $tag_r {$t9} $skip_label
+        set cmp_r [$ra alloc_temp]
+        $em li $cmp_r $tag_val
+        $em bne $tag_r $cmp_r $skip_label
         $em nop
+        $ra free_temp $cmp_r
         $ra free_temp $tag_r
 
         # Bind payload fields
@@ -1825,8 +1827,8 @@ oo::class create pak::MipsCodegen {
                 $em sw {$zero} $ok_off {$sp}
                 $em sw {$zero} [expr {$ok_off + 4}] {$sp}
                 # Set is_ok flag at offset 0
-                $em li {$t9} 1
-                $em sb {$t9} $ok_off {$sp}
+                $em li $dst 1
+                $em sb $dst $ok_off {$sp}
                 # Store value at offset 4
                 set val [$ra alloc_temp]
                 my emit_expr [pak::nfield $expr value] $val
@@ -2110,8 +2112,8 @@ oo::class create pak::MipsCodegen {
             my load_from_sp [lindex $local 0] $dst [lindex $local 1]
             return
         }
-        $em la {$t9} $name
-        $em lw $dst 0 {$t9}
+        $em la $dst $name
+        $em lw $dst 0 $dst
     }
 
     # element layout for array/slice access — always 4-byte (matches backend).
@@ -2366,8 +2368,8 @@ oo::class create pak::MipsCodegen {
             if {[pak::kindof $target] eq "Ident"} {
                 my emit_ident_load [pak::fval $target name] $cur
             } else {
-                $em la {$t9} __cur
-                $em lw $cur 0 {$t9}
+                $em la $cur __cur
+                $em lw $cur 0 $cur
             }
             switch -- $op {
                 +=  { $em addu $val_reg $cur $val_reg }
@@ -2386,8 +2388,10 @@ oo::class create pak::MipsCodegen {
                 if {$local ne ""} {
                     my store_to_sp [lindex $local 0] $val_reg [lindex $local 1]
                 } else {
-                    $em la {$t9} [pak::fval $target name]
-                    $em sw $val_reg 0 {$t9}
+                    set addr_r [$ra alloc_temp]
+                    $em la $addr_r [pak::fval $target name]
+                    $em sw $val_reg 0 $addr_r
+                    $ra free_temp $addr_r
                 }
             }
             Deref {
@@ -2649,10 +2653,12 @@ oo::class create pak::MipsCodegen {
     method save_fn_state {} {
         set s [dict create ra $ra scopes $scopes defers $defers \
             next_local $next_local ret_label $ret_label \
-            loop_header $loop_header loop_exit $loop_exit]
+            loop_header $loop_header loop_exit $loop_exit \
+            loop_defer_depth $loop_defer_depth]
         set ra ""
         set loop_header {}
         set loop_exit {}
+        set loop_defer_depth {}
         return $s
     }
     method restore_fn_state {s} {
@@ -2664,6 +2670,7 @@ oo::class create pak::MipsCodegen {
         set ret_label [dict get $s ret_label]
         set loop_header [dict get $s loop_header]
         set loop_exit [dict get $s loop_exit]
+        set loop_defer_depth [dict get $s loop_defer_depth]
     }
 
     method emit_method_call {access args_seq dst} {

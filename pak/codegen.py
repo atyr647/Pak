@@ -1101,8 +1101,8 @@ class Codegen:
             idx_str = self.gen_expr(e.index)
             if isinstance(obj_type, ast.TypeSlice):
                 return f'({obj_str}).data[{idx_str}]'
-            # Container index: Vec/FixedList/Pool hold a `.data` array.
-            if self._container_kind(obj_type) in ('Vec', 'FixedList', 'Pool'):
+            # All indexed containers hold a `.data` array.
+            if self._container_kind(obj_type) in ('Vec', 'FixedList', 'Pool', 'RingBuffer'):
                 return f'({obj_str}).data[{idx_str}]'
             return f'{obj_str}[{idx_str}]'
         if isinstance(e, ast.SliceExpr):

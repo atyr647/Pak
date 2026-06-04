@@ -198,24 +198,24 @@ main:
     lwc1 $f12, 0($t8)
     sw $t9, 116($sp)
     li $t8, 1
-    la $t9, frame_count
-    lw $t7, 0($t9)
+    la $t7, frame_count
+    lw $t7, 0($t7)
     addu $t8, $t7, $t8
-    la $t9, frame_count
-    sw $t8, 0($t9)
+    la $t7, frame_count
+    sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 100
     sw $t8, 96($sp)
     move $t9, $t8
-    la $t9, SPEED
-    lw $t8, 0($t9)
+    la $t8, SPEED
+    lw $t8, 0($t8)
     swc1 $f12, 100($sp)
     move $t9, $t8
     li $t8, 0
     sb $t8, 104($sp)
     move $t9, $t8
-    la $t9, frame_count
-    lw $t8, 0($t9)
+    la $t8, frame_count
+    lw $t8, 0($t8)
     sw $t8, 112($sp)
     move $t9, $t8
     lw $t7, 116($sp)

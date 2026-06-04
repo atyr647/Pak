@@ -180,24 +180,24 @@ main:
     jal rdpq_set_mode_copy
     nop
     move $t9, $v0
-    la $t9, bg_sprite
-    lw $a0, 0($t9)
+    la $a0, bg_sprite
+    lw $a0, 0($a0)
     li $a1, 0
     li $a2, 0
     li $a3, 0
     jal rdpq_sprite_blit
     nop
     move $t9, $v0
-    la $t9, player_sprite
-    lw $a0, 0($t9)
+    la $a0, player_sprite
+    lw $a0, 0($a0)
     li $a1, 160
     li $a2, 120
     li $a3, 0
     jal rdpq_sprite_blit
     nop
     move $t9, $v0
-    la $t9, enemy_sprite
-    lw $a0, 0($t9)
+    la $a0, enemy_sprite
+    lw $a0, 0($a0)
     li $a1, 100
     li $a2, 80
     li $a3, 0

@@ -165,8 +165,8 @@ update:
     beqz $t9, .Lif_end_1
     nop
     li $t8, 2
-    la $t9, __cur
-    lw $t7, 0($t9)
+    la $t7, __cur
+    lw $t7, 0($t7)
     addu $t8, $t7, $t8
     lw $t7, 96($sp)
     sw $t8, 0($t7)
@@ -178,8 +178,8 @@ update:
     beqz $t9, .Lif_end_2
     nop
     li $t8, 2
-    la $t9, __cur
-    lw $t7, 0($t9)
+    la $t7, __cur
+    lw $t7, 0($t7)
     subu $t8, $t7, $t8
     lw $t7, 96($sp)
     sw $t8, 0($t7)
@@ -191,8 +191,8 @@ update:
     beqz $t9, .Lif_end_3
     nop
     li $t8, 2
-    la $t9, __cur
-    lw $t7, 0($t9)
+    la $t7, __cur
+    lw $t7, 0($t7)
     addu $t8, $t7, $t8
     lw $t7, 96($sp)
     sw $t8, 4($t7)
@@ -204,8 +204,8 @@ update:
     beqz $t9, .Lif_end_4
     nop
     li $t8, 2
-    la $t9, __cur
-    lw $t7, 0($t9)
+    la $t7, __cur
+    lw $t7, 0($t7)
     subu $t8, $t7, $t8
     lw $t7, 96($sp)
     sw $t8, 4($t7)

@@ -215,8 +215,8 @@ main:
     li $t9, 1
 .Lpush_2:
     lw $t8, 480($sp)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $t8, 480($sp)
     seq $t9, $t8, $zero
@@ -232,12 +232,12 @@ main:
     sw $t9, 512($sp)
     lw $t8, 512($sp)
     lwc1 $f12, 0($t8)
-    la $t9, sink_f
-    sw $t7, 0($t9)
+    la $t8, sink_f
+    sw $t7, 0($t8)
     move $t9, $t7
     lw $t7, 480($sp)
-    la $t9, sink_i
-    sw $t7, 0($t9)
+    la $t8, sink_i
+    sw $t7, 0($t8)
     move $t9, $t7
     addiu $a0, $sp, 96
     li $a1, 0
@@ -245,8 +245,8 @@ main:
     nop
     move $t9, $v0
     lw $t7, 480($sp)
-    la $t9, sink_i
-    sw $t7, 0($t9)
+    la $t8, sink_i
+    sw $t7, 0($t8)
     move $t9, $t7
     la $t8, RingBuffer
     move $a0, $t8
@@ -317,8 +317,8 @@ main:
     sw $t4, 556($sp)
 .Lrbf_5:
     lw $t4, 556($sp)
-    la $t9, sink_i
-    sw $t4, 0($t9)
+    la $t5, sink_i
+    sw $t4, 0($t5)
     move $t9, $t4
     addiu $a0, $sp, 516
     li $a1, 0
@@ -327,8 +327,8 @@ main:
     move $t9, $v0
     sw $t9, 560($sp)
     lw $t4, 560($sp)
-    la $t9, sink_f
-    sw $t4, 0($t9)
+    la $t5, sink_f
+    sw $t4, 0($t5)
     move $t9, $t4
     lw $t4, 548($sp)
     li $t5, 4
@@ -349,14 +349,14 @@ main:
 .Lrbe_6:
     sw $t9, 564($sp)
     lw $t8, 564($sp)
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t6, sink_f
+    sw $t8, 0($t6)
     move $t9, $t8
     lw $t5, 556($sp)
     seq $t6, $t5, $zero
     move $t8, $t6
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t6, sink_i
+    sw $t8, 0($t6)
     move $t9, $t8
     la $t6, FixedMap
     move $a0, $t6
@@ -388,8 +388,8 @@ main:
     jal pak_map_set
     nop
     lw $t8, 712($sp)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t6, sink_i
+    sw $t8, 0($t6)
     move $t9, $t8
     addiu $a0, $sp, 568
     li $a1, 16
@@ -405,8 +405,8 @@ main:
     nop
     lw $t6, 716($sp)
     lw $t8, 0($t6)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t6, sink_i
+    sw $t8, 0($t6)
     move $t9, $t8
 .Lif_end_7:
     addiu $a0, $sp, 568
@@ -422,8 +422,8 @@ main:
     jal pak_map_remove
     nop
     lw $t8, 712($sp)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t6, sink_i
+    sw $t8, 0($t6)
     move $t9, $t8
     la $t6, Pool
     move $a0, $t6
@@ -457,8 +457,8 @@ main:
     move $t9, $t8
     lw $t6, 920($sp)
     lwc1 $f12, 0($t6)
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t6, sink_f
+    sw $t8, 0($t6)
     move $t9, $t8
     addiu $a0, $sp, 724
     lw $a1, 920($sp)
@@ -466,8 +466,8 @@ main:
     nop
 .Lif_end_8:
     lw $t8, 916($sp)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t6, sink_i
+    sw $t8, 0($t6)
     move $t9, $t8
     la $t8, Vec
     move $a0, $t8
@@ -488,8 +488,8 @@ main:
     jal _pak_vec_push
     nop
     lw $t8, 928($sp)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t6, sink_i
+    sw $t8, 0($t6)
     move $t9, $t8
     addiu $a0, $sp, 924
     li $a1, 0
@@ -498,8 +498,8 @@ main:
     move $t9, $v0
     sw $t9, 936($sp)
     lw $t8, 936($sp)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t6, sink_i
+    sw $t8, 0($t6)
     move $t9, $t8
     lw $t8, 928($sp)
     seq $t9, $t8, $zero
@@ -509,8 +509,8 @@ main:
     nop
     move $t9, $v0
     lw $t8, 928($sp)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t6, sink_i
+    sw $t8, 0($t6)
     move $t9, $t8
     addiu $a0, $sp, 924
     li $a1, 99
@@ -522,8 +522,8 @@ main:
     nop
     move $t9, $v0
     lw $t8, 928($sp)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t6, sink_i
+    sw $t8, 0($t6)
     move $t9, $t8
     addiu $a0, $sp, 924
     jal _pak_vec_free

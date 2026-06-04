@@ -317,16 +317,16 @@ main:
     jal Shape_c_area
     nop
     move $t8, $v0
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 104
     move $a0, $t7
     jal Shape_c_perimeter
     nop
     move $t8, $v0
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
     sw $zero, 112($sp)
     sw $zero, 116($sp)
@@ -348,53 +348,53 @@ main:
     jal Shape_r_area
     nop
     move $t8, $v0
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 120
     move $a0, $t7
     jal Shape_r_perimeter
     nop
     move $t8, $v0
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $a0, 104($sp)
     jal get_area
     nop
     move $t8, $v0
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $a0, 120($sp)
     jal get_area
     nop
     move $t8, $v0
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $a0, 120($sp)
     jal get_perimeter
     nop
     move $t8, $v0
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 96
     move $a0, $t7
     jal C_area
     nop
     move $t8, $v0
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 108
     move $a0, $t7
     jal R_area
     nop
     move $t8, $v0
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
     addiu $t6, $sp, 120
     move $a0, $t6
@@ -402,8 +402,8 @@ main:
     nop
     move $t7, $v0
     move $t8, $t7
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_6:
     lw $fp, 248($sp)

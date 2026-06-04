@@ -433,8 +433,8 @@ main:
     sw $t7, 4($t8)
     lw $t7, 128($sp)
     lw $t8, 4($t7)
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 96($sp)
     li $t6, 0
@@ -453,15 +453,15 @@ main:
     sw $t7, 4($t8)
     lw $t7, 144($sp)
     lw $t8, 4($t7)
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $a0, 144($sp)
     jal sum
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 96($sp)
     li $t6, 4
@@ -482,15 +482,15 @@ main:
     jal sum
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $a0, 128($sp)
     jal find_max
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 96($sp)
     li $t6, 0
@@ -516,15 +516,15 @@ main:
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     lw $t8, 0($t7)
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $a0, 144($sp)
     jal sum
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     move $t9, $zero
     sw $t9, 192($sp)
@@ -597,15 +597,15 @@ main:
     sw $t7, 4($t8)
     lw $t7, 256($sp)
     lw $t8, 4($t7)
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $a0, 256($sp)
     jal sum_x
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 192($sp)
     li $t6, 1
@@ -624,8 +624,8 @@ main:
     sw $t7, 4($t8)
     lw $t7, 272($sp)
     lw $t8, 4($t7)
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_13:
     lw $fp, 248($sp)

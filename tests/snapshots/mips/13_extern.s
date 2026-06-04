@@ -153,8 +153,8 @@ main:
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
-    la $t9, buf
-    lw $t7, 0($t9)
+    la $t7, buf
+    lw $t7, 0($t7)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
@@ -168,8 +168,8 @@ main:
     move $t9, $v0
     move $t9, $zero
     sw $t9, 100($sp)
-    la $t9, buf
-    lw $t7, 0($t9)
+    la $t7, buf
+    lw $t7, 0($t7)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
@@ -193,19 +193,19 @@ main:
     jal strlen
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
-    la $t9, TICKS_PER_SECOND
-    lw $t8, 0($t9)
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t8, TICKS_PER_SECOND
+    lw $t8, 0($t8)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
-    la $t9, RDPQ_COMBINER_FLAT
-    lw $t7, 0($t9)
+    la $t7, RDPQ_COMBINER_FLAT
+    lw $t7, 0($t7)
     andi $t8, $t7, 255
-    la $t9, buf
-    lw $t7, 0($t9)
+    la $t7, buf
+    lw $t7, 0($t7)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6

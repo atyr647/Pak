@@ -260,13 +260,13 @@ main:
     sw $t9, 96($sp)
     lw $t7, 96($sp)
     lw $t8, 0($t7)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 96($sp)
     lw $t8, 4($t7)
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 1
     sw $t8, 112($sp)
@@ -276,8 +276,8 @@ main:
     sw $t9, 108($sp)
     lw $t7, 108($sp)
     lw $t8, 4($t7)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     li $a0, 15
     li $a1, 3
@@ -287,13 +287,13 @@ main:
     sw $t9, 120($sp)
     lw $t7, 120($sp)
     lw $t8, 0($t7)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 120($sp)
     lw $t8, 4($t7)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     li $a0, 100
     li $a1, 200
@@ -303,13 +303,13 @@ main:
     sw $t9, 124($sp)
     lw $t7, 124($sp)
     lw $t8, 0($t7)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 124($sp)
     lw $t8, 4($t7)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     li $a0, 17
     li $a1, 5
@@ -319,13 +319,13 @@ main:
     sw $t9, 128($sp)
     lw $t7, 128($sp)
     lw $t8, 0($t7)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 128($sp)
     lw $t8, 4($t7)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 10
     sw $t8, 136($sp)
@@ -337,8 +337,8 @@ main:
     jal pair_sum
     nop
     move $t8, $v0
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     li $a0, 99
     li $a1, 1
@@ -355,8 +355,8 @@ main:
     lw $t7, 152($sp)
     lw $t6, 148($sp)
     subu $t8, $t7, $t6
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_4:
     lw $fp, 248($sp)

@@ -228,8 +228,8 @@ Enemy_update:
     lwc1 $f12, 8($t6)
     lwc1 $f12, 100($sp)
     mul $t8, $t7, $t6
-    la $t9, __cur
-    lw $t7, 0($t9)
+    la $t7, __cur
+    lw $t7, 0($t7)
     addu $t8, $t7, $t8
     lw $t7, 96($sp)
     sw $t8, 0($t7)
@@ -276,8 +276,8 @@ main:
     jal Spr_get_width
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     sw $zero, 120($sp)
     sw $zero, 124($sp)
@@ -303,8 +303,8 @@ main:
     lw $t6, 116($sp)
     lw $t7, 0($t6)
     move $t8, $t7
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_4:
     lw $fp, 248($sp)

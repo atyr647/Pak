@@ -296,8 +296,8 @@ main:
     jal add
     nop
     move $t8, $v0
-    la $t9, result_sink
-    sw $t8, 0($t9)
+    la $t7, result_sink
+    sw $t8, 0($t7)
     move $t9, $t8
     la $t8, .Lf320
     lwc1 $f12, 0($t8)
@@ -334,8 +334,8 @@ main:
     lw $t5, 100($sp)
     move $t6, $t5
     addu $t8, $t7, $t6
-    la $t9, result_sink
-    sw $t8, 0($t9)
+    la $t7, result_sink
+    sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_8:
     lw $fp, 248($sp)

@@ -402,3 +402,18 @@ set ::pak::CG_PRIM [dict create \
     {u8} {uint8_t} \
     {void} {void} \
 ]
+
+set ::pak::CG_FMT_SPEC [dict create \
+    {PakStr} {%.*s} \
+    {bool} {%d} \
+    {double} {%lf} \
+    {float} {%f} \
+    {int16_t} {%d} \
+    {int32_t} {%d} \
+    {int64_t} {%lld} \
+    {int8_t} {%d} \
+    {uint16_t} {%u} \
+    {uint32_t} {%u} \
+    {uint64_t} {%llu} \
+    {uint8_t} {%u} \
+]

@@ -631,14 +631,13 @@ oo::class create pak::Codegen {
             if {[dict exists $::pak::CG_FMT_SPEC $c]} { return [dict get $::pak::CG_FMT_SPEC $c] }
             if {[string match "*\*" $c] || $c eq "const char *"} { return "%s" }
         }
-        return "%ld"
+        return "%d"
     }
     method fmt_arg_for_expr {expr spec} {
         set c [my gen_expr $expr]
         switch -- $spec {
-            "%ld"  { return "(long)($c)" }
             "%lld" { return "(long long)($c)" }
-            "%lu" - "%llu" { return "(unsigned long)($c)" }
+            "%llu" { return "(unsigned long long)($c)" }
             "%.*s" { return "($c).len, ($c).data" }
         }
         return $c

@@ -162,8 +162,8 @@ load_data:
     sw $zero, 100($sp)
     sw $zero, 104($sp)
     sb $zero, 100($sp)
-    la $t9, LoadError
-    lw $t8, 0($t9)
+    la $t8, LoadError
+    lw $t8, 0($t8)
     lw $t9, 0($t8)
     sw $t9, 104($sp)
     addiu $v0, $sp, 100
@@ -172,8 +172,8 @@ load_data:
 .Lif_end_1:
     sw $zero, 108($sp)
     sw $zero, 112($sp)
-    li $t9, 1
-    sb $t9, 108($sp)
+    li $v0, 1
+    sb $v0, 108($sp)
     li $t9, 42
     sw $t9, 112($sp)
     addiu $v0, $sp, 108
@@ -205,8 +205,8 @@ divide:
     sw $zero, 104($sp)
     sw $zero, 108($sp)
     sb $zero, 104($sp)
-    la $t9, LoadError
-    lw $t8, 0($t9)
+    la $t8, LoadError
+    lw $t8, 0($t8)
     lw $t9, 0($t8)
     sw $t9, 108($sp)
     addiu $v0, $sp, 104
@@ -215,8 +215,8 @@ divide:
 .Lif_end_3:
     sw $zero, 112($sp)
     sw $zero, 116($sp)
-    li $t9, 1
-    sb $t9, 112($sp)
+    li $v0, 1
+    sb $v0, 112($sp)
     lw $t8, 96($sp)
     lw $t7, 100($sp)
     div $t8, $t7
@@ -248,30 +248,30 @@ main:
     sw $t9, 96($sp)
     lw $t9, 96($sp)
     lbu $t8, 0($t9)
-    li $t9, 0
-    bne $t8, $t9, .Larm_skip_7
+    li $t7, 0
+    bne $t8, $t7, .Larm_skip_7
     nop
-    la $t9, data
-    lw $t7, 0($t9)
-    la $t9, sink
-    sw $t7, 0($t9)
+    la $t7, data
+    lw $t7, 0($t7)
+    la $t6, sink
+    sw $t7, 0($t6)
     move $t8, $t7
     j .Lmatch_end_5
     nop
 .Larm_skip_7:
     lbu $t8, 0($t9)
-    li $t9, 0
-    bne $t8, $t9, .Larm_skip_9
+    li $t7, 0
+    bne $t8, $t7, .Larm_skip_9
     nop
-    la $t9, e
-    lw $t8, 0($t9)
+    la $t8, e
+    lw $t8, 0($t8)
     li $t7, 0
     bne $t8, $t7, .Larm_skip_12
     nop
     li $t5, 1
     subu $t6, $zero, $t5
-    la $t9, sink
-    sw $t6, 0($t9)
+    la $t5, sink
+    sw $t6, 0($t5)
     move $t7, $t6
     j .Lmatch_end_10
     nop
@@ -281,8 +281,8 @@ main:
     nop
     li $t5, 2
     subu $t6, $zero, $t5
-    la $t9, sink
-    sw $t6, 0($t9)
+    la $t5, sink
+    sw $t6, 0($t5)
     move $t7, $t6
     j .Lmatch_end_10
     nop
@@ -292,8 +292,8 @@ main:
     nop
     li $t5, 3
     subu $t6, $zero, $t5
-    la $t9, sink
-    sw $t6, 0($t9)
+    la $t5, sink
+    sw $t6, 0($t5)
     move $t7, $t6
     j .Lmatch_end_10
     nop
@@ -311,25 +311,25 @@ main:
     sw $t9, 100($sp)
     lw $t9, 100($sp)
     lbu $t8, 0($t9)
-    li $t9, 0
-    bne $t8, $t9, .Larm_skip_19
+    li $t7, 0
+    bne $t8, $t7, .Larm_skip_19
     nop
     li $t6, 10
     subu $t7, $zero, $t6
-    la $t9, sink
-    sw $t7, 0($t9)
+    la $t6, sink
+    sw $t7, 0($t6)
     move $t8, $t7
     j .Lmatch_end_17
     nop
 .Larm_skip_19:
     lbu $t8, 0($t9)
-    li $t9, 0
-    bne $t8, $t9, .Larm_skip_21
+    li $t7, 0
+    bne $t8, $t7, .Larm_skip_21
     nop
-    la $t9, v
-    lw $t7, 0($t9)
-    la $t9, sink
-    sw $t7, 0($t9)
+    la $t7, v
+    lw $t7, 0($t7)
+    la $t6, sink
+    sw $t7, 0($t6)
     move $t8, $t7
     j .Lmatch_end_17
     nop
@@ -350,8 +350,8 @@ main:
     sw $zero, 128($sp)
     sw $zero, 132($sp)
     sb $zero, 128($sp)
-    la $t9, LoadError
-    lw $t6, 0($t9)
+    la $t6, LoadError
+    lw $t6, 0($t6)
     lw $t7, 0($t6)
     sw $t7, 132($sp)
     addiu $t9, $sp, 128
@@ -362,20 +362,20 @@ main:
     sw $t7, 4($t8)
     lw $t9, 104($sp)
     lbu $t8, 0($t9)
-    li $t9, 0
-    bne $t8, $t9, .Larm_skip_24
+    li $t7, 0
+    bne $t8, $t7, .Larm_skip_24
     nop
-    la $t9, v
-    lw $t7, 0($t9)
-    la $t9, sink
-    sw $t7, 0($t9)
+    la $t7, v
+    lw $t7, 0($t7)
+    la $t6, sink
+    sw $t7, 0($t6)
     move $t8, $t7
     j .Lmatch_end_22
     nop
 .Larm_skip_24:
     lbu $t8, 0($t9)
-    li $t9, 0
-    bne $t8, $t9, .Larm_skip_26
+    li $t7, 0
+    bne $t8, $t7, .Larm_skip_26
     nop
     j .Lmatch_end_22
     nop
@@ -383,20 +383,20 @@ main:
 .Lmatch_end_22:
     lw $t9, 120($sp)
     lbu $t8, 0($t9)
-    li $t9, 0
-    bne $t8, $t9, .Larm_skip_29
+    li $t7, 0
+    bne $t8, $t7, .Larm_skip_29
     nop
     j .Lmatch_end_27
     nop
 .Larm_skip_29:
     lbu $t8, 0($t9)
-    li $t9, 0
-    bne $t8, $t9, .Larm_skip_31
+    li $t7, 0
+    bne $t8, $t7, .Larm_skip_31
     nop
     li $t6, 1
     subu $t7, $zero, $t6
-    la $t9, sink
-    sw $t7, 0($t9)
+    la $t6, sink
+    sw $t7, 0($t6)
     move $t8, $t7
     j .Lmatch_end_27
     nop

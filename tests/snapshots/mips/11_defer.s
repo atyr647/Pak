@@ -168,8 +168,8 @@ do_work:
     jal debugf
     nop
     move $t9, $v0
-    la $t9, buf
-    lw $t8, 0($t9)
+    la $t8, buf
+    lw $t8, 0($t8)
     move $a0, $t8
     jal __pak_free
     nop

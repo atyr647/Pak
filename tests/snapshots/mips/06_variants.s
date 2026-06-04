@@ -156,8 +156,8 @@ area:
     addiu $fp, $sp, 256
     lw $t9, 96($sp)
     lbu $t8, 0($t9)
-    li $t9, 0
-    bne $t8, $t9, .Larm_skip_3
+    li $t7, 0
+    bne $t8, $t7, .Larm_skip_3
     nop
     lwc1 $f12, 4($t9)
     swc1 $f12, 108($sp)
@@ -173,8 +173,8 @@ area:
     nop
 .Larm_skip_3:
     lbu $t8, 0($t9)
-    li $t9, 1
-    bne $t8, $t9, .Larm_skip_5
+    li $t7, 1
+    bne $t8, $t7, .Larm_skip_5
     nop
     lwc1 $f12, 4($t9)
     swc1 $f12, 112($sp)
@@ -282,8 +282,8 @@ main:
     jal area
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     sw $zero, 108($sp)
     sw $zero, 112($sp)
@@ -300,26 +300,26 @@ main:
     jal area
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
-    la $t9, Shape
-    lw $t7, 0($t9)
+    la $t7, Shape
+    lw $t7, 0($t7)
     lw $a0, 0($t7)
     jal area
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
-    la $t9, Entity
-    lw $t7, 0($t9)
+    la $t7, Entity
+    lw $t7, 0($t7)
     lw $a0, 0($t7)
     jal entity_id
     nop
     move $t8, $v0
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     sw $zero, 124($sp)
     sw $zero, 128($sp)
@@ -334,22 +334,22 @@ main:
     sw $t9, 120($sp)
     lw $t9, 120($sp)
     lbu $t8, 0($t9)
-    li $t9, 0
-    bne $t8, $t9, .Larm_skip_21
+    li $t7, 0
+    bne $t8, $t7, .Larm_skip_21
     nop
     lbu $t8, 1($t9)
     sb $t8, 136($sp)
     lbu $t6, 136($sp)
     move $t7, $t6
-    la $t9, sink_i
-    sw $t7, 0($t9)
+    la $t6, sink_i
+    sw $t7, 0($t6)
     move $t8, $t7
     j .Lmatch_end_19
     nop
 .Larm_skip_21:
     lbu $t8, 0($t9)
-    li $t9, 1
-    bne $t8, $t9, .Larm_skip_23
+    li $t7, 1
+    bne $t8, $t7, .Larm_skip_23
     nop
     lw $t8, 4($t9)
     sw $t8, 140($sp)
@@ -358,8 +358,8 @@ main:
     lw $t6, 140($sp)
     lw $t5, 144($sp)
     addu $t7, $t6, $t5
-    la $t9, sink_i
-    sw $t7, 0($t9)
+    la $t6, sink_i
+    sw $t7, 0($t6)
     move $t8, $t7
     j .Lmatch_end_19
     nop
@@ -369,8 +369,8 @@ main:
     nop
     li $t6, 1
     subu $t7, $zero, $t6
-    la $t9, sink_i
-    sw $t7, 0($t9)
+    la $t6, sink_i
+    sw $t7, 0($t6)
     move $t8, $t7
     j .Lmatch_end_19
     nop
@@ -383,8 +383,8 @@ main:
     bne $t9, $t8, .Larm_skip_28
     nop
     li $t7, 1
-    la $t9, sink_i
-    sw $t7, 0($t9)
+    la $t6, sink_i
+    sw $t7, 0($t6)
     move $t8, $t7
     j .Lmatch_end_26
     nop
@@ -393,8 +393,8 @@ main:
     bne $t9, $t8, .Larm_skip_30
     nop
     li $t7, 2
-    la $t9, sink_i
-    sw $t7, 0($t9)
+    la $t6, sink_i
+    sw $t7, 0($t6)
     move $t8, $t7
     j .Lmatch_end_26
     nop
@@ -403,8 +403,8 @@ main:
     bne $t9, $t8, .Larm_skip_32
     nop
     li $t7, 0
-    la $t9, sink_i
-    sw $t7, 0($t9)
+    la $t6, sink_i
+    sw $t7, 0($t6)
     move $t8, $t7
     j .Lmatch_end_26
     nop

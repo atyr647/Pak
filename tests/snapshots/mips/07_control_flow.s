@@ -235,8 +235,8 @@ main:
     beqz $t9, .Lif_else_8
     nop
     li $t8, 1
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     j .Lif_end_7
     nop
@@ -247,15 +247,15 @@ main:
     beqz $t9, .Lelif_else_9
     nop
     li $t8, 2
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     j .Lif_end_7
     nop
 .Lelif_else_9:
     li $t8, 3
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
 .Lif_end_7:
     li $t9, 0
@@ -371,8 +371,8 @@ main:
     addu $t7, $t6, $t5
     lw $t6, 112($sp)
     addu $t8, $t7, $t6
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_6:
     lw $fp, 248($sp)

@@ -218,8 +218,8 @@ fill_audio_buffer:
     j .Lloop_x_5
     nop
 .Lif_end_6:
-    la $t9, frame
-    lw $t7, 0($t9)
+    la $t7, frame
+    lw $t7, 0($t7)
     li $t6, 735
     mul $t8, $t7, $t6
     lw $t6, 100($sp)
@@ -314,12 +314,12 @@ main:
     jal rdpq_detach_show
     nop
     move $t9, $v0
-    la $t9, frame
-    lw $t7, 0($t9)
+    la $t7, frame
+    lw $t7, 0($t7)
     li $t6, 1
     addu $t8, $t7, $t6
-    la $t9, frame
-    sw $t8, 0($t9)
+    la $t7, frame
+    sw $t8, 0($t7)
     move $t9, $t8
     j .Lloop_h_8
     nop

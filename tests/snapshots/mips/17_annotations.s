@@ -220,8 +220,8 @@ main:
     lw $t6, 96($sp)
     lw $t7, 0($t6)
     andi $t8, $t7, 255
-    la $t9, dma_out
-    lw $t7, 0($t9)
+    la $t7, dma_out
+    lw $t7, 0($t7)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
@@ -243,11 +243,11 @@ main:
     addu $t6, $t6, $t5
     lw $t7, 0($t6)
     move $t8, $t7
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
-    la $t9, dma_out
-    lw $t6, 0($t9)
+    la $t6, dma_out
+    lw $t6, 0($t6)
     li $t5, 0
     sll $t5, $t5, 2
     addu $t6, $t6, $t5
@@ -259,8 +259,8 @@ main:
     jal sum_scanline
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_3:
     lw $fp, 248($sp)

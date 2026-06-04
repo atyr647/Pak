@@ -223,16 +223,16 @@ main:
     jal identity
     nop
     move $t8, $v0
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     la $t7, .Lf320
     lwc1 $f12, 0($t7)
     jal identity
     nop
     move $t8, $v0
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
     li $a0, 1
     jal identity
@@ -244,8 +244,8 @@ main:
     jal max_of
     nop
     move $t8, $v0
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     la $t7, .Lf321
     lwc1 $f12, 0($t7)
@@ -254,24 +254,24 @@ main:
     jal max_of
     nop
     move $t8, $v0
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
     li $a0, 100
     li $a1, 50
     jal max_of
     nop
     move $t8, $v0
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     li $a0, 1
     li $a1, 2
     jal swap_first
     nop
     move $t8, $v0
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     sw $zero, 108($sp)
     sw $zero, 112($sp)
@@ -287,29 +287,29 @@ main:
     sw $t7, 4($t8)
     lw $t7, 100($sp)
     lw $t8, 0($t7)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 100($sp)
     lw $t8, 4($t7)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 100
     move $a0, $t7
     jal P_sum_i32
     nop
     move $t8, $v0
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 100
     move $a0, $t7
     jal P_get_first
     nop
     move $t8, $v0
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     sw $zero, 124($sp)
     sw $zero, 128($sp)
@@ -327,24 +327,24 @@ main:
     sw $t7, 4($t8)
     lw $t7, 116($sp)
     lwc1 $f12, 0($t7)
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 116
     move $a0, $t7
     jal Fp_sum_i32
     nop
     move $t8, $v0
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 116
     move $a0, $t7
     jal Fp_get_second
     nop
     move $t8, $v0
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
 
 	.section .text
@@ -370,8 +370,8 @@ identity__i32:
     jal identity__i32
     nop
     move $t8, $v0
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     sw $zero, 140($sp)
     sw $zero, 144($sp)
@@ -388,13 +388,13 @@ identity__i32:
     sw $t7, 4($t8)
     lw $t7, 132($sp)
     lw $t8, 0($t7)
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 132($sp)
     lwc1 $f12, 4($t7)
-    la $t9, sink_f
-    sw $t8, 0($t9)
+    la $t7, sink_f
+    sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_3:
     lw $fp, 248($sp)

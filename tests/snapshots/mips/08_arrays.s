@@ -295,8 +295,8 @@ main:
     addu $t6, $t6, $t5
     lw $t7, 0($t6)
     move $t8, $t7
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 10
     lw $t7, 96($sp)
@@ -323,8 +323,8 @@ main:
     jal sum_array
     nop
     move $t8, $v0
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_6:
     lw $fp, 248($sp)

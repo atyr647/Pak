@@ -187,16 +187,16 @@ main:
     move $t9, $v0
     lw $t7, 100($sp)
     lw $t8, 0($t7)
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 99
     lw $t7, 100($sp)
     sw $t8, 0($t7)
     move $t9, $t8
     lw $t8, 96($sp)
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
     move $t9, $zero
     sw $t9, 104($sp)
@@ -209,8 +209,8 @@ main:
     nop
     lw $t7, 104($sp)
     lw $t8, 0($t7)
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
 .Lif_end_2:
     lw $t8, 108($sp)
@@ -220,8 +220,8 @@ main:
     nop
     lw $t7, 108($sp)
     lw $t8, 0($t7)
-    la $t9, sink
-    sw $t8, 0($t9)
+    la $t7, sink
+    sw $t8, 0($t7)
     move $t9, $t8
 .Lif_end_3:
     li $a0, 1

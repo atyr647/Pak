@@ -267,13 +267,13 @@ main:
     sw $t9, 120($sp)
     lw $t7, 96($sp)
     move $t8, $t7
-    la $t9, sink_i
-    sw $t8, 0($t9)
+    la $t7, sink_i
+    sw $t8, 0($t7)
     move $t9, $t8
     li $t7, 3
     sll $t8, $t7, 16
-    la $t9, sink_x
-    sw $t8, 0($t9)
+    la $t7, sink_x
+    sw $t8, 0($t7)
     move $t9, $t8
     sw $zero, 128($sp)
     sw $zero, 132($sp)
@@ -321,8 +321,8 @@ main:
     lw $t5, 152($sp)
     lw $t6, 0($t5)
     addu $t8, $t7, $t6
-    la $t9, sink_x
-    sw $t8, 0($t9)
+    la $t7, sink_x
+    sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_2:
     lw $fp, 248($sp)
