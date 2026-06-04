@@ -535,12 +535,15 @@ class Parser:
             name = self.expect(TT.IDENT).value
             return ast.TypeDynTrait(name=name, line=line, col=col)
 
-        # ?*Type  or  ?Type
+        # ?*Type  or  ?*mut Type  or  ?*volatile Type  or  ?Type
         if self.match(TT.QUESTION):
             if self.check(TT.STAR):
                 self.advance()
+                vol = bool(self.match(TT.VOLATILE))
+                mut = bool(self.match(TT.MUT))
                 inner = self.parse_type()
-                return ast.TypePointer(inner=inner, nullable=True, line=line, col=col)
+                ptr = ast.TypePointer(inner=inner, nullable=True, mutable=mut, line=line, col=col)
+                return ast.TypeVolatile(inner=ptr, line=line, col=col) if vol else ptr
             inner = self.parse_type()
             return ast.TypeOption(inner=inner, line=line, col=col)
 

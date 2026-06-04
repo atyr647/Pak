@@ -434,7 +434,7 @@ proc pak::mips_annlist {node} {
 
 # ── orchestrator ────────────────────────────────────────────────────────────
 oo::class create pak::MipsCodegen {
-    variable em pool ra ret_label scopes defers next_local loop_header loop_exit \
+    variable em pool ra ret_label scopes defers next_local loop_header loop_exit loop_defer_depth \
              globals consts label_n \
              tenv_layouts tenv_enum_values tenv_variant_decls \
              generic_fns generic_structs mono_emitted type_nodes
@@ -449,6 +449,7 @@ oo::class create pak::MipsCodegen {
         set next_local 16
         set loop_header {}
         set loop_exit {}
+        set loop_defer_depth {}
         set globals [dict create]
         set consts [dict create]
         set label_n 0
@@ -915,6 +916,16 @@ oo::class create pak::MipsCodegen {
             lset defers end $last
         }
     }
+    # Emit defers for all scopes at index >= base_depth (innermost first).
+    # Used by break/continue to run defers declared inside the current loop.
+    method emit_defers_from {base_depth} {
+        for {set i [expr {[llength $defers]-1}]} {$i >= $base_depth} {incr i -1} {
+            set scope_d [lindex $defers $i]
+            for {set j [expr {[llength $scope_d]-1}]} {$j >= 0} {incr j -1} {
+                my emit_stmt [lindex $scope_d $j]
+            }
+        }
+    }
     method declare_local {name layout {type_node ""}} {
         set align [dict get $layout align]
         set next_local [expr {($next_local + $align - 1) & ~($align - 1)}]
@@ -1021,12 +1032,17 @@ oo::class create pak::MipsCodegen {
         $em type_func $name
         $em label $name
         if {$ra ne ""} { catch {$ra destroy} }
-        # Pre-reserve 8 spill slots (32 bytes) at offsets 16..47 in the frame.
-        # All local variables and parameters start at offset 48.
-        set spill_base 16
+        # Frame layout: $sp+0..15 = O32 home area; $sp+16..63 = outgoing stack args
+        # (up to 12 extra args beyond the 4 register args); $sp+64..95 = 8 spill
+        # slots; $sp+96+ = local variables.  Keeping spill slots above the O32
+        # outgoing-arg area prevents marshal_args from clobbering spilled values.
+        set spill_base 64
         set ra [pak::RegAlloc new [self] $spill_base]
         set scopes {}
         set defers {}
+        set loop_header {}
+        set loop_exit {}
+        set loop_defer_depth {}
         set next_local [expr {$spill_base + 8 * 4}]
         my push_scope
         # params: store $a0-$a3 into stack slots (BEFORE prologue, matching backend)
@@ -1113,10 +1129,14 @@ oo::class create pak::MipsCodegen {
     }
 
     # ── typed memory ──────────────────────────────────────────────────────────
+    # Float convention: all scalar f32 values reside in $f12 (the float
+    # accumulator).  The GPR dst/src argument is ignored for float ops —
+    # swc1/lwc1 always target $f12.  Float arithmetic is not yet fully
+    # supported; only load, store, and argument-passing paths are correct.
     method emit_typed_load {dst off base layout {volatile 0}} {
         if {$volatile} { $em sync }
         if {[dict get $layout is_float]} {
-            if {[dict get $layout size] == 4} { $em lwc1 $dst $off $base } else { $em ldc1 $dst $off $base }
+            if {[dict get $layout size] == 4} { $em lwc1 {$f12} $off $base } else { $em ldc1 {$f12} $off $base }
         } else {
             switch -- [dict get $layout size] {
                 1 { if {[dict get $layout is_signed]} { $em lb $dst $off $base } else { $em lbu $dst $off $base } }
@@ -1129,7 +1149,7 @@ oo::class create pak::MipsCodegen {
     method emit_typed_store {src off base layout {volatile 0}} {
         if {$volatile} { $em sync }
         if {[dict get $layout is_float]} {
-            if {[dict get $layout size] == 4} { $em swc1 $src $off $base } else { $em sdc1 $src $off $base }
+            if {[dict get $layout size] == 4} { $em swc1 {$f12} $off $base } else { $em sdc1 {$f12} $off $base }
         } else {
             switch -- [dict get $layout size] {
                 1 { $em sb $src $off $base }
@@ -1244,10 +1264,16 @@ oo::class create pak::MipsCodegen {
             ForStmt   { my emit_for $stmt }
             MatchStmt { my emit_match $stmt }
             Break {
-                if {[llength $loop_exit] > 0} { $em j [lindex $loop_exit end]; $em nop }
+                if {[llength $loop_exit] > 0} {
+                    my emit_defers_from [lindex $loop_defer_depth end]
+                    $em j [lindex $loop_exit end]; $em nop
+                }
             }
             Continue {
-                if {[llength $loop_header] > 0} { $em j [lindex $loop_header end]; $em nop }
+                if {[llength $loop_header] > 0} {
+                    my emit_defers_from [lindex $loop_defer_depth end]
+                    $em j [lindex $loop_header end]; $em nop
+                }
             }
             DeferStmt {
                 my add_defer [pak::nfield $stmt body]
@@ -1340,6 +1366,7 @@ oo::class create pak::MipsCodegen {
         set header [my fresh_label ".Lwhile_h"]
         set exit_l [my fresh_label ".Lwhile_x"]
         lappend loop_header $header; lappend loop_exit $exit_l
+        lappend loop_defer_depth [llength $defers]
         $em label $header
         set cond [$ra alloc_temp]
         my emit_expr [pak::nfield $stmt condition] $cond
@@ -1351,12 +1378,14 @@ oo::class create pak::MipsCodegen {
         $em nop
         $em label $exit_l
         set loop_header [lrange $loop_header 0 end-1]; set loop_exit [lrange $loop_exit 0 end-1]
+        set loop_defer_depth [lrange $loop_defer_depth 0 end-1]
     }
 
     method emit_do_while {stmt} {
         set header [my fresh_label ".Ldow_h"]
         set exit_l [my fresh_label ".Ldow_x"]
         lappend loop_header $header; lappend loop_exit $exit_l
+        lappend loop_defer_depth [llength $defers]
         $em label $header
         my emit_block [pak::nfield $stmt body]
         set cond [$ra alloc_temp]
@@ -1366,18 +1395,21 @@ oo::class create pak::MipsCodegen {
         $ra free_temp $cond
         $em label $exit_l
         set loop_header [lrange $loop_header 0 end-1]; set loop_exit [lrange $loop_exit 0 end-1]
+        set loop_defer_depth [lrange $loop_defer_depth 0 end-1]
     }
 
     method emit_loop {stmt} {
         set header [my fresh_label ".Lloop_h"]
         set exit_l [my fresh_label ".Lloop_x"]
         lappend loop_header $header; lappend loop_exit $exit_l
+        lappend loop_defer_depth [llength $defers]
         $em label $header
         my emit_block [pak::nfield $stmt body]
         $em j $header
         $em nop
         $em label $exit_l
         set loop_header [lrange $loop_header 0 end-1]; set loop_exit [lrange $loop_exit 0 end-1]
+        set loop_defer_depth [lrange $loop_defer_depth 0 end-1]
     }
 
     method emit_for {stmt} {
@@ -1401,6 +1433,7 @@ oo::class create pak::MipsCodegen {
         set end_tv [pak::nfield $it end]
         if {![pak::isnil $end_tv]} { my emit_expr $end_tv $end_r } else { $em li $end_r 2147483647 }
         lappend loop_header $header; lappend loop_exit $exit_l
+        lappend loop_defer_depth [llength $defers]
         $em label $header
         set ctr [$ra alloc_temp]
         my load_from_sp $counter_off $ctr $counter_layout
@@ -1424,6 +1457,7 @@ oo::class create pak::MipsCodegen {
         $ra free_temp $start_r
         $em label $exit_l
         set loop_header [lrange $loop_header 0 end-1]; set loop_exit [lrange $loop_exit 0 end-1]
+        set loop_defer_depth [lrange $loop_defer_depth 0 end-1]
     }
 
     # for item in slice — treat iterable as a fat pointer {ptr, len@+4}.
@@ -1446,6 +1480,7 @@ oo::class create pak::MipsCodegen {
         $em sw {$zero} $idx_off {$sp}
 
         lappend loop_header $header; lappend loop_exit $exit_l
+        lappend loop_defer_depth [llength $defers]
         $em label $header
 
         set idx_r [$ra alloc_temp]
@@ -1485,6 +1520,7 @@ oo::class create pak::MipsCodegen {
         $em nop
         $em label $exit_l
         set loop_header [lrange $loop_header 0 end-1]; set loop_exit [lrange $loop_exit 0 end-1]
+        set loop_defer_depth [lrange $loop_defer_depth 0 end-1]
     }
 
     method emit_match {stmt} {
@@ -1704,7 +1740,7 @@ oo::class create pak::MipsCodegen {
                 $em la $addr $lbl
                 $em lwc1 {$f12} 0 $addr
                 $ra free_temp $addr
-                $em move $dst {$zero}
+                # Float value lives in $f12; $dst (GPR) is not used for floats.
             }
             Ident     { my emit_ident_load [pak::fval $expr name] $dst }
             BinaryOp  { my emit_binop $expr $dst }
@@ -2125,10 +2161,9 @@ oo::class create pak::MipsCodegen {
             return
         }
         if {[dict get $to is_float]} {
-            # int → float: convert in $f12, GPR result gets 0 (matches Python)
+            # int → float: convert into $f12 (the float accumulator register).
             $em mtc1 $src {$f12}
             $em cvt_s_w {$f12} {$f12}
-            $em move $dst {$zero}
             return
         }
         pak::emit_int_cast $em $dst $src [dict get $to size] [dict get $to is_signed]

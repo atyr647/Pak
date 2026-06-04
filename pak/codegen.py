@@ -1088,7 +1088,12 @@ class Codegen:
                 # Pointer variable: p.field → p->field
                 if self.is_pointer(n):
                     return f'{obj_str}->{e.field}'
-            # Chained access on a non-ident expression
+                # Ident, no special case: plain struct field access
+                return f'{obj_str}.{e.field}'
+            # Chained access on a non-ident expression — use -> for pointer results
+            obj_type = self._expr_type(e.obj)
+            if isinstance(obj_type, ast.TypePointer):
+                return f'({obj_str})->{e.field}'
             return f'{obj_str}.{e.field}'
         if isinstance(e, ast.IndexAccess):
             obj_str = self.gen_expr(e.obj)
@@ -1466,8 +1471,8 @@ class Codegen:
     # ── Format string helper ──────────────────────────────────────────────────
 
     _FMT_SPEC = {
-        'int8_t': '%d', 'int16_t': '%d', 'int32_t': '%ld', 'int64_t': '%lld',
-        'uint8_t': '%u', 'uint16_t': '%u', 'uint32_t': '%lu', 'uint64_t': '%llu',
+        'int8_t': '%d', 'int16_t': '%d', 'int32_t': '%d', 'int64_t': '%lld',
+        'uint8_t': '%u', 'uint16_t': '%u', 'uint32_t': '%u', 'uint64_t': '%llu',
         'float': '%f', 'double': '%lf', 'bool': '%d',
         'PakStr': '%.*s',
     }
@@ -1483,17 +1488,15 @@ class Codegen:
             if c.endswith('*') or c == 'const char *':
                 return '%s'
         # Fallback: treat as int
-        return '%ld'
+        return '%d'
 
     def _fmt_arg_for_expr(self, expr, spec: str) -> str:
-        """Wrap expression for printf (e.g., (long) cast for %ld)."""
+        """Wrap expression for printf."""
         c = self.gen_expr(expr)
-        if spec == '%ld':
-            return f'(long)({c})'
         if spec == '%lld':
             return f'(long long)({c})'
-        if spec in ('%lu', '%llu'):
-            return f'(unsigned long)({c})'
+        if spec == '%llu':
+            return f'(unsigned long long)({c})'
         if spec == '%.*s':
             # PakStr: pass len then data
             return f'({c}).len, ({c}).data'
@@ -3035,27 +3038,32 @@ class Codegen:
         return '\n'.join(l for l in lines if l is not None)
 
     def gen_null_check(self, s: ast.NullCheckStmt, pad: str, indent: int) -> str:
-        expr = self.gen_expr(s.expr)
+        raw = self.gen_expr(s.expr)
         inner_pad = '    ' * (indent + 1)
-        lines = [f'{pad}if ({expr} != NULL) {{']
+        # Wrap in a block so s.expr is evaluated exactly once into a temp,
+        # avoiding double evaluation when s.expr has side effects.
+        lines = [f'{pad}{{']
+        lines.append(f'{inner_pad}__auto_type {s.binding} = ({raw});')
+        lines.append(f'{inner_pad}if ({s.binding} != NULL) {{')
+        body_pad = '    ' * (indent + 2)
         self.scope_push()
         self.scope_set(s.binding, ast.TypePointer(inner=ast.TypeName(name='auto')))
-        lines.append(f'{inner_pad}__typeof__({expr}) {s.binding} = {expr};')
         for stmt in s.then.stmts:
-            lines.append(self.gen_stmt(stmt, indent + 1))
-        for d in self._emit_defers_for_scope(-1, pad, indent + 1):
+            lines.append(self.gen_stmt(stmt, indent + 2))
+        for d in self._emit_defers_for_scope(-1, body_pad, indent + 2):
             lines.append(d)
         self.scope_pop()
-        lines.append(f'{pad}}}')
+        lines.append(f'{inner_pad}}}')   # close if
         if s.else_branch:
-            lines.append(f'{pad}else {{')
+            lines.append(f'{inner_pad}else {{')
             self.scope_push()
             for stmt in s.else_branch.stmts:
-                lines.append(self.gen_stmt(stmt, indent + 1))
-            for d in self._emit_defers_for_scope(-1, pad, indent + 1):
+                lines.append(self.gen_stmt(stmt, indent + 2))
+            for d in self._emit_defers_for_scope(-1, body_pad, indent + 2):
                 lines.append(d)
             self.scope_pop()
-            lines.append(f'{pad}}}')
+            lines.append(f'{inner_pad}}}')
+        lines.append(f'{pad}}}')   # close outer block
         return '\n'.join(l for l in lines if l is not None)
 
     def _gen_loop_expr_let(self, s: ast.LetDecl, pad: str, prefix: str, decl: str) -> str:

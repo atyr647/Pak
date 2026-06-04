@@ -722,13 +722,18 @@ oo::class create pak::Parser {
 
     method parse_match_arm {} {
         set pat [my parse_pattern]
+        set guard [pak::Nil]
+        if {[my check IF]} {
+            my advance
+            set guard [my parse_expr]
+        }
         my expect FAT_ARROW
         if {[my check LBRACE]} {
             set body [my parse_block]
         } else {
             set body [pak::N Block stmts [list [my parse_stmt]]]
         }
-        return [pak::N MatchArm pattern $pat guard [pak::Nil] body $body]
+        return [pak::N MatchArm pattern $pat guard $guard body $body]
     }
 
     method parse_pattern {} {

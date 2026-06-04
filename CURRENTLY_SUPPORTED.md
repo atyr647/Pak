@@ -198,7 +198,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 |---------|--------|-------|
 | Integer arithmetic | ✅ Full | |
 | Fixed-point arithmetic | ✅ Full | `mult`/`div` sequences |
-| Float arithmetic (`f32`) | ✅ Full | FPU instructions |
+| Float arithmetic (`f32`) | ⚠️ Partial | Float values held in `$f12` accumulator; load/store correct; arithmetic ops use integer path (mul.s/add.s not used) |
 | Struct field access | ✅ Full | |
 | Array indexing | ✅ Full | Bounds checking available |
 | Function calls (o32 ABI) | ✅ Full | |
@@ -231,6 +231,14 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `.ok(v)` / `.err(e)` match patterns fail to parse (E002) | Fixed — `parse_pattern()` uses `expect_name()` to accept keyword names after `.` |
 | Variant payload bindings not in scope (E010) | Fixed — `_check_match()` declares binding variables from `.Case(x, y)` arms |
 | Writing through an alloc'd pointer (`*p = 42`) then `free(p)` reported E010 | Fixed — parser newline handling no longer treats the deref-write as a move |
+| Format string uses `%ld`/`%lu` for `i32`/`u32` (wrong on LP64 hosts) | Fixed — `int32_t`→`%d`, `uint32_t`→`%u`; fallback changed from `%ld` to `%d` |
+| `DotAccess` on a non-Ident pointer expression generates `.` instead of `->` | Fixed — `_expr_type` consulted for chained access; pointer results use `->` |
+| MIPS `swc1`/`lwc1` used GPR operand (invalid assembly for float store/load) | Fixed — float typed-load/store always targets `$f12`; `FloatLit` drops spurious `move $dst $zero` |
+| MIPS `break`/`continue` skipped `defer` blocks declared inside the loop | Fixed — `emit_defers_from` emits inner-loop defers on break/continue; loop depth tracked in `loop_defer_depth` |
+| MIPS spill area (offsets 16–47) conflicted with O32 outgoing arg area | Fixed — spill base moved to offset 64; stack args (slots 5+) still go to 16–47, no overlap for ≤12 extra args |
+| `?*mut T` and `?*volatile T` failed to parse | Fixed — `parse_type` handles `mut`/`volatile` after `?*` |
+| Tcl parser missing match arm guard support (`pattern if cond =>`) | Fixed — `parse_match_arm` now checks for `IF` token before `FAT_ARROW` |
+| `if expr -> binding { }` null-check evaluated `expr` twice when side-effecting | Fixed — `gen_null_check` emits an outer block with `__auto_type binding = (expr)` then checks binding |
 
 ---
 
