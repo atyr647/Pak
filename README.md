@@ -74,7 +74,9 @@ pip install -e ".[dev]"
 pak --version          # pak 0.1.0
 ```
 
-The compiler itself is pure Python (≥ 3.11) with zero runtime dependencies.
+The CLI entry point is Python (≥ 3.11), but all compilation subcommands delegate to the
+**Tcl backend** (`tclsh tcl/cli.tcl`). Only `pak convert` (the C→Pak transpiler) stays in
+Python because it depends on pycparser. You will need both Python and `tclsh` installed.
 
 ### Your first ROM
 
@@ -206,23 +208,23 @@ every feature tagged `[IMPLEMENTED]`, `[PARTIAL]`, or `[PLANNED]`.
 ## Repository layout
 
 ```
-pak/              The compiler (Python): lexer, parser, type checker, C + MIPS codegen
+tcl/              Primary compiler implementation (Tcl): lexer, parser, typechecker,
+                  C codegen, MIPS backend — this is what `pak` runs
+pak/              Reference compiler implementation (Python): same stages, kept at
+                  byte-for-byte parity with the Tcl primary; also hosts the c2pak
+                  transpiler (Python-only, needs pycparser)
 pak/runtime/      Standalone bare-metal N64 runtime + libdragon shim (Path B)
 pak/tools/        rompack.py (.z64 packer) + n64_build.sh (standalone pipeline)
-pak/c2pak/        C → Pak transpiler
-tcl/              A full second implementation of the compiler in Tcl, kept at
-                  byte-for-byte parity with the Python reference (lexer, parser,
-                  checker, typechecker, C codegen, MIPS backend)
 examples/canonical/  29 gold-standard, known-correct reference programs
 examples/         51 example programs total (games, std-lib middleware, baremetal)
-tests/            900 unit + integration + snapshot tests
+tests/            728 unit + integration + snapshot tests
 runtime/          Shared C runtime headers (containers, math, RNG, PakFS)
 ```
 
-Pak ships **two independent compiler implementations** — a Python reference and
-a Tcl port — held in lockstep by parity harnesses in CI. Every lexer token,
+Pak ships **two independent compiler implementations** — a Tcl primary and a
+Python reference — held in lockstep by parity harnesses in CI. Every lexer token,
 parser AST, checker diagnostic, and chunk of generated C/MIPS is cross-verified
-between the two on every push.
+between the two on every push: 75/75 AST, 29/29 C, 29/29 MIPS.
 
 ---
 
@@ -244,9 +246,13 @@ between the two on every push.
 ## Development
 
 ```bash
-pytest tests/                       # run the full suite (900 tests)
+pytest tests/                       # run the full suite (728 tests)
 pak check examples/canonical/*.pk64 # all must pass
 pak explain examples/canonical/01_hello.pk64
+# Parity gates (Tcl vs Python):
+bash tcl/tools/ast_parity.sh        # 75/75 AST
+bash tcl/tools/cg_parity.sh         # 29/29 C codegen
+bash tcl/tools/mips_parity.sh       # 29/29 MIPS
 ```
 
 CI (GitHub Actions) runs on every push: the Python test suite across 3.11/3.12,
@@ -261,6 +267,14 @@ Pak is **0.1.0** — actively developed and already capable of compiling real,
 playable N64 programs. The language surface is largely stable; see the
 `[IMPLEMENTED]` / `[PARTIAL]` / `[PLANNED]` tags throughout `LANGUAGE.md` for the
 precise current boundary.
+
+The compiler has been through multiple hardening passes. All silent fallbacks
+have been eliminated — unimplemented constructs raise explicit errors (`MIPSUNPORTED`,
+`CGUNPORTED`) rather than producing wrong output. Key recent additions include:
+MIPS named-field variant construction (`Type.case { field: val }`), complete
+compound-assign coverage (`/=`, `%=`, `<<=`, `>>=`), and the Tcl backend as the
+primary `pak` CLI runtime. See **[CURRENTLY_SUPPORTED.md](CURRENTLY_SUPPORTED.md)**
+for the full implementation-status snapshot.
 
 ## License
 
