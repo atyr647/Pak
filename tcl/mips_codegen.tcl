@@ -2477,10 +2477,14 @@ oo::class create pak::MipsCodegen {
                 +=  { $em addu $val_reg $cur $val_reg }
                 -=  { $em subu $val_reg $cur $val_reg }
                 *=  { $em mul $val_reg $cur $val_reg }
+                /=  { $em div $cur $val_reg; $em mflo $val_reg }
+                %=  { $em div $cur $val_reg; $em mfhi $val_reg }
+                <<= { $em sllv $val_reg $cur $val_reg }
+                >>= { $em srav $val_reg $cur $val_reg }
                 &=  { $em and_ $val_reg $cur $val_reg }
                 |=  { $em or_ $val_reg $cur $val_reg }
                 ^=  { $em xor $val_reg $cur $val_reg }
-                default {}
+                default { pak::mips_unported "compound-assign:$op" }
             }
             $ra free_temp $cur
         }
@@ -2505,7 +2509,7 @@ oo::class create pak::MipsCodegen {
             }
             IndexAccess { my emit_index_store $target $val_reg }
             DotAccess   { my emit_field_store $target $val_reg }
-            default {}
+            default { pak::mips_unported "assign-target:[pak::kindof $target]" }
         }
     }
 

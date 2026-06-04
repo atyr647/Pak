@@ -190,6 +190,8 @@ main:
     move $t9, $t8
     li $t8, 2
     lw $t7, 96($sp)
+    div $t7, $t8
+    mflo $t8
     sw $t8, 96($sp)
     move $t9, $t8
     li $t9, 0
