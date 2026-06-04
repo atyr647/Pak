@@ -2655,6 +2655,12 @@ proc pak::cg_api_lambda {mod fn arglist} {
         "math rand_seed"   { return "__pak_srand([lindex $arglist 0])" }
         "math rand_range"  { return "__pak_rand_range([lindex $arglist 0], [lindex $arglist 1])" }
         "math rand_f"      { return "__pak_rand_f()" }
+        "arena alloc"    { return "pak_arena_alloc([pak::cg_addr $arglist 0], [expr {[llength $arglist] > 1 ? [lindex $arglist 1] : 0}])" }
+        "arena reset"    { return "pak_arena_reset([pak::cg_addr $arglist 0])" }
+        "joypad is_connected" {
+            set port [expr {[llength $arglist] > 0 ? [lindex $arglist 0] : 0}]
+            return "(joypad_get_status($port).style != JOYPAD_STYLE_NONE)"
+        }
         "str from_cstr"    { return "pak_str_from_cstr([lindex $arglist 0])" }
         "str len"          { return "([lindex $arglist 0]).len" }
         "str eq"           { return "pak_str_eq([lindex $arglist 0], [lindex $arglist 1])" }
