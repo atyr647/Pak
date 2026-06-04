@@ -1591,26 +1591,28 @@ oo::class create pak::Codegen {
     }
 
     method gen_null_check {s pad indent} {
-        set expr [my gen_expr [pak::nfield $s expr]]
         set binding [pak::fval $s binding]
-        set inner_pad [string repeat "    " [expr {$indent+1}]]
-        set lines [list "${pad}if ($expr != NULL) {"]
+        set inner_pad  [string repeat "    " [expr {$indent+1}]]
+        set inner2_pad [string repeat "    " [expr {$indent+2}]]
+        set lines [list "${pad}\{"]
+        lappend lines "${inner_pad}__auto_type $binding = ([my gen_expr [pak::nfield $s expr]]);"
+        lappend lines "${inner_pad}if ($binding != NULL) \{"
         my scope_push
         my scope_set $binding [pak::N TypePointer inner [pak::N TypeName name auto] nullable 0 mutable 0]
-        lappend lines "${inner_pad}__typeof__($expr) $binding = $expr;"
-        foreach st [pak::items [pak::nfield [pak::nfield $s then] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
-        foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+        foreach st [pak::items [pak::nfield [pak::nfield $s then] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
+        foreach d [my emit_defers_for_scope [expr {$indent+2}]] { lappend lines $d }
         my scope_pop
-        lappend lines "${pad}}"
+        lappend lines "${inner_pad}\}"
         set eb [pak::nfield $s else_branch]
         if {![pak::isnil $eb]} {
-            lappend lines "${pad}else {"
+            lappend lines "${inner_pad}else \{"
             my scope_push
-            foreach st [pak::items [pak::nfield $eb stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
-            foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+            foreach st [pak::items [pak::nfield $eb stmts]] { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
+            foreach d [my emit_defers_for_scope [expr {$indent+2}]] { lappend lines $d }
             my scope_pop
-            lappend lines "${pad}}"
+            lappend lines "${inner_pad}\}"
         }
+        lappend lines "${pad}\}"
         return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
     }
 
@@ -1750,10 +1752,8 @@ oo::class create pak::Codegen {
     }
 
     method gen_match_guarded {s pad indent} {
-        variable _tmp_counter
-        if {![info exists _tmp_counter]} { set _tmp_counter 0 }
-        incr _tmp_counter
-        set expr_var "_pak_match_${_tmp_counter}"
+        incr tmp_counter
+        set expr_var "_pak_match_${tmp_counter}"
         set inner_pad [string repeat "    " [expr {$indent+1}]]
         set inner2_pad [string repeat "    " [expr {$indent+2}]]
         set match_type [my match_type_name [pak::nfield $s expr]]

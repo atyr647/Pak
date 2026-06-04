@@ -1523,6 +1523,17 @@ oo::class create pak::MipsCodegen {
         set loop_defer_depth [lrange $loop_defer_depth 0 end-1]
     }
 
+    # Emit guard check for a match arm: if guard is present and false, jump to skip_label.
+    method emit_arm_guard {arm skip_label} {
+        set guard [pak::nfield $arm guard]
+        if {[pak::isnil $guard]} return
+        set gr [$ra alloc_temp]
+        my emit_expr $guard $gr
+        $em beqz $gr $skip_label
+        $em nop
+        $ra free_temp $gr
+    }
+
     method emit_match {stmt} {
         set end_label [my fresh_label ".Lmatch_end"]
         set val [$ra alloc_temp]
@@ -1537,10 +1548,12 @@ oo::class create pak::MipsCodegen {
             set pkind [pak::kindof $pat]
 
             if {$pkind eq "Ident" && [pak::fval $pat name] eq "_"} {
-                # Wildcard — always matches
+                # Wildcard — always matches (guard still evaluated if present)
+                my emit_arm_guard $arm $skip_label
                 my emit_block_or_stmt [pak::nfield $arm body]
                 $em j $end_label
                 $em nop
+                if {![pak::isnil [pak::nfield $arm guard]]} { $em label $skip_label }
                 break
             } elseif {$pkind eq "EnumVariantAccess"} {
                 # .CaseName — match enum integer value
@@ -1550,13 +1563,14 @@ oo::class create pak::MipsCodegen {
                 $em bne $val $case_r $skip_label
                 $em nop
                 $ra free_temp $case_r
+                my emit_arm_guard $arm $skip_label
                 my emit_block_or_stmt [pak::nfield $arm body]
                 $em j $end_label
                 $em nop
                 $em label $skip_label
             } elseif {$pkind eq "Call" && [pak::kindof [pak::nfield $pat func]] eq "EnumVariantAccess"} {
                 # .VariantCase(binding) — variant tag + extract payload
-                my emit_variant_arm $val $pat [pak::nfield $arm body] $skip_label $end_label
+                my emit_variant_arm $val $pat [pak::nfield $arm body] $skip_label $end_label $arm
                 $em label $skip_label
             } elseif {$pkind eq "IntLit"} {
                 set case_r [$ra alloc_temp]
@@ -1564,6 +1578,7 @@ oo::class create pak::MipsCodegen {
                 $em bne $val $case_r $skip_label
                 $em nop
                 $ra free_temp $case_r
+                my emit_arm_guard $arm $skip_label
                 my emit_block_or_stmt [pak::nfield $arm body]
                 $em j $end_label
                 $em nop
@@ -1574,15 +1589,18 @@ oo::class create pak::MipsCodegen {
                 $em bne $val $case_r $skip_label
                 $em nop
                 $ra free_temp $case_r
+                my emit_arm_guard $arm $skip_label
                 my emit_block_or_stmt [pak::nfield $arm body]
                 $em j $end_label
                 $em nop
                 $em label $skip_label
             } else {
                 # Unknown pattern — always emit body
+                my emit_arm_guard $arm $skip_label
                 my emit_block_or_stmt [pak::nfield $arm body]
                 $em j $end_label
                 $em nop
+                if {![pak::isnil [pak::nfield $arm guard]]} { $em label $skip_label }
             }
         }
 
@@ -1590,7 +1608,7 @@ oo::class create pak::MipsCodegen {
         $em label $end_label
     }
 
-    method emit_variant_arm {val_reg pat body skip_label end_label} {
+    method emit_variant_arm {val_reg pat body skip_label end_label {arm ""}} {
         set case_name [pak::fval [pak::nfield $pat func] name]
         set tag_val   [my resolve_variant_tag $case_name]
         set vname     [my resolve_variant_name_for_case $case_name]
@@ -1610,6 +1628,7 @@ oo::class create pak::MipsCodegen {
         $em nop
         $ra free_temp $cmp_r
         $ra free_temp $tag_r
+        if {$arm ne ""} { my emit_arm_guard $arm $skip_label }
 
         # Bind payload fields
         set args [pak::items [pak::nfield $pat args]]
