@@ -676,3 +676,125 @@ class TestPhase4to7:
         from pak.c2pak.c_preprocess import strip_gcc_extensions
         result = strip_gcc_extensions('void f(int * __restrict p) {}')
         assert '__restrict' not in result
+
+
+# ── Phase 7: c2pak improvements ──────────────────────────────────────────────
+
+class TestC2pakImprovements:
+    """Tests for preprocessor fixes, variadic handling, and N64 type additions."""
+
+    # ── #elif correctness ─────────────────────────────────────────────────────
+
+    def test_elif_first_branch_taken(self):
+        """#if 1 / #elif 1 / #else — only the first branch is active."""
+        from pak.c2pak.c_preprocess import preprocess
+        source = '#if 1\nint a = 1;\n#elif 1\nint b = 2;\n#else\nint c = 3;\n#endif\n'
+        cleaned, _ = preprocess(source)
+        assert 'int a = 1;' in cleaned
+        assert 'int b = 2;' not in cleaned
+        assert 'int c = 3;' not in cleaned
+
+    def test_elif_second_branch_taken(self):
+        """#if 0 / #elif 1 / #else — second branch is active."""
+        from pak.c2pak.c_preprocess import preprocess
+        source = '#if 0\nint a = 1;\n#elif 1\nint b = 2;\n#else\nint c = 3;\n#endif\n'
+        cleaned, _ = preprocess(source)
+        assert 'int a = 1;' not in cleaned
+        assert 'int b = 2;' in cleaned
+        assert 'int c = 3;' not in cleaned
+
+    def test_elif_else_branch_taken(self):
+        """#if 0 / #elif 0 / #else — else branch is active."""
+        from pak.c2pak.c_preprocess import preprocess
+        source = '#if 0\nint a = 1;\n#elif 0\nint b = 2;\n#else\nint c = 3;\n#endif\n'
+        cleaned, _ = preprocess(source)
+        assert 'int a = 1;' not in cleaned
+        assert 'int b = 2;' not in cleaned
+        assert 'int c = 3;' in cleaned
+
+    def test_ifdef_elif_chain(self):
+        """#ifdef / #elif 0 / #else — ifdef branch taken, else skipped."""
+        from pak.c2pak.c_preprocess import preprocess
+        source = '#define FOO 1\n#ifdef FOO\nint a = 1;\n#elif 0\nint b = 2;\n#else\nint c = 3;\n#endif\n'
+        cleaned, _ = preprocess(source)
+        assert 'int a = 1;' in cleaned
+        assert 'int b = 2;' not in cleaned
+        assert 'int c = 3;' not in cleaned
+
+    # ── Variadic functions ────────────────────────────────────────────────────
+
+    def test_variadic_no_ellipsis_in_output(self):
+        """Variadic functions must not emit '...' (invalid Pak syntax)."""
+        result = transpile('void logf(const char *fmt, ...) {}\n')
+        assert '...' not in result
+
+    def test_variadic_comment_emitted(self):
+        """Variadic functions get a c2pak: variadic comment."""
+        result = transpile('void logf(const char *fmt, ...) {}\n')
+        assert 'c2pak: variadic' in result
+
+    def test_variadic_named_params_preserved(self):
+        """Non-variadic params are still emitted correctly."""
+        result = transpile('int printf(const char *fmt, ...) { return 0; }\n')
+        assert 'fmt' in result
+        assert '...' not in result
+
+    def test_variadic_extern_no_ellipsis(self):
+        """Extern variadic declaration also must not emit '...'."""
+        result = transpile('extern int snprintf(char *buf, int n, const char *fmt, ...);\n')
+        assert '...' not in result
+        assert 'snprintf' in result
+
+    # ── Function-like macro expansion ─────────────────────────────────────────
+
+    def test_func_macro_expansion_simple(self):
+        """Simple function-like macro is expanded so pycparser can parse it."""
+        from pak.c2pak.c_preprocess import preprocess
+        source = '#define DOUBLE(x) ((x)*2)\nint y = DOUBLE(5);\n'
+        cleaned, _ = preprocess(source)
+        assert 'DOUBLE' not in cleaned
+        assert '((5)*2)' in cleaned or '(5)' in cleaned
+
+    def test_func_macro_expansion_two_args(self):
+        """Two-argument macro is expanded inline."""
+        from pak.c2pak.c_preprocess import preprocess
+        source = '#define ADD(a, b) ((a)+(b))\nint z = ADD(x, y);\n'
+        cleaned, _ = preprocess(source)
+        assert 'ADD' not in cleaned
+        assert '(x)' in cleaned
+        assert '(y)' in cleaned
+
+    def test_func_macro_expansion_zero_args(self):
+        """Zero-argument macro is expanded to its body."""
+        from pak.c2pak.c_preprocess import preprocess
+        source = '#define NEWLINE() (\'\\n\')\nchar c = NEWLINE();\n'
+        cleaned, _ = preprocess(source)
+        assert 'NEWLINE' not in cleaned
+
+    def test_func_macro_transpile_min_max(self):
+        """MIN/MAX macros expand so transpilation succeeds."""
+        result = transpile(
+            '#define MIN(a,b) ((a)<(b)?(a):(b))\n'
+            'int clamp_low(int x, int lo) { return MIN(x, lo); }\n'
+        )
+        assert 'fn clamp_low' in result
+        assert 'MIN(' not in result
+
+    def test_func_macro_no_call_in_output(self):
+        """After expansion, no call-site trace of the macro name remains."""
+        result = transpile(
+            '#define SQ(x) ((x)*(x))\n'
+            'int y = SQ(5);\n'
+        )
+        assert 'SQ(' not in result
+
+    # ── New N64 type mappings ─────────────────────────────────────────────────
+
+    def test_n64_types_extended(self):
+        """Newly added N64 types are in N64_TYPES dict."""
+        from pak.c2pak.n64_api import N64_TYPES
+        assert 'color_t' in N64_TYPES
+        assert 'wav64_t' in N64_TYPES
+        assert 'sprite_t' in N64_TYPES
+        assert 'rspq_block_t' in N64_TYPES
+        assert 'joypad_buttons_t' in N64_TYPES

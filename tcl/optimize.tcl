@@ -147,6 +147,82 @@ proc pak::opt::peephole {lines} {
     return $result
 }
 
+# ── Constant folding ────────────────────────────────────────────────────────
+# Folds sequences like:
+#   li $t, A
+#   li $s, B
+#   addu/subu/and/or/xor/slt $d, $t, $s    (or $d, $s, $t)
+# → li $d, (A op B)                         (when both sources are known immediates)
+#
+# Operates on a sliding window; removes consumed li instructions.
+proc pak::opt::const_fold {lines} {
+    # Map from reg → integer value for currently live li-loaded constants.
+    set known [dict create]
+    set result {}
+    set n [llength $lines]
+    for {set i 0} {$i < $n} {incr i} {
+        set line [lindex $lines $i]
+        set parsed [parse_line $line]
+        if {$parsed eq ""} {
+            # label or blank — kill all known constants (conservative)
+            if {[is_label $line]} { set known [dict create] }
+            lappend result $line
+            continue
+        }
+        lassign $parsed op operands
+        set parts [lmap p [split $operands ,] {string trim $p}]
+
+        # Track li $reg, imm
+        if {$op eq "li" && [llength $parts] == 2} {
+            set reg [lindex $parts 0]
+            set val [lindex $parts 1]
+            if {[regexp {^-?\d+$} $val]} {
+                dict set known $reg [expr {int($val)}]
+                lappend result $line
+                continue
+            }
+        }
+
+        # Try folding binary ops where both sources are known constants
+        set folded 0
+        if {[llength $parts] == 3 && $op in {addu subu and or xor slt sltu}} {
+            set dst [lindex $parts 0]
+            set s1  [lindex $parts 1]
+            set s2  [lindex $parts 2]
+            if {[dict exists $known $s1] && [dict exists $known $s2]} {
+                set v1 [dict get $known $s1]
+                set v2 [dict get $known $s2]
+                switch $op {
+                    addu  { set r [expr {($v1 + $v2) & 0xFFFFFFFF}] }
+                    subu  { set r [expr {($v1 - $v2) & 0xFFFFFFFF}] }
+                    and   { set r [expr {$v1 & $v2}] }
+                    or    { set r [expr {$v1 | $v2}] }
+                    xor   { set r [expr {$v1 ^ $v2}] }
+                    slt   { set r [expr {$v1 < $v2 ? 1 : 0}] }
+                    sltu  { set r [expr {($v1 & 0xFFFFFFFF) < ($v2 & 0xFFFFFFFF) ? 1 : 0}] }
+                }
+                regexp {^(\s*)} $line -> indent
+                # sign-extend 32→Tcl int
+                if {$r >= 0x80000000} { set r [expr {$r - 0x100000000}] }
+                lappend result "${indent}li $dst, $r"
+                dict set known $dst $r
+                set folded 1
+            }
+        }
+        if {!$folded} {
+            # Any instruction that writes a register kills its known value
+            set wrt [regs_written $op $operands]
+            foreach w $wrt { dict unset known $w }
+            # Branches / jumps / calls / stores invalidate everything conservatively
+            if {[is_branch_or_jump $op] || $op in {sw sh sb swc1 jal jalr syscall}} {
+                set known [dict create]
+            }
+            lappend result $line
+        }
+    }
+    return $result
+}
+
 # ── Branch delay slot filling ────────────────────────────────────────────────
 proc pak::opt::fill_delay_slots {lines} {
     set result {}
@@ -242,17 +318,21 @@ proc pak::opt::schedule_block {block} {
         if {$parsed eq ""} { incr i; continue }
         lassign $parsed op operands
 
-        # Load-use hazard
+        # Load-use hazard: lw/lb/lh/etc followed by immediate use of loaded reg
+        # stalls the R4300i pipeline for 1 cycle. Fill with an independent
+        # instruction if available, otherwise insert nop.
         if {[in $op $::pak::opt::LOAD_OPS] && $i + 1 < [llength $lines]} {
             set written [regs_written $op $operands]
             set np [parse_line [lindex $lines [expr {$i+1}]]]
             if {$np ne ""} {
                 set next_reads [regs_read [lindex $np 0] [lindex $np 1]]
                 if {[sets_overlap $written $next_reads]} {
-                    if {[find_and_move_between lines $i [expr {$i+1}]]} {
-                        incr i
-                        continue
+                    if {![find_and_move_between lines $i [expr {$i+1}]]} {
+                        regexp {^(\s*)} [lindex $lines $i] -> indent
+                        set lines [linsert $lines [expr {$i+1}] "${indent}nop"]
                     }
+                    incr i
+                    continue
                 }
             }
         }
@@ -361,11 +441,12 @@ proc pak::opt::eliminate_dead_labels {lines} {
 }
 
 # ── Public API ───────────────────────────────────────────────────────────────
-proc pak::optimize_asm {asm_text {peephole 1} {schedule 1} {fill_slots 1} {dead_labels 1}} {
+proc pak::optimize_asm {asm_text {peephole 1} {schedule 1} {fill_slots 1} {dead_labels 1} {const_fold 1}} {
     set lines [split $asm_text "\n"]
-    if {$peephole}   { set lines [pak::opt::peephole $lines] }
-    if {$schedule}   { set lines [pak::opt::schedule_vr4300 $lines] }
-    if {$fill_slots} { set lines [pak::opt::fill_delay_slots $lines] }
+    if {$const_fold}  { set lines [pak::opt::const_fold $lines] }
+    if {$peephole}    { set lines [pak::opt::peephole $lines] }
+    if {$schedule}    { set lines [pak::opt::schedule_vr4300 $lines] }
+    if {$fill_slots}  { set lines [pak::opt::fill_delay_slots $lines] }
     if {$dead_labels} { set lines [pak::opt::eliminate_dead_labels $lines] }
     return [join $lines "\n"]
 }

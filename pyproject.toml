@@ -14,7 +14,7 @@ license = {text = "MIT"}
 dev = ["pytest"]
 
 [project.scripts]
-pak = "pak.cli:main"
+pak = "pak.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

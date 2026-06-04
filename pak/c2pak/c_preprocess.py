@@ -14,7 +14,7 @@ This is intentionally lightweight. For complex macro-heavy code use
 from __future__ import annotations
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
 
 # ── GCC extension stripping ───────────────────────────────────────────────────
@@ -153,8 +153,8 @@ class Preprocessor:
     def __init__(self):
         self.simple_macros: Dict[str, SimpleMacro] = {}
         self.func_macros: Dict[str, FuncMacro] = {}
-        # Types inferred from typedefs already known before this file
-        self._ifdef_stack: List[bool] = []  # True = currently active branch
+        # Each entry: (currently_active, any_branch_taken_in_this_chain)
+        self._ifdef_stack: List[Tuple[bool, bool]] = []
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -180,7 +180,11 @@ class Preprocessor:
                     out_lines.append(line)
                 else:
                     out_lines.append('\n')
-        return ''.join(out_lines), dict(self.simple_macros)
+        cleaned = ''.join(out_lines)
+        # Expand function-like macros inline so pycparser sees real C code
+        if self.func_macros:
+            cleaned = _expand_func_macros(cleaned, self.func_macros)
+        return cleaned, dict(self.simple_macros)
 
     # ── Directive handling ────────────────────────────────────────────────────
 
@@ -202,24 +206,30 @@ class Preprocessor:
         elif keyword in ('ifdef', 'ifndef'):
             name = rest.strip().split()[0] if rest.strip() else ''
             defined = name in self.simple_macros or name in self.func_macros
-            if keyword == 'ifdef':
-                self._ifdef_stack.append(self._is_active() and defined)
-            else:
-                self._ifdef_stack.append(self._is_active() and not defined)
+            condition = defined if keyword == 'ifdef' else not defined
+            active = self._is_active() and condition
+            # Push (currently_active, any_branch_taken_in_chain)
+            self._ifdef_stack.append((active, active))
         elif keyword == 'if':
             # Simplified: treat #if 0 as inactive, everything else active
             val = rest.strip()
-            self._ifdef_stack.append(self._is_active() and val != '0')
+            active = self._is_active() and val != '0'
+            self._ifdef_stack.append((active, active))
         elif keyword == 'elif':
             if self._ifdef_stack:
-                # If the previous branch was active we deactivate, otherwise
-                # attempt to evaluate the condition.
-                prev = self._ifdef_stack.pop()
+                # Pop current frame; check whether any branch was already taken
+                _, any_taken = self._ifdef_stack.pop()
                 val = rest.strip()
-                self._ifdef_stack.append(not prev and val != '0')
+                condition = val != '0'
+                # Active only if parent is active, no prior branch taken, and condition holds
+                active = self._is_active() and not any_taken and condition
+                self._ifdef_stack.append((active, any_taken or active))
         elif keyword == 'else':
             if self._ifdef_stack:
-                self._ifdef_stack[-1] = not self._ifdef_stack[-1]
+                _, any_taken = self._ifdef_stack.pop()
+                # Active only if parent is active and no prior branch was taken
+                active = self._is_active() and not any_taken
+                self._ifdef_stack.append((active, True))
         elif keyword == 'endif':
             if self._ifdef_stack:
                 self._ifdef_stack.pop()
@@ -247,7 +257,7 @@ class Preprocessor:
 
     def _is_active(self) -> bool:
         """Return True if we're in an active (non-skipped) branch."""
-        return all(self._ifdef_stack) if self._ifdef_stack else True
+        return all(active for active, _ in self._ifdef_stack) if self._ifdef_stack else True
 
     @staticmethod
     def _join_line_continuations(source: str) -> str:
@@ -318,6 +328,98 @@ def strip_comments(source: str) -> str:
             result.append(source[i])
             i += 1
     return ''.join(result)
+
+
+def _extract_macro_args(source: str, start: int) -> Tuple[Optional[List[str]], int]:
+    """Extract comma-separated arguments starting at *start* (after the opening '(').
+
+    Returns (args, end_pos) where end_pos is the position after the closing ')'.
+    Returns (None, start) on parse failure.
+    """
+    args: List[str] = []
+    current: List[str] = []
+    depth = 1
+    i = start
+    n = len(source)
+    while i < n and depth > 0:
+        c = source[i]
+        if c == '(':
+            depth += 1
+            current.append(c)
+        elif c == ')':
+            depth -= 1
+            if depth == 0:
+                args.append(''.join(current))
+                i += 1
+                break
+            current.append(c)
+        elif c == ',' and depth == 1:
+            args.append(''.join(current))
+            current = []
+        else:
+            current.append(c)
+        i += 1
+    else:
+        return None, start  # unterminated call
+    return args, i
+
+
+def _expand_one_macro(source: str, name: str, macro: FuncMacro) -> str:
+    """Expand all calls to *name* in *source*."""
+    pattern = re.compile(r'\b' + re.escape(name) + r'\s*\(')
+    result: List[str] = []
+    i = 0
+    while i < len(source):
+        m = pattern.search(source, i)
+        if not m:
+            result.append(source[i:])
+            break
+        result.append(source[i:m.start()])
+        j = m.end()
+        args, end_pos = _extract_macro_args(source, j)
+        if args is None:
+            result.append(source[m.start():j])
+            i = j
+            continue
+        # Normalise: a 0-param macro invoked as MACRO() gives args=['']
+        if len(macro.params) == 0 and args == ['']:
+            args = []
+        if len(args) != len(macro.params):
+            # Wrong arg count — leave unexpanded
+            result.append(source[m.start():end_pos])
+            i = end_pos
+            continue
+        # Substitute each param with its argument (wrapped in parens for safety)
+        body = macro.body
+        for param, arg in zip(macro.params, args):
+            body = re.sub(r'\b' + re.escape(param) + r'\b',
+                          '(' + arg.strip() + ')', body)
+        result.append(body)
+        i = end_pos
+    return ''.join(result)
+
+
+def _expand_func_macros(source: str, func_macros: Dict[str, FuncMacro]) -> str:
+    """Expand simple function-like macros in *source*.
+
+    Skips macros whose body contains '#' (stringification / token-pasting).
+    Repeats expansion up to 10 times to handle macros that call other macros.
+    """
+    expandable = {
+        name: macro
+        for name, macro in func_macros.items()
+        if '#' not in macro.body
+    }
+    if not expandable:
+        return source
+    for _ in range(10):
+        new_source = source
+        for name, macro in expandable.items():
+            new_source = _expand_one_macro(new_source, name, macro)
+        if new_source == source:
+            break
+        source = new_source
+    return source
 
 
 def preprocess(source: str) -> Tuple[str, Dict[str, SimpleMacro]]:

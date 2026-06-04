@@ -1088,7 +1088,12 @@ class Codegen:
                 # Pointer variable: p.field → p->field
                 if self.is_pointer(n):
                     return f'{obj_str}->{e.field}'
-            # Chained access on a non-ident expression
+                # Ident, no special case: plain struct field access
+                return f'{obj_str}.{e.field}'
+            # Chained access on a non-ident expression — use -> for pointer results
+            obj_type = self._expr_type(e.obj)
+            if isinstance(obj_type, ast.TypePointer):
+                return f'({obj_str})->{e.field}'
             return f'{obj_str}.{e.field}'
         if isinstance(e, ast.IndexAccess):
             obj_str = self.gen_expr(e.obj)
@@ -1096,8 +1101,8 @@ class Codegen:
             idx_str = self.gen_expr(e.index)
             if isinstance(obj_type, ast.TypeSlice):
                 return f'({obj_str}).data[{idx_str}]'
-            # Container index: Vec/FixedList/Pool hold a `.data` array.
-            if self._container_kind(obj_type) in ('Vec', 'FixedList', 'Pool'):
+            # All indexed containers hold a `.data` array.
+            if self._container_kind(obj_type) in ('Vec', 'FixedList', 'Pool', 'RingBuffer'):
                 return f'({obj_str}).data[{idx_str}]'
             return f'{obj_str}[{idx_str}]'
         if isinstance(e, ast.SliceExpr):
@@ -1255,6 +1260,11 @@ class Codegen:
             type_name = self._struct_lit_c_name(e)
             fields = ', '.join(f'.{name} = {self.gen_expr(val)}' for name, val in e.fields)
             return f'({type_name}){{{fields}}}'
+        if isinstance(e, ast.VariantLit):
+            vt = e.variant_type
+            vc = e.case_name
+            inner = ', '.join(f'.{name} = {self.gen_expr(val)}' for name, val in e.fields)
+            return f'({vt}){{.tag = {vt}_tag_{vc}, .data.{vc} = {{{inner}}}}}'
         if isinstance(e, ast.ArrayLit):
             if e.repeat is not None:
                 val_expr = e.elements[0] if e.elements else ast.IntLit(value=0)
@@ -1298,10 +1308,7 @@ class Codegen:
         if isinstance(e, ast.Cast):
             return f'({self.gen_type(e.type)}){self.gen_expr(e.expr)}'
         if isinstance(e, ast.RangeExpr):
-            # Used in for loops - handled specially
-            start = self.gen_expr(e.start)
-            end = self.gen_expr(e.end) if e.end else ''
-            return f'{start}..{end}'
+            raise CodegenError('RangeExpr used as expression (only valid as for-loop iterable or slice bounds)')
         if isinstance(e, ast.EnumVariantAccess):
             # .variant → EnumName_variant if we know the enum
             if e.name in self.enum_variants:
@@ -1366,7 +1373,7 @@ class Codegen:
                 alloc_c = self.gen_expr(e.allocator)
                 return f'({alloc_c}).vtable->dealloc_bytes(({alloc_c}).self, {ptr})'
             return f'free({ptr})'
-        return '/* unknown expr */'
+        raise CodegenError(f'unhandled expression type in codegen: {type(e).__name__}')
 
     def _gen_asm_expr(self, e: ast.AsmExpr) -> str:
         parts = [f'__asm__ {"__volatile__" if e.volatile else ""}("{e.template}"']
@@ -1461,8 +1468,8 @@ class Codegen:
     # ── Format string helper ──────────────────────────────────────────────────
 
     _FMT_SPEC = {
-        'int8_t': '%d', 'int16_t': '%d', 'int32_t': '%ld', 'int64_t': '%lld',
-        'uint8_t': '%u', 'uint16_t': '%u', 'uint32_t': '%lu', 'uint64_t': '%llu',
+        'int8_t': '%d', 'int16_t': '%d', 'int32_t': '%d', 'int64_t': '%lld',
+        'uint8_t': '%u', 'uint16_t': '%u', 'uint32_t': '%u', 'uint64_t': '%llu',
         'float': '%f', 'double': '%lf', 'bool': '%d',
         'PakStr': '%.*s',
     }
@@ -1478,17 +1485,15 @@ class Codegen:
             if c.endswith('*') or c == 'const char *':
                 return '%s'
         # Fallback: treat as int
-        return '%ld'
+        return '%d'
 
     def _fmt_arg_for_expr(self, expr, spec: str) -> str:
-        """Wrap expression for printf (e.g., (long) cast for %ld)."""
+        """Wrap expression for printf."""
         c = self.gen_expr(expr)
-        if spec == '%ld':
-            return f'(long)({c})'
         if spec == '%lld':
             return f'(long long)({c})'
-        if spec in ('%lu', '%llu'):
-            return f'(unsigned long)({c})'
+        if spec == '%llu':
+            return f'(unsigned long long)({c})'
         if spec == '%.*s':
             # PakStr: pass len then data
             return f'({c}).len, ({c}).data'
@@ -2197,7 +2202,7 @@ class Codegen:
                 result += f'\n#else\n' + '\n'.join(else_lines)
             result += f'\n#endif'
             return result
-        return f'/* unhandled decl: {type(decl).__name__} */'
+        raise CodegenError(f'unhandled declaration type in codegen: {type(decl).__name__}')
 
     def gen_impl(self, impl: ast.ImplBlock) -> str:
         # Generic impls are emitted lazily, specialized per instantiation
@@ -2814,9 +2819,13 @@ class Codegen:
             return result
         if isinstance(stmt, ast.UnionDecl):
             return self.gen_union(stmt)
-        return f'{pad}/* unhandled stmt: {type(stmt).__name__} */'
+        raise CodegenError(f'unhandled statement type in codegen: {type(stmt).__name__}')
 
     def gen_let_stmt(self, s: ast.LetDecl, pad: str) -> str:
+        if s.name == '_':
+            if s.value is not None:
+                return f'{pad}(void)({self.gen_expr(s.value)});'
+            return ''
         annotations = s.annotations or []
         prefix = ''
         if '@aligned' in ' '.join(annotations):
@@ -3026,27 +3035,32 @@ class Codegen:
         return '\n'.join(l for l in lines if l is not None)
 
     def gen_null_check(self, s: ast.NullCheckStmt, pad: str, indent: int) -> str:
-        expr = self.gen_expr(s.expr)
+        raw = self.gen_expr(s.expr)
         inner_pad = '    ' * (indent + 1)
-        lines = [f'{pad}if ({expr} != NULL) {{']
+        # Wrap in a block so s.expr is evaluated exactly once into a temp,
+        # avoiding double evaluation when s.expr has side effects.
+        lines = [f'{pad}{{']
+        lines.append(f'{inner_pad}__auto_type {s.binding} = ({raw});')
+        lines.append(f'{inner_pad}if ({s.binding} != NULL) {{')
+        body_pad = '    ' * (indent + 2)
         self.scope_push()
         self.scope_set(s.binding, ast.TypePointer(inner=ast.TypeName(name='auto')))
-        lines.append(f'{inner_pad}__typeof__({expr}) {s.binding} = {expr};')
         for stmt in s.then.stmts:
-            lines.append(self.gen_stmt(stmt, indent + 1))
-        for d in self._emit_defers_for_scope(-1, pad, indent + 1):
+            lines.append(self.gen_stmt(stmt, indent + 2))
+        for d in self._emit_defers_for_scope(-1, body_pad, indent + 2):
             lines.append(d)
         self.scope_pop()
-        lines.append(f'{pad}}}')
+        lines.append(f'{inner_pad}}}')   # close if
         if s.else_branch:
-            lines.append(f'{pad}else {{')
+            lines.append(f'{inner_pad}else {{')
             self.scope_push()
             for stmt in s.else_branch.stmts:
-                lines.append(self.gen_stmt(stmt, indent + 1))
-            for d in self._emit_defers_for_scope(-1, pad, indent + 1):
+                lines.append(self.gen_stmt(stmt, indent + 2))
+            for d in self._emit_defers_for_scope(-1, body_pad, indent + 2):
                 lines.append(d)
             self.scope_pop()
-            lines.append(f'{pad}}}')
+            lines.append(f'{inner_pad}}}')
+        lines.append(f'{pad}}}')   # close outer block
         return '\n'.join(l for l in lines if l is not None)
 
     def _gen_loop_expr_let(self, s: ast.LetDecl, pad: str, prefix: str, decl: str) -> str:
@@ -3113,7 +3127,7 @@ class Codegen:
             self.scope_set(s.binding, ast.TypeName(name='auto'))
 
             if isinstance(coll_type, ast.TypeSlice) or \
-                    self._container_kind(coll_type) in ('Vec', 'FixedList', 'Pool'):
+                    self._container_kind(coll_type) in ('Vec', 'FixedList', 'Pool', 'RingBuffer'):
                 # Fat slice or .data/.len container: iterate via .data up to .len
                 idx = s.index if s.index else f'_i_{s.binding}'
                 lines.append(f'{pad}for (int {idx} = 0; {idx} < ({coll}).len; {idx}++) {{')
@@ -3263,23 +3277,40 @@ class Codegen:
                     lines.append(f'{inner_pad}case {obj_name}_tag_{variant}:')
                 else:
                     lines.append(f'{inner_pad}case {obj_name}_{variant}:')
+            elif isinstance(pat, ast.Call) and isinstance(pat.func, ast.EnumVariantAccess):
+                case_name = pat.func.name
+                type_name = self.enum_variants.get(case_name, '')
+                if type_name in self.variant_types:
+                    lines.append(f'{inner_pad}case {type_name}_tag_{case_name}:')
+                elif type_name:
+                    lines.append(f'{inner_pad}case {type_name}_{case_name}:')
+                else:
+                    lines.append(f'{inner_pad}case {case_name}:')
             elif isinstance(pat, ast.IntLit):
                 lines.append(f'{inner_pad}case {pat.value}:')
             elif isinstance(pat, ast.BoolLit):
                 lines.append(f'{inner_pad}case {"1" if pat.value else "0"}:')
             else:
-                lines.append(f'{inner_pad}case /* {self.gen_expr(pat)} */:')
+                raise CodegenError(f'unhandled match pattern type: {type(pat).__name__}')
 
             # Wrap body in {} so variable declarations are always valid in C
             lines.append(f'{inner_pad}{{')
             self.scope_push()
-            # Emit variant binding if pattern has one: Type.Case(binding)
+            # Emit payload bindings: Type.Case(binding) or .case(x, y)
             if isinstance(pat, ast.DotAccess) and pat.binding:
                 obj_name = self.gen_expr(pat.obj)
                 if obj_name in self.variant_types:
                     field_name = pat.field.lower()
                     lines.append(f'{inner2_pad}__auto_type {pat.binding} = {expr}.data.{field_name};')
                     self.scope_set(pat.binding, ast.TypeName(name='auto'))
+            elif isinstance(pat, ast.Call) and isinstance(pat.func, ast.EnumVariantAccess):
+                case_name = pat.func.name
+                type_name = self.enum_variants.get(case_name, '')
+                if type_name in self.variant_types:
+                    for i, arg in enumerate(pat.args):
+                        if isinstance(arg, ast.Ident) and arg.name != '_':
+                            lines.append(f'{inner2_pad}__auto_type {arg.name} = {expr}.data.{case_name}.field{i};')
+                            self.scope_set(arg.name, ast.TypeName(name='auto'))
             if isinstance(arm.body, ast.Block):
                 for stmt in arm.body.stmts:
                     lines.append(self.gen_stmt(stmt, indent + 2))

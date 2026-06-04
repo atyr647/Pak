@@ -1,7 +1,0 @@
--- EXPECT: E002
--- `_` is a keyword token, not a valid identifier.
--- Using it as a let target is a parse error.
-
-entry {
-    let _ = 5
-}

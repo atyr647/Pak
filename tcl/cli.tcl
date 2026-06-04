@@ -12,6 +12,7 @@ source [file join $_clihere makefile_gen.tcl]
 source [file join $_clihere pakfs.tcl]
 source [file join $_clihere mips_codegen.tcl]
 source [file join $_clihere optimize.tcl]
+source [file join $_clihere n64enc.tcl]
 
 namespace eval pak {}
 set ::pak::CLI_ROOT [file normalize [file join $_clihere ..]]
@@ -127,7 +128,7 @@ proc pak::_errmsg {err} {
 
 # Format a diagnostic dict exactly like PakError/CheckDiag.__str__.
 proc pak::diag_str {d} {
-    set fn [dict get $d filename]
+    set fn [expr {[dict exists $d filename] ? [dict get $d filename] : ""}]
     if {$fn ne ""} { set loc "$fn:[dict get $d line]:[dict get $d col]" } \
     else { set loc "[dict get $d line]:[dict get $d col]" }
     set prefix [expr {[dict get $d severity] eq "warning" ? "warning" : "error"}]
@@ -491,6 +492,28 @@ proc pak::cmd_explain {opts} {
     }
 }
 
+proc pak::cmd_objgen {opts} {
+    set pak_file [dict get $opts file]
+    if {![file exists $pak_file]} { puts stderr "error: file not found: $pak_file"; exit 1 }
+    set out [dict get $opts output]
+    if {$out eq ""} { set out "[file rootname $pak_file].pakobj" }
+    set prog [pak::cli_parse_file $pak_file]
+    if {$prog eq ""} { exit 1 }
+    set recs [pak::mips_generate_records $prog]
+    pak::enc::write_object $recs $out
+    puts "Wrote $out"
+}
+
+proc pak::cmd_asmobj {opts} {
+    set asm_file [dict get $opts file]
+    if {![file exists $asm_file]} { puts stderr "error: file not found: $asm_file"; exit 1 }
+    set out [dict get $opts output]
+    if {$out eq ""} { set out "[file rootname $asm_file].pakobj" }
+    set fh [open $asm_file r]; set text [read $fh]; close $fh
+    pak::enc::write_object_from_asm $text $out
+    puts "Wrote $out"
+}
+
 proc pak::cmd_run {opts} {
     pak::cmd_build $opts
     set root [pak::cli_find_project_root]
@@ -631,6 +654,8 @@ proc pak::cli_main {argv} {
         build  { pak::cmd_build [pak::_parse_opts $rest {verbose 0 backend c no_style_warnings 0}] }
         check  { pak::cmd_check [pak::_parse_opts $rest {files {} no_style_warnings 0}] }
         explain { pak::cmd_explain [pak::_parse_opts $rest {file "" backend c}] }
+        objgen { pak::cmd_objgen [pak::_parse_opts $rest {file "" output ""}] }
+        asmobj { pak::cmd_asmobj [pak::_parse_opts $rest {file "" output ""}] }
         run    { pak::cmd_run [pak::_parse_opts $rest {verbose 0 backend c no_style_warnings 0}] }
         init   { pak::cmd_init [pak::_parse_opts $rest {name ""}] }
         clean  { pak::cmd_clean {} }

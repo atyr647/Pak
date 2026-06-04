@@ -123,14 +123,16 @@ class TestE002Mutations:
         """).strip()
         assert_mutant_fails(mutant, "E002")
 
-    def test_let_underscore_is_parse_error(self):
-        """Using _ as a let target is a parse error (E002)."""
-        mutant = textwrap.dedent("""
+    def test_let_underscore_discards_value(self):
+        """let _ = expr is now valid — evaluates and discards the result."""
+        source = textwrap.dedent("""
+            fn side() -> i32 { return 0 }
             entry {
+                let _ = side()
                 let _: i32 = 42
             }
         """).strip()
-        assert_mutant_fails(mutant, "E002")
+        assert_original_passes(source)
 
     def test_missing_entry_braces(self):
         """Entry block without braces is a parse error."""

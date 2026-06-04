@@ -349,14 +349,12 @@ For debug output, use `debug.log(msg)` via `use n64.debug`.
 These are not design choices — they are current implementation gaps.
 Work around them as shown.
 
-### `let _ = expr` Does Not Work
-`_` is a keyword token, not a valid identifier in `let`.
+### `let _ = expr` — WORKS
+`let _ = expr` is now supported. The expression is evaluated for side-effects
+and the result is discarded. No variable is bound.
 ```
--- WRONG (parse error):
-let _ = some_value
-
--- CORRECT: just use the value directly, or assign to a named variable
-some_global = some_value
+-- WORKS: evaluate and discard
+let _ = some_fn_call()
 ```
 
 ### Variant Payload Binding in Match — WORKS

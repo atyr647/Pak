@@ -40,7 +40,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `enum Name { case }` | ✅ Full | |
 | `enum Name: BaseType { case = val }` | ✅ Full | |
 | `variant Name { case(Type) }` | ✅ Full | Positional payloads |
-| `variant Name { case { field: T } }` | ⚠️ Partial | Parsed; named field construction not supported as expression |
+| `variant Name { case { field: T } }` | ✅ Full | `Type.case { field: val }` construction now supported |
 | `union Name { field: Type }` | ✅ Full | Untagged C union |
 | `fn name(params) -> ret { }` | ✅ Full | |
 | `fn name<T>(params)` (generic) | ✅ Full | Params parsed |
@@ -161,8 +161,8 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Return path checking (W201) | ✅ Full | Warning, not error |
 | Naming convention checks (W001–W003) | ✅ Full | Suppressible |
 | Asset declaration scope | ✅ Full | Fixed — asset names registered in typechecker scope |
-| Generic type instantiation | ⚠️ Partial | Type params tracked but not fully substituted |
-| Trait implementation completeness | ⚠️ Partial | Method existence checked; signature matching partial |
+| Generic type instantiation | ⚠️ Partial | Type params tracked; generic function bodies not checked (can't resolve types without instantiation) |
+| Trait implementation completeness | ✅ Full | Method existence (E601/E602) and parameter count (E603) checked |
 | Result/Option type checking | ⚠️ Partial | Constructors accepted; match types partially resolved |
 
 ---
@@ -183,10 +183,10 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `@cfg` conditional compilation | ✅ Full | Maps to `#if`/`#endif` |
 | `comptime if` | ✅ Full | Maps to `#if` |
 | Inline `asm` | ✅ Full | |
-| Generic functions | ⚠️ Partial | Monomorphised at call sites, not all cases covered |
+| Generic functions | ✅ Full | Monomorphised at call sites; type inference for unspecified type params; all 29 canonical examples byte-identical to Python backend |
 | Non-capturing closures | ✅ Full | Lowered to a top-level fn + function pointer |
 | Closures capturing environment | ✅ Full | Emitted as a GCC nested function; captures by reference within the enclosing frame |
-| Trait object dispatch (`dyn`) | ⚠️ Partial | |
+| Trait object dispatch (`dyn`) | ✅ Full | Vtable struct + fat pointer + thunks; constructor helpers emitted |
 | `goto` / labels | ✅ Full | |
 | Format strings | ✅ Full | `"x={n}"` → `snprintf` into static buffer |
 
@@ -198,16 +198,18 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 |---------|--------|-------|
 | Integer arithmetic | ✅ Full | |
 | Fixed-point arithmetic | ✅ Full | `mult`/`div` sequences |
-| Float arithmetic (`f32`) | ✅ Full | FPU instructions |
+| Float arithmetic (`f32`) | ⚠️ Partial | Float values held in `$f12` accumulator; load/store correct; arithmetic ops use integer path (mul.s/add.s not used) |
 | Struct field access | ✅ Full | |
 | Array indexing | ✅ Full | Bounds checking available |
 | Function calls (o32 ABI) | ✅ Full | |
 | N64 API calls via `jal` | ✅ Full | All modules |
-| Register allocation | ✅ Full | Spill logic included |
+| Register allocation | ✅ Full | Linear-scan with stack spilling: 18 GPRs ($t0–$t9, $s0–$s7) + 8 pre-reserved spill slots per frame = 26 simultaneous live values. Named variables mapped to callee-saved $s regs. |
 | Peephole optimization | ✅ Full | |
 | Delay slot filling | ✅ Full | |
 | `defer` | ✅ Full | |
 | `match` on enums | ✅ Full | |
+| Named-field variant construction (`Type.case { f: v }`) | ✅ Full | Stack-allocated with tag + payload stores |
+| Compound-assign `/=`, `%=`, `<<=`, `>>=` | ✅ Full | `/=` → `div`/`mflo`; `%=` → `div`/`mfhi`; shifts → `sllv`/`srav` |
 | Generics / traits | ⚠️ Partial | Same as C backend |
 
 ---
@@ -216,19 +218,36 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 
 | Bug | Workaround |
 |-----|------------|
-| `let _ = expr` — `_` is a keyword, not a valid `let` target | Assign to a named variable or static |
+| (fixed) `let _ = expr` — expression evaluated, result discarded | — |
 | (fixed) Capturing closures — now emitted as GCC nested functions | — |
-| Named-field variant construction as expression (`Event.move { x: 1 }`) | Use positional payloads: `Event.move(1, 2)` |
+| (fixed) Named-field variant construction (`Event.move { x: 1 }`) | — |
 
 ## Recently Fixed Bugs
 
 | Bug | Fix |
 |-----|-----|
+| `pak check` crashes with `key "filename" not known` on files with `@cfg` annotations | Fixed — Tcl `Checker.err`/`warn` now include `filename` in diagnostic dicts; `diag_str` also hardened against missing key |
+| MIPS `GPR temporary pool exhausted` on deeply-nested binary expressions (e.g. 8+ chained `\|`) | Fixed — `emit_binop` now allocates the RHS temp *after* evaluating the LHS, reducing peak register pressure from O(depth×2) to O(depth+2) |
 | Asset names not in typechecker scope (E010) | Fixed — `AssetDecl` now registered in `_check_top` |
 | DMA checker fires on address/size argument names (false-positive E201/E202) | Fixed — checker now only inspects `args[0]` (the buffer); also `&buf[0]` form now detected |
 | `.ok(v)` / `.err(e)` match patterns fail to parse (E002) | Fixed — `parse_pattern()` uses `expect_name()` to accept keyword names after `.` |
 | Variant payload bindings not in scope (E010) | Fixed — `_check_match()` declares binding variables from `.Case(x, y)` arms |
 | Writing through an alloc'd pointer (`*p = 42`) then `free(p)` reported E010 | Fixed — parser newline handling no longer treats the deref-write as a move |
+| Format string uses `%ld`/`%lu` for `i32`/`u32` (wrong on LP64 hosts) | Fixed — `int32_t`→`%d`, `uint32_t`→`%u`; fallback changed from `%ld` to `%d` |
+| `DotAccess` on a non-Ident pointer expression generates `.` instead of `->` | Fixed — `_expr_type` consulted for chained access; pointer results use `->` |
+| MIPS `swc1`/`lwc1` used GPR operand (invalid assembly for float store/load) | Fixed — float typed-load/store always targets `$f12`; `FloatLit` drops spurious `move $dst $zero` |
+| MIPS `break`/`continue` skipped `defer` blocks declared inside the loop | Fixed — `emit_defers_from` emits inner-loop defers on break/continue; loop depth tracked in `loop_defer_depth` |
+| MIPS spill area (offsets 16–47) conflicted with O32 outgoing arg area | Fixed — spill base moved to offset 64; stack args (slots 5+) still go to 16–47, no overlap for ≤12 extra args |
+| `?*mut T` and `?*volatile T` failed to parse | Fixed — `parse_type` handles `mut`/`volatile` after `?*` |
+| Tcl parser missing match arm guard support (`pattern if cond =>`) | Fixed — `parse_match_arm` now checks for `IF` token before `FAT_ARROW` |
+| `if expr -> binding { }` null-check evaluated `expr` twice when side-effecting | Fixed — `gen_null_check` emits an outer block with `__auto_type binding = (expr)` then checks binding |
+| Tcl parser `start..end` range — end expression used stale `end` variable | Fixed — `parse_range_end` now correctly reads the end expression from tokens |
+| MIPS `DotAccess` match pattern fell through to wrong emit path | Fixed — `emit_match` arm dispatch now handles `DotAccess` pattern before the wildcard branch |
+| MIPS `emit_stmt`/`emit_expr` had silent `default {}` / `move $dst $zero` fallbacks | Fixed — both now raise `mips_unported` for any unrecognised node kind, surfacing bugs instead of silently emitting wrong code |
+| MIPS `emit_binop` had a silent no-op default for unhandled operators | Fixed — now raises `mips_unported` |
+| Tcl C codegen `gen_match` Ident binding pattern emitted invalid C `case /* name */:` | Fixed — now raises `cg_unported`; only the wildcard (`_`) is accepted as a default arm |
+| MIPS named-field variant construction (`Type.case { field: val }`) silently emitted `$zero` | Fixed — `emit_expr` now handles `VariantLit`: stack-allocates a properly-aligned struct, stores the discriminant tag, then stores each named payload field at the correct offset |
+| MIPS compound-assign `/=`, `%=`, `<<=`, `>>=` were silently discarded | Fixed — `/=` uses `div`/`mflo`, `%=` uses `div`/`mfhi`, `<<=` uses `sllv`, `>>=` uses `srav`; unrecognised operators now raise `mips_unported` |
 
 ---
 

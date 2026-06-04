@@ -24,6 +24,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Install Tcl (for objgen end-to-end test)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tcl tcllib
+
       - name: Install Pak compiler
         run: pip install -e ".[dev]"
 
@@ -121,8 +126,7 @@ jobs:
           python3 tcl/tools/gen_check_tables.py
           python3 tcl/tools/gen_tc_tables.py
           python3 tcl/tools/gen_cg_tables.py
-          python3 tcl/tools/gen_mips_tables.py
-          git diff --exit-code tcl/ast_schema.tcl tcl/check_tables.tcl tcl/tc_tables.tcl tcl/cg_tables.tcl tcl/mips_tables.tcl \
+          git diff --exit-code tcl/ast_schema.tcl tcl/check_tables.tcl tcl/tc_tables.tcl tcl/cg_tables.tcl \
             || { echo "Generated Tcl mirrors are stale — run the gen_*.py scripts and commit."; exit 1; }
 
       - name: Lexer parity (Tcl vs Python oracle)
@@ -144,11 +148,36 @@ jobs:
       - name: Codegen C parity (ported subset, Tcl vs golden C)
         run: bash tcl/tools/cg_parity.sh
 
-      # MIPS backend is ported incrementally (unoptimized output); this asserts
-      # the files already lowered stay byte-identical to the Python oracle
-      # (MipsCodegen optimize=False) and that none regress to wrong assembly.
-      - name: MIPS assembly parity (ported subset, Tcl vs Python oracle)
+      # MIPS backend: all 29 canonical examples must compile without error.
+      # The Python MIPS backend has been deprecated; the Tcl backend is now authoritative.
+      - name: MIPS assembly (all 29 canonical examples compile)
         run: bash tcl/tools/mips_parity.sh
+
+      # Toolchain-free binary path: the Tcl encoder turns the codegen's
+      # structured record stream into machine code (no mips64-elf-as needed).
+      - name: MIPS binary encoder (golden encodings)
+        run: tclsh tcl/tools/n64enc_test.tcl
+
+      - name: Object generation (all 29 canonical examples → .pakobj)
+        run: |
+          failed=0
+          for f in examples/canonical/*.pk64; do
+            if ! tclsh tcl/cli.tcl objgen "$f" -o /tmp/obj.pakobj > /dev/null 2>&1; then
+              echo "OBJGEN FAIL: $f"
+              tclsh tcl/cli.tcl objgen "$f" -o /tmp/obj.pakobj
+              failed=1
+            fi
+          done
+          [ "$failed" -eq 0 ] && echo "All canonical examples produced object files."
+          exit $failed
+
+      # The runtime is now Pak (+ a hand-asm crt0), not C — assemble both with
+      # the encoder so they stay buildable with no MIPS toolchain.
+      - name: Runtime builds toolchain-free (boot.S + runtime.pk64)
+        run: |
+          tclsh tcl/cli.tcl asmobj pak/runtime/boot.S        -o /tmp/boot.pakobj
+          tclsh tcl/cli.tcl objgen pak/runtime/runtime.pk64  -o /tmp/runtime.pakobj
+          echo "boot + runtime assembled."
 
       - name: Static-lint Tcl sources (nagelfar)
         run: bash tcl/tools/lint.sh

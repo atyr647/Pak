@@ -535,12 +535,15 @@ class Parser:
             name = self.expect(TT.IDENT).value
             return ast.TypeDynTrait(name=name, line=line, col=col)
 
-        # ?*Type  or  ?Type
+        # ?*Type  or  ?*mut Type  or  ?*volatile Type  or  ?Type
         if self.match(TT.QUESTION):
             if self.check(TT.STAR):
                 self.advance()
+                vol = bool(self.match(TT.VOLATILE))
+                mut = bool(self.match(TT.MUT))
                 inner = self.parse_type()
-                return ast.TypePointer(inner=inner, nullable=True, line=line, col=col)
+                ptr = ast.TypePointer(inner=inner, nullable=True, mutable=mut, line=line, col=col)
+                return ast.TypeVolatile(inner=ptr, line=line, col=col) if vol else ptr
             inner = self.parse_type()
             return ast.TypeOption(inner=inner, line=line, col=col)
 
@@ -813,7 +816,11 @@ class Parser:
         line, col = self.loc()
         self.expect(TT.LET)
         mutable = self.match(TT.MUT)
-        name = self.expect(TT.IDENT).value
+        if self.check(TT.UNDERSCORE):
+            self.advance()
+            name = '_'
+        else:
+            name = self.expect(TT.IDENT).value
         typ = None
         if self.match(TT.COLON):
             typ = self.parse_type()
@@ -1200,6 +1207,24 @@ class Parser:
                 else:
                     self.expect(TT.RBRACKET)
                     expr = ast.IndexAccess(obj=expr, index=idx, line=line, col=col)
+            elif (self.check(TT.LBRACE)
+                  and isinstance(expr, ast.DotAccess)
+                  and isinstance(expr.obj, ast.Ident)
+                  and self._is_struct_literal_context()):
+                # Named-field variant construction: TypeName.case_name { field: val }
+                vtype = expr.obj.name
+                vcase = expr.field
+                self.advance()  # consume '{'
+                fields = []
+                while not self.check(TT.RBRACE) and not self.check(TT.EOF):
+                    fname = self.expect(TT.IDENT).value
+                    self.expect(TT.COLON)
+                    fval = self.parse_expr()
+                    fields.append((fname, fval))
+                    self.match(TT.COMMA)
+                self.expect(TT.RBRACE)
+                expr = ast.VariantLit(variant_type=vtype, case_name=vcase,
+                                      fields=fields, line=line, col=col)
             else:
                 break
         return expr
@@ -1217,7 +1242,7 @@ class Parser:
                 self.advance()
                 end = None
                 if not self.check(TT.RBRACE) and not self.check(TT.COMMA) and not self.check(TT.RPAREN) and not self.check(TT.RBRACKET):
-                    end = self.parse_primary()
+                    end = self.parse_postfix()
                 return ast.RangeExpr(start=lit, end=end, line=line, col=col)
             return lit
 
@@ -1478,7 +1503,7 @@ class Parser:
                 self.advance()
                 end = None
                 if not self.check(TT.RBRACE) and not self.check(TT.COMMA) and not self.check(TT.RPAREN):
-                    end = self.parse_primary()
+                    end = self.parse_postfix()
                 return ast.RangeExpr(start=ast.Ident(name=name, line=line, col=col), end=end, line=line, col=col)
 
             ident = ast.Ident(name=name, line=line, col=col)
@@ -1499,7 +1524,7 @@ class Parser:
                 self.advance()
                 end = None
                 if not self.check(TT.RBRACE) and not self.check(TT.COMMA) and not self.check(TT.RPAREN) and not self.check(TT.RBRACKET):
-                    end = self.parse_primary()
+                    end = self.parse_postfix()
                 return ast.RangeExpr(start=ast.IntLit(value=ival, raw=raw, line=line, col=col), end=end, line=line, col=col)
             return ast.IntLit(value=ival, raw=raw, line=line, col=col)
 

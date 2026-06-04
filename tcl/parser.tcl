@@ -183,7 +183,11 @@ oo::class create pak::Parser {
         my expect LET
         set mutable [pak::Nil]
         if {[my accept MUT]} { set mutable [pak::Lit mut] }
-        set name [my expectv IDENT]
+        if {[my accept UNDERSCORE]} {
+            set name "_"
+        } else {
+            set name [my expectv IDENT]
+        }
         set typ [pak::Nil]
         if {[my accept COLON]} { set typ [my parse_type] }
         set val [pak::Nil]
@@ -718,13 +722,18 @@ oo::class create pak::Parser {
 
     method parse_match_arm {} {
         set pat [my parse_pattern]
+        set guard [pak::Nil]
+        if {[my check IF]} {
+            my advance
+            set guard [my parse_expr]
+        }
         my expect FAT_ARROW
         if {[my check LBRACE]} {
             set body [my parse_block]
         } else {
             set body [pak::N Block stmts [list [my parse_stmt]]]
         }
-        return [pak::N MatchArm pattern $pat guard [pak::Nil] body $body]
+        return [pak::N MatchArm pattern $pat guard $guard body $body]
     }
 
     method parse_pattern {} {
@@ -939,6 +948,24 @@ oo::class create pak::Parser {
                     my expect RBRACKET
                     set expr [pak::N IndexAccess obj $expr index $idx]
                 }
+            } elseif {[my check LBRACE] \
+                      && [pak::kindof $expr] eq "DotAccess" \
+                      && [pak::kindof [pak::nfield $expr obj]] eq "Ident" \
+                      && [my is_struct_lit_ctx]} {
+                # Named-field variant construction: TypeName.case_name { field: val }
+                set vtype [pak::fval [pak::nfield $expr obj] name]
+                set vcase [pak::fval $expr field]
+                my advance
+                set fields {}
+                while {![my check RBRACE] && ![my check EOF]} {
+                    set fn [my expectv IDENT]
+                    my expect COLON
+                    set fv [my parse_expr]
+                    lappend fields [pak::Seq [list [pak::Lit $fn] $fv]]
+                    my match COMMA
+                }
+                my expect RBRACE
+                set expr [pak::N VariantLit variant_type $vtype case_name $vcase fields $fields]
             } else break
         }
         return $expr
@@ -953,7 +980,7 @@ oo::class create pak::Parser {
                 if {[my check DOTDOT]} {
                     my advance
                     set end [pak::Nil]
-                    if {![my check RBRACE] && ![my check COMMA] && ![my check RPAREN] && ![my check RBRACKET]} { set end [my parse_primary] }
+                    if {![my check RBRACE] && ![my check COMMA] && ![my check RPAREN] && ![my check RBRACKET]} { set end [my parse_postfix] }
                     return [pak::N RangeExpr start $lit end $end]
                 }
                 return $lit
@@ -1124,7 +1151,7 @@ oo::class create pak::Parser {
                 if {[my check DOTDOT] && [llength $targs] == 0} {
                     my advance
                     set end [pak::Nil]
-                    if {![my check RBRACE] && ![my check COMMA] && ![my check RPAREN]} { set end [my parse_primary] }
+                    if {![my check RBRACE] && ![my check COMMA] && ![my check RPAREN]} { set end [my parse_postfix] }
                     return [pak::N RangeExpr start [pak::N Ident name $name type_args {}] end $end]
                 }
                 # If type args weren't followed by a call/struct, the '<...>' was

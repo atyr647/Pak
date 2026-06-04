@@ -115,9 +115,41 @@ N64_TYPES: Dict[str, str] = {
     'antialias_filter_t': 'i32',
     'gamma_t': 'i32',
 
+    # libdragon graphics / sprites
+    'sprite_t': '*mut u8',
+    'rdpq_blitparms_t': '*mut u8',
+    'color_t': 'u32',
+    'rdp_color_t': 'u32',
+    'rdpq_tile_t': 'i32',
+    'tex_format_t': 'i32',
+
+    # libdragon audio
+    'wav64_t': '*mut u8',
+    'xm64player_t': '*mut u8',
+    'ym64player_t': '*mut u8',
+    'mixer_ch_t': '*mut u8',
+
+    # libdragon rspq / rdpq blocks
+    'rspq_block_t': '*mut u8',
+    'rdpq_block_t': '*mut u8',
+
+    # libdragon filesystem / debug
+    'FILE': '*mut u8',
+    'dir_t': '*mut u8',
+
+    # libdragon controller / joypad
+    'joypad_port_t': 'i32',
+    'joypad_style_t': 'i32',
+    'joypad_buttons_t': 'u32',
+    'joypad_inputs_t': '*mut u8',
+
+    # OS / threading
+    'OSTime': 'u64',
+    'OSPri': 'i32',
+    'OSId': 'i32',
+
     # Common
     '__builtin_va_list': '*mut u8',
-    'FILE': '*mut u8',
 }
 
 # Modules collected from C_TO_PAK_API for use declarations

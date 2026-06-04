@@ -1,33 +1,27 @@
 #!/usr/bin/env python3
-"""Emit the Python MIPS backend's UNOPTIMIZED assembly for a .pk64 file.
+"""Emit MIPS assembly for a .pk64 file via the Tcl MIPS backend.
 
-Calls MipsCodegen(optimize=False) directly (not the CLI, which forces
-optimize=True) so the Tcl port can target unoptimized output first — the
-instruction-scheduling optimizer is a separate, later concern.
+The Python MIPS backend has been deprecated; this shim delegates to
+tclsh tcl/cli.tcl mips <file> so existing tooling continues to work.
 """
 import sys
+import subprocess
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from pak.parser import parse, ParseError  # noqa: E402
-from pak.lexer import LexError  # noqa: E402
-from pak.mips import MipsCodegen, CodegenError  # noqa: E402
+TCL_CLI = Path(__file__).resolve().parents[2] / 'tcl' / 'cli.tcl'
 
 
 def main() -> None:
     path = sys.argv[1]
-    src = Path(path).read_text(encoding="utf-8")
-    try:
-        prog = parse(src, path)
-    except (ParseError, LexError):
-        print("PARSEERROR")
-        return
-    try:
-        cg = MipsCodegen(bounds_check=True, optimize=False)
-        sys.stdout.write(cg.generate(prog))
-    except CodegenError as e:
-        print(f"CODEGENERROR\t{e}")
+    result = subprocess.run(
+        ['tclsh', str(TCL_CLI), 'mips', path],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        print(f"ERROR\t{result.stderr.strip()}")
+    else:
+        sys.stdout.write(result.stdout)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

@@ -161,8 +161,11 @@ class DeclMapper:
 
     def emit_func_decl(self, decl: CFuncDecl) -> List[str]:
         """Emit a forward function declaration."""
-        sig = self._emit_sig(decl.sig)
-        return [sig]
+        lines = []
+        if decl.sig.is_variadic:
+            lines.append('-- c2pak: variadic function (trailing args not expressible in Pak)')
+        lines.append(self._emit_sig(decl.sig))
+        return lines
 
     def emit_func_def(self, defn: CFuncDef, method_of: str = None) -> List[str]:
         """Emit a function definition (with body).
@@ -171,6 +174,8 @@ class DeclMapper:
                    use 'self' as the first parameter name.
         """
         lines = []
+        if defn.sig.is_variadic:
+            lines.append('-- c2pak: variadic function (trailing args not expressible in Pak)')
         sig_str = self._emit_sig(defn.sig, method_of=method_of)
         lines.append(sig_str + ' {')
         # Emit body with 1 indent
@@ -186,6 +191,8 @@ class DeclMapper:
                            n64_modules: set = None) -> List[str]:
         """Emit a complete function definition."""
         lines = []
+        if defn.sig.is_variadic:
+            lines.append('-- c2pak: variadic function (trailing args not expressible in Pak)')
         sig_str = self._emit_sig(defn.sig, method_of=method_of)
         lines.append(sig_str + ' {')
         sm = StmtMapper(self.tm, self.em)
@@ -229,8 +236,7 @@ class DeclMapper:
             if i in skip_indices:
                 continue
             if p.is_variadic:
-                parts.append('...')
-                continue
+                continue  # variadic not expressible in Pak; comment added at function level
             # Strip C's (void) parameter — a single void param means no params
             typ = self.tm.map_type(p.typ)
             if typ == 'void':
@@ -279,8 +285,7 @@ class DeclMapper:
             if i in skip_indices:
                 continue
             if p.is_variadic:
-                parts.append('...')
-                continue
+                continue  # variadic not expressible in Pak; comment added at function level
             typ = self.tm.map_type(p.typ)
             if typ == 'void':
                 continue
