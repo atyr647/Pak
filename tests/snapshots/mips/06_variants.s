@@ -376,7 +376,16 @@ main:
     nop
 .Larm_skip_25:
 .Lmatch_end_19:
-    move $t9, $zero
+    sw $zero, 152($sp)
+    sw $zero, 156($sp)
+    sw $zero, 160($sp)
+    li $t8, 0
+    sb $t8, 152($sp)
+    li $t8, 42
+    sw $t8, 156($sp)
+    li $t8, 80
+    sb $t8, 160($sp)
+    addiu $t9, $sp, 152
     sw $t9, 148($sp)
     lw $t9, 148($sp)
     li $t8, 0

@@ -1301,7 +1301,7 @@ oo::class create pak::MipsCodegen {
                 }
             }
             NullCheckStmt { my emit_null_check_stmt $stmt }
-            default    {}
+            default    { pak::mips_unported "stmt:[pak::kindof $stmt]" }
         }
     }
 
@@ -1890,6 +1890,63 @@ oo::class create pak::MipsCodegen {
                 $ra free_temp $val
                 $em addiu $dst {$sp} $err_off
             }
+            VariantLit {
+                set vname [pak::fval $expr variant_type]
+                set case_name [pak::fval $expr case_name]
+                if {![dict exists $tenv_layouts $vname]} { pak::mips_unported "VariantLit:$vname" }
+                set layout [dict get $tenv_layouts $vname]
+                set tag_val [my variant_tag $vname $case_name]
+                set case_fields [my variant_case_fields $vname $case_name]
+
+                set off [my declare_local __variant_lit $layout]
+                for {set w 0} {$w < [dict get $layout size]} {incr w 4} {
+                    $em sw {$zero} [expr {$off + $w}] {$sp}
+                }
+                # Store tag
+                set tag_size [dict get $layout tag_size]
+                if {$tag_size < 1} { set tag_size 1 }
+                set tmp [$ra alloc_temp]
+                $em li $tmp $tag_val
+                if {$tag_size == 1} { $em sb $tmp $off {$sp} } \
+                elseif {$tag_size == 2} { $em sh $tmp $off {$sp} } \
+                else { $em sw $tmp $off {$sp} }
+                $ra free_temp $tmp
+                # Payload offset
+                if {[llength $case_fields] > 0} {
+                    set payload_align 1
+                    foreach cf $case_fields {
+                        set a [dict get $cf align]
+                        if {$a > $payload_align} { set payload_align $a }
+                    }
+                } else { set payload_align 4 }
+                set payload_start [expr {($tag_size + $payload_align - 1) & ~($payload_align - 1)}]
+                # Store named fields by matching name to case_fields
+                foreach pair [pak::items [pak::nfield $expr fields]] {
+                    set pitems [pak::items $pair]
+                    set fname [pak::sval [lindex $pitems 0]]
+                    set fval  [lindex $pitems 1]
+                    set fi -1; set i 0
+                    foreach cf $case_fields {
+                        if {[dict get $cf name] eq $fname} { set fi $i; break }
+                        incr i
+                    }
+                    if {$fi >= 0} {
+                        set cf [lindex $case_fields $fi]
+                        set ftype [dict get $cf type_node]
+                        if {$ftype ne "" && ![pak::isnil $ftype]} {
+                            set fl [my mips_layout $ftype]
+                        } else {
+                            set fl [dict create size [dict get $cf size] align [dict get $cf align] \
+                                is_float 0 is_signed 1 is_ptr 0 fields {}]
+                        }
+                        set tmp [$ra alloc_temp]
+                        my emit_expr $fval $tmp
+                        my emit_typed_store $tmp [expr {$off + $payload_start + [dict get $cf offset]}] {$sp} $fl
+                        $ra free_temp $tmp
+                    }
+                }
+                $em addiu $dst {$sp} $off
+            }
             RangeExpr { pak::mips_unported "RangeExpr-as-expr (only valid in for-loop)" }
             EnumVariantAccess {
                 set val [my resolve_enum_case_value [pak::fval $expr name]]
@@ -1932,7 +1989,7 @@ oo::class create pak::MipsCodegen {
                 $em la $dst $name
             }
             CatchExpr { my emit_catch $expr $dst }
-            default   { $em move $dst {$zero} }
+            default   { pak::mips_unported "expr:[pak::kindof $expr]" }
         }
     }
 
@@ -2389,7 +2446,7 @@ oo::class create pak::MipsCodegen {
                 $em sltu $dst {$zero} $tmp
                 $ra free_temp $tmp
             }
-            default { $em addu $dst $lhs $rhs }
+            default { pak::mips_unported "binop:$op" }
         }
         $ra free_temp $rhs
         $ra free_temp $lhs

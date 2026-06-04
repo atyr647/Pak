@@ -1821,7 +1821,7 @@ oo::class create pak::Codegen {
                     if {[pak::fval $pat name] eq "_"} {
                         lappend lines "${inner_pad}default:"
                     } else {
-                        lappend lines "${inner_pad}case /* [my gen_expr $pat] */:"
+                        pak::cg_unported "match-pat:Ident-binding:[pak::fval $pat name]"
                     }
                 }
                 EnumVariantAccess {
