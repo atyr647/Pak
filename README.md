@@ -2,12 +2,13 @@
 
 **A modern systems language for Nintendo 64 homebrew.**
 
-Pak (`.pk64`) is a small, statically-typed language that compiles to clean C and
+Pak (`.pk64`) is a small, statically-typed language that compiles to clean C,
 links against [libdragon](https://libdragon.dev) to produce real `.z64` ROMs —
-or compiles fully standalone, with its own bare-metal N64 runtime, requiring
-nothing but a MIPS cross-compiler. It gives you Rust-flavored ergonomics
-(pattern matching, variants, traits, generics, `defer`, `Result`) while staying
-close enough to the hardware that the N64's DMA, cache, fixed-point, and EEPROM
+or goes fully standalone: the compiler contains its own MIPS code generator,
+self-contained assembler, and ROM packer, so a `.z64` can be produced without
+any external toolchain at all. It gives you Rust-flavored ergonomics (pattern
+matching, variants, traits, generics, `defer`, `Result`) while staying close
+enough to the hardware that the N64's DMA, cache, fixed-point, and EEPROM
 quirks are first-class, compiler-checked concerns.
 
 ```pak
@@ -58,8 +59,8 @@ type system:
   monomorphized generics, closures, `defer`, `Result`, named arguments, default
   parameters, multi-file modules, match guards.
 
-Everything you write maps to predictable C. Run `pak explain file.pk64` to see
-exactly what the hardware will execute.
+Everything you write maps to predictable C or MIPS assembly. Run
+`pak explain file.pk64` to see exactly what the hardware will execute.
 
 ---
 
@@ -74,36 +75,43 @@ pip install -e ".[dev]"
 pak --version          # pak 0.1.0
 ```
 
-The CLI entry point is Python (≥ 3.11), but all compilation subcommands delegate to the
-**Tcl backend** (`tclsh tcl/cli.tcl`). Only `pak convert` (the C→Pak transpiler) stays in
-Python because it depends on pycparser. You will need both Python and `tclsh` installed.
+The CLI entry point is Python (≥ 3.11), but all compilation subcommands delegate
+to the **Tcl backend** (`tclsh tcl/cli.tcl`). Only `pak convert` (the C→Pak
+transpiler) stays in Python because it depends on pycparser. You will need both
+Python and `tclsh` installed.
 
 ### Your first ROM
 
 ```bash
 pak init my_game
 cd my_game
-pak check src/main.pk64        # type-check only
-pak explain src/main.pk64      # show the generated C
-pak build src/main.pk64        # compile + pack assets + generate Makefile
-pak run src/main.pk64          # build, then launch in the ares emulator
+pak check src/main.pk64              # type-check only
+pak explain src/main.pk64            # show the generated C
+pak explain --backend mips src/main.pk64   # show the generated MIPS
+pak build src/main.pk64              # compile + pack assets + generate Makefile
+pak run src/main.pk64                # build, then launch in the ares emulator
 ```
 
-`pak build` emits C and a libdragon Makefile. To go all the way to a `.z64` you
-need either a libdragon toolchain (the default path) **or** just a
-`mips-n64-gcc` cross-compiler (the standalone path, below).
+`pak build` emits C and a libdragon Makefile. To go all the way to a `.z64`
+you need a libdragon toolchain (Path A below) **or** nothing at all (Path B).
 
 ---
 
-## Two ways to a ROM
+## From source to ROM
 
 ```
-              ┌──────────────┐
-  .pk64  ───▶ │  Pak compiler │ ───▶  clean C
-              └──────────────┘          │
-                                        ├──▶ Path A:  + libdragon  ──▶ make ──▶ .z64
-                                        │
-                                        └──▶ Path B:  + pak/runtime ──▶ mips-n64-gcc ──▶ rompack ──▶ .z64
+              ┌────────────────────┐
+  .pk64  ───▶ │   Pak compiler     │
+              └────────────────────┘
+                   │           │
+          C backend│           │MIPS backend
+                   ▼           ▼
+              clean C      MIPS assembly
+                   │           │
+    Path A         │           │ Path B
+    + libdragon    │           │ in-compiler:
+    + make ──▶.z64 │           │  n64enc.tcl  ──▶ object
+                              │  n64rom.tcl  ──▶ .z64
 ```
 
 **Path A — libdragon (full-featured).**
@@ -111,20 +119,39 @@ The generated C uses the libdragon API (`display_*`, `rdpq_*`, `joypad_*`, …).
 `pak build` writes a libdragon-compatible Makefile; `make` produces the ROM.
 This is the path for serious games — full RDP/RSP, audio mixer, filesystem.
 
-**Path B — standalone runtime (no libdragon).**
-`pak/runtime/` ships a drop-in libdragon *shim* plus bare-metal drivers: a
-boot/crt0 (`boot.S`), linker script (`n64.ld`), VI video init (`vi.c`), SI/PIF
-controller DMA (`si.c`), a software framebuffer renderer, and a libdragon header
-shim that shadows the real one via `-I pak/runtime/`. The generated C is
-**unchanged** — you just compile it against the shim. `pak/tools/rompack.py`
-then prepends a valid N64 header and CIC-NUS-6102 checksum to produce a bootable
-`.z64`. The whole standalone pipeline is `pak/tools/n64_build.sh`, and its only
-external dependency is a `mips-n64-gcc` cross-compiler.
+```bash
+# Path A
+export N64_INST=/opt/libdragon
+pak build && make
+```
+
+**Path B — fully standalone (no external toolchain).**
+The Tcl backend contains a complete MIPS pipeline with no external dependencies:
+
+- **`tcl/mips_codegen.tcl`** — AST → VR4300 MIPS-III assembly (o32 ABI, with
+  linear-scan register allocation and delay-slot scheduling)
+- **`tcl/optimize.tcl`** — peephole + basic-block optimizer over the assembly
+- **`tcl/n64enc.tcl`** — self-contained MIPS encoder; turns the assembly stream
+  into a relocatable binary object without calling any assembler binary
+- **`tcl/n64rom.tcl`** — builds a bootable `.z64` (ROM header, IPL3 embedding,
+  CRC1/CRC2) entirely in Tcl via `binary format`
+
+The result: `pak objgen src/main.pk64` produces a `.pakobj` relocatable object
+straight from source. No `mips-n64-gcc`, no `binutils`, no cross-compiler of
+any kind.
 
 ```bash
-# Path B, end to end:
-pak/tools/n64_build.sh src/main.pk64 my_game.z64
+# Path B — inspect the MIPS output
+pak explain --backend mips src/main.pk64
+
+# Path B — compile to a .pakobj (relocatable binary, no external tools)
+pak objgen src/main.pk64 -o main.pakobj
 ```
+
+> **Legacy standalone path:** `pak/tools/n64_build.sh` is the original C-based
+> standalone route (`.pk64` → C → `mips-n64-gcc` → `mips-n64-objcopy` →
+> `rompack.py` → `.z64`). It still works if you have `mips-n64-gcc` installed,
+> but the in-compiler Tcl pipeline (Path B above) supersedes it.
 
 ---
 
@@ -196,7 +223,9 @@ every feature tagged `[IMPLEMENTED]`, `[PARTIAL]`, or `[PLANNED]`.
 |---------|-------------|
 | `pak check <file>`   | Type-check without building |
 | `pak build <file>`   | Compile `.pk64` → C / MIPS, pack assets, generate Makefile |
-| `pak explain <file>` | Print the generated C (or MIPS) for inspection |
+| `pak explain <file>` | Print the generated C for inspection |
+| `pak explain --backend mips <file>` | Print the generated MIPS assembly |
+| `pak objgen <file>`  | Compile `.pk64` → `.pakobj` relocatable binary (no external tools) |
 | `pak run <file>`     | Build, then `make run` (launches in ares) |
 | `pak init <name>`    | Scaffold a new project |
 | `pak pack`           | Pack converted assets into a PakFS archive |
@@ -208,13 +237,23 @@ every feature tagged `[IMPLEMENTED]`, `[PARTIAL]`, or `[PLANNED]`.
 ## Repository layout
 
 ```
-tcl/              Primary compiler implementation (Tcl): lexer, parser, typechecker,
-                  C codegen, MIPS backend — this is what `pak` runs
-pak/              Reference compiler implementation (Python): same stages, kept at
-                  byte-for-byte parity with the Tcl primary; also hosts the c2pak
-                  transpiler (Python-only, needs pycparser)
-pak/runtime/      Standalone bare-metal N64 runtime + libdragon shim (Path B)
-pak/tools/        rompack.py (.z64 packer) + n64_build.sh (standalone pipeline)
+tcl/              Primary compiler implementation (Tcl): lexer, parser,
+                  typechecker, C codegen, MIPS backend — this is what `pak` runs
+  mips_codegen.tcl    AST → VR4300 MIPS-III assembly (o32, linear-scan regalloc)
+  optimize.tcl        Peephole + basic-block optimizer
+  n64enc.tcl          Self-contained MIPS encoder → relocatable binary object
+  n64asm.tcl          Self-contained MIPS assembler (validates against binutils)
+  n64rom.tcl          Bootable .z64 ROM builder (pure Tcl, no external tools)
+  codegen.tcl         C code generator
+  typechecker.tcl     Type checker + semantic analysis
+  checker.tcl         Lint + error diagnostics
+pak/              Reference compiler implementation (Python): same stages, kept
+                  at byte-for-byte parity with the Tcl primary; also hosts the
+                  c2pak transpiler (Python-only, needs pycparser)
+pak/runtime/      Legacy bare-metal N64 runtime + libdragon shim (used by the
+                  old n64_build.sh C-based standalone path)
+pak/tools/        rompack.py + n64_build.sh (legacy standalone pipeline,
+                  requires mips-n64-gcc; superseded by the in-Tcl pipeline)
 examples/canonical/  29 gold-standard, known-correct reference programs
 examples/         51 example programs total (games, std-lib middleware, baremetal)
 tests/            728 unit + integration + snapshot tests
@@ -222,9 +261,9 @@ runtime/          Shared C runtime headers (containers, math, RNG, PakFS)
 ```
 
 Pak ships **two independent compiler implementations** — a Tcl primary and a
-Python reference — held in lockstep by parity harnesses in CI. Every lexer token,
-parser AST, checker diagnostic, and chunk of generated C/MIPS is cross-verified
-between the two on every push: 75/75 AST, 29/29 C, 29/29 MIPS.
+Python reference — held in lockstep by parity harnesses in CI. Every lexer
+token, parser AST, checker diagnostic, and chunk of generated C/MIPS is
+cross-verified between the two on every push: 75/75 AST, 29/29 C, 29/29 MIPS.
 
 ---
 
@@ -249,6 +288,7 @@ between the two on every push: 75/75 AST, 29/29 C, 29/29 MIPS.
 pytest tests/                       # run the full suite (728 tests)
 pak check examples/canonical/*.pk64 # all must pass
 pak explain examples/canonical/01_hello.pk64
+pak explain --backend mips examples/canonical/01_hello.pk64
 # Parity gates (Tcl vs Python):
 bash tcl/tools/ast_parity.sh        # 75/75 AST
 bash tcl/tools/cg_parity.sh         # 29/29 C codegen
@@ -265,16 +305,20 @@ canonical-example validation, "invalid programs must fail" checks, golden
 
 Pak is **0.1.0** — actively developed and already capable of compiling real,
 playable N64 programs. The language surface is largely stable; see the
-`[IMPLEMENTED]` / `[PARTIAL]` / `[PLANNED]` tags throughout `LANGUAGE.md` for the
-precise current boundary.
+`[IMPLEMENTED]` / `[PARTIAL]` / `[PLANNED]` tags throughout `LANGUAGE.md` for
+the precise current boundary.
 
-The compiler has been through multiple hardening passes. All silent fallbacks
-have been eliminated — unimplemented constructs raise explicit errors (`MIPSUNPORTED`,
-`CGUNPORTED`) rather than producing wrong output. Key recent additions include:
-MIPS named-field variant construction (`Type.case { field: val }`), complete
-compound-assign coverage (`/=`, `%=`, `<<=`, `>>=`), and the Tcl backend as the
-primary `pak` CLI runtime. See **[CURRENTLY_SUPPORTED.md](CURRENTLY_SUPPORTED.md)**
-for the full implementation-status snapshot.
+The compiler is entirely self-contained. The Tcl backend drives the full
+pipeline end-to-end: lexer → parser → typechecker → C or MIPS codegen →
+optimizer → binary encoder → ROM packer. No MIPS transpiler, no external
+assembler, no cross-compiler required for the standalone path. All silent
+fallbacks have been eliminated — unimplemented constructs raise explicit errors
+(`MIPSUNPORTED`, `CGUNPORTED`) rather than producing wrong output. Key recent
+additions: the in-compiler MIPS pipeline (`n64enc.tcl`, `n64rom.tcl`) replacing
+the `mips-n64-gcc`-based build script; MIPS named-field variant construction;
+complete compound-assign coverage (`/=`, `%=`, `<<=`, `>>=`). See
+**[CURRENTLY_SUPPORTED.md](CURRENTLY_SUPPORTED.md)** for the full
+implementation-status snapshot.
 
 ## License
 

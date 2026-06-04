@@ -627,11 +627,25 @@ result catch |err| { fallback_value }
 
 Unwraps a `Result`, running the handler block on `err`.
 
-### Null Check Expression [IMPLEMENTED]
+### Null Check Statement [IMPLEMENTED]
+
+A null-safe dereference written as a specialised `if` form:
 
 ```pak
-ptr? binding { fallback }
+if ptr -> binding {
+    -- ptr is not none; binding holds the non-null value
+}
+
+if ptr -> binding {
+    use(binding)
+} else {
+    -- ptr was none
+}
 ```
+
+The `->` after the condition introduces the binding name. The compiler checks
+that `ptr` is a nullable type (`?*T` / `Option(T)`); if not, `E002` fires.
+`binding` is only in scope inside the then-block.
 
 ### Memory [IMPLEMENTED]
 
@@ -675,7 +689,7 @@ GCC toolchain. Do not store or call the closure after the enclosing function ret
 ### Explicit Type Arguments [IMPLEMENTED]
 
 Generic functions and generic struct literals accept explicit type arguments
-with angle-bracket syntax directly before the call/braces. (Rust-style `::<>`
+with angle-bracket syntax directly before the call/braces. (Rust-style `::< >`
 turbofish is **not** supported.)
 
 ```pak
@@ -1152,7 +1166,7 @@ These constructs **do not exist** in Pak. Do not generate them.
 - `fn main()` — use `entry { }` instead
 - `;;` or `;` after every statement — Pak is newline-delimited
 - `&&`, `||`, `!` — use `and`, `or`, `not`
-- `->` in expressions (only in function signatures and match arms via `=>`)
+- `->` as an expression operator (it appears only in function return types and null-check `if` statements)
 - Implicit numeric conversions — all casts are explicit with `as`
 - `null` — use `none`
 - `void` return type — omit the `->` entirely
@@ -1161,7 +1175,7 @@ These constructs **do not exist** in Pak. Do not generate them.
 - Exceptions / `try` / `throw` — use `Result(Ok, Err)`
 - `new` / `delete` — use `alloc()` / `free()`
 - Rust-style `?` operator — use `catch` or explicit `match`
-- `if let` / `while let` — use `match` or `null_check`
+- `if let` / `while let` — use `match` or null-check `if ptr -> binding { }`
 - Trailing `?` on types meaning Option — use `Option(T)` or `?T`
 - `:=` (Go-style) — use `let`
 - `=>` outside of match arms
