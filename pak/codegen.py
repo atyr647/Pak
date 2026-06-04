@@ -3130,7 +3130,7 @@ class Codegen:
             self.scope_set(s.binding, ast.TypeName(name='auto'))
 
             if isinstance(coll_type, ast.TypeSlice) or \
-                    self._container_kind(coll_type) in ('Vec', 'FixedList', 'Pool'):
+                    self._container_kind(coll_type) in ('Vec', 'FixedList', 'Pool', 'RingBuffer'):
                 # Fat slice or .data/.len container: iterate via .data up to .len
                 idx = s.index if s.index else f'_i_{s.binding}'
                 lines.append(f'{pad}for (int {idx} = 0; {idx} < ({coll}).len; {idx}++) {{')
