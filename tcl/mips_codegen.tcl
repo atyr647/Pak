@@ -1572,6 +1572,28 @@ oo::class create pak::MipsCodegen {
                 # .VariantCase(binding) — variant tag + extract payload
                 my emit_variant_arm $val $pat [pak::nfield $arm body] $skip_label $end_label $arm
                 $em label $skip_label
+            } elseif {$pkind eq "DotAccess"} {
+                # EnumName.case or VariantName.Case(binding)
+                set variant [pak::fval $pat field]
+                set binding [pak::nfield $pat binding]
+                if {![pak::isnil $binding] && $binding ne ""} {
+                    # DotAccess with a single binding — treat as single-arg Call
+                    set fake_call [pak::N Call func [pak::N EnumVariantAccess name $variant] \
+                        args [pak::Seq [list [pak::N Ident name [pak::sval $binding]]]] type_args {}]
+                    my emit_variant_arm $val $fake_call [pak::nfield $arm body] $skip_label $end_label $arm
+                } else {
+                    set case_val [my resolve_enum_case_value $variant]
+                    set case_r [$ra alloc_temp]
+                    $em li $case_r $case_val
+                    $em bne $val $case_r $skip_label
+                    $em nop
+                    $ra free_temp $case_r
+                    my emit_arm_guard $arm $skip_label
+                    my emit_block_or_stmt [pak::nfield $arm body]
+                    $em j $end_label
+                    $em nop
+                }
+                $em label $skip_label
             } elseif {$pkind eq "IntLit"} {
                 set case_r [$ra alloc_temp]
                 $em li $case_r [pak::fval $pat value]
