@@ -254,6 +254,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | MIPS interpolated format strings raised `MIPSUNPORTED` | Fixed — emits `snprintf` call into a static `__pak_fmtbuf_N` buffer; `snprintf` added to extern list |
 | MIPS function parameters stored before stack frame established (pre-prologue `sw`) | Fixed — all param stores now happen after `emit_prologue_placeholder`; 3rd+ float params arriving on stack are loaded from `$fp+(N*4)` (fp = old_sp) |
 | MIPS `marshal_args` used a two-pass save/reload pattern for float args that the VR4300 scheduler misoptimized (moved reload before save due to missing memory alias analysis) | Fixed — replaced with single-pass reverse-order evaluation; each float arg is emitted directly into `$f12`, then `mov.s $f14,$f12` (2nd) or `swc1 $f12,N($sp)` (3rd+) immediately; no save-slot temporaries needed |
+| MIPS `emit_binop` used stale caller-saved temp register after a `jal` in the right operand (e.g. `n * factorial(n-1)` computed garbage because the JAL clobbered `$t9` holding `n`) | Fixed — `expr_has_call` detects which side contains a function call; `emit_binop` evaluates that side first so the other operand's load lands after the JAL, into a fresh temp |
 
 ---
 
@@ -264,3 +265,7 @@ have been tested with the libdragon toolchain and produce `.z64` ROMs that run o
 emulators (ares, cen64) and N64 flashcarts.
 
 The MIPS backend generates MIPS I assembly compatible with the N64's R4300i CPU.
+Pak-generated MIPS functions (`add`, `sub`, `mul_by_two`, `factorial`, `gcd`) were
+executed under `qemu-mips` (32-bit MIPS O32 ABI) and all 12 arithmetic correctness
+tests passed, including the recursive `factorial` case that exposed the JAL-clobber
+bug fixed in this release.

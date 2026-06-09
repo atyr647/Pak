@@ -2617,6 +2617,22 @@ oo::class create pak::MipsCodegen {
         }
     }
 
+    # Returns 1 if expr contains at least one function Call node.
+    # Used by emit_binop to determine evaluation order so that the JAL
+    # from a function call does not clobber caller-saved temp registers
+    # holding the other operand's value.
+    method expr_has_call {expr} {
+        switch -- [pak::kindof $expr] {
+            Call     { return 1 }
+            BinaryOp {
+                if {[my expr_has_call [pak::nfield $expr left]]}  { return 1 }
+                return [my expr_has_call [pak::nfield $expr right]]
+            }
+            UnaryOp  { return [my expr_has_call [pak::nfield $expr operand]] }
+            default  { return 0 }
+        }
+    }
+
     method emit_binop {expr dst} {
         set op [pak::fval $expr op]
         # Float path: dispatch to FPU arithmetic / comparisons
@@ -2627,10 +2643,27 @@ oo::class create pak::MipsCodegen {
         }
         set frac [my infer_frac_bits [pak::nfield $expr left]]
         if {$frac == 0} { set frac [my infer_frac_bits [pak::nfield $expr right]] }
-        set lhs [$ra alloc_temp]
-        my emit_expr [pak::nfield $expr left] $lhs
-        set rhs [$ra alloc_temp]
-        my emit_expr [pak::nfield $expr right] $rhs
+        set left_expr  [pak::nfield $expr left]
+        set right_expr [pak::nfield $expr right]
+        # Evaluate the side containing a function call FIRST so that the
+        # subsequent JAL does not clobber the caller-saved temp register
+        # that holds the other operand (e.g. n * factorial(n-1)).
+        if {[my expr_has_call $right_expr] && ![my expr_has_call $left_expr]} {
+            set rhs [$ra alloc_temp]
+            my emit_expr $right_expr $rhs
+            set lhs [$ra alloc_temp]
+            my emit_expr $left_expr $lhs
+        } elseif {[my expr_has_call $left_expr] && ![my expr_has_call $right_expr]} {
+            set lhs [$ra alloc_temp]
+            my emit_expr $left_expr $lhs
+            set rhs [$ra alloc_temp]
+            my emit_expr $right_expr $rhs
+        } else {
+            set lhs [$ra alloc_temp]
+            my emit_expr $left_expr $lhs
+            set rhs [$ra alloc_temp]
+            my emit_expr $right_expr $rhs
+        }
         if {$frac > 0 && $op eq "*"} {
             my emit_fixmul $dst $lhs $rhs $frac
             $ra free_temp $rhs; $ra free_temp $lhs
