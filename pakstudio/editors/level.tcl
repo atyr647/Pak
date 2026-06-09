@@ -52,7 +52,7 @@ proc level_ed::create {parent on_change_cb on_sel_cb} {
 
     set f [ttk::frame $parent.leved]
 
-    # Toolbar
+    # Toolbar (packed at top)
     set tb [ttk::frame $f.toolbar]
     _make_toolbar $tb
     pack $tb -fill x -padx 4 -pady 2
@@ -60,21 +60,20 @@ proc level_ed::create {parent on_change_cb on_sel_cb} {
     ttk::separator $f.tbs -orient horizontal
     pack $f.tbs -fill x
 
-    # Canvas inside scrollable frame
-    set cv [canvas $f.cv -bg #1a1a2e -highlightthickness 1 \
+    # Canvas area (inner frame, uses grid for scrollbars)
+    set cvf [ttk::frame $f.cvf]
+    pack $cvf -fill both -expand 1
+
+    set cv [canvas $cvf.cv -bg #1a1a2e -highlightthickness 1 \
         -highlightcolor #334466 -cursor crosshair]
-    set vsb [ttk::scrollbar $f.vsb -orient vertical   -command [list $cv yview]]
-    set hsb [ttk::scrollbar $f.hsb -orient horizontal -command [list $cv xview]]
+    set vsb [ttk::scrollbar $cvf.vsb -orient vertical   -command [list $cv yview]]
+    set hsb [ttk::scrollbar $cvf.hsb -orient horizontal -command [list $cv xview]]
     $cv configure -yscrollcommand [list $vsb set] -xscrollcommand [list $hsb set]
 
     grid $cv  $vsb -sticky nsew
     grid $hsb      -sticky ew
-    grid columnconfigure $f 0 -weight 1
-    grid rowconfigure    $f 1 -weight 1
-
-    # Row 0 = toolbar, row 1 = canvas grid
-    grid $tb     -row 0 -columnspan 2 -sticky ew
-    grid $f.tbs  -row 1 -columnspan 2 -sticky ew
+    grid columnconfigure $cvf 0 -weight 1
+    grid rowconfigure    $cvf 0 -weight 1
 
     set canvas $cv
 
@@ -131,14 +130,13 @@ proc level_ed::_make_toolbar {tb} {
     pack $tb.tlbl -side left -padx 2
 
     foreach {t lbl col} {
-        1 "Solid"  #AA5533
-        2 "Platform" #558844
-        3 "Hazard"  #FF2200
+        1 "■ Solid"    #AA5533
+        2 "▤ Platform" #558844
+        3 "✕ Hazard"  #FF2200
     } {
-        set b [ttk::button $tb.tile_$t -text $lbl \
-            -command [list level_ed::set_cur_tile $t] -style Toolbutton]
-        $b configure -foreground $col
-        pack $b -side left -padx 1
+        ttk::button $tb.tile_$t -text $lbl \
+            -command [list level_ed::set_cur_tile $t] -style Toolbutton
+        pack $tb.tile_$t -side left -padx 1
     }
 
     ttk::separator $tb.sep2 -orient vertical

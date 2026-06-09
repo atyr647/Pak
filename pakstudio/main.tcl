@@ -1,6 +1,5 @@
 #!/usr/bin/env wish
 # PakStudio — zero-code N64 game development suite
-# Entry point: sets up the main window, sources all modules, wires everything.
 
 package require Tk
 
@@ -23,6 +22,7 @@ foreach f {
     editors/level.tcl
     editors/audio.tcl
     editors/save_editor.tcl
+    editors/preview.tcl
 } {
     source [file join $here $f]
 }
@@ -30,53 +30,129 @@ foreach f {
 # ── Application state ─────────────────────────────────────────────────────────
 
 namespace eval app {
-    variable outdir    ""      ;# current build output directory
-    variable log_widget ""     ;# log panel text widget
+    variable outdir       ""
+    variable log_widget   ""
     variable build_running false
 }
 
-# ── Theme ──────────────────────────────────────────────────────────────────────
+# ── Premium dark theme ─────────────────────────────────────────────────────────
 
 proc app::setup_theme {} {
+    # Palette — define as Tcl variables for substitution
+    set bg0  #0a0d14
+    set bg1  #131720
+    set bg2  #1a1f2e
+    set bg3  #21273a
+    set bgIn #272e42
+    set bgHv #2e3650
+    set bgSl #1a3f72
+    set fg0  #dde4f0
+    set fg1  #7a8a9f
+    set fg2  #3d4a5e
+    set acc2 #6aadff
+    set bdr  #1e2540
+
     ttk::style theme use clam
+
     ttk::style configure . \
-        -background #1e2433 -foreground #e0e0e0 \
-        -fieldbackground #252d3f -selectbackground #2255aa \
-        -troughcolor #151c2a -bordercolor #334466
+        -background $bg1 -foreground $fg0 \
+        -fieldbackground $bgIn -selectbackground $bgSl \
+        -selectforeground $fg0 \
+        -troughcolor $bg0 -bordercolor $bdr \
+        -font {TkDefaultFont 9}
 
-    ttk::style configure TFrame       -background #1e2433
-    ttk::style configure TLabel       -background #1e2433 -foreground #e0e0e0
-    ttk::style configure TLabelframe  -background #1e2433 -foreground #aaccff
-    ttk::style configure TButton      -background #2a3450 -foreground #e0e0e0 \
-                                       -relief flat -padding {6 3}
-    ttk::style map       TButton      -background {active #3a4a70 pressed #1a2440}
-    ttk::style configure Toolbutton   -background #252d3f -foreground #c0c0c0 \
-                                       -relief flat -padding {4 2}
-    ttk::style map       Toolbutton   -background {active #334466 selected #2255aa}
-    ttk::style configure TEntry       -fieldbackground #252d3f -foreground #e0e0e0 \
-                                       -insertcolor #ffffff
-    ttk::style configure TSpinbox     -fieldbackground #252d3f -foreground #e0e0e0
-    ttk::style configure TCombobox    -fieldbackground #252d3f -foreground #e0e0e0
-    ttk::style configure TNotebook    -background #1a2030
-    ttk::style configure TNotebook.Tab -background #252d3f -foreground #a0a0a0 \
-                                        -padding {10 4}
-    ttk::style map TNotebook.Tab      -background {selected #1e2433} \
-                                       -foreground {selected #ffffff}
-    ttk::style configure TSeparator   -background #334466
-    ttk::style configure TScrollbar   -background #252d3f -troughcolor #151c2a \
-                                       -arrowcolor #a0a0a0
+    ttk::style configure TFrame       -background $bg1
+    ttk::style configure TLabel       -background $bg1 -foreground $fg0
+    ttk::style configure TLabelframe  -background $bg1 -foreground $acc2
+    ttk::style configure TLabelframe.Label -background $bg1 -foreground $acc2
 
-    # Accent (green build button)
+    ttk::style configure TButton \
+        -background $bg3 -foreground $fg0 \
+        -relief flat -padding {8 4} -borderwidth 0
+    ttk::style map TButton \
+        -background [list active $bgHv pressed $bg2 disabled $bg2] \
+        -foreground [list disabled $fg2]
+
+    ttk::style configure Toolbar.TButton \
+        -background $bg2 -foreground $fg1 \
+        -relief flat -padding {10 5} -borderwidth 0
+    ttk::style map Toolbar.TButton \
+        -background [list active $bgHv pressed $bg1 selected $bgSl] \
+        -foreground [list active $fg0 selected $acc2]
+
+    ttk::style configure Toolbutton \
+        -background $bg2 -foreground $fg1 -relief flat -padding {4 3}
+    ttk::style map Toolbutton \
+        -background [list active $bgHv selected $bgSl] \
+        -foreground [list active $fg0 selected $acc2]
+
     ttk::style configure Accent.TButton \
-        -background #226633 -foreground #ffffff -padding {10 4}
+        -background #1d5c38 -foreground #ffffff -padding {12 5}
     ttk::style map Accent.TButton \
-        -background {active #2a8040 pressed #1a4422}
+        -background {active #247a4a pressed #164830}
 
-    # Danger (delete button)
     ttk::style configure Danger.TButton \
-        -background #662222 -foreground #ffffff -padding {8 3}
+        -background #5c1c1c -foreground #ffffff -padding {8 4}
     ttk::style map Danger.TButton \
-        -background {active #883333 pressed #441111}
+        -background {active #7a2424 pressed #3e1010}
+
+    ttk::style configure TEntry \
+        -fieldbackground $bgIn -foreground $fg0 \
+        -insertcolor #ffffff -relief flat -borderwidth 1
+
+    ttk::style configure TSpinbox \
+        -fieldbackground $bgIn -foreground $fg0 \
+        -arrowcolor $fg1 -relief flat -borderwidth 1
+
+    ttk::style configure TCombobox \
+        -fieldbackground $bgIn -foreground $fg0 \
+        -arrowcolor $fg1 -relief flat -borderwidth 1
+    ttk::style map TCombobox \
+        -fieldbackground [list readonly $bg3]
+
+    ttk::style configure TNotebook -background $bg0 -borderwidth 0
+    ttk::style configure TNotebook.Tab \
+        -background $bg2 -foreground $fg2 \
+        -padding {14 6} -borderwidth 0
+    ttk::style map TNotebook.Tab \
+        -background [list selected $bg1 active $bg3] \
+        -foreground [list selected $fg0 active $fg1]
+
+    ttk::style configure TSeparator   -background $bdr
+    ttk::style configure TPanedwindow -background $bg0
+    ttk::style configure Sash -sashthickness 4 -sashpad 0
+
+    ttk::style configure TScrollbar \
+        -background $bg2 -troughcolor $bg0 \
+        -arrowcolor $fg2 -borderwidth 0 -relief flat
+    ttk::style map TScrollbar \
+        -background [list active $bgHv]
+
+    ttk::style configure TScale \
+        -background $bg1 -troughcolor $bgIn
+    ttk::style map TScale \
+        -background [list active $bg1]
+
+    ttk::style configure TCheckbutton -background $bg1 -foreground $fg0
+    ttk::style map TCheckbutton \
+        -background [list active $bg1] \
+        -foreground [list active $fg0]
+
+    ttk::style configure TRadiobutton -background $bg1 -foreground $fg0
+    ttk::style map TRadiobutton \
+        -background [list active $bg1] \
+        -foreground [list active $fg0]
+
+    # Named label / frame styles
+    ttk::style configure Header.TLabel \
+        -font {TkDefaultFont 10 bold} -foreground $acc2
+    ttk::style configure Subtitle.TLabel \
+        -foreground $fg1 -font {TkDefaultFont 8}
+    ttk::style configure Section.TLabel \
+        -foreground $fg2 -font {TkDefaultFont 8 bold}
+    ttk::style configure Sep.TFrame -background $bdr
+
+    . configure -background $bg0
 }
 
 # ── Main window ────────────────────────────────────────────────────────────────
@@ -86,81 +162,150 @@ proc app::create_main_window {} {
 
     wm title    . "PakStudio — N64 Game Dev Suite"
     wm geometry . "1280x800"
-    wm minsize  . 960 600
-
-    # Icon (text fallback)
+    wm minsize  . 960 640
     catch { wm iconname . "PakStudio" }
 
     setup_theme
-
-    # Menu bar
     _create_menu
 
-    # Main layout: left sidebar | centre editor | right panel
-    set pw [ttk::panedwindow . -orient horizontal]
-    pack $pw -fill both -expand 1
+    # Toolbar sits at the top
+    _create_toolbar
 
-    # Left: level list + tile palette
-    set left [ttk::frame $pw.left -width 190]
-    $pw add $left -weight 0
-    _create_left_panel $left
+    ttk::separator .sep_tb -orient horizontal
+    pack .sep_tb -fill x -side top
 
-    # Centre: notebook (level editor, physics, audio, rom settings)
-    set centre [ttk::frame $pw.centre]
-    $pw add $centre -weight 3
-    _create_centre_panel $centre
-
-    # Right: entity inspector
-    set right [ttk::frame $pw.right -width 220]
-    $pw add $right -weight 0
-    _create_right_panel $right
-
-    # Bottom: build log + status bar
-    set bot [ttk::frame . -height 180]
-    pack $bot -fill x -side bottom
+    # Status bar and log anchored to the bottom (must pack before the expand widget)
+    _create_status_bar
 
     ttk::separator .sep_bot -orient horizontal
     pack .sep_bot -fill x -side bottom
 
+    set bot [ttk::frame .bot]
+    pack $bot -fill x -side bottom
     set log_widget [log_panel::create $bot]
-    _create_status_bar
+
+    # Main three-panel layout
+    set pw [ttk::panedwindow .pw -orient horizontal]
+    pack $pw -fill both -expand 1
+
+    set left [ttk::frame $pw.left -width 200]
+    $pw add $left -weight 0
+    _create_left_panel $left
+
+    set centre [ttk::frame $pw.centre]
+    $pw add $centre -weight 3
+    _create_centre_panel $centre
+
+    set right [ttk::frame $pw.right -width 220]
+    $pw add $right -weight 0
+    _create_right_panel $right
 }
 
-# ── Left panel (level list + tool help) ───────────────────────────────────────
+# ── Toolbar ───────────────────────────────────────────────────────────────────
+
+proc app::_create_toolbar {} {
+    set tb [ttk::frame .toolbar]
+    pack .toolbar -fill x -side top
+
+    set n 0
+    foreach {id lbl cmd} {
+        new    "New"       app::cmd_new
+        open   "Open"      app::cmd_open
+        save   "Save"      app::cmd_save
+        -      -           -
+        build  "Build ▶"  app::cmd_build
+        run    "Run"       app::cmd_run
+        -      -           -
+        check  "Check ✓"  app::cmd_validate
+    } {
+        if {$id eq "-"} {
+            incr n
+            set s [ttk::frame $tb.s$n -width 1 -style Sep.TFrame]
+            pack $s -side left -fill y -pady 4 -padx 4
+        } else {
+            ttk::button $tb.b$id -text $lbl -command $cmd \
+                -style Toolbar.TButton -takefocus 0
+            pack $tb.b$id -side left -padx 1 -pady 3
+        }
+    }
+
+    # Right-side: project indicator (shows "● Saved" or "● Unsaved")
+    set ::app_proj_indicator [ttk::label $tb.proj \
+        -text "No project" -style Subtitle.TLabel -anchor e]
+    pack $tb.proj -side right -padx 12
+}
+
+# ── Left panel ────────────────────────────────────────────────────────────────
 
 proc app::_create_left_panel {f} {
-    ttk::label $f.hdr -text "Levels" -font {TkDefaultFont 10 bold} \
-        -foreground #88ccff
-    pack $f.hdr -anchor w -padx 8 -pady {8 2}
+    # ── Levels section ────────────────────────────────────────────────────────
+    ttk::label $f.lhdr -text "LEVELS" -style Section.TLabel
+    pack $f.lhdr -anchor w -padx 10 -pady {10 4}
 
-    ttk::separator $f.sep -orient horizontal
-    pack $f.sep -fill x -padx 8 -pady 4
-
-    # Level listbox
-    set lb [listbox $f.lb -selectmode single -bg #252d3f -fg #e0e0e0 \
-        -selectbackground #2255aa -borderwidth 0 -highlightthickness 0 \
-        -height 8 -font {TkDefaultFont 9}]
+    set lb [listbox $f.lb -selectmode single \
+        -bg #1a1f2e -fg #dde4f0 \
+        -selectbackground #1a3f72 -selectforeground #dde4f0 \
+        -borderwidth 0 -highlightthickness 0 \
+        -height 8 -font {TkDefaultFont 9} \
+        -activestyle none]
     pack $lb -fill x -padx 8
 
     bind $lb <<ListboxSelect>> [list app::_on_level_select $lb]
-
     set ::app_level_lb $lb
 
     set btnf [ttk::frame $f.btnf]
-    ttk::button $btnf.add -text "+ Level" -command app::_add_level \
+    ttk::button $btnf.add -text "+ Add Level" -command app::_add_level \
         -style Toolbutton
-    ttk::button $btnf.del -text "- Level" -command app::_del_level \
+    ttk::button $btnf.del -text "− Remove"   -command app::_del_level \
         -style Toolbutton
     pack $btnf.add $btnf.del -side left -padx 2
     pack $btnf -anchor w -padx 8 -pady 4
 
-    ttk::separator $f.sep2 -orient horizontal
-    pack $f.sep2 -fill x -padx 8 -pady 8
+    # ── Tile legend ───────────────────────────────────────────────────────────
+    ttk::separator $f.sep1 -orient horizontal
+    pack $f.sep1 -fill x -padx 8 -pady {8 4}
 
-    # Keyboard shortcut help
-    ttk::label $f.help -text "Shortcuts\n  Q  Paint Tile\n  E  Erase\n  R  Place Object\n  S  Select Object\n  1/2/3  Tile Type\n  Scroll  Pan\n  +/-  Zoom" \
-        -justify left -foreground #666666 -font {TkDefaultFont 8}
-    pack $f.help -anchor w -padx 12 -pady 4
+    ttk::label $f.thdr -text "TILE TYPES" -style Section.TLabel
+    pack $f.thdr -anchor w -padx 10 -pady {0 4}
+
+    foreach {col sym lbl} {
+        #4a6080  ■  "Solid (key: 1)"
+        #55aa44  ═  "One-Way (key: 2)"
+        #cc2222  ▲  "Hazard (key: 3)"
+    } {
+        set rf [ttk::frame $f.tile_[string index $lbl 0]]
+        canvas $rf.dot -width 14 -height 14 -highlightthickness 0 \
+            -bg #1a1f2e
+        $rf.dot create rectangle 2 2 12 12 -fill $col -outline {}
+        ttk::label $rf.lbl -text $lbl -style Subtitle.TLabel -anchor w
+        pack $rf.dot $rf.lbl -side left -padx {0 4}
+        pack $rf -anchor w -padx {24 8} -pady 1
+    }
+
+    # ── Shortcuts ─────────────────────────────────────────────────────────────
+    ttk::separator $f.sep2 -orient horizontal
+    pack $f.sep2 -fill x -padx 8 -pady {8 4}
+
+    ttk::label $f.shdr -text "SHORTCUTS" -style Section.TLabel
+    pack $f.shdr -anchor w -padx 10 -pady {0 4}
+
+    set shortcuts {
+        "Q" "Paint tile"
+        "E" "Erase"
+        "R" "Place object"
+        "S" "Select object"
+        "1/2/3" "Tile type"
+        "+/−" "Zoom"
+        "Drag" "Pan"
+    }
+    foreach {key lbl} $shortcuts {
+        set sf [ttk::frame $f.sc_$key]
+        ttk::label $sf.k -text $key -foreground #6aadff \
+            -font {TkDefaultFont 8 bold} -width 6 -anchor e
+        ttk::label $sf.l -text $lbl -style Subtitle.TLabel
+        pack $sf.k $sf.l -side left -padx {0 6}
+        pack $sf -anchor w -padx {12 8} -pady 1
+    }
 }
 
 proc app::_on_level_select {lb} {
@@ -168,6 +313,7 @@ proc app::_on_level_select {lb} {
     if {$sel eq {}} return
     set idx [lindex $sel 0]
     level_ed::load_doc [project::current_doc] $idx
+    preview_ed::load_doc [project::current_doc] $idx
 }
 
 proc app::_add_level {} {
@@ -176,6 +322,7 @@ proc app::_add_level {} {
     $::app_level_lb selection clear 0 end
     $::app_level_lb selection set $idx
     level_ed::load_doc [project::current_doc] $idx
+    preview_ed::load_doc [project::current_doc] $idx
 }
 
 proc app::_del_level {} {
@@ -194,6 +341,7 @@ proc app::_del_level {} {
     _refresh_level_list
     $::app_level_lb selection set 0
     level_ed::load_doc [project::current_doc] 0
+    preview_ed::load_doc [project::current_doc] 0
 }
 
 proc app::_refresh_level_list {} {
@@ -207,52 +355,57 @@ proc app::_refresh_level_list {} {
     }
 }
 
-# ── Centre panel (notebook: level | physics | audio | ROM) ────────────────────
+# ── Centre panel ──────────────────────────────────────────────────────────────
 
 proc app::_create_centre_panel {f} {
     set nb [ttk::notebook $f.nb]
     pack $nb -fill both -expand 1
 
-    # ── Level Editor tab ──────────────────────────────────────────────────────
+    # Level Editor
     set led [ttk::frame $nb.led]
-    $nb add $led -text " Level Editor "
+    $nb add $led -text "  Level Editor  "
     level_ed::create $led \
         app::_on_level_changed \
         app::_on_object_selected
 
-    # ── Physics tab ───────────────────────────────────────────────────────────
+    # Live Preview
+    set prv [ttk::frame $nb.prv]
+    $nb add $prv -text "  Preview  "
+    preview_ed::create $prv
+
+    # Physics
     set phy [ttk::frame $nb.phy]
-    $nb add $phy -text " Physics "
+    $nb add $phy -text "  Physics  "
     physics_ed::create $phy app::_on_physics_changed
 
-    # ── Audio tab ─────────────────────────────────────────────────────────────
+    # Audio
     set aud [ttk::frame $nb.aud]
-    $nb add $aud -text " Audio "
+    $nb add $aud -text "  Audio  "
     audio_ed::create $aud
 
-    # ── ROM Settings tab ──────────────────────────────────────────────────────
+    # ROM Settings
     set rom [ttk::frame $nb.rom]
-    $nb add $rom -text " ROM Settings "
+    $nb add $rom -text "  ROM Settings  "
     save_ed::create $rom
 
-    # Sync settings panels to doc when switching tabs
     bind $nb <<NotebookTabChanged>> app::_on_tab_changed
-
     set ::app_centre_nb $nb
 }
 
 proc app::_on_tab_changed {} {
-    set nb $::app_centre_nb
+    set nb  $::app_centre_nb
     set tab [$nb tab current -text]
     switch -glob $tab {
-        "*Audio*"   { audio_ed::save_to_doc }
-        "*ROM*"     { save_ed::save_to_doc  }
+        "*Audio*"   { audio_ed::save_to_doc   }
+        "*ROM*"     { save_ed::save_to_doc    }
         "*Physics*" { physics_ed::save_to_doc }
+        "*Preview*" { preview_ed::refresh     }
     }
     _update_title
 }
 
 proc app::_on_level_changed {} {
+    preview_ed::refresh
     _update_title
 }
 
@@ -277,27 +430,47 @@ proc app::_create_right_panel {f} {
 
 proc app::_on_entity_changed {} {
     level_ed::refresh
+    preview_ed::refresh
     _update_title
 }
 
 # ── Status bar ────────────────────────────────────────────────────────────────
 
 proc app::_create_status_bar {} {
-    set sb [ttk::frame . -relief flat]
+    set sb [ttk::frame .statusbar]
     pack $sb -fill x -side bottom
 
-    set ::app_status_lbl [ttk::label $sb.msg -text "Ready" \
-        -foreground #888888 -anchor w]
-    set ::app_status_pos [ttk::label $sb.pos -text "" \
-        -foreground #666666 -width 20 -anchor e]
-    pack $sb.msg -side left  -padx 8
-    pack $sb.pos -side right -padx 8
+    ttk::separator .sep_sb -orient horizontal
+    pack .sep_sb -fill x -side bottom
+
+    set ::app_status_lbl [ttk::label $sb.msg \
+        -text "Ready" -style Subtitle.TLabel -anchor w]
+    set ::app_status_pos [ttk::label $sb.pos \
+        -text "" -style Subtitle.TLabel -width 22 -anchor e]
+    set ::app_save_ind [ttk::label $sb.ind \
+        -text "●" -foreground #3d4a5e -width 3 -anchor e]
+
+    pack $sb.msg -side left  -padx {10 4} -pady 2
+    pack $sb.ind -side right -padx {0 4}  -pady 2
+    pack $sb.pos -side right -padx 4      -pady 2
 }
 
 proc app::status {msg} {
-    set ::app_status_lbl ""
-    $::app_status_lbl configure -text $msg
+    catch { $::app_status_lbl configure -text $msg }
     update idletasks
+}
+
+proc app::_update_save_indicator {} {
+    set dirty [project::is_dirty]
+    catch {
+        if {$dirty} {
+            $::app_save_ind configure -foreground #d4a017 -text "●"
+            $::app_proj_indicator configure -text "Unsaved changes"
+        } else {
+            $::app_save_ind configure -foreground #2da864 -text "●"
+            $::app_proj_indicator configure -text "All saved"
+        }
+    }
 }
 
 # ── Menu bar ──────────────────────────────────────────────────────────────────
@@ -306,10 +479,9 @@ proc app::_create_menu {} {
     menu .mb
     . configure -menu .mb
 
-    # File
     menu .mb.file -tearoff 0
     .mb add cascade -label "File" -menu .mb.file -underline 0
-    .mb.file add command -label "New Project..."   -accelerator "Ctrl+N" \
+    .mb.file add command -label "New Project..."  -accelerator "Ctrl+N" \
         -command app::cmd_new
     .mb.file add command -label "Open Project..."  -accelerator "Ctrl+O" \
         -command app::cmd_open
@@ -320,24 +492,23 @@ proc app::_create_menu {} {
     .mb.file add separator
     .mb.file add command -label "Exit"             -command app::cmd_exit
 
-    # Build
     menu .mb.build -tearoff 0
     .mb add cascade -label "Build" -menu .mb.build -underline 0
-    .mb.build add command -label "Build ROM"         -accelerator "F5" \
+    .mb.build add command -label "Build ROM"          -accelerator "F5" \
         -command app::cmd_build
-    .mb.build add command -label "Run in Emulator"   -accelerator "F6" \
+    .mb.build add command -label "Run in Emulator"    -accelerator "F6" \
         -command app::cmd_run
     .mb.build add separator
     .mb.build add command -label "Validate (pak check)" \
         -command app::cmd_validate
 
-    # Help
     menu .mb.help -tearoff 0
     .mb add cascade -label "Help" -menu .mb.help -underline 0
-    .mb.help add command -label "Keyboard Shortcuts" -command app::_show_shortcuts
-    .mb.help add command -label "About PakStudio"    -command app::_show_about
+    .mb.help add command -label "Keyboard Shortcuts" \
+        -command app::_show_shortcuts
+    .mb.help add command -label "About PakStudio" \
+        -command app::_show_about
 
-    # Accelerators
     bind . <Control-n> app::cmd_new
     bind . <Control-o> app::cmd_open
     bind . <Control-s> app::cmd_save
@@ -378,7 +549,6 @@ proc app::cmd_open {} {
 proc app::cmd_save {} {
     set path [project::current_path]
     if {$path eq ""} { cmd_save_as; return }
-    # Flush panel state into doc first
     audio_ed::save_to_doc
     save_ed::save_to_doc
     physics_ed::save_to_doc
@@ -417,7 +587,7 @@ proc app::cmd_validate {} {
     audio_ed::save_to_doc
     save_ed::save_to_doc
     physics_ed::save_to_doc
-    set doc [project::current_doc]
+    set doc    [project::current_doc]
     set result [validate::check_doc $doc]
     if {[dict get $result ok]} {
         log_panel::append $log_widget "  PASS: pak check clean"
@@ -441,11 +611,9 @@ proc app::cmd_build {} {
     save_ed::save_to_doc
     physics_ed::save_to_doc
 
-    # Ask for output directory if not set
     if {$outdir eq "" || ![file isdirectory $outdir]} {
         set outdir [tk_chooseDirectory \
-            -title "Choose Build Output Directory" \
-            -mustexist 0]
+            -title "Choose Build Output Directory" -mustexist 0]
         if {$outdir eq ""} return
         file mkdir $outdir
     }
@@ -453,12 +621,8 @@ proc app::cmd_build {} {
     log_panel::clear $log_widget
     set build_running true
     status "Building..."
-
-    set doc [project::current_doc]
-    set cb  [list log_panel::append $log_widget]
-
-    # Run in a coroutine so the UI stays responsive
-    coroutine build_coro app::_run_build $doc $outdir $cb
+    coroutine build_coro app::_run_build [project::current_doc] $outdir \
+        [list log_panel::append $log_widget]
 }
 
 proc app::_run_build {doc outdir cb} {
@@ -487,9 +651,8 @@ proc app::cmd_run {} {
         status "Build first before running"
         return
     }
-    set cb [list log_panel::append $log_widget]
     log_panel::append $log_widget "--- Launching emulator ---"
-    after 0 [list build::run_rom $outdir $cb]
+    after 0 [list build::run_rom $outdir [list log_panel::append $log_widget]]
 }
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -502,73 +665,112 @@ proc app::_load_doc {doc} {
     $::app_level_lb selection clear 0 end
     $::app_level_lb selection set 0
     level_ed::load_doc $doc 0
+    preview_ed::load_doc $doc 0
     entity_ed::deselect
     _update_title
     status "Project loaded"
 }
 
 proc app::_update_title {} {
-    set name [dict get [project::current_doc] meta name]
-    set path [project::current_path]
-    set dirty [expr {[project::is_dirty] ? " *" : ""}]
+    set doc [project::current_doc]
+    if {![dict exists $doc meta]} return
+    set name  [dict get $doc meta name]
+    set path  [project::current_path]
+    set dirty [project::is_dirty]
+    set mark  [expr {$dirty ? " *" : ""}]
     if {$path ne ""} {
-        wm title . "PakStudio — $name$dirty  ($path)"
+        wm title . "PakStudio — $name$mark  ($path)"
     } else {
-        wm title . "PakStudio — $name$dirty  [unsaved]"
+        wm title . "PakStudio — $name$mark  \[unsaved\]"
     }
+    _update_save_indicator
 }
 
 proc app::_show_shortcuts {} {
     set w [toplevel .shortcuts]
     wm title $w "Keyboard Shortcuts"
     wm transient $w .
-    ttk::label $w.txt -text \
-"Ctrl+N    New project
-Ctrl+O    Open project
-Ctrl+S    Save
-F5        Build ROM
-F6        Run in emulator
+    wm resizable $w 0 0
 
-Level Editor:
-  Q        Paint tile tool
-  E        Eraser tool
-  R        Place object
-  S        Select object
-  1        Solid tile
-  2        One-way platform
-  3        Hazard tile
-  +/-      Zoom in/out
-  Scroll   Pan canvas" \
-        -justify left -font {TkFixedFont 10} -padding 16
-    pack $w.txt
-    ttk::button $w.ok -text "Close" -command [list destroy $w]
-    pack $w.ok -pady 8
+    ttk::frame $w.f
+    pack $w.f -padx 20 -pady 16
+
+    ttk::label $w.f.t -text "Keyboard Shortcuts" -style Header.TLabel
+    pack $w.f.t -pady {0 12}
+
+    set rows {
+        "Ctrl+N"  "New project"
+        "Ctrl+O"  "Open project"
+        "Ctrl+S"  "Save"
+        "F5"      "Build ROM"
+        "F6"      "Run in emulator"
+        ""        ""
+        "Q"       "Paint tile"
+        "E"       "Eraser"
+        "R"       "Place object"
+        "S"       "Select object"
+        "1"       "Solid tile"
+        "2"       "One-way platform"
+        "3"       "Hazard tile"
+        "+/−"     "Zoom in / out"
+        "Drag"    "Pan canvas"
+    }
+    foreach {k l} $rows {
+        if {$k eq ""} {
+            ttk::separator $w.f.s[incr ::_sc_n] -orient horizontal
+            pack $w.f.s$::_sc_n -fill x -pady 4
+        } else {
+            set rf [ttk::frame $w.f.r$k]
+            ttk::label $rf.k -text $k -foreground #6aadff \
+                -font {TkDefaultFont 9 bold} -width 10 -anchor e
+            ttk::label $rf.l -text $l -style Subtitle.TLabel -anchor w
+            pack $rf.k $rf.l -side left -padx {0 8}
+            pack $rf -fill x -pady 1
+        }
+    }
+    ttk::button $w.f.ok -text "Close" -command [list destroy $w] -style Accent.TButton
+    pack $w.f.ok -pady {12 0}
 }
 
 proc app::_show_about {} {
-    tk_messageBox -title "About PakStudio" \
-        -message "PakStudio — Zero-Code N64 Game Development Suite\n\nBuilt on the Pak language & N64 LibDragon.\n\nCreate 2D platformers today,\n3D racers and FPS coming soon." \
-        -icon info
+    set w [toplevel .about]
+    wm title $w "About PakStudio"
+    wm transient $w .
+    wm resizable $w 0 0
+
+    ttk::frame $w.f
+    pack $w.f -padx 32 -pady 24
+
+    ttk::label $w.f.logo -text "PakStudio" \
+        -font {TkDefaultFont 20 bold} -foreground #6aadff
+    ttk::label $w.f.sub  -text "Zero-Code N64 Game Development Suite" \
+        -style Subtitle.TLabel
+    ttk::separator $w.f.sep -orient horizontal
+    ttk::label $w.f.body -text \
+        "Built on the Pak language and libdragon.\n\n2D Platformers: fully functional\nTop-Down / FPS / Racer: coming soon" \
+        -justify center -style Subtitle.TLabel
+    ttk::button $w.f.ok -text "Close" -command [list destroy $w] -style Accent.TButton
+
+    foreach widget {logo sub sep body ok} {
+        pack $w.f.$widget -pady {0 8}
+    }
 }
 
 # ── Launch ────────────────────────────────────────────────────────────────────
 
 app::create_main_window
 
-# Show new project wizard on startup if no args given
 if {$argc == 0} {
     after 200 {
         set doc [wizard::show .]
         if {$doc ne {}} {
             app::_load_doc $doc
         } else {
-            # Create a default project silently so the UI isn't blank
             project::new platformer "My Platformer"
             app::_load_doc [project::current_doc]
         }
     }
 } else {
-    # Open file from command line
     set fpath [lindex $argv 0]
     if {[file exists $fpath]} {
         set doc [project::load_from $fpath]

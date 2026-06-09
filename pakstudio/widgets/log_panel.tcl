@@ -15,11 +15,17 @@ proc log_panel::create {parent} {
     pack $hdr.clr -side right
     pack $hdr -fill x -padx 4 -pady {4 0}
 
-    set txt [text $f.txt -height 8 -wrap none -state disabled \
+    # Text area in its own frame (so grid doesn't conflict with pack above)
+    set tf [ttk::frame $f.tf]
+    # Wire clear button now that tf is defined
+    $hdr.clr configure -command [list log_panel::clear $tf.txt]
+    pack $tf -fill both -expand 1
+
+    set txt [text $tf.txt -height 8 -wrap none -state disabled \
         -font {TkFixedFont 9} -bg #1a1a1a -fg #e0e0e0 \
         -insertbackground white -relief flat -borderwidth 0]
-    set vsb [ttk::scrollbar $f.vsb -orient vertical   -command [list $txt yview]]
-    set hsb [ttk::scrollbar $f.hsb -orient horizontal -command [list $txt xview]]
+    set vsb [ttk::scrollbar $tf.vsb -orient vertical   -command [list $txt yview]]
+    set hsb [ttk::scrollbar $tf.hsb -orient horizontal -command [list $txt xview]]
     $txt configure -yscrollcommand [list $vsb set] -xscrollcommand [list $hsb set]
 
     # Colour tags
@@ -30,11 +36,11 @@ proc log_panel::create {parent} {
 
     grid $txt $vsb -sticky nsew
     grid $hsb      -sticky ew
-    grid columnconfigure $f 0 -weight 1
-    grid rowconfigure    $f 0 -weight 1
+    grid columnconfigure $tf 0 -weight 1
+    grid rowconfigure    $tf 0 -weight 1
 
     pack $f -fill both -expand 1
-    return $f.txt
+    return $tf.txt
 }
 
 # Append one line to the log widget with auto-colour coding.

@@ -6,10 +6,10 @@ proc save_ed::create {parent} {
     set f [ttk::frame $parent.saveed]
 
     ttk::label $f.title -text "ROM Settings" -font {TkDefaultFont 10 bold}
-    pack $f.title -anchor w -padx 8 -pady {8 2}
-
     ttk::separator $f.sep -orient horizontal
-    pack $f.sep -fill x -padx 8 -pady 4
+
+    grid $f.title -row 0 -columnspan 2 -sticky w  -padx 8 -pady {8 2}
+    grid $f.sep   -row 1 -columnspan 2 -sticky ew -padx 8 -pady 4
 
     set ::save_type        "none"
     set ::save_rom_title   ""
@@ -25,35 +25,35 @@ proc save_ed::create {parent} {
     ttk::label $f.stinfo -text "Note: EEPROM = 8-byte blocks" \
         -foreground #888888 -font {TkDefaultFont 8}
 
-    grid $f.stlbl  -row 0 -column 0 -sticky w  -padx {8 2} -pady 4
-    grid $f.stcmb  -row 0 -column 1 -sticky ew -padx {2 8} -pady 4
-    grid $f.stinfo -row 1 -column 1 -sticky w  -padx {2 8} -pady {0 8}
+    grid $f.stlbl  -row 2 -column 0 -sticky w  -padx {8 2} -pady 4
+    grid $f.stcmb  -row 2 -column 1 -sticky ew -padx {2 8} -pady 4
+    grid $f.stinfo -row 3 -column 1 -sticky w  -padx {2 8} -pady {0 8}
 
     ttk::separator $f.sep2 -orient horizontal
-    grid $f.sep2 -row 2 -columnspan 2 -sticky ew -padx 8 -pady 4
+    grid $f.sep2 -row 4 -columnspan 2 -sticky ew -padx 8 -pady 4
 
     ttk::label $f.rtsub -text "ROM Title Card:" -font {TkDefaultFont 9 bold}
-    grid $f.rtsub -row 3 -columnspan 2 -sticky w -padx 8 -pady {4 0}
+    grid $f.rtsub -row 5 -columnspan 2 -sticky w -padx 8 -pady {4 0}
 
     ttk::label $f.rtlbl -text "Title (max 20):" -anchor w
     ttk::entry $f.rtent -textvariable ::save_rom_title -width 22
     ttk::label $f.rtlim -text "Displayed on the N64 boot screen" \
         -foreground #888888 -font {TkDefaultFont 8}
 
-    grid $f.rtlbl -row 4 -column 0 -sticky w  -padx {8 2} -pady 2
-    grid $f.rtent -row 4 -column 1 -sticky ew -padx {2 8} -pady 2
-    grid $f.rtlim -row 5 -column 1 -sticky w  -padx {2 8} -pady {0 8}
+    grid $f.rtlbl -row 6 -column 0 -sticky w  -padx {8 2} -pady 2
+    grid $f.rtent -row 6 -column 1 -sticky ew -padx {2 8} -pady 2
+    grid $f.rtlim -row 7 -column 1 -sticky w  -padx {2 8} -pady {0 8}
 
     ttk::separator $f.sep3 -orient horizontal
-    grid $f.sep3 -row 6 -columnspan 2 -sticky ew -padx 8 -pady 4
+    grid $f.sep3 -row 8 -columnspan 2 -sticky ew -padx 8 -pady 4
 
     ttk::label $f.dissub -text "Display:" -font {TkDefaultFont 9 bold}
-    grid $f.dissub -row 7 -columnspan 2 -sticky w -padx 8 -pady {4 0}
+    grid $f.dissub -row 9 -columnspan 2 -sticky w -padx 8 -pady {4 0}
 
     foreach {key lbl values var row} {
-        resolution  "Resolution:" {"320x240" "640x480"} ::save_resolution 8
-        bit_depth   "Bit Depth:"  {16 32}              ::save_bit_depth   9
-        framebuffers "Framebuffers:" {2 3}              ::save_framebuffers 10
+        resolution   "Resolution:"   {"320x240" "640x480"} ::save_resolution   10
+        bit_depth    "Bit Depth:"    {16 32}               ::save_bit_depth    11
+        framebuffers "Framebuffers:" {2 3}                 ::save_framebuffers 12
     } {
         ttk::label $f.lbl_$key -text $lbl -anchor w
         ttk::combobox $f.cmb_$key -textvariable $var -values $values \

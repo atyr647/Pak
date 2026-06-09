@@ -6,15 +6,14 @@ proc audio_ed::create {parent} {
     set f [ttk::frame $parent.auded]
 
     ttk::label $f.title -text "Audio Events" -font {TkDefaultFont 10 bold}
-    pack $f.title -anchor w -padx 8 -pady {8 2}
-
     ttk::separator $f.sep -orient horizontal
-    pack $f.sep -fill x -padx 8 -pady 4
-
     ttk::label $f.info \
         -text "Assign audio files (.wav) to game events.\nLeave blank for no sound on that event." \
         -justify left -foreground #888888 -wraplength 260
-    pack $f.info -anchor w -padx 8 -pady {0 8}
+
+    grid $f.title -row 0 -columnspan 3 -sticky w  -padx 8 -pady {8 2}
+    grid $f.sep   -row 1 -columnspan 3 -sticky ew -padx 8 -pady 4
+    grid $f.info  -row 2 -columnspan 3 -sticky w  -padx 8 -pady {0 8}
 
     set events {
         jump       "Jump"
@@ -27,7 +26,7 @@ proc audio_ed::create {parent} {
         bg_music   "Background Music"
     }
 
-    set row 0
+    set row 3
     foreach {key lbl} $events {
         set vname ::audio_$key
         set ::audio_$key ""

@@ -2,21 +2,19 @@
 
 namespace eval physics_ed {}
 
-# Create physics editor as child of $parent.
-# $on_change callback is called with no args when a value is changed.
 proc physics_ed::create {parent on_change} {
     set f [ttk::frame $parent.physed]
 
-    ttk::label $f.title -text "Physics & Feel" -font {TkDefaultFont 10 bold}
-    pack $f.title -anchor w -padx 8 -pady {8 2}
-
-    ttk::separator $f.sep -orient horizontal
-    pack $f.sep -fill x -padx 8 -pady 4
-
-    # Variables (will be synced on load)
+    # Variables
     foreach v {gravity jump_force move_speed max_fall coyote_frames jump_buffer} {
         set ::phys_$v 0
     }
+
+    ttk::label $f.title -text "Physics & Feel" -font {TkDefaultFont 10 bold}
+    ttk::separator $f.sep -orient horizontal
+
+    grid $f.title -row 0 -columnspan 3 -sticky w -padx 8 -pady {8 2}
+    grid $f.sep   -row 1 -columnspan 3 -sticky ew -padx 8 -pady 4
 
     set params {
         gravity       "Gravity"       0.05 0.1  2.0
@@ -27,7 +25,7 @@ proc physics_ed::create {parent on_change} {
         jump_buffer   "Jump Buffer"   1     0    20
     }
 
-    set row 0
+    set row 2
     foreach {key lbl step from to} $params {
         set vname ::phys_$key
         ttk::label $f.lbl_$key -text $lbl -anchor w -width 16
@@ -47,7 +45,6 @@ proc physics_ed::create {parent on_change} {
     }
     grid columnconfigure $f 1 -weight 1
 
-    # Presets
     ttk::separator $f.sep2 -orient horizontal
     grid $f.sep2 -row $row -columnspan 3 -sticky ew -padx 8 -pady 8
     incr row
@@ -77,7 +74,6 @@ proc physics_ed::_apply_preset {on_change} {
 }
 
 proc physics_ed::_on_change {on_change args} {
-    # Debounce: schedule callback 100ms after last change
     after cancel "physics_ed::_fire $on_change"
     after 100    "physics_ed::_fire $on_change"
 }
@@ -86,7 +82,6 @@ proc physics_ed::_fire {on_change} {
     catch {{*}$on_change}
 }
 
-# Load values from project doc into the UI variables.
 proc physics_ed::load_doc {doc} {
     set phys [dict get $doc physics]
     foreach key {gravity jump_force move_speed max_fall coyote_frames jump_buffer} {
@@ -96,8 +91,8 @@ proc physics_ed::load_doc {doc} {
     }
 }
 
-# Read the current UI values back into the project doc.
 proc physics_ed::save_to_doc {} {
+    if {![dict exists [project::current_doc] meta]} return
     foreach key {gravity jump_force move_speed max_fall coyote_frames jump_buffer} {
         set val [set ::phys_$key]
         project::set_field physics $key $val
