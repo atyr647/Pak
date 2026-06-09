@@ -454,6 +454,7 @@ proc pak::mips_annlist {node} {
 # ── orchestrator ────────────────────────────────────────────────────────────
 oo::class create pak::MipsCodegen {
     variable em pool ra ret_label scopes defers next_local loop_header loop_exit loop_defer_depth \
+             loop_result \
              globals consts label_n fmtstr_counter \
              tenv_layouts tenv_enum_values tenv_variant_decls \
              generic_fns generic_structs mono_emitted type_nodes
@@ -469,6 +470,7 @@ oo::class create pak::MipsCodegen {
         set loop_header {}
         set loop_exit {}
         set loop_defer_depth {}
+        set loop_result {}
         set globals [dict create]
         set consts [dict create]
         set label_n 0
@@ -1063,6 +1065,7 @@ oo::class create pak::MipsCodegen {
         set loop_header {}
         set loop_exit {}
         set loop_defer_depth {}
+        set loop_result {}
         set next_local [expr {$spill_base + 8 * 4}]
         my push_scope
         # Declare param stack slots (allocate offsets, no emission yet).
@@ -1270,22 +1273,40 @@ oo::class create pak::MipsCodegen {
                 }
                 set off [my declare_local [pak::fval $stmt name] $layout $tn]
                 if {![pak::isnil $v]} {
-                    set lsz [dict get $layout size]
-                    set lfields [expr {[dict exists $layout fields] ? [dict size [dict get $layout fields]] : 0}]
-                    if {$lsz > 4 && $lfields > 0} {
-                        # Large struct: expr returns a pointer; copy to stack slot
-                        set src_ptr [$ra alloc_temp]
-                        set dst_ptr [$ra alloc_temp]
-                        my emit_expr $v $src_ptr
-                        $em addiu $dst_ptr {$sp} $off
-                        my emit_memcpy $dst_ptr $src_ptr $lsz
-                        $ra free_temp $dst_ptr
-                        $ra free_temp $src_ptr
+                    # loop-as-expression: let x = loop { ... break val ... }
+                    if {[pak::kindof $v] in {LoopStmt WhileStmt}} {
+                        # Initialize result slot to 0
+                        set ztmp [$ra alloc_temp]
+                        $em li $ztmp 0
+                        my store_to_sp $off $ztmp $layout
+                        $ra free_temp $ztmp
+                        # Push result info; Break will store into this slot
+                        lappend loop_result [list $off $layout]
+                        if {[pak::kindof $v] eq "LoopStmt"} {
+                            my emit_loop $v
+                        } else {
+                            my emit_while $v
+                        }
+                        set loop_result [lrange $loop_result 0 end-1]
+                        # Result is already in $off from Break's store_to_sp — nothing more to do
                     } else {
-                        set tmp [$ra alloc_temp]
-                        my emit_expr $v $tmp
-                        my store_to_sp $off $tmp $layout
-                        $ra free_temp $tmp
+                        set lsz [dict get $layout size]
+                        set lfields [expr {[dict exists $layout fields] ? [dict size [dict get $layout fields]] : 0}]
+                        if {$lsz > 4 && $lfields > 0} {
+                            # Large struct: expr returns a pointer; copy to stack slot
+                            set src_ptr [$ra alloc_temp]
+                            set dst_ptr [$ra alloc_temp]
+                            my emit_expr $v $src_ptr
+                            $em addiu $dst_ptr {$sp} $off
+                            my emit_memcpy $dst_ptr $src_ptr $lsz
+                            $ra free_temp $dst_ptr
+                            $ra free_temp $src_ptr
+                        } else {
+                            set tmp [$ra alloc_temp]
+                            my emit_expr $v $tmp
+                            my store_to_sp $off $tmp $layout
+                            $ra free_temp $tmp
+                        }
                     }
                 }
             }
@@ -1316,6 +1337,17 @@ oo::class create pak::MipsCodegen {
             ForStmt   { my emit_for $stmt }
             MatchStmt { my emit_match $stmt }
             Break {
+                set bv [pak::nfield $stmt value]
+                if {![pak::isnil $bv] && [llength $loop_result] > 0} {
+                    # loop-as-expression: store break value into the result slot
+                    set res_info [lindex $loop_result end]
+                    set res_off  [lindex $res_info 0]
+                    set res_lay  [lindex $res_info 1]
+                    set tmp [$ra alloc_temp]
+                    my emit_expr $bv $tmp
+                    my store_to_sp $res_off $tmp $res_lay
+                    $ra free_temp $tmp
+                }
                 if {[llength $loop_exit] > 0} {
                     my emit_defers_from [lindex $loop_defer_depth end]
                     $em j [lindex $loop_exit end]; $em nop
@@ -1475,6 +1507,7 @@ oo::class create pak::MipsCodegen {
 
     method emit_for_range {stmt it} {
         set header [my fresh_label ".Lfor_h"]
+        set incr_l [my fresh_label ".Lfor_i"]
         set exit_l [my fresh_label ".Lfor_x"]
         set counter_layout [my mips_layout_name i32]
         set counter_off [my declare_local [pak::fval $stmt binding] $counter_layout]
@@ -1484,7 +1517,9 @@ oo::class create pak::MipsCodegen {
         my store_to_sp $counter_off $start_r $counter_layout
         set end_tv [pak::nfield $it end]
         if {![pak::isnil $end_tv]} { my emit_expr $end_tv $end_r } else { $em li $end_r 2147483647 }
-        lappend loop_header $header; lappend loop_exit $exit_l
+        # continue must jump to the INCREMENT label (not the header) so the
+        # counter advances before the next iteration check.
+        lappend loop_header $incr_l; lappend loop_exit $exit_l
         lappend loop_defer_depth [llength $defers]
         $em label $header
         set ctr [$ra alloc_temp]
@@ -1499,6 +1534,7 @@ oo::class create pak::MipsCodegen {
             my store_to_sp $idx_off $ctr $idx_layout
         }
         my emit_block [pak::nfield $stmt body]
+        $em label $incr_l
         my load_from_sp $counter_off $ctr $counter_layout
         $em addiu $ctr $ctr 1
         my store_to_sp $counter_off $ctr $counter_layout
@@ -1515,6 +1551,7 @@ oo::class create pak::MipsCodegen {
     # for item in slice — treat iterable as a fat pointer {ptr, len@+4}.
     method emit_for_each {stmt iterable} {
         set header [my fresh_label ".Lfeach_h"]
+        set incr_l [my fresh_label ".Lfeach_i"]
         set exit_l [my fresh_label ".Lfeach_x"]
         set ptr_layout [my mips_layout_name i32]
         set ptr_off [my declare_local __for_ptr $ptr_layout]
@@ -1531,7 +1568,8 @@ oo::class create pak::MipsCodegen {
         $ra free_temp $slice_base
         $em sw {$zero} $idx_off {$sp}
 
-        lappend loop_header $header; lappend loop_exit $exit_l
+        # continue jumps to the increment label, not the header
+        lappend loop_header $incr_l; lappend loop_exit $exit_l
         lappend loop_defer_depth [llength $defers]
         $em label $header
 
@@ -1562,6 +1600,7 @@ oo::class create pak::MipsCodegen {
 
         my emit_block [pak::nfield $stmt body]
 
+        $em label $incr_l
         $em lw $idx_r $idx_off {$sp}
         $em addiu $idx_r $idx_r 1
         $em sw $idx_r $idx_off {$sp}
@@ -3045,11 +3084,12 @@ oo::class create pak::MipsCodegen {
         set s [dict create ra $ra scopes $scopes defers $defers \
             next_local $next_local ret_label $ret_label \
             loop_header $loop_header loop_exit $loop_exit \
-            loop_defer_depth $loop_defer_depth]
+            loop_defer_depth $loop_defer_depth loop_result $loop_result]
         set ra ""
         set loop_header {}
         set loop_exit {}
         set loop_defer_depth {}
+        set loop_result {}
         return $s
     }
     method restore_fn_state {s} {
@@ -3062,6 +3102,7 @@ oo::class create pak::MipsCodegen {
         set loop_header [dict get $s loop_header]
         set loop_exit [dict get $s loop_exit]
         set loop_defer_depth [dict get $s loop_defer_depth]
+        set loop_result [dict get $s loop_result]
     }
 
     method emit_method_call {access args_seq dst} {
