@@ -1,0 +1,404 @@
+-- 30_raycaster.pk64
+-- PAK3D: First-person dungeon raycaster on N64.
+--
+-- Demonstrates: structs, enums, impl blocks, static arrays, f32 math,
+--   match exhaustiveness, fixed-point, N64 display/controller/rdpq APIs,
+--   DDA raycasting algorithm, collision detection, minimap rendering.
+--
+-- Controls: Analog stick = move/rotate | L/R = strafe | D-pad = move/turn
+--           Start = pause | A (title) = start | B (pause) = quit
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+use n64.math
+use n64.debug
+
+-- ─── Screen ──────────────────────────────────────────────────────────────────
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const HALF_H:   i32 = 120
+const COL_STEP: i32 = 2        -- render every 2 pixels (half-res = 160 columns)
+
+-- ─── Map ─────────────────────────────────────────────────────────────────────
+
+const MAP_W: i32 = 16
+const MAP_H: i32 = 16
+
+-- 0=open  1=brick  2=stone  3=mossy
+static dungeon_map: [256]u8 = [
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 2, 2, 0, 0, 1, 0, 0, 1, 0, 0, 2, 0, 0, 1,
+    1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 1,
+    1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1,
+    1, 1, 0, 0, 0, 0, 3, 3, 3, 0, 0, 0, 0, 0, 1, 1,
+    1, 0, 0, 0, 0, 0, 3, 0, 3, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 0, 0, 0, 0, 3, 0, 3, 0, 0, 0, 0, 0, 0, 1,
+    1, 1, 0, 0, 0, 0, 3, 3, 3, 0, 0, 0, 0, 0, 1, 1,
+    1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1,
+    1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 1,
+    1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 2, 2, 0, 0, 1, 0, 0, 1, 0, 0, 2, 0, 0, 1,
+    1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+]
+
+fn map_get(mx: i32, my: i32) -> u8 {
+    if mx < 0 or mx >= MAP_W or my < 0 or my >= MAP_H {
+        return 1
+    }
+    return dungeon_map[my * MAP_W + mx]
+}
+
+-- ─── Colors ───────────────────────────────────────────────────────────────────
+
+const COLOR_SKY:     u32 = 0x0D1B2AFF   -- dark navy ceiling
+const COLOR_FLOOR:   u32 = 0x1A120AFF   -- dark brown floor
+
+const COLOR_BRICK_N: u32 = 0xAA5533FF   -- brick, N/S face (brighter)
+const COLOR_BRICK_E: u32 = 0x773322FF   -- brick, E/W face (darker)
+const COLOR_STONE_N: u32 = 0x4477AAFF   -- stone, N/S face
+const COLOR_STONE_E: u32 = 0x336688FF   -- stone, E/W face
+const COLOR_MOSS_N:  u32 = 0x44AA55FF   -- mossy, N/S face
+const COLOR_MOSS_E:  u32 = 0x338844FF   -- mossy, E/W face
+
+const COLOR_MINI_OPEN:  u32 = 0x333333FF
+const COLOR_MINI_BRICK: u32 = 0xAA5533FF
+const COLOR_MINI_STONE: u32 = 0x4477AAFF
+const COLOR_MINI_MOSS:  u32 = 0x44AA55FF
+const COLOR_MINI_WALL:  u32 = 0x222222FF
+const COLOR_MINI_PLR:   u32 = 0xFFFF00FF
+
+const COLOR_BLACK: u32 = 0x000000FF
+const COLOR_WHITE: u32 = 0xFFFFFFFF
+
+-- ─── Input ───────────────────────────────────────────────────────────────────
+
+const DEAD_ZONE:  i32   = 12
+const MOVE_SPEED: f32   = 0.055
+const ROT_SPEED:  f32   = 0.038
+const STICK_SCALE: f32  = 0.00045
+
+-- ─── Game types ──────────────────────────────────────────────────────────────
+
+enum GamePhase: u8 { title, playing, paused, gameover }
+
+struct Camera {
+    pos_x:   f32
+    pos_y:   f32
+    dir_x:   f32
+    dir_y:   f32
+    plane_x: f32
+    plane_y: f32
+}
+
+struct GameState {
+    cam:    Camera
+    phase:  GamePhase
+    frame:  i32
+    health: i32
+    score:  i32
+}
+
+-- ─── Camera operations ───────────────────────────────────────────────────────
+
+impl Camera {
+    fn rotate(self: *Camera, angle: f32) {
+        let cos_a: f32 = math.cos_f(angle)
+        let sin_a: f32 = math.sin_f(angle)
+        let old_dx: f32  = self.dir_x
+        let old_px: f32  = self.plane_x
+        self.dir_x   = self.dir_x   * cos_a - self.dir_y   * sin_a
+        self.dir_y   = old_dx       * sin_a + self.dir_y   * cos_a
+        self.plane_x = self.plane_x * cos_a - self.plane_y * sin_a
+        self.plane_y = old_px       * sin_a + self.plane_y * cos_a
+    }
+
+    fn try_move(self: *Camera, dx: f32, dy: f32) {
+        let nx: f32 = self.pos_x + dx
+        let ny: f32 = self.pos_y + dy
+        if map_get(nx as i32, self.pos_y as i32) == 0 {
+            self.pos_x = nx
+        }
+        if map_get(self.pos_x as i32, ny as i32) == 0 {
+            self.pos_y = ny
+        }
+    }
+}
+
+-- ─── Wall color lookup ───────────────────────────────────────────────────────
+
+fn wall_color(wtype: u8, side: i32) -> u32 {
+    let c: u32 = COLOR_BRICK_N
+    if wtype == 2 { c = COLOR_STONE_N }
+    elif wtype == 3 { c = COLOR_MOSS_N }
+    if side == 1 {
+        c = COLOR_BRICK_E
+        if wtype == 2 { c = COLOR_STONE_E }
+        elif wtype == 3 { c = COLOR_MOSS_E }
+    }
+    return c
+}
+
+-- ─── Minimap ─────────────────────────────────────────────────────────────────
+
+const MINI_X:    i32 = 252   -- top-right corner x origin
+const MINI_Y:    i32 = 2     -- top-right corner y origin
+const MINI_CELL: i32 = 4     -- cell size in pixels
+
+fn render_minimap(gs: *GameState) {
+    let my: i32 = 0
+    while my < MAP_H {
+        let mx: i32 = 0
+        while mx < MAP_W {
+            let cell: u8 = dungeon_map[my * MAP_W + mx]
+            let sx: i32 = MINI_X + mx * MINI_CELL
+            let sy: i32 = MINI_Y + my * MINI_CELL
+
+            let col: u32 = COLOR_MINI_OPEN
+            if cell == 1 { col = COLOR_MINI_BRICK }
+            elif cell == 2 { col = COLOR_MINI_STONE }
+            elif cell == 3 { col = COLOR_MINI_MOSS }
+
+            rdpq.set_fill_color(col)
+            rdpq.fill_rectangle(sx, sy, sx + MINI_CELL, sy + MINI_CELL)
+            mx += 1
+        }
+        my += 1
+    }
+
+    -- Player dot
+    let px: i32 = MINI_X + (gs.cam.pos_x as i32) * MINI_CELL
+    let py: i32 = MINI_Y + (gs.cam.pos_y as i32) * MINI_CELL
+    rdpq.set_fill_color(COLOR_MINI_PLR)
+    rdpq.fill_rectangle(px, py, px + MINI_CELL, py + MINI_CELL)
+}
+
+-- ─── 3D raycaster ────────────────────────────────────────────────────────────
+
+@hot
+fn render_3d(gs: *GameState) {
+    let cam: *Camera = &gs.cam
+
+    -- Sky (ceiling) and floor
+    rdpq.set_mode_fill(COLOR_SKY)
+    rdpq.fill_rectangle(0, 0, SCREEN_W, HALF_H)
+    rdpq.set_fill_color(COLOR_FLOOR)
+    rdpq.fill_rectangle(0, HALF_H, SCREEN_W, SCREEN_H)
+
+    -- Cast one ray per pair of columns (COL_STEP = 2)
+    let col: i32 = 0
+    while col < SCREEN_W {
+
+        -- Camera-space X in [-1, 1]
+        let cam_x: f32 = 2.0 * (col as f32) / (SCREEN_W as f32) - 1.0
+
+        -- Ray direction
+        let rdx: f32 = cam.dir_x + cam.plane_x * cam_x
+        let rdy: f32 = cam.dir_y + cam.plane_y * cam_x
+
+        -- Current map cell
+        let mx: i32 = cam.pos_x as i32
+        let my: i32 = cam.pos_y as i32
+
+        -- Length of ray per full X/Y cell step (delta distances)
+        let ddx: f32 = 999999.0
+        if rdx != 0.0 { ddx = math.abs_f(1.0 / rdx) }
+
+        let ddy: f32 = 999999.0
+        if rdy != 0.0 { ddy = math.abs_f(1.0 / rdy) }
+
+        -- Step direction and initial side distances
+        let step_x: i32 = 1
+        let sdx: f32 = (mx as f32 + 1.0 - cam.pos_x) * ddx
+        if rdx < 0.0 {
+            step_x = -1
+            sdx = (cam.pos_x - mx as f32) * ddx
+        }
+
+        let step_y: i32 = 1
+        let sdy: f32 = (my as f32 + 1.0 - cam.pos_y) * ddy
+        if rdy < 0.0 {
+            step_y = -1
+            sdy = (cam.pos_y - my as f32) * ddy
+        }
+
+        -- DDA: step until we hit a wall (max 24 steps to avoid runaway)
+        let side: i32  = 0
+        let wtype: u8  = 0
+        let hit: bool  = false
+        let steps: i32 = 0
+
+        while not hit and steps < 24 {
+            if sdx < sdy {
+                sdx += ddx
+                mx  += step_x
+                side = 0
+            } else {
+                sdy += ddy
+                my  += step_y
+                side = 1
+            }
+            wtype = map_get(mx, my)
+            if wtype != 0 { hit = true }
+            steps += 1
+        }
+
+        -- Perpendicular wall distance (prevents fisheye)
+        let perp: f32 = 1.0
+        if side == 0 { perp = sdx - ddx }
+        else         { perp = sdy - ddy }
+        if perp < 0.1 { perp = 0.1 }
+
+        -- Wall strip height in pixels
+        let line_h: i32 = (SCREEN_H as f32 / perp) as i32
+        if line_h > SCREEN_H { line_h = SCREEN_H }
+
+        let draw_top: i32 = HALF_H - line_h / 2
+        let draw_bot: i32 = HALF_H + line_h / 2
+        if draw_top < 0         { draw_top = 0 }
+        if draw_bot > SCREEN_H  { draw_bot = SCREEN_H }
+
+        -- Fetch wall color (type + side)
+        let wc: u32 = wall_color(wtype, side)
+
+        -- Draw two-pixel-wide wall strip (stay in fill mode, just change color)
+        rdpq.set_fill_color(wc)
+        rdpq.fill_rectangle(col, draw_top, col + COL_STEP, draw_bot)
+
+        col += COL_STEP
+    }
+}
+
+-- ─── Update ──────────────────────────────────────────────────────────────────
+
+fn update_playing(gs: *GameState, pad: joypad_status_t) {
+    let sx: i32 = pad.stick_x as i32
+    let sy: i32 = pad.stick_y as i32
+
+    -- Analog stick: rotate
+    if sx > DEAD_ZONE or sx < -DEAD_ZONE {
+        gs.cam.rotate(sx as f32 * (-STICK_SCALE))
+    }
+
+    -- Analog stick: move forward/backward
+    if sy > DEAD_ZONE {
+        let spd: f32 = sy as f32 * STICK_SCALE
+        gs.cam.try_move(gs.cam.dir_x * spd, gs.cam.dir_y * spd)
+    }
+    if sy < -DEAD_ZONE {
+        let spd: f32 = sy as f32 * STICK_SCALE
+        gs.cam.try_move(gs.cam.dir_x * spd, gs.cam.dir_y * spd)
+    }
+
+    -- Digital: strafe left/right
+    if pad.held.l {
+        gs.cam.try_move(gs.cam.plane_x * (-MOVE_SPEED), gs.cam.plane_y * (-MOVE_SPEED))
+    }
+    if pad.held.r {
+        gs.cam.try_move(gs.cam.plane_x * MOVE_SPEED, gs.cam.plane_y * MOVE_SPEED)
+    }
+
+    -- D-pad: rotate
+    if pad.held.right { gs.cam.rotate(-ROT_SPEED) }
+    if pad.held.left  { gs.cam.rotate( ROT_SPEED) }
+
+    -- D-pad: forward/back
+    if pad.held.up   { gs.cam.try_move( gs.cam.dir_x * MOVE_SPEED,  gs.cam.dir_y * MOVE_SPEED) }
+    if pad.held.down { gs.cam.try_move(-gs.cam.dir_x * MOVE_SPEED, -gs.cam.dir_y * MOVE_SPEED) }
+
+    if pad.pressed.start { gs.phase = GamePhase.paused }
+}
+
+-- ─── Render ──────────────────────────────────────────────────────────────────
+
+fn render_screen(gs: *GameState) {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    match gs.phase {
+        .title => {
+            rdpq.set_mode_fill(0x000011FF)
+            rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+        }
+        .playing => {
+            render_3d(gs)
+            render_minimap(gs)
+        }
+        .paused => {
+            render_3d(gs)
+            render_minimap(gs)
+            rdpq.set_fill_color(0x333355FF)
+            rdpq.fill_rectangle(100, 100, 220, 140)
+        }
+        .gameover => {
+            rdpq.set_mode_fill(0x110000FF)
+            rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+        }
+    }
+
+    rdpq.detach_show()
+}
+
+-- ─── Game init ───────────────────────────────────────────────────────────────
+
+fn init_game(gs: *GameState) {
+    -- Start in the top-left corridor, facing east
+    gs.cam.pos_x   = 1.5
+    gs.cam.pos_y   = 8.5
+    gs.cam.dir_x   = 1.0
+    gs.cam.dir_y   = 0.0
+    gs.cam.plane_x = 0.0
+    gs.cam.plane_y = 0.66    -- camera plane: gives ~66-degree horizontal FOV
+    gs.health      = 10
+    gs.score       = 0
+    gs.frame       = 0
+    gs.phase       = GamePhase.title
+}
+
+-- ─── Entry ───────────────────────────────────────────────────────────────────
+
+entry {
+    display.init(0, 2, 3, 0, 1)  -- 320x240, 16 bpp, triple-buffer, no gamma, bilinear
+    rdpq.init()
+    controller.init()
+    timer.init()
+
+    defer {
+        rdpq.close()
+        debug.log("PAK3D exited")
+    }
+
+    let gs: GameState = undefined
+    init_game(&gs)
+
+    loop {
+        controller.poll()
+        let pad = controller.read(0)
+
+        match gs.phase {
+            .title => {
+                if pad.pressed.start or pad.pressed.a {
+                    gs.phase = GamePhase.playing
+                }
+            }
+            .playing => {
+                update_playing(&gs, pad)
+            }
+            .paused => {
+                if pad.pressed.start { gs.phase = GamePhase.playing }
+                if pad.pressed.b     { gs.phase = GamePhase.gameover }
+            }
+            .gameover => {
+                if pad.pressed.start { init_game(&gs) }
+            }
+        }
+
+        render_screen(&gs)
+        gs.frame += 1
+    }
+}
