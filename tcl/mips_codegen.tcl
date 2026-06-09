@@ -1065,26 +1065,50 @@ oo::class create pak::MipsCodegen {
         set loop_defer_depth {}
         set next_local [expr {$spill_base + 8 * 4}]
         my push_scope
-        # params: store $a0-$a3 into stack slots (BEFORE prologue, matching backend)
+        # Declare param stack slots (allocate offsets, no emission yet).
+        # Stores happen AFTER the prologue so that $sp-relative offsets are
+        # consistent between the stores and all later loads.
         set i 0
         set float_param_n 0
+        set param_info {}
         foreach p [pak::items $params] {
             set p_layout [my mips_layout [pak::nfield $p type]]
             set off [my declare_local [pak::fval $p name] $p_layout]
-            if {[dict get $p_layout is_float]} {
-                # o32 ABI: 1st float arg in $f12, 2nd float arg in $f14
-                if {$float_param_n == 1} { $em mov_s {$f12} {$f14} }
-                my store_to_sp $off {} $p_layout
-                incr float_param_n
-            } elseif {$i < 4} {
-                my store_to_sp $off [lindex $::pak::ARG_GPRS $i] $p_layout
-            }
+            lappend param_info [list $off $p_layout $float_param_n $i]
+            if {[dict get $p_layout is_float]} { incr float_param_n }
             incr i
         }
         set frame_size 256
         set prologue_start [$em len]
         my emit_prologue_placeholder $frame_size
         set prologue_end [$em len]
+        # Store params to frame AFTER prologue.
+        # o32 ABI: 1st float in $f12, 2nd float in $f14, 3rd+ at $fp+(N*4)
+        # (fp = old_sp = callee's frame top; caller put extra floats in its
+        # outgoing-arg area at sp+0, sp+4, sp+8 ... = fp+0, fp+4, fp+8 ...).
+        foreach pi $param_info {
+            lassign $pi off p_layout fpn idx
+            if {[dict get $p_layout is_float]} {
+                if {$fpn == 0} {
+                    my store_to_sp $off {} $p_layout
+                } elseif {$fpn == 1} {
+                    $em mov_s {$f12} {$f14}
+                    my store_to_sp $off {} $p_layout
+                } else {
+                    # 3rd+ float: arrived at caller's sp+(fpn*4) = fp+(fpn*4)
+                    $em lwc1 {$f12} [expr {$fpn * 4}] {$fp}
+                    my store_to_sp $off {} $p_layout
+                }
+            } elseif {$idx < 4} {
+                my store_to_sp $off [lindex $::pak::ARG_GPRS $idx] $p_layout
+            } else {
+                # 5th+ integer arg: arrived at caller's sp+($idx*4) = fp+($idx*4)
+                set tmp [$ra alloc_temp]
+                $em lw $tmp [expr {$idx * 4}] {$fp}
+                my store_to_sp $off $tmp $p_layout
+                $ra free_temp $tmp
+            }
+        }
         set ret_label [my fresh_label ".L${name}_ret"]
         my emit_block $body
         # Emit outer-scope (param) defers before patching prologue
@@ -1159,8 +1183,8 @@ oo::class create pak::MipsCodegen {
     # ── typed memory ──────────────────────────────────────────────────────────
     # Float convention: all scalar f32 values reside in $f12 (the float
     # accumulator).  The GPR dst/src argument is ignored for float ops —
-    # swc1/lwc1 always target $f12.  Float arithmetic is not yet fully
-    # supported; only load, store, and argument-passing paths are correct.
+    # swc1/lwc1 always target $f12.  FPU arithmetic (add.s/sub.s/mul.s/div.s)
+    # and comparisons (c.eq.s/c.lt.s/c.le.s + bc1t/bc1f) are fully supported.
     method emit_typed_load {dst off base layout {volatile 0}} {
         if {$volatile} { $em sync }
         if {[dict get $layout is_float]} {
@@ -3534,18 +3558,43 @@ oo::class create pak::MipsCodegen {
 
     method marshal_args {args_seq {start_idx 0}} {
         set arglist [pak::items $args_seq]
-        set i 0
-        foreach arg $arglist {
+        set n [llength $arglist]
+        if {$n == 0} return
+        # Count float args so each knows its float-index.
+        set float_total 0
+        foreach arg $arglist { if {[my infer_is_float $arg]} { incr float_total } }
+        # Evaluate in REVERSE order to avoid save/reload patterns that the
+        # VR4300 memory scheduler (which lacks alias analysis) would reorder.
+        # After reverse evaluation:
+        #   float 0 stays in $f12      (evaluated last, never overwritten)
+        #   float 1 moved to $f14 via mov.s immediately after its eval
+        #   float 2+ stored to sp+(N*4) outgoing arg area right after eval
+        # Integer args use position-based slots; reverse order only affects
+        # side-effect sequencing (pure-expression args are unaffected).
+        set fi_counter $float_total
+        for {set i [expr {$n - 1}]} {$i >= 0} {incr i -1} {
+            set arg [lindex $arglist $i]
             set slot [expr {$i + $start_idx}]
-            if {$slot < 4} {
-                my emit_expr $arg [lindex $::pak::ARG_GPRS $slot]
+            if {[my infer_is_float $arg]} {
+                incr fi_counter -1
+                set fi $fi_counter
+                my emit_expr $arg {$zero}   ;# result in $f12
+                if {$fi == 1} {
+                    $em mov_s {$f14} {$f12}
+                } elseif {$fi >= 2} {
+                    $em swc1 {$f12} [expr {$fi * 4}] {$sp}
+                }
+                # fi==0: 1st float stays in $f12 (evaluated last, correct at call)
             } else {
-                set tmp [$ra alloc_temp]
-                my emit_expr $arg $tmp
-                $em sw $tmp [expr {($slot - 4) * 4 + 16}] {$sp}
-                $ra free_temp $tmp
+                if {$slot < 4} {
+                    my emit_expr $arg [lindex $::pak::ARG_GPRS $slot]
+                } else {
+                    set tmp [$ra alloc_temp]
+                    my emit_expr $arg $tmp
+                    $em sw $tmp [expr {($slot - 4) * 4 + 16}] {$sp}
+                    $ra free_temp $tmp
+                }
             }
-            incr i
         }
     }
 }

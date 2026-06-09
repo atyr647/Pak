@@ -150,11 +150,11 @@
 	.globl Player_init
 	.type Player_init, @function
 Player_init:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     la $t7, .Lf320
     lwc1 $f12, 0($t7)
     lw $t6, 96($sp)
@@ -192,14 +192,14 @@ Player_init:
 	.globl Player_move
 	.type Player_move, @function
 Player_move:
-    sw $a0, 96($sp)
-    swc1 $f12, 100($sp)
-    mov.s $f12, $f14
-    swc1 $f12, 104($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    swc1 $f12, 100($sp)
+    mov.s $f12, $f14
+    swc1 $f12, 104($sp)
     lwc1 $f12, 100($sp)
     la $t7, __cur
     lw $t7, 0($t7)
@@ -228,11 +228,11 @@ Player_move:
 	.globl Player_is_alive
 	.type Player_is_alive, @function
 Player_is_alive:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t8, 96($sp)
     lw $t9, 8($t8)
     li $t8, 0
@@ -251,12 +251,12 @@ Player_is_alive:
 	.globl Player_take_damage
 	.type Player_take_damage, @function
 Player_take_damage:
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    sw $a1, 100($sp)
     lw $t8, 100($sp)
     la $t7, __cur
     lw $t7, 0($t7)
@@ -328,9 +328,10 @@ main:
     move $t9, $t8
     addiu $t8, $sp, 96
     move $a0, $t8
-    la $t8, .Lf324
-    lwc1 $f12, 0($t8)
     la $t8, .Lf320
+    lwc1 $f12, 0($t8)
+    mov.s $f14, $f12
+    la $t8, .Lf324
     lwc1 $f12, 0($t8)
     jal P_move
     nop

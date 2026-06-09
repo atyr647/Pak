@@ -150,14 +150,14 @@
 	.globl sum_scanline
 	.type sum_scanline, @function
 sum_scanline:
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
-    sw $a2, 104($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
     sw $s7, 244($sp)
+    sw $a0, 96($sp)
+    sw $a1, 100($sp)
+    sw $a2, 104($sp)
     li $t9, 0
     sw $t9, 108($sp)
     li $t9, 0
@@ -247,6 +247,8 @@ main:
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
+    li $a2, 320
+    li $a1, 0
     la $t6, dma_out
     lw $t6, 0($t6)
     li $t5, 0
@@ -255,8 +257,6 @@ main:
     lw $t7, 0($t6)
     sw $t7, 424($sp)
     addiu $a0, $sp, 424
-    li $a1, 0
-    li $a2, 320
     jal sum_scanline
     nop
     move $t8, $v0

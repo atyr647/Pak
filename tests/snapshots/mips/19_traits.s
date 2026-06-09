@@ -150,13 +150,13 @@
 	.globl Sprite_draw
 	.type Sprite_draw, @function
 Sprite_draw:
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
-    sw $a2, 104($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    sw $a1, 100($sp)
+    sw $a2, 104($sp)
     lw $t8, 100($sp)
     lw $t7, 96($sp)
     sw $t8, 0($t7)
@@ -177,11 +177,11 @@ Sprite_draw:
 	.globl Sprite_get_width
 	.type Sprite_get_width, @function
 Sprite_get_width:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t9, 96($sp)
     lw $v0, 8($t9)
     j .LSprite_get_width_ret_1
@@ -198,11 +198,11 @@ Sprite_get_width:
 	.globl Sprite_get_height
 	.type Sprite_get_height, @function
 Sprite_get_height:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t9, 96($sp)
     lw $v0, 12($t9)
     j .LSprite_get_height_ret_2
@@ -219,12 +219,12 @@ Sprite_get_height:
 	.globl Enemy_update
 	.type Enemy_update, @function
 Enemy_update:
-    sw $a0, 96($sp)
-    swc1 $f12, 100($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    swc1 $f12, 100($sp)
     lw $t6, 96($sp)
     lwc1 $f12, 8($t6)
     mov.s $f14, $f12
@@ -268,8 +268,8 @@ main:
     sw $t9, 96($sp)
     addiu $t8, $sp, 96
     move $a0, $t8
-    li $a1, 10
     li $a2, 20
+    li $a1, 10
     jal Spr_draw
     nop
     move $t9, $v0

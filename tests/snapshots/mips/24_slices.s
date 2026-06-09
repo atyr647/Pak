@@ -150,11 +150,11 @@
 	.globl sum
 	.type sum, @function
 sum:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     li $t9, 0
     sw $t9, 104($sp)
     lw $t9, 96($sp)
@@ -198,11 +198,11 @@ sum:
 	.globl find_max
 	.type find_max, @function
 find_max:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t8, 96($sp)
     li $t7, 0
     sll $t7, $t7, 2
@@ -254,11 +254,11 @@ find_max:
 	.globl double_all
 	.type double_all, @function
 double_all:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     li $t9, 0
     sw $t9, 104($sp)
     lw $t7, 96($sp)
@@ -298,11 +298,11 @@ double_all:
 	.globl sum_x
 	.type sum_x, @function
 sum_x:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     li $t9, 0
     sw $t9, 104($sp)
     lw $t9, 96($sp)

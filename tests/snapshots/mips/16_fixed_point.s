@@ -150,12 +150,12 @@
 	.globl vec2fx_add
 	.type vec2fx_add, @function
 vec2fx_add:
-    sw $a0, 96($sp)
-    sw $a1, 104($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    sw $a1, 104($sp)
     sw $zero, 112($sp)
     sw $zero, 116($sp)
     lw $t7, 96($sp)
@@ -185,12 +185,12 @@ vec2fx_add:
 	.globl vec2fx_scale
 	.type vec2fx_scale, @function
 vec2fx_scale:
-    sw $a0, 96($sp)
-    sw $a1, 104($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    sw $a1, 104($sp)
     sw $zero, 108($sp)
     sw $zero, 112($sp)
     lw $t7, 96($sp)
@@ -296,15 +296,15 @@ main:
     sw $t8, 144($sp)
     addiu $t9, $sp, 140
     sw $t9, 136($sp)
-    lw $a0, 124($sp)
     lw $a1, 136($sp)
+    lw $a0, 124($sp)
     jal vec2fx_add
     nop
     move $t9, $v0
     sw $t9, 148($sp)
-    lw $a0, 136($sp)
     la $t8, .Lf321
     lwc1 $f12, 0($t8)
+    lw $a0, 136($sp)
     jal vec2fx_scale
     nop
     move $t9, $v0

@@ -150,11 +150,11 @@
 	.globl check_greeting
 	.type check_greeting, @function
 check_greeting:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     addiu $t8, $sp, 96
     move $a0, $t8
     la $a1, .Lstr0
@@ -185,12 +185,12 @@ check_greeting:
 	.globl same_string
 	.type same_string, @function
 same_string:
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    sw $a1, 100($sp)
     addiu $t9, $sp, 96
     move $a0, $t9
     lw $a1, 100($sp)
@@ -210,12 +210,12 @@ same_string:
 	.globl find_offset
 	.type find_offset, @function
 find_offset:
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    sw $a1, 100($sp)
     addiu $t9, $sp, 96
     move $a0, $t9
     lw $a1, 100($sp)
@@ -235,11 +235,11 @@ find_offset:
 	.globl check_pakstr
 	.type check_pakstr, @function
 check_pakstr:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     addiu $t9, $sp, 96
     move $a0, $t9
     jal S_len
@@ -404,24 +404,24 @@ main:
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $a0, 96($sp)
     la $a1, .Lstr2
+    lw $a0, 96($sp)
     jal same_string
     nop
     move $t8, $v0
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $a0, 96($sp)
     la $a1, .Lstr6
+    lw $a0, 96($sp)
     jal same_string
     nop
     move $t8, $v0
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $a0, 96($sp)
     la $a1, .Lstr1
+    lw $a0, 96($sp)
     jal find_offset
     nop
     move $t8, $v0

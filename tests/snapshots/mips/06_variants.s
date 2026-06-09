@@ -150,11 +150,11 @@
 	.globl area
 	.type area, @function
 area:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t9, 96($sp)
     lbu $t8, 0($t9)
     li $t7, 0
@@ -215,11 +215,11 @@ area:
 	.globl entity_id
 	.type entity_id, @function
 entity_id:
-    sb $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sb $a0, 96($sp)
     lb $t9, 96($sp)
     li $t8, 0
     bne $t9, $t8, .Larm_skip_11

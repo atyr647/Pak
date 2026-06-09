@@ -154,6 +154,8 @@ main:
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    li $a2, 64
+    li $a1, 0
     la $t7, buf
     lw $t7, 0($t7)
     li $t6, 0
@@ -162,29 +164,27 @@ main:
     lw $t8, 0($t7)
     sw $t8, 96($sp)
     addiu $a0, $sp, 96
-    li $a1, 0
-    li $a2, 64
     jal memset
     nop
     move $t9, $v0
     move $t9, $zero
     sw $t9, 100($sp)
+    li $a2, 8
+    lw $t7, 100($sp)
+    li $t6, 0
+    sll $t6, $t6, 2
+    addu $t7, $t7, $t6
+    lw $t8, 0($t7)
+    sw $t8, 108($sp)
+    addiu $a1, $sp, 108
     la $t7, buf
     lw $t7, 0($t7)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     lw $t8, 0($t7)
-    sw $t8, 108($sp)
-    addiu $a0, $sp, 108
-    lw $t7, 100($sp)
-    li $t6, 0
-    sll $t6, $t6, 2
-    addu $t7, $t7, $t6
-    lw $t8, 0($t7)
     sw $t8, 112($sp)
-    addiu $a1, $sp, 112
-    li $a2, 8
+    addiu $a0, $sp, 112
     jal memcpy
     nop
     move $t9, $v0

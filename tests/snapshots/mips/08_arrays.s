@@ -150,12 +150,12 @@
 	.globl sum_array
 	.type sum_array, @function
 sum_array:
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    sw $a1, 100($sp)
     li $t9, 0
     sw $t9, 104($sp)
     li $t9, 0
@@ -195,13 +195,13 @@ sum_array:
 	.globl fill
 	.type fill, @function
 fill:
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
-    sw $a2, 104($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    sw $a1, 100($sp)
+    sw $a2, 104($sp)
     li $t9, 0
     sw $t9, 108($sp)
     lw $t8, 100($sp)
@@ -263,6 +263,8 @@ main:
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
+    li $a2, 0
+    li $a1, 8
     lw $t7, 96($sp)
     li $t6, 0
     sll $t6, $t6, 2
@@ -270,8 +272,6 @@ main:
     lw $t8, 0($t7)
     sw $t8, 192($sp)
     addiu $a0, $sp, 192
-    li $a1, 8
-    li $a2, 0
     jal fill
     nop
     move $t9, $v0
@@ -313,6 +313,7 @@ main:
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
+    li $a1, 8
     lw $t6, 96($sp)
     li $t5, 0
     sll $t5, $t5, 2
@@ -320,7 +321,6 @@ main:
     lw $t7, 0($t6)
     sw $t7, 196($sp)
     addiu $a0, $sp, 196
-    li $a1, 8
     jal sum_array
     nop
     move $t8, $v0

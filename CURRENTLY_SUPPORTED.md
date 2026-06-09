@@ -252,6 +252,8 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | MIPS `Option(non-pointer T)` layout raised `MIPSUNPORTED` | Fixed — implemented 1-byte-tag + aligned-payload struct layout |
 | Tcl C codegen `arr.as_slice()` raised `CGUNPORTED` for array types | Fixed — emits `(PakSlice_T){.data = arr, .len = N}` matching Python codegen |
 | MIPS interpolated format strings raised `MIPSUNPORTED` | Fixed — emits `snprintf` call into a static `__pak_fmtbuf_N` buffer; `snprintf` added to extern list |
+| MIPS function parameters stored before stack frame established (pre-prologue `sw`) | Fixed — all param stores now happen after `emit_prologue_placeholder`; 3rd+ float params arriving on stack are loaded from `$fp+(N*4)` (fp = old_sp) |
+| MIPS `marshal_args` used a two-pass save/reload pattern for float args that the VR4300 scheduler misoptimized (moved reload before save due to missing memory alias analysis) | Fixed — replaced with single-pass reverse-order evaluation; each float arg is emitted directly into `$f12`, then `mov.s $f14,$f12` (2nd) or `swc1 $f12,N($sp)` (3rd+) immediately; no save-slot temporaries needed |
 
 ---
 

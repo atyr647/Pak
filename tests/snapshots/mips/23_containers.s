@@ -372,20 +372,20 @@ main:
     nop
     addiu $a0, $sp, 568
     li $a1, 16
-    li $a2, 1
     li $a3, 100
+    li $a2, 1
     jal pak_map_set
     nop
     addiu $a0, $sp, 568
     li $a1, 16
-    li $a2, 2
     li $a3, 200
+    li $a2, 2
     jal pak_map_set
     nop
     addiu $a0, $sp, 568
     li $a1, 16
-    li $a2, 3
     li $a3, 300
+    li $a2, 3
     jal pak_map_set
     nop
     lw $t8, 712($sp)

@@ -150,11 +150,11 @@
 	.globl abs
 	.type abs, @function
 abs:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t8, 96($sp)
     li $t7, 0
     slt $t9, $t8, $t7
@@ -180,11 +180,11 @@ abs:
 	.globl sign
 	.type sign, @function
 sign:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t8, 96($sp)
     li $t7, 0
     sgt $t9, $t8, $t7

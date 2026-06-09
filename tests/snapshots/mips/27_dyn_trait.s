@@ -150,11 +150,11 @@
 	.globl Circle_area
 	.type Circle_area, @function
 Circle_area:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     la $t7, .Lf320
     lwc1 $f12, 0($t7)
     mov.s $f14, $f12
@@ -179,11 +179,11 @@ Circle_area:
 	.globl Circle_perimeter
 	.type Circle_perimeter, @function
 Circle_perimeter:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     la $t8, .Lf321
     lwc1 $f12, 0($t8)
     mov.s $f14, $f12
@@ -204,11 +204,11 @@ Circle_perimeter:
 	.globl Rect_area
 	.type Rect_area, @function
 Rect_area:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t8, 96($sp)
     lwc1 $f12, 0($t8)
     mov.s $f14, $f12
@@ -229,11 +229,11 @@ Rect_area:
 	.globl Rect_perimeter
 	.type Rect_perimeter, @function
 Rect_perimeter:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     la $t8, .Lf322
     lwc1 $f12, 0($t8)
     mov.s $f14, $f12
@@ -258,11 +258,11 @@ Rect_perimeter:
 	.globl get_area
 	.type get_area, @function
 get_area:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     addiu $t9, $sp, 96
     move $a0, $t9
     jal S_area
@@ -281,11 +281,11 @@ get_area:
 	.globl get_perimeter
 	.type get_perimeter, @function
 get_perimeter:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     addiu $t9, $sp, 96
     move $a0, $t9
     jal S_perimeter

@@ -150,11 +150,11 @@
 	.globl load_data
 	.type load_data, @function
 load_data:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t8, 96($sp)
     move $t7, $zero
     seq $t9, $t8, $t7
@@ -192,12 +192,12 @@ load_data:
 	.globl divide
 	.type divide, @function
 divide:
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    sw $a1, 100($sp)
     lw $t8, 100($sp)
     li $t7, 0
     seq $t9, $t8, $t7
@@ -304,8 +304,8 @@ main:
     nop
 .Larm_skip_9:
 .Lmatch_end_5:
-    li $a0, 10
     li $a1, 2
+    li $a0, 10
     jal divide
     nop
     move $t9, $v0

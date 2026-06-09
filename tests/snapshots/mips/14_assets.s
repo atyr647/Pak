@@ -157,12 +157,12 @@ main:
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
-    li $a0, 0
-    li $a1, 0
-    li $a2, 2
-    li $a3, 0
     li $t8, 0
     sw $t8, 16($sp)
+    li $a3, 0
+    li $a2, 2
+    li $a1, 0
+    li $a0, 0
     jal display_init
     nop
     move $t9, $v0
@@ -181,27 +181,27 @@ main:
     jal rdpq_set_mode_copy
     nop
     move $t9, $v0
+    li $a3, 0
+    li $a2, 0
+    li $a1, 0
     la $a0, bg_sprite
     lw $a0, 0($a0)
-    li $a1, 0
-    li $a2, 0
-    li $a3, 0
     jal rdpq_sprite_blit
     nop
     move $t9, $v0
+    li $a3, 0
+    li $a2, 120
+    li $a1, 160
     la $a0, player_sprite
     lw $a0, 0($a0)
-    li $a1, 160
-    li $a2, 120
-    li $a3, 0
     jal rdpq_sprite_blit
     nop
     move $t9, $v0
+    li $a3, 0
+    li $a2, 80
+    li $a1, 100
     la $a0, enemy_sprite
     lw $a0, 0($a0)
-    li $a1, 100
-    li $a2, 80
-    li $a3, 0
     jal rdpq_sprite_blit
     nop
     move $t9, $v0

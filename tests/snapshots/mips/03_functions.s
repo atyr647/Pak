@@ -150,12 +150,12 @@
 	.globl add
 	.type add, @function
 add:
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    sw $a1, 100($sp)
     lw $t9, 96($sp)
     lw $t8, 100($sp)
     addu $v0, $t9, $t8
@@ -173,13 +173,13 @@ add:
 	.globl max
 	.type max, @function
 max:
-    swc1 $f12, 96($sp)
-    mov.s $f12, $f14
-    swc1 $f12, 100($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    swc1 $f12, 96($sp)
+    mov.s $f12, $f14
+    swc1 $f12, 100($sp)
     lwc1 $f12, 96($sp)
     mov.s $f14, $f12
     lwc1 $f12, 100($sp)
@@ -210,14 +210,15 @@ max:
 	.globl clamp
 	.type clamp, @function
 clamp:
-    swc1 $f12, 96($sp)
-    mov.s $f12, $f14
-    swc1 $f12, 100($sp)
-    swc1 $f12, 104($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    swc1 $f12, 96($sp)
+    mov.s $f12, $f14
+    swc1 $f12, 100($sp)
+    lwc1 $f12, 8($fp)
+    swc1 $f12, 104($sp)
     lwc1 $f12, 96($sp)
     mov.s $f14, $f12
     lwc1 $f12, 100($sp)
@@ -263,11 +264,11 @@ clamp:
 	.globl reset
 	.type reset, @function
 reset:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     li $t8, 0
     lw $t7, 96($sp)
     sw $t8, 0($t7)
@@ -284,11 +285,11 @@ reset:
 	.globl increment
 	.type increment, @function
 increment:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t6, 96($sp)
     lw $t7, 0($t6)
     li $t6, 1
@@ -312,8 +313,8 @@ main:
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
-    li $a0, 3
     li $a1, 4
+    li $a0, 3
     jal add
     nop
     move $t8, $v0
@@ -322,6 +323,7 @@ main:
     move $t9, $t8
     la $t8, .Lf320
     lwc1 $f12, 0($t8)
+    mov.s $f14, $f12
     la $t8, .Lf321
     lwc1 $f12, 0($t8)
     jal max
@@ -330,8 +332,10 @@ main:
     sw $t9, 96($sp)
     la $t8, .Lf322
     lwc1 $f12, 0($t8)
+    swc1 $f12, 8($sp)
     la $t8, .Lf323
     lwc1 $f12, 0($t8)
+    mov.s $f14, $f12
     la $t8, .Lf324
     lwc1 $f12, 0($t8)
     jal clamp
@@ -369,19 +373,19 @@ main:
 	.section .rodata
 	.align 2
 .Lf320:
-	.word 1069547520
-	.align 2
-.Lf321:
 	.word 1075838976
 	.align 2
+.Lf321:
+	.word 1069547520
+	.align 2
 .Lf322:
-	.word 1125515264
+	.word 1120403456
 	.align 2
 .Lf323:
 	.word 0
 	.align 2
 .Lf324:
-	.word 1120403456
+	.word 1125515264
 
 	.section .data
 	.align 2

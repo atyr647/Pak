@@ -150,11 +150,11 @@
 	.globl update
 	.type update, @function
 update:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     li $a0, 0
     jal joypad_get_status
     nop
@@ -278,11 +278,11 @@ update:
 	.globl render
 	.type render, @function
 render:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     jal display_get
     nop
     move $t9, $v0
@@ -295,18 +295,18 @@ render:
     jal rdpq_set_mode_fill
     nop
     move $t9, $v0
-    lw $t8, 96($sp)
-    lw $a0, 0($t8)
-    lw $t8, 96($sp)
-    lw $a1, 4($t8)
-    lw $t7, 96($sp)
-    lw $t8, 0($t7)
-    li $t7, 16
-    addu $a2, $t8, $t7
     lw $t7, 96($sp)
     lw $t8, 4($t7)
     li $t7, 16
     addu $a3, $t8, $t7
+    lw $t7, 96($sp)
+    lw $t8, 0($t7)
+    li $t7, 16
+    addu $a2, $t8, $t7
+    lw $t8, 96($sp)
+    lw $a1, 4($t8)
+    lw $t8, 96($sp)
+    lw $a0, 0($t8)
     jal rdpq_fill_rectangle
     nop
     move $t9, $v0
@@ -329,12 +329,12 @@ main:
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
-    li $a0, 0
-    li $a1, 0
-    li $a2, 2
-    li $a3, 0
     li $t8, 0
     sw $t8, 16($sp)
+    li $a3, 0
+    li $a2, 2
+    li $a1, 0
+    li $a0, 0
     jal display_init
     nop
     move $t9, $v0
