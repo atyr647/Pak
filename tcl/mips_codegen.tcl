@@ -1076,7 +1076,7 @@ oo::class create pak::MipsCodegen {
         set param_info {}
         foreach p [pak::items $params] {
             set p_layout [my mips_layout [pak::nfield $p type]]
-            set off [my declare_local [pak::fval $p name] $p_layout]
+            set off [my declare_local [pak::fval $p name] $p_layout [pak::nfield $p type]]
             lappend param_info [list $off $p_layout $float_param_n $i]
             if {[dict get $p_layout is_float]} { incr float_param_n }
             incr i
@@ -1263,6 +1263,25 @@ oo::class create pak::MipsCodegen {
                 if {![pak::isnil $typ]} { set layout [my mips_layout $typ] } else { set layout [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}] }
                 set tn [expr {[pak::isnil $typ] ? "" : $typ}]
                 set v [pak::nfield $stmt value]
+                # Infer type node from RHS when no explicit annotation is given.
+                # This enables correct method-call name mangling (TypeName_method)
+                # for variables like: let mut p = Player { ... }
+                if {$tn eq "" && ![pak::isnil $v]} {
+                    if {[pak::kindof $v] eq "StructLit"} {
+                        set sname [pak::fval $v type_name]
+                        if {$sname ne ""} {
+                            set tn [pak::N TypeName name $sname]
+                            if {[dict exists $tenv_layouts $sname]} {
+                                set layout [dict get $tenv_layouts $sname]
+                            }
+                        }
+                    } elseif {[pak::kindof $v] eq "VariantCons"} {
+                        set vname [pak::fval $v name]
+                        if {$vname ne "" && [dict exists $tenv_variant_decls $vname]} {
+                            set tn [pak::N TypeName name $vname]
+                        }
+                    }
+                }
                 if {[pak::fval $stmt name] eq "_"} {
                     if {![pak::isnil $v]} {
                         set tmp [$ra alloc_temp]
@@ -1291,9 +1310,18 @@ oo::class create pak::MipsCodegen {
                         # Result is already in $off from Break's store_to_sp — nothing more to do
                     } else {
                         set lsz [dict get $layout size]
-                        set lfields [expr {[dict exists $layout fields] ? [dict size [dict get $layout fields]] : 0}]
-                        if {$lsz > 4 && $lfields > 0} {
-                            # Large struct: expr returns a pointer; copy to stack slot
+                        # Determine if the RHS expression returns a pointer to a
+                        # multi-word value on the stack (struct lit, variant ctor,
+                        # array lit, tuple lit, etc.).  Conditions:
+                        #   • size > 4 — multi-word value
+                        #   • has fields/tag_size/_container — it's an aggregate type
+                        set is_aggregate [expr {
+                            ([dict exists $layout fields]     && [dict size [dict get $layout fields]] > 0) ||
+                            [dict exists $layout tag_size]    ||
+                            [dict exists $layout _container]
+                        }]
+                        if {$lsz > 4 && $is_aggregate} {
+                            # Large aggregate: expr returns a pointer; copy to stack slot
                             set src_ptr [$ra alloc_temp]
                             set dst_ptr [$ra alloc_temp]
                             my emit_expr $v $src_ptr
@@ -2192,8 +2220,26 @@ oo::class create pak::MipsCodegen {
     }
 
     method emit_field_access {expr dst} {
+        # Handle variant zero-arg constructor: Shape.point → emit_variant_constructor
+        set obj [pak::nfield $expr obj]
+        if {[pak::kindof $obj] eq "Ident"} {
+            set obj_name [pak::fval $obj name]
+            set field_name [pak::fval $expr field]
+            if {[dict exists $tenv_variant_decls $obj_name]} {
+                my emit_variant_constructor $obj_name $field_name [pak::Seq {}] $dst
+                return
+            }
+            # Also handle EnumName.CaseName as a raw integer enum value
+            if {[dict exists $tenv_enum_values $obj_name]} {
+                set cases [dict get $tenv_enum_values $obj_name]
+                if {[dict exists $cases $field_name]} {
+                    $em li $dst [dict get $cases $field_name]
+                    return
+                }
+            }
+        }
         set base [$ra alloc_temp]
-        my emit_expr [pak::nfield $expr obj] $base
+        my emit_expr $obj $base
         set fi [my resolve_field_info $expr]
         if {$fi ne ""} {
             set type_node [dict get $fi type_node]
@@ -2776,22 +2822,40 @@ oo::class create pak::MipsCodegen {
             if {[pak::kindof $target] eq "Ident"} {
                 set tlocal [my lookup_local [pak::fval $target name]]
                 if {$tlocal ne "" && [dict get [lindex $tlocal 1] is_float]} { set target_is_float 1 }
+            } elseif {[pak::kindof $target] eq "DotAccess"} {
+                set fi [my resolve_field_info $target]
+                if {$fi ne ""} {
+                    set ftype [dict get $fi type_node]
+                    if {$ftype ne "" && ![pak::isnil $ftype]} {
+                        set fl [my mips_layout $ftype]
+                        if {[dict get $fl is_float]} { set target_is_float 1 }
+                    }
+                }
             }
             if {$target_is_float && $op in {+= -= *= /=}} {
                 $em mov_s {$f14} {$f12}
-                set cur [$ra alloc_temp]
-                my emit_ident_load [pak::fval $target name] $cur
+                if {[pak::kindof $target] eq "Ident"} {
+                    set cur [$ra alloc_temp]
+                    my emit_ident_load [pak::fval $target name] $cur
+                    $ra free_temp $cur
+                } else {
+                    # DotAccess: load the field value into $f12
+                    set cur [$ra alloc_temp]
+                    my emit_field_access $target $cur
+                    $ra free_temp $cur
+                }
                 switch -- $op {
                     += { $em add_s {$f12} {$f12} {$f14} }
                     -= { $em sub_s {$f12} {$f12} {$f14} }
                     *= { $em mul_s {$f12} {$f12} {$f14} }
                     /= { $em div_s {$f12} {$f12} {$f14} }
                 }
-                $ra free_temp $cur
             } else {
                 set cur [$ra alloc_temp]
                 if {[pak::kindof $target] eq "Ident"} {
                     my emit_ident_load [pak::fval $target name] $cur
+                } elseif {[pak::kindof $target] eq "DotAccess"} {
+                    my emit_field_access $target $cur
                 } else {
                     $em la $cur __cur
                     $em lw $cur 0 $cur
@@ -2820,7 +2884,16 @@ oo::class create pak::MipsCodegen {
                 } else {
                     set addr_r [$ra alloc_temp]
                     $em la $addr_r [pak::fval $target name]
-                    $em sw $val_reg 0 $addr_r
+                    # Use float store if the global is declared as float
+                    set glay {}
+                    if {[dict exists $globals [pak::fval $target name]]} {
+                        set glay [lindex [dict get $globals [pak::fval $target name]] 1]
+                    }
+                    if {$glay ne {} && [dict get $glay is_float]} {
+                        $em swc1 {$f12} 0 $addr_r
+                    } else {
+                        $em sw $val_reg 0 $addr_r
+                    }
                     $ra free_temp $addr_r
                 }
             }
@@ -3106,22 +3179,38 @@ oo::class create pak::MipsCodegen {
     }
 
     method emit_method_call {access args_seq dst} {
-        # Determine type name from the variable, fallback to capitalize
+        # Determine type name from the variable's declared type node, then
+        # from an embedded _type_name in its layout, then fall back to
+        # capitalizing the variable name (last resort only).
         set type_name ""
         set obj [pak::nfield $access obj]
         if {[pak::kindof $obj] eq "Ident"} {
-            set local [my lookup_local [pak::fval $obj name]]
-            if {$local ne ""} {
-                set layout [lindex $local 1]
-                # Check for embedded type name
-                if {[dict exists $layout _type_name]} {
-                    set type_name [dict get $layout _type_name]
+            set var_name [pak::fval $obj name]
+            # Primary: use the stored type node (set by declare_local via LetDecl/params)
+            set tn [my lookup_type_node $var_name]
+            if {$tn ne "" && ![pak::isnil $tn]} {
+                if {[pak::kindof $tn] eq "TypeName"} {
+                    set type_name [pak::fval $tn name]
+                } elseif {[pak::kindof $tn] eq "TypePointer"} {
+                    set inner [pak::nfield $tn inner]
+                    if {![pak::isnil $inner] && [pak::kindof $inner] eq "TypeName"} {
+                        set type_name [pak::fval $inner name]
+                    }
                 }
             }
+            # Secondary: layout-embedded _type_name
             if {$type_name eq ""} {
-                # Capitalize fallback
-                set n [pak::fval $obj name]
-                set type_name "[string toupper [string index $n 0]][string range $n 1 end]"
+                set local [my lookup_local $var_name]
+                if {$local ne ""} {
+                    set layout [lindex $local 1]
+                    if {[dict exists $layout _type_name]} {
+                        set type_name [dict get $layout _type_name]
+                    }
+                }
+            }
+            # Tertiary: capitalize variable name (best-effort for single-char names)
+            if {$type_name eq ""} {
+                set type_name "[string toupper [string index $var_name 0]][string range $var_name 1 end]"
             }
         }
         set mangled "${type_name}_[pak::fval $access field]"

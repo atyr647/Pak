@@ -155,18 +155,25 @@ check_greeting:
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
     sw $a0, 96($sp)
-    addiu $t8, $sp, 96
-    move $a0, $t8
-    la $a1, .Lstr0
-    jal S_starts_with
+    lw $t8, 96($sp)
+    la $t7, .Lstr0
+    move $a0, $t7
+    jal strlen
     nop
-    move $t9, $v0
-    addiu $t7, $sp, 96
+    move $a2, $v0
+    move $a0, $t8
+    move $a1, $t7
+    jal strncmp
+    nop
+    seq $t9, $v0, $zero
+    lw $t7, 96($sp)
     move $a0, $t7
     la $a1, .Lstr1
-    jal S_contains
+    jal strstr
     nop
+    sltu $t8, $zero, $v0
     move $t8, $v0
+    sltu $t8, $zero, $t8
     sltiu $t7, $t9, 1
     sltiu $v0, $t8, 1
     or $v0, $t7, $v0
@@ -191,11 +198,12 @@ same_string:
     addiu $fp, $sp, 256
     sw $a0, 96($sp)
     sw $a1, 100($sp)
-    addiu $t9, $sp, 96
+    lw $t9, 96($sp)
     move $a0, $t9
     lw $a1, 100($sp)
-    jal A_eq
+    jal strcmp
     nop
+    seq $v0, $v0, $zero
     j .Lsame_string_ret_1
     nop
 .Lsame_string_ret_1:
@@ -216,11 +224,19 @@ find_offset:
     addiu $fp, $sp, 256
     sw $a0, 96($sp)
     sw $a1, 100($sp)
-    addiu $t9, $sp, 96
+    lw $t9, 96($sp)
     move $a0, $t9
     lw $a1, 100($sp)
-    jal Haystack_find
+    jal strstr
     nop
+    bne $v0, $zero, .Lsf_3
+    nop
+    li $v0, -1
+    j .Lsfe_4
+    nop
+.Lsf_3:
+    subu $v0, $v0, $t9
+.Lsfe_4:
     j .Lfind_offset_ret_2
     nop
 .Lfind_offset_ret_2:
@@ -240,13 +256,10 @@ check_pakstr:
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
     sw $a0, 96($sp)
-    addiu $t9, $sp, 96
-    move $a0, $t9
-    jal S_len
+    lw $v0, 100($sp)
+    j .Lcheck_pakstr_ret_5
     nop
-    j .Lcheck_pakstr_ret_3
-    nop
-.Lcheck_pakstr_ret_3:
+.Lcheck_pakstr_ret_5:
     lw $fp, 248($sp)
     lw $ra, 252($sp)
     addiu $sp, $sp, 256
@@ -332,22 +345,6 @@ main:
     la $a1, .Lstr1
     jal strstr
     nop
-    bne $v0, $zero, .Lsf_5
-    nop
-    li $t8, -1
-    j .Lsfe_6
-    nop
-.Lsf_5:
-    subu $t8, $v0, $t7
-.Lsfe_6:
-    la $t7, sink_i
-    sw $t8, 0($t7)
-    move $t9, $t8
-    lw $t7, 96($sp)
-    move $a0, $t7
-    la $a1, .Lstr0
-    jal strstr
-    nop
     bne $v0, $zero, .Lsf_7
     nop
     li $t8, -1
@@ -361,7 +358,7 @@ main:
     move $t9, $t8
     lw $t7, 96($sp)
     move $a0, $t7
-    la $a1, .Lstr4
+    la $a1, .Lstr0
     jal strstr
     nop
     bne $v0, $zero, .Lsf_9
@@ -372,6 +369,22 @@ main:
 .Lsf_9:
     subu $t8, $v0, $t7
 .Lsfe_10:
+    la $t7, sink_i
+    sw $t8, 0($t7)
+    move $t9, $t8
+    lw $t7, 96($sp)
+    move $a0, $t7
+    la $a1, .Lstr4
+    jal strstr
+    nop
+    bne $v0, $zero, .Lsf_11
+    nop
+    li $t8, -1
+    j .Lsfe_12
+    nop
+.Lsf_11:
+    subu $t8, $v0, $t7
+.Lsfe_12:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
@@ -486,7 +499,7 @@ main:
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
-.Lmain_ret_4:
+.Lmain_ret_6:
     lw $fp, 248($sp)
     lw $ra, 252($sp)
     addiu $sp, $sp, 256

@@ -287,7 +287,7 @@ main:
     nop
     move $t8, $v0
     la $t7, sink
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     sw $zero, 108($sp)
     sw $zero, 112($sp)
@@ -305,45 +305,49 @@ main:
     nop
     move $t8, $v0
     la $t7, sink
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
-    la $t7, Shape
-    lw $t7, 0($t7)
-    lw $a0, 0($t7)
+    sw $zero, 120($sp)
+    sw $zero, 124($sp)
+    sw $zero, 128($sp)
+    li $t7, 2
+    sb $t7, 120($sp)
+    addiu $a0, $sp, 120
     jal area
     nop
     move $t8, $v0
     la $t7, sink
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
-    la $t7, Entity
-    lw $t7, 0($t7)
-    lw $a0, 0($t7)
+    sw $zero, 132($sp)
+    li $t7, 1
+    sb $t7, 132($sp)
+    addiu $a0, $sp, 132
     jal entity_id
     nop
     move $t8, $v0
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    sw $zero, 124($sp)
-    sw $zero, 128($sp)
-    sw $zero, 132($sp)
+    sw $zero, 140($sp)
+    sw $zero, 144($sp)
+    sw $zero, 148($sp)
     li $t8, 1
-    sb $t8, 124($sp)
+    sb $t8, 140($sp)
     li $t8, 100
-    sw $t8, 128($sp)
+    sw $t8, 144($sp)
     li $t8, 200
-    sw $t8, 132($sp)
-    addiu $t9, $sp, 124
-    sw $t9, 120($sp)
-    lw $t9, 120($sp)
+    sw $t8, 148($sp)
+    addiu $t9, $sp, 140
+    sw $t9, 136($sp)
+    lw $t9, 136($sp)
     lbu $t8, 0($t9)
     li $t7, 0
     bne $t8, $t7, .Larm_skip_21
     nop
     lbu $t8, 1($t9)
-    sb $t8, 136($sp)
-    lbu $t6, 136($sp)
+    sb $t8, 152($sp)
+    lbu $t6, 152($sp)
     move $t7, $t6
     la $t6, sink_i
     sw $t7, 0($t6)
@@ -356,11 +360,11 @@ main:
     bne $t8, $t7, .Larm_skip_23
     nop
     lw $t8, 4($t9)
-    sw $t8, 140($sp)
+    sw $t8, 156($sp)
     lw $t8, 8($t9)
-    sw $t8, 144($sp)
-    lw $t6, 140($sp)
-    lw $t5, 144($sp)
+    sw $t8, 160($sp)
+    lw $t6, 156($sp)
+    lw $t5, 160($sp)
     addu $t7, $t6, $t5
     la $t6, sink_i
     sw $t7, 0($t6)
@@ -380,18 +384,18 @@ main:
     nop
 .Larm_skip_25:
 .Lmatch_end_19:
-    sw $zero, 152($sp)
-    sw $zero, 156($sp)
-    sw $zero, 160($sp)
+    sw $zero, 168($sp)
+    sw $zero, 172($sp)
+    sw $zero, 176($sp)
     li $t8, 0
-    sb $t8, 152($sp)
+    sb $t8, 168($sp)
     li $t8, 42
-    sw $t8, 156($sp)
+    sw $t8, 172($sp)
     li $t8, 80
-    sb $t8, 160($sp)
-    addiu $t9, $sp, 152
-    sw $t9, 148($sp)
-    lw $t9, 148($sp)
+    sb $t8, 176($sp)
+    addiu $t9, $sp, 168
+    sw $t9, 164($sp)
+    lw $t9, 164($sp)
     li $t8, 0
     bne $t9, $t8, .Larm_skip_28
     nop

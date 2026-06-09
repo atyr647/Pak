@@ -159,9 +159,7 @@ opposite:
     li $t8, 0
     bne $t9, $t8, .Larm_skip_3
     nop
-    la $t8, Direction
-    lw $t8, 0($t8)
-    lw $v0, 0($t8)
+    li $v0, 1
     j .Lopposite_ret_0
     nop
     j .Lmatch_end_1
@@ -170,9 +168,7 @@ opposite:
     li $t8, 1
     bne $t9, $t8, .Larm_skip_5
     nop
-    la $t8, Direction
-    lw $t8, 0($t8)
-    lw $v0, 0($t8)
+    li $v0, 0
     j .Lopposite_ret_0
     nop
     j .Lmatch_end_1
@@ -181,9 +177,7 @@ opposite:
     li $t8, 2
     bne $t9, $t8, .Larm_skip_7
     nop
-    la $t8, Direction
-    lw $t8, 0($t8)
-    lw $v0, 0($t8)
+    li $v0, 3
     j .Lopposite_ret_0
     nop
     j .Lmatch_end_1
@@ -192,9 +186,7 @@ opposite:
     li $t8, 3
     bne $t9, $t8, .Larm_skip_9
     nop
-    la $t8, Direction
-    lw $t8, 0($t8)
-    lw $v0, 0($t8)
+    li $v0, 2
     j .Lopposite_ret_0
     nop
     j .Lmatch_end_1
@@ -217,13 +209,9 @@ main:
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
-    la $t8, GameState
-    lw $t8, 0($t8)
-    lw $t9, 0($t8)
+    li $t9, 0
     sw $t9, 96($sp)
-    la $t8, Direction
-    lw $t8, 0($t8)
-    lw $t9, 0($t8)
+    li $t9, 0
     sw $t9, 100($sp)
     lw $t9, 96($sp)
     li $t8, 0
@@ -285,9 +273,7 @@ main:
     j .Lmatch_end_20
     nop
 .Lmatch_end_20:
-    la $t8, Direction
-    lw $t8, 0($t8)
-    lw $a0, 0($t8)
+    li $a0, 2
     jal opposite
     nop
     move $t9, $v0

@@ -233,7 +233,7 @@ main:
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     li $a0, 1
     jal identity
@@ -257,7 +257,7 @@ main:
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     li $a1, 50
     li $a0, 100
@@ -330,7 +330,7 @@ main:
     lw $t7, 116($sp)
     lwc1 $f12, 0($t7)
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 116
     move $a0, $t7
@@ -338,7 +338,7 @@ main:
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 116
     move $a0, $t7
@@ -346,7 +346,7 @@ main:
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
 
 	.section .text
@@ -396,7 +396,7 @@ identity__i32:
     lw $t7, 132($sp)
     lwc1 $f12, 4($t7)
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
 .Lmain_ret_3:
     lw $fp, 248($sp)

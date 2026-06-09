@@ -325,7 +325,7 @@ main:
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 104
     move $a0, $t7
@@ -333,77 +333,81 @@ main:
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
-    sw $zero, 112($sp)
     sw $zero, 116($sp)
-    la $t7, .Lf324
-    lwc1 $f12, 0($t7)
-    swc1 $f12, 112($sp)
-    la $t7, .Lf325
-    lwc1 $f12, 0($t7)
+    sw $zero, 120($sp)
+    la $t6, .Lf324
+    lwc1 $f12, 0($t6)
     swc1 $f12, 116($sp)
-    addiu $t9, $sp, 112
-    sw $t9, 108($sp)
+    la $t6, .Lf325
+    lwc1 $f12, 0($t6)
+    swc1 $f12, 120($sp)
+    addiu $t9, $sp, 116
+    addiu $t8, $sp, 108
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
     addiu $a0, $sp, 108
     jal Shape_from_Rect
     nop
     move $t9, $v0
-    sw $t9, 120($sp)
-    addiu $t7, $sp, 120
+    sw $t9, 124($sp)
+    addiu $t7, $sp, 124
     move $a0, $t7
     jal Shape_r_area
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
-    addiu $t7, $sp, 120
+    addiu $t7, $sp, 124
     move $a0, $t7
     jal Shape_r_perimeter
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     lw $a0, 104($sp)
     jal get_area
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
-    lw $a0, 120($sp)
+    lw $a0, 124($sp)
     jal get_area
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
-    lw $a0, 120($sp)
+    lw $a0, 124($sp)
     jal get_perimeter
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 96
     move $a0, $t7
-    jal C_area
+    jal Circle_area
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 108
     move $a0, $t7
-    jal R_area
+    jal Rect_area
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
-    addiu $t6, $sp, 120
+    addiu $t6, $sp, 124
     move $a0, $t6
     jal Shape_r_area
     nop

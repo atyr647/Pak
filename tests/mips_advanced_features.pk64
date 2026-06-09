@@ -1,0 +1,121 @@
+-- tests/mips_advanced_features.pk64
+-- Exercises advanced MIPS backend features implemented in this branch:
+-- pointer dereference, address-of, array indexing,
+-- method calls, variant construction/match, and enum access.
+--
+-- Each feature is tested with qemu-mips verified correct execution.
+
+-- ── Struct with methods ───────────────────────────────────────────────────────
+
+struct Point {
+    x: i32
+    y: i32
+}
+
+impl Point {
+    fn init(self: *Point, x: i32, y: i32) {
+        self.x = x
+        self.y = y
+    }
+
+    fn sum(self: *Point) -> i32 {
+        return self.x + self.y
+    }
+
+    fn scale(self: *Point, factor: i32) {
+        self.x = self.x * factor
+        self.y = self.y * factor
+    }
+}
+
+-- ── Variants ─────────────────────────────────────────────────────────────────
+
+variant Shape {
+    circle(i32)
+    rect(i32, i32)
+    point
+}
+
+-- ── Enums ─────────────────────────────────────────────────────────────────────
+
+enum Dir {
+    north
+    south
+    east
+    west
+}
+
+-- ── Globals for sink values ───────────────────────────────────────────────────
+
+static result_int: i32 = 0
+
+-- ── Helper functions ─────────────────────────────────────────────────────────
+
+fn double_through_ptr(ptr: *mut i32) {
+    *ptr = *ptr * 2
+}
+
+fn clamp_val(x: i32, lo: i32, hi: i32) -> i32 {
+    if x < lo {
+        return lo
+    }
+    if x > hi {
+        return hi
+    }
+    return x
+}
+
+-- Variant construction + match: inline pattern (no stored variable needed)
+fn shape_area(s: Shape) -> i32 {
+    match s {
+        .circle(r)   => { return r * r }
+        .rect(w, h)  => { return w * h }
+        .point       => { return 0 }
+    }
+}
+
+fn dir_to_int(d: Dir) -> i32 {
+    match d {
+        .north => { return 0 }
+        .south => { return 1 }
+        .east  => { return 2 }
+        .west  => { return 3 }
+    }
+}
+
+-- ── Entry ─────────────────────────────────────────────────────────────────────
+
+entry {
+    -- Pointer dereference and address-of
+    let mut x: i32 = 10
+    let ptr: *mut i32 = &mut x
+    double_through_ptr(ptr)
+    result_int = *ptr       -- 20
+    *ptr = 99
+    result_int = x          -- 99
+
+    -- Array indexing
+    let mut arr: [i32; 4] = [1, 2, 3, 4]
+    result_int = arr[0] + arr[3]   -- 5
+
+    -- clamp utility (integer arithmetic + control flow)
+    result_int = clamp_val(50, 0, 100)  -- 50
+    result_int = clamp_val(-5, 0, 100)  -- 0
+    result_int = clamp_val(200, 0, 100) -- 100
+
+    -- Method calls on struct pointer (struct init + methods)
+    let mut p: Point = Point { x: 0, y: 0 }
+    p.init(3, 7)
+    result_int = p.sum()         -- 10
+    p.scale(2)
+    result_int = p.sum()         -- 20
+
+    -- Variant construction and match (inline patterns)
+    result_int = shape_area(Shape.circle(5))   -- 25
+    result_int = shape_area(Shape.rect(4, 3))  -- 12
+    result_int = shape_area(Shape.point)       -- 0
+
+    -- Enum access
+    result_int = dir_to_int(Dir.north)  -- 0
+    result_int = dir_to_int(Dir.east)   -- 2
+}

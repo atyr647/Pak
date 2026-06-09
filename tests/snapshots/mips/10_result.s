@@ -163,9 +163,7 @@ load_data:
     sw $zero, 100($sp)
     sw $zero, 104($sp)
     sb $zero, 100($sp)
-    la $t8, LoadError
-    lw $t8, 0($t8)
-    lw $t9, 0($t8)
+    li $t9, 0
     sw $t9, 104($sp)
     addiu $v0, $sp, 100
     j .Lload_data_ret_0
@@ -206,9 +204,7 @@ divide:
     sw $zero, 104($sp)
     sw $zero, 108($sp)
     sb $zero, 104($sp)
-    la $t8, LoadError
-    lw $t8, 0($t8)
-    lw $t9, 0($t8)
+    li $t9, 1
     sw $t9, 108($sp)
     addiu $v0, $sp, 104
     j .Ldivide_ret_2
@@ -351,9 +347,7 @@ main:
     sw $zero, 128($sp)
     sw $zero, 132($sp)
     sb $zero, 128($sp)
-    la $t6, LoadError
-    lw $t6, 0($t6)
-    lw $t7, 0($t6)
+    li $t7, 1
     sw $t7, 132($sp)
     addiu $t9, $sp, 128
     addiu $t8, $sp, 120

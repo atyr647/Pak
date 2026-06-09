@@ -267,7 +267,7 @@ main:
     lw $t7, 96($sp)
     lw $t8, 4($t7)
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     li $t8, 1
     sw $t8, 112($sp)
