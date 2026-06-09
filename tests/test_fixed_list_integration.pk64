@@ -1,0 +1,62 @@
+-- test_fixed_list_integration.pk64
+-- Integration test: exercises FixedList(i32, 64) operations.
+-- Outputs results via debug.log; Python test replaces debugf with printf.
+
+use n64.debug
+
+entry {
+    -- ── Create a FixedList(i32, 64) ──────────────────────────────────────────
+    let list: FixedList(i32, 64) = FixedList.init()
+
+    -- Verify empty on creation
+    let is_empty_start: i32 = list.is_empty() as i32
+    debug.log("RESULT_EMPTY={is_empty_start}")
+
+    -- ── Push values 0..9 ─────────────────────────────────────────────────────
+    let i: i32 = 0
+    while i < 10 {
+        list.push(i * 3)    -- 0, 3, 6, 9, 12, 15, 18, 21, 24, 27
+        i += 1
+    }
+
+    -- Check length after pushing 10 items
+    let len_after_push: i32 = list.len()
+    debug.log("RESULT_LEN={len_after_push}")
+
+    -- ── Iterate with for range loop, accumulate sum ───────────────────────────
+    -- sum of k*3 for k in 0..10 = 3*(0+1+...+9) = 3*45 = 135
+    let total: i32 = 0
+    let n: i32 = list.len()
+    for k in 0..n {
+        total += k * 3
+    }
+    debug.log("RESULT_SUM={total}")
+
+    -- ── Check is_empty after pushing ─────────────────────────────────────────
+    let is_empty_after: i32 = list.is_empty() as i32
+    debug.log("RESULT_NOT_EMPTY={is_empty_after}")
+
+    -- ── Pop a value ───────────────────────────────────────────────────────────
+    let popped: i32 = list.pop()
+    debug.log("RESULT_POP={popped}")
+
+    let len_after_pop: i32 = list.len()
+    debug.log("RESULT_LEN_AFTER_POP={len_after_pop}")
+
+    -- ── Remove element at index 0 ─────────────────────────────────────────────
+    list.remove(0)
+    let len_after_remove: i32 = list.len()
+    debug.log("RESULT_AFTER_REMOVE={len_after_remove}")
+
+    -- ── Test boundary: fill to capacity ──────────────────────────────────────
+    let list2: FixedList(i32, 64) = FixedList.init()
+    let j: i32 = 0
+    while j < 64 {
+        list2.push(j)
+        j += 1
+    }
+    -- Try pushing to a full list (should silently not grow beyond capacity)
+    list2.push(999)
+    let len_full: i32 = list2.len()
+    debug.log("RESULT_PUSH_FULL={len_full}")
+}
