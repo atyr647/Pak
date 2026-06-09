@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -226,8 +227,9 @@ Enemy_update:
     addiu $fp, $sp, 256
     lw $t6, 96($sp)
     lwc1 $f12, 8($t6)
+    mov.s $f14, $f12
     lwc1 $f12, 100($sp)
-    mul $t8, $t7, $t6
+    mul.s $f12, $f14, $f12
     la $t7, __cur
     lw $t7, 0($t7)
     addu $t8, $t7, $t8

@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -156,12 +157,14 @@ Circle_area:
     addiu $fp, $sp, 256
     la $t7, .Lf320
     lwc1 $f12, 0($t7)
+    mov.s $f14, $f12
     lw $t6, 96($sp)
     lwc1 $f12, 0($t6)
-    mul $t9, $t8, $t7
+    mul.s $f12, $f14, $f12
+    mov.s $f14, $f12
     lw $t7, 96($sp)
     lwc1 $f12, 0($t7)
-    mul $v0, $t9, $t8
+    mul.s $f12, $f14, $f12
     j .LCircle_area_ret_0
     nop
 .LCircle_area_ret_0:
@@ -183,9 +186,10 @@ Circle_perimeter:
     addiu $fp, $sp, 256
     la $t8, .Lf321
     lwc1 $f12, 0($t8)
+    mov.s $f14, $f12
     lw $t7, 96($sp)
     lwc1 $f12, 0($t7)
-    mul $v0, $t9, $t8
+    mul.s $f12, $f14, $f12
     j .LCircle_perimeter_ret_1
     nop
 .LCircle_perimeter_ret_1:
@@ -207,9 +211,10 @@ Rect_area:
     addiu $fp, $sp, 256
     lw $t8, 96($sp)
     lwc1 $f12, 0($t8)
+    mov.s $f14, $f12
     lw $t7, 96($sp)
     lwc1 $f12, 4($t7)
-    mul $v0, $t9, $t8
+    mul.s $f12, $f14, $f12
     j .LRect_area_ret_2
     nop
 .LRect_area_ret_2:
@@ -231,12 +236,14 @@ Rect_perimeter:
     addiu $fp, $sp, 256
     la $t8, .Lf322
     lwc1 $f12, 0($t8)
+    mov.s $f14, $f12
     lw $t6, 96($sp)
     lwc1 $f12, 0($t6)
+    mov.s $f14, $f12
     lw $t5, 96($sp)
     lwc1 $f12, 4($t5)
-    addu $t8, $t7, $t6
-    mul $v0, $t9, $t8
+    add.s $f12, $f14, $f12
+    mul.s $f12, $f14, $f12
     j .LRect_perimeter_ret_3
     nop
 .LRect_perimeter_ret_3:

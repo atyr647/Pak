@@ -963,7 +963,12 @@ oo::class create pak::Codegen {
             return "(($obj) < ($a0) ? ($a0) : ($obj) > ($a1) ? ($a1) : ($obj))"
         }
         if {$method in {as_slice as_slice_mut}} {
-            if {[pak::kindof $obj_type] eq "TypeArray"} { pak::cg_unported "builtin:as_slice" }
+            if {[pak::kindof $obj_type] eq "TypeArray"} {
+                set inner_t [pak::nfield $obj_type inner]
+                set td [my slice_typedef $inner_t]
+                set sz [my gen_expr [pak::nfield $obj_type size]]
+                return "($td)\{.data = ($obj), .len = (int32_t)($sz)\}"
+            }
             return "(\{ __auto_type _arr = &($obj)\[0\]; (void*)_arr; \})"
         }
         if {$method eq "get_unchecked" && $na == 1} {

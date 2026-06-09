@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -162,11 +163,13 @@ area:
     lwc1 $f12, 4($t9)
     swc1 $f12, 108($sp)
     lwc1 $f12, 108($sp)
+    mov.s $f14, $f12
     lwc1 $f12, 108($sp)
-    mul $t8, $t7, $t6
+    mul.s $f12, $f14, $f12
+    mov.s $f14, $f12
     la $t6, .Lf320
     lwc1 $f12, 0($t6)
-    mul $v0, $t8, $t7
+    mul.s $f12, $f14, $f12
     j .Larea_ret_0
     nop
     j .Lmatch_end_1
@@ -181,8 +184,9 @@ area:
     lwc1 $f12, 8($t9)
     swc1 $f12, 116($sp)
     lwc1 $f12, 112($sp)
+    mov.s $f14, $f12
     lwc1 $f12, 116($sp)
-    mul $v0, $t8, $t7
+    mul.s $f12, $f14, $f12
     j .Larea_ret_0
     nop
     j .Lmatch_end_1

@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -193,6 +194,7 @@ Player_init:
 Player_move:
     sw $a0, 96($sp)
     swc1 $f12, 100($sp)
+    mov.s $f12, $f14
     swc1 $f12, 104($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
