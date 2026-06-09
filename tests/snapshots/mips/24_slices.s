@@ -165,7 +165,7 @@ sum:
 .Lfeach_h_1:
     lw $t9, 116($sp)
     lw $t8, 112($sp)
-    bge $t9, $t8, .Lfeach_x_2
+    bge $t9, $t8, .Lfeach_x_3
     nop
     lw $t7, 108($sp)
     sll $t6, $t9, 2
@@ -177,12 +177,13 @@ sum:
     addu $t6, $t5, $t6
     sw $t6, 104($sp)
     move $t7, $t6
+.Lfeach_i_2:
     lw $t9, 116($sp)
     addiu $t9, $t9, 1
     sw $t9, 116($sp)
     j .Lfeach_h_1
     nop
-.Lfeach_x_2:
+.Lfeach_x_3:
     lw $v0, 104($sp)
     j .Lsum_ret_0
     nop
@@ -214,10 +215,10 @@ find_max:
     lw $t8, 4($t9)
     sw $t8, 112($sp)
     sw $zero, 116($sp)
-.Lfeach_h_4:
+.Lfeach_h_5:
     lw $t9, 116($sp)
     lw $t8, 112($sp)
-    bge $t9, $t8, .Lfeach_x_5
+    bge $t9, $t8, .Lfeach_x_7
     nop
     lw $t7, 108($sp)
     sll $t6, $t9, 2
@@ -227,22 +228,23 @@ find_max:
     lw $t6, 120($sp)
     lw $t5, 104($sp)
     sgt $t7, $t6, $t5
-    beqz $t7, .Lif_end_6
+    beqz $t7, .Lif_end_8
     nop
     lw $t6, 120($sp)
     sw $t6, 104($sp)
     move $t7, $t6
-.Lif_end_6:
+.Lif_end_8:
+.Lfeach_i_6:
     lw $t9, 116($sp)
     addiu $t9, $t9, 1
     sw $t9, 116($sp)
-    j .Lfeach_h_4
+    j .Lfeach_h_5
     nop
-.Lfeach_x_5:
+.Lfeach_x_7:
     lw $v0, 104($sp)
-    j .Lfind_max_ret_3
+    j .Lfind_max_ret_4
     nop
-.Lfind_max_ret_3:
+.Lfind_max_ret_4:
     lw $fp, 248($sp)
     lw $ra, 252($sp)
     addiu $sp, $sp, 256
@@ -263,9 +265,9 @@ double_all:
     sw $t9, 104($sp)
     lw $t7, 96($sp)
     lw $t8, 4($t7)
-.Lfor_h_8:
+.Lfor_h_10:
     lw $t7, 104($sp)
-    bge $t7, $t8, .Lfor_x_9
+    bge $t7, $t8, .Lfor_x_12
     nop
     lw $t3, 96($sp)
     lw $t2, 104($sp)
@@ -280,13 +282,14 @@ double_all:
     addu $t4, $t4, $t3
     sw $t5, 0($t4)
     move $t6, $t5
+.Lfor_i_11:
     lw $t7, 104($sp)
     addiu $t7, $t7, 1
     sw $t7, 104($sp)
-    j .Lfor_h_8
+    j .Lfor_h_10
     nop
-.Lfor_x_9:
-.Ldouble_all_ret_7:
+.Lfor_x_12:
+.Ldouble_all_ret_9:
     lw $fp, 248($sp)
     lw $ra, 252($sp)
     addiu $sp, $sp, 256
@@ -310,10 +313,10 @@ sum_x:
     lw $t8, 4($t9)
     sw $t8, 112($sp)
     sw $zero, 116($sp)
-.Lfeach_h_11:
+.Lfeach_h_14:
     lw $t9, 116($sp)
     lw $t8, 112($sp)
-    bge $t9, $t8, .Lfeach_x_12
+    bge $t9, $t8, .Lfeach_x_16
     nop
     lw $t7, 108($sp)
     sll $t6, $t9, 2
@@ -326,16 +329,17 @@ sum_x:
     addu $t6, $t5, $t6
     sw $t6, 104($sp)
     move $t7, $t6
+.Lfeach_i_15:
     lw $t9, 116($sp)
     addiu $t9, $t9, 1
     sw $t9, 116($sp)
-    j .Lfeach_h_11
+    j .Lfeach_h_14
     nop
-.Lfeach_x_12:
+.Lfeach_x_16:
     lw $v0, 104($sp)
-    j .Lsum_x_ret_10
+    j .Lsum_x_ret_13
     nop
-.Lsum_x_ret_10:
+.Lsum_x_ret_13:
     lw $fp, 248($sp)
     lw $ra, 252($sp)
     addiu $sp, $sp, 256
@@ -620,7 +624,7 @@ main:
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-.Lmain_ret_13:
+.Lmain_ret_17:
     lw $fp, 248($sp)
     lw $ra, 252($sp)
     addiu $sp, $sp, 256

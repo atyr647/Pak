@@ -163,7 +163,7 @@ sum_array:
     lw $t8, 100($sp)
 .Lfor_h_1:
     lw $t7, 108($sp)
-    bge $t7, $t8, .Lfor_x_2
+    bge $t7, $t8, .Lfor_x_3
     nop
     lw $t4, 96($sp)
     lw $t3, 108($sp)
@@ -174,12 +174,13 @@ sum_array:
     addu $t5, $t4, $t5
     sw $t5, 104($sp)
     move $t6, $t5
+.Lfor_i_2:
     lw $t7, 108($sp)
     addiu $t7, $t7, 1
     sw $t7, 108($sp)
     j .Lfor_h_1
     nop
-.Lfor_x_2:
+.Lfor_x_3:
     lw $v0, 104($sp)
     j .Lsum_array_ret_0
     nop
@@ -205,9 +206,9 @@ fill:
     li $t9, 0
     sw $t9, 108($sp)
     lw $t8, 100($sp)
-.Lfor_h_4:
+.Lfor_h_5:
     lw $t7, 108($sp)
-    bge $t7, $t8, .Lfor_x_5
+    bge $t7, $t8, .Lfor_x_7
     nop
     lw $t5, 104($sp)
     lw $t4, 96($sp)
@@ -216,13 +217,14 @@ fill:
     addu $t4, $t4, $t3
     sw $t5, 0($t4)
     move $t6, $t5
+.Lfor_i_6:
     lw $t7, 108($sp)
     addiu $t7, $t7, 1
     sw $t7, 108($sp)
-    j .Lfor_h_4
+    j .Lfor_h_5
     nop
-.Lfor_x_5:
-.Lfill_ret_3:
+.Lfor_x_7:
+.Lfill_ret_4:
     lw $fp, 248($sp)
     lw $ra, 252($sp)
     addiu $sp, $sp, 256
@@ -327,7 +329,7 @@ main:
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-.Lmain_ret_6:
+.Lmain_ret_8:
     lw $fp, 248($sp)
     lw $ra, 252($sp)
     addiu $sp, $sp, 256

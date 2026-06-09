@@ -165,7 +165,7 @@ sum_scanline:
     lw $t8, 104($sp)
 .Lfor_h_1:
     lw $t7, 112($sp)
-    bge $t7, $t8, .Lfor_x_2
+    bge $t7, $t8, .Lfor_x_3
     nop
     lw $t3, 96($sp)
     lw $t0, 100($sp)
@@ -181,12 +181,13 @@ sum_scanline:
     addu $t5, $t4, $t5
     sw $t5, 108($sp)
     move $t6, $t5
+.Lfor_i_2:
     lw $t7, 112($sp)
     addiu $t7, $t7, 1
     sw $t7, 112($sp)
     j .Lfor_h_1
     nop
-.Lfor_x_2:
+.Lfor_x_3:
     lw $v0, 108($sp)
     j .Lsum_scanline_ret_0
     nop
@@ -263,7 +264,7 @@ main:
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-.Lmain_ret_3:
+.Lmain_ret_4:
     lw $fp, 248($sp)
     lw $ra, 252($sp)
     addiu $sp, $sp, 256
