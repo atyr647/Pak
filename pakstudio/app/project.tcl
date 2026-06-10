@@ -34,6 +34,7 @@ proc project::new {genre {name "Untitled"}} {
             palette     "arcade" \
         ] \
         physics  [_default_physics $genre] \
+        controls [_default_controls] \
         levels   [list [_default_level 1 "Level 1"]] \
         tilesets [list [_default_tileset]] \
         entities [dict create \
@@ -83,6 +84,18 @@ proc project::_default_assets {} {
             win        "" \
             music      "" \
         ] \
+    ]
+}
+
+# Controller mapping. jump_button: a | b | a_or_b | z. move_input: dpad |
+# stick | both. run_button: none | z | r | b (hold to sprint). run_mult is the
+# speed multiplier applied while the run button is held.
+proc project::_default_controls {} {
+    return [dict create \
+        jump_button "a_or_b" \
+        move_input  "both" \
+        run_button  "none" \
+        run_mult    1.6 \
     ]
 }
 
@@ -232,6 +245,10 @@ proc project::load_from {filepath} {
     # Forward-migrate projects saved before the asset pipeline existed.
     if {![dict exists $raw assets]} {
         dict set raw assets [_default_assets]
+    }
+    # Forward-migrate projects saved before controller config existed.
+    if {![dict exists $raw controls]} {
+        dict set raw controls [_default_controls]
     }
     set doc   $raw
     set path  $filepath

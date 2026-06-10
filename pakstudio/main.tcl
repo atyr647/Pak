@@ -18,6 +18,7 @@ foreach f {
     widgets/canvas_scroll.tcl
     editors/wizard.tcl
     editors/physics.tcl
+    editors/controls.tcl
     editors/entity.tcl
     editors/level.tcl
     editors/audio.tcl
@@ -379,6 +380,11 @@ proc app::_create_centre_panel {f} {
     $nb add $phy -text "  Physics  "
     physics_ed::create $phy app::_on_physics_changed
 
+    # Controls
+    set ctl [ttk::frame $nb.ctl]
+    $nb add $ctl -text "  Controls  "
+    controls_ed::create $ctl
+
     # Audio
     set aud [ttk::frame $nb.aud]
     $nb add $aud -text "  Audio  "
@@ -409,10 +415,11 @@ proc app::_on_tab_changed {} {
     }
     catch {
         switch -glob $tab {
-            "*Audio*"   { audio_ed::save_to_doc   }
-            "*ROM*"     { save_ed::save_to_doc    }
-            "*Physics*" { physics_ed::save_to_doc }
-            "*Preview*" { preview_ed::refresh     }
+            "*Audio*"    { audio_ed::save_to_doc    }
+            "*ROM*"      { save_ed::save_to_doc     }
+            "*Physics*"  { physics_ed::save_to_doc  }
+            "*Controls*" { controls_ed::save_to_doc }
+            "*Preview*"  { preview_ed::refresh      }
         }
     }
     catch { _update_title }
@@ -566,6 +573,7 @@ proc app::cmd_save {} {
     audio_ed::save_to_doc
     save_ed::save_to_doc
     physics_ed::save_to_doc
+    controls_ed::save_to_doc
     project::save_to $path
     status "Saved: $path"
     _update_title
@@ -579,6 +587,7 @@ proc app::cmd_save_as {} {
     audio_ed::save_to_doc
     save_ed::save_to_doc
     physics_ed::save_to_doc
+    controls_ed::save_to_doc
     project::save_to $path
     status "Saved: $path"
     _update_title
@@ -601,6 +610,7 @@ proc app::cmd_validate {} {
     audio_ed::save_to_doc
     save_ed::save_to_doc
     physics_ed::save_to_doc
+    controls_ed::save_to_doc
     set doc    [project::current_doc]
     set result [validate::check_doc $doc]
     if {[dict get $result ok]} {
@@ -624,6 +634,7 @@ proc app::cmd_build {} {
     audio_ed::save_to_doc
     save_ed::save_to_doc
     physics_ed::save_to_doc
+    controls_ed::save_to_doc
 
     if {$outdir eq "" || ![file isdirectory $outdir]} {
         set outdir [tk_chooseDirectory \
@@ -672,10 +683,11 @@ proc app::cmd_run {} {
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 proc app::_load_doc {doc} {
-    physics_ed::load_doc $doc
-    audio_ed::load_doc   $doc
-    save_ed::load_doc    $doc
-    assets_ed::load_doc  $doc
+    physics_ed::load_doc  $doc
+    controls_ed::load_doc $doc
+    audio_ed::load_doc    $doc
+    save_ed::load_doc     $doc
+    assets_ed::load_doc   $doc
     _refresh_level_list
     $::app_level_lb selection clear 0 end
     $::app_level_lb selection set 0

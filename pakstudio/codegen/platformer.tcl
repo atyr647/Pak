@@ -92,7 +92,7 @@ proc codegen::platformer::_main_pk64 {doc} {
     lappend out [_save_block]
     lappend out [_spawn_block]
     lappend out [_load_level $doc]
-    lappend out [_player_block]
+    lappend out [_player_block $doc]
     lappend out [_enemy_block]
     lappend out [_render_block $doc]
     lappend out [_render_title $doc]
@@ -100,6 +100,62 @@ proc codegen::platformer::_main_pk64 {doc} {
     lappend out [_update_block]
     lappend out [_entry_block]
     return [join $out "\n"]
+}
+
+# ── Controller mapping ───────────────────────────────────────────────────────
+# Each helper returns a Pak boolean expression over `pad` (a joypad_status_t)
+# for the configured control. Movement can read the D-pad, the analog stick, or
+# both; the analog stick uses CTRL_DEADZONE (N64 stick: +y is up).
+
+proc codegen::platformer::_controls {doc} {
+    if {[dict exists $doc controls]} { return [dict get $doc controls] }
+    return [dict create jump_button a_or_b move_input both run_button none run_mult 1.6]
+}
+proc codegen::platformer::_jump_pressed_expr {doc} {
+    switch -- [dict get [_controls $doc] jump_button] {
+        a       { return "pad.pressed.a" }
+        b       { return "pad.pressed.b" }
+        z       { return "pad.pressed.z" }
+        a_or_b  -
+        default { return "pad.pressed.a or pad.pressed.b" }
+    }
+}
+proc codegen::platformer::_left_expr {doc} {
+    switch -- [dict get [_controls $doc] move_input] {
+        dpad  { return "pad.held.left" }
+        stick { return "pad.stick_x < -CTRL_DEADZONE" }
+        default { return "(pad.held.left or pad.stick_x < -CTRL_DEADZONE)" }
+    }
+}
+proc codegen::platformer::_right_expr {doc} {
+    switch -- [dict get [_controls $doc] move_input] {
+        dpad  { return "pad.held.right" }
+        stick { return "pad.stick_x > CTRL_DEADZONE" }
+        default { return "(pad.held.right or pad.stick_x > CTRL_DEADZONE)" }
+    }
+}
+proc codegen::platformer::_up_expr {doc} {
+    switch -- [dict get [_controls $doc] move_input] {
+        dpad  { return "pad.held.up" }
+        stick { return "pad.stick_y > CTRL_DEADZONE" }
+        default { return "(pad.held.up or pad.stick_y > CTRL_DEADZONE)" }
+    }
+}
+proc codegen::platformer::_down_expr {doc} {
+    switch -- [dict get [_controls $doc] move_input] {
+        dpad  { return "pad.held.down" }
+        stick { return "pad.stick_y < -CTRL_DEADZONE" }
+        default { return "(pad.held.down or pad.stick_y < -CTRL_DEADZONE)" }
+    }
+}
+proc codegen::platformer::_run_held_expr {doc} {
+    switch -- [dict get [_controls $doc] run_button] {
+        z       { return "pad.held.z" }
+        r       { return "pad.held.r" }
+        b       { return "pad.held.b" }
+        none    -
+        default { return "" }
+    }
 }
 
 # ── Header ───────────────────────────────────────────────────────────────────
@@ -181,6 +237,7 @@ proc codegen::platformer::_constants {doc} {
     set cf [dict get $phys coyote_frames]
     set jb [dict get $phys jump_buffer]
     set nlevels [llength [dict get $doc levels]]
+    set rm [_f [dict get [_controls $doc] run_mult]]
 
     return "const SCREEN_W: i32 = 320
 const SCREEN_H: i32 = 240
@@ -201,6 +258,9 @@ const SPRING_FORCE: f32 = -11.0
 const COYOTE_F:    i32 = $cf
 const JUMP_BUF_F:  i32 = $jb
 const INVULN_F:    i32 = 60
+
+const CTRL_DEADZONE: i32 = 40
+const RUN_MULT:      f32 = $rm
 
 const PLAYER_W: i32 = 12
 const PLAYER_H: i32 = 15
@@ -845,8 +905,14 @@ proc codegen::platformer::_load_level {doc} {
 
 # ── Player update (static) ───────────────────────────────────────────────────
 
-proc codegen::platformer::_player_block {} {
-    return {-- ── Player ───────────────────────────────────────────────────────────────────
+proc codegen::platformer::_player_block {doc} {
+    set run [_run_held_expr $doc]
+    if {$run eq ""} {
+        set runline ""
+    } else {
+        set runline "    if $run { spd = MOVE_SPEED * RUN_MULT }\n"
+    }
+    set tmpl {-- ── Player ───────────────────────────────────────────────────────────────────
 fn hurt_player() {
     if gs.player.invuln > 0 { return }
     if gs.player.health > 0 { gs.player.health -= 1 }
@@ -875,19 +941,20 @@ fn player_update(pad: joypad_status_t) {
     let cx: i32 = gs.player.x as i32 + PLAYER_W / 2
     let cy: i32 = gs.player.y as i32 + PLAYER_H / 2
     let on_lad: bool = is_ladder(tile_at(lvl, cx / TILE_SZ, cy / TILE_SZ))
-    gs.player.on_ladder = on_lad and (pad.held.up or pad.held.down)
+    gs.player.on_ladder = on_lad and (@@UP@@ or @@DOWN@@)
 
     gs.player.vx = 0.0
-    if pad.held.left  { gs.player.vx = -MOVE_SPEED; gs.player.facing = -1 }
-    if pad.held.right { gs.player.vx =  MOVE_SPEED; gs.player.facing =  1 }
+    let spd: f32 = MOVE_SPEED
+@@RUNLINE@@    if @@LEFT@@  { gs.player.vx = -spd; gs.player.facing = -1 }
+    if @@RIGHT@@ { gs.player.vx =  spd; gs.player.facing =  1 }
 
     if gs.player.on_ladder {
         gs.player.vy = 0.0
-        if pad.held.up   { gs.player.vy = -CLIMB_SPEED }
-        if pad.held.down { gs.player.vy =  CLIMB_SPEED }
+        if @@UP@@   { gs.player.vy = -CLIMB_SPEED }
+        if @@DOWN@@ { gs.player.vy =  CLIMB_SPEED }
     } else {
         if gs.player.jump_buf > 0 { gs.player.jump_buf -= 1 }
-        if pad.pressed.a or pad.pressed.b { gs.player.jump_buf = JUMP_BUF_F }
+        if @@JUMP@@ { gs.player.jump_buf = JUMP_BUF_F }
 
         if gs.player.on_ground {
             gs.player.coyote = COYOTE_F
@@ -933,7 +1000,7 @@ fn player_update(pad: joypad_status_t) {
         let t_left: u8 = tile_at(lvl, (pix + 2) / TILE_SZ, feet / TILE_SZ)
         let t_right: u8 = tile_at(lvl, (pix + PLAYER_W - 2) / TILE_SZ, feet / TILE_SZ)
         let hit_oneway: bool = is_oneway(t_left) or is_oneway(t_right)
-        let oneway_land: bool = hit_oneway and (feet % TILE_SZ < 6) and (not pad.held.down)
+        let oneway_land: bool = hit_oneway and (feet % TILE_SZ < 6) and (not @@DOWN@@)
         if hit_solid or oneway_land {
             gs.player.y = (feet / TILE_SZ * TILE_SZ - PLAYER_H) as f32
             gs.player.vy = 0.0
@@ -1010,6 +1077,14 @@ fn player_update(pad: joypad_status_t) {
     if gs.cam_y > max_cam_y { gs.cam_y = max_cam_y }
 }
 }
+    return [string map [list \
+        @@RUNLINE@@ $runline \
+        @@JUMP@@  [_jump_pressed_expr $doc] \
+        @@LEFT@@  [_left_expr  $doc] \
+        @@RIGHT@@ [_right_expr $doc] \
+        @@UP@@    [_up_expr    $doc] \
+        @@DOWN@@  [_down_expr  $doc] \
+    ] $tmpl]
 }
 
 # ── Enemy + coin update (static) ─────────────────────────────────────────────
@@ -1447,11 +1522,13 @@ proc codegen::platformer::_render_suffix {} {
     draw_number(gs.coins, 136, 4, 1, 0xFFDD00FF)
     draw_text("LIVES", 200, 4, 1, 0xFFFFFFFF)
     draw_number(gs.lives, 226, 4, 1, 0xFF4444FF)
+    draw_text("L", 292, 4, 1, 0xFFFFFFFF)
+    draw_number(gs.level + 1, 300, 4, 1, 0x88FF88FF)
     rdpq.sync_pipe()
     rdpq.set_mode_fill(0xFF2222FF)
     let hi: i32 = 0
     while hi < gs.player.health {
-        rdpq.fill_rectangle(260 + hi * 8, 4, 266 + hi * 8, 12)
+        rdpq.fill_rectangle(252 + hi * 8, 4, 258 + hi * 8, 12)
         hi += 1
     }
 }
@@ -1479,7 +1556,9 @@ fn render_levelclear() {
     rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
     rdpq.sync_pipe()
     draw_text_centered("LEVEL CLEAR", SCREEN_W / 2, 80, 2, 0x44FF88FF)
-    draw_text_centered("PRESS START", SCREEN_W / 2, 140, 1, 0xFFFFFFFF)
+    draw_text("STAGE", 120, 120, 1, 0xFFFFFFFF)
+    draw_number(gs.level + 1, 152, 120, 1, 0xFFDD00FF)
+    draw_text_centered("PRESS START", SCREEN_W / 2, 160, 1, 0xFFFFFFFF)
 }
 
 fn render_gameover() {
@@ -1512,14 +1591,27 @@ proc codegen::platformer::_render_title {doc} {
     regsub -all {[^A-Z0-9 :.!-]} $name " " name
     set name [string range $name 0 19]
     return "fn render_title() \{
-    rdpq.set_mode_fill(0x0D1828FF)
+    rdpq.set_mode_fill(0x0A1020FF)
     rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+    rdpq.sync_pipe()
+    -- animated parallax starfield (asset-free)
+    let ph: i32 = gs.frame % SCREEN_W
+    let i: i32 = 0
+    while i < 48 \{
+        let sx: i32 = (i * 71 + 13 + (SCREEN_W - ph) * (1 + i % 3)) % SCREEN_W
+        let sy: i32 = (i * 37 + i * i * 7) % SCREEN_H
+        if (gs.frame / 4 + i) % 8 < 5 \{
+            rdpq.set_fill_color(0xFFFFFFFF)
+            rdpq.fill_rectangle(sx, sy, sx + 1 + i % 2, sy + 1 + i % 2)
+        \}
+        i += 1
+    \}
     rdpq.sync_pipe()
     draw_text_centered(\"$name\", SCREEN_W / 2, 60, 2, 0xFFDD00FF)
     draw_text_centered(\"A PAK GAME\", SCREEN_W / 2, 100, 1, 0x88AAFFFF)
-    if (gs.frame / 20) % 2 == 0 {
+    if (gs.frame / 20) % 2 == 0 \{
         draw_text_centered(\"PRESS START\", SCREEN_W / 2, 150, 2, 0xFFFFFFFF)
-    }
+    \}
     draw_text(\"HI\", 130, 200, 1, 0xFFFFFFFF)
     draw_number(gs.hi_score, 144, 200, 1, 0xFFDD00FF)
 \}

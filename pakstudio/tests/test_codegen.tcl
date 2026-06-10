@@ -138,6 +138,57 @@ set pak5 [dict get [codegen::generate $d5] "src/main.pk64"]
 assert "gravity 0.5 injected"      {[string match "*const GRAVITY*= 0.5*" $pak5]}
 assert "jump_force -9.0 injected"  {[string match "*const JUMP_FORCE*= -9.0*" $pak5]}
 
+# ── Controller config ─────────────────────────────────────────────────────────
+
+puts "\n=== controller config: codegen + pak check across mappings ==="
+
+# Default mapping emits the dead-zone constant and combined input expressions.
+set pakc [dict get [codegen::generate [project::new platformer "Ctrl"]] "src/main.pk64"]
+assert "emits CTRL_DEADZONE const" {[string match "*const CTRL_DEADZONE*" $pakc]}
+assert "emits RUN_MULT const"      {[string match "*const RUN_MULT*" $pakc]}
+assert "default move reads dpad+stick" {[string match "*pad.held.left or pad.stick_x*" $pakc]}
+assert "default jump is a or b"    {[string match "*if pad.pressed.a or pad.pressed.b \{ gs.player.jump_buf*" $pakc]}
+assert "no run line when run off"  {![string match "*spd = MOVE_SPEED \* RUN_MULT*" $pakc]}
+
+# Jump = A only
+set dj [project::new platformer "JumpA"]
+project::set_field controls jump_button a
+set pakj [dict get [codegen::generate [project::current_doc]] "src/main.pk64"]
+assert "jump A only injected" {[string match "*if pad.pressed.a \{ gs.player.jump_buf*" $pakj]}
+check_doc_passes "jump=a mapping" [project::current_doc]
+
+# Movement = analog stick only
+set ds [project::new platformer "Stick"]
+project::set_field controls move_input stick
+set paks [dict get [codegen::generate [project::current_doc]] "src/main.pk64"]
+assert "stick-only left uses deadzone" {[string match "*if pad.stick_x < -CTRL_DEADZONE  \{*" $paks]}
+assert "stick-only has no dpad left"   {![string match "*if pad.held.left*" $paks]}
+check_doc_passes "move=stick mapping" [project::current_doc]
+
+# Movement = dpad only
+set dd [project::new platformer "Dpad"]
+project::set_field controls move_input dpad
+set pakd [dict get [codegen::generate [project::current_doc]] "src/main.pk64"]
+assert "dpad-only has no stick read" {![string match "*pad.stick_x*" $pakd]}
+check_doc_passes "move=dpad mapping" [project::current_doc]
+
+# Run button = Z with custom multiplier
+set dr [project::new platformer "Run"]
+project::set_field controls run_button z
+project::set_field controls run_mult 2.25
+set pakr [dict get [codegen::generate [project::current_doc]] "src/main.pk64"]
+assert "run line emitted when on"  {[string match "*if pad.held.z \{ spd = MOVE_SPEED \* RUN_MULT \}*" $pakr]}
+assert "run mult value injected"   {[string match "*const RUN_MULT*= 2.25*" $pakr]}
+check_doc_passes "run=z mapping" [project::current_doc]
+
+# Legacy doc with no controls key still generates (uses default mapping)
+set dleg [project::new platformer "Legacy"]
+set dleg [project::current_doc]
+set dleg [dict remove $dleg controls]
+check_doc_passes "legacy doc without controls key" $dleg
+set pakleg [dict get [codegen::generate $dleg] "src/main.pk64"]
+assert "legacy doc falls back to default jump" {[string match "*pad.pressed.a or pad.pressed.b*" $pakleg]}
+
 # ── Asset pipeline ────────────────────────────────────────────────────────────
 
 puts "\n=== asset pipeline: codegen + pak check across asset configs ==="
