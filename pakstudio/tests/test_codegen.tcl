@@ -4,6 +4,7 @@
 set here [file dirname [file normalize [info script]]]
 source [file join $here .. app project.tcl]
 source [file join $here .. codegen platformer.tcl]
+source [file join $here .. codegen shmup.tcl]
 source [file join $here .. app codegen.tcl]
 source [file join $here .. app validate.tcl]
 
@@ -218,6 +219,52 @@ project::new platformer "Progress"
 set pakp [dict get [codegen::generate [project::current_doc]] "src/main.pk64"]
 assert "best_stage bumped on level clear" {[string match "*if gs.level + 1 > gs.best_stage*" $pakp]}
 assert "title shows BEST STAGE"           {[string match "*BEST STAGE*" $pakp]}
+
+# ── Shoot-em-up genre ─────────────────────────────────────────────────────────
+
+puts "\n=== shmup: codegen + pak check across orientations ==="
+
+foreach orient {horizontal vertical} {
+    project::new shmup "Star Blaster"
+    project::set_field settings orientation $orient
+    set d [project::current_doc]
+    set files [codegen::generate $d]
+    set pak [dict get $files "src/main.pk64"]
+    assert "shmup/$orient: no leftover placeholder" {![string match "*@@*" $pak]}
+    assert "shmup/$orient: has entry"     {[string match "*\nentry \{*" $pak]}
+    assert "shmup/$orient: ship update"   {[string match "*fn ship_update(*" $pak]}
+    assert "shmup/$orient: enemy spawns"  {[string match "*fn spawn_enemy(*" $pak]}
+    assert "shmup/$orient: collisions"    {[string match "*fn collisions()*" $pak]}
+    assert "shmup/$orient: reuses font"   {[string match "*fn draw_number(*" $pak]}
+    set want [expr {$orient eq "vertical" ? 1 : 0}]
+    assert "shmup/$orient: ORIENT = $want" {[string match "*const ORIENT: i32 = $want*" $pak]}
+    check_doc_passes "shmup $orient default" $d
+}
+
+# Multi-level shmup with extra waves
+project::new shmup "Multi Shmup"
+project::set_field settings orientation horizontal
+project::add_level
+project::add_object 1 [dict create type enemy_jumper x 12 y 6]
+project::add_object 1 [dict create type goal x 40 y 7]
+check_doc_passes "shmup three-wave" [project::current_doc]
+
+# Shmup with saving disabled
+project::new shmup "No Save Shmup"
+project::set_field settings save_type none
+set pakns [dict get [codegen::generate [project::current_doc]] "src/main.pk64"]
+assert "shmup save=none: no eeprom" {![string match "*use n64.eeprom*" $pakns]}
+check_doc_passes "shmup save=none" [project::current_doc]
+
+# Empty shmup level (no enemies placed) still builds
+project::new shmup "Empty Shmup"
+set d [project::current_doc]
+set lvls [dict get $d levels]
+set l0 [lindex $lvls 0]
+dict set l0 objects [list [dict create type player_start x 2 y 7] [dict create type goal x 30 y 7]]
+lset lvls 0 $l0
+dict set d levels $lvls
+check_doc_passes "shmup no enemies" $d
 
 # ── Asset pipeline ────────────────────────────────────────────────────────────
 

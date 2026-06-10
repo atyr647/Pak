@@ -10,6 +10,7 @@ set here [file dirname [file normalize [info script]]]
 foreach f {
     app/project.tcl
     codegen/platformer.tcl
+    codegen/shmup.tcl
     app/codegen.tcl
     app/validate.tcl
     app/build.tcl

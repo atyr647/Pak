@@ -143,11 +143,11 @@ proc level_ed::_make_toolbar {tb} {
     ttk::separator $tb.sep2 -orient vertical
     pack $tb.sep2 -side left -fill y -padx 4
 
-    # Entity palette
+    # Entity palette (rebuilt per-genre by _set_entity_palette on load)
     ttk::label $tb.elbl -text "Entity:"
     pack $tb.elbl -side left -padx 2
-
-    foreach {id lbl} {
+    set ::level_ed_entbar $tb
+    _set_entity_palette {
         coin         "Coin"
         enemy_patrol "Patrol"
         enemy_jumper "Jumper"
@@ -155,10 +155,6 @@ proc level_ed::_make_toolbar {tb} {
         checkpoint   "Checkpoint"
         goal         "Goal"
         door         "Door"
-    } {
-        ttk::button $tb.ent_$id -text $lbl \
-            -command [list level_ed::set_cur_entity $id] -style Toolbutton
-        pack $tb.ent_$id -side left -padx 1
     }
 
     ttk::separator $tb.sep3 -orient vertical
@@ -169,6 +165,50 @@ proc level_ed::_make_toolbar {tb} {
     ttk::button $tb.zout -text "-" -command [list level_ed::_zoom -1] -width 2
     ttk::button $tb.zrst -text "1:1" -command [list level_ed::_zoom_reset] -width 3
     pack $tb.zout $tb.zin $tb.zrst -side right -padx 1
+}
+
+# Rebuild the entity palette buttons from {id label id label …} pairs.
+proc level_ed::_set_entity_palette {pairs} {
+    set tb $::level_ed_entbar
+    # Destroy any existing entity buttons
+    if {[info exists ::level_ed_entids]} {
+        foreach id $::level_ed_entids {
+            catch { destroy $tb.ent_$id }
+        }
+    }
+    set ::level_ed_entids {}
+    set before ""
+    if {[winfo exists $tb.sep3]} { set before [list -before $tb.sep3] }
+    set first ""
+    foreach {id lbl} $pairs {
+        ttk::button $tb.ent_$id -text $lbl \
+            -command [list level_ed::set_cur_entity $id] -style Toolbutton
+        pack $tb.ent_$id -side left -padx 1 {*}$before
+        lappend ::level_ed_entids $id
+        if {$first eq ""} { set first $id }
+    }
+    # Keep current entity valid
+    if {$first ne "" && [lsearch -exact $::level_ed_entids $::level_ed::cur_entity] < 0} {
+        set level_ed::cur_entity $first
+    }
+}
+
+# Switch the palette to match a genre's entity vocabulary.
+proc level_ed::_palette_for_genre {genre} {
+    set types [project::_default_entity_types $genre]
+    set pairs {}
+    if {$genre eq "shmup"} { lappend pairs player_start "Ship Start" }
+    foreach t $types {
+        lappend pairs [dict get $t id] [dict get $t label]
+    }
+    if {$genre eq "platformer"} {
+        # platformer also exposes a couple of static placeables
+        set pairs {}
+        lappend pairs player_start "Player" coin "Coin" \
+            enemy_patrol "Patrol" enemy_jumper "Jumper" \
+            spring "Spring" checkpoint "Checkpoint" goal "Goal" door "Door"
+    }
+    _set_entity_palette $pairs
 }
 
 proc level_ed::set_tool {t} {
@@ -201,6 +241,9 @@ proc level_ed::load_doc {d {li 0}} {
     variable level_idx
     set doc       $d
     set level_idx $li
+    if {[dict exists $d meta genre]} {
+        catch { _palette_for_genre [dict get $d meta genre] }
+    }
     _redraw
 }
 

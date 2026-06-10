@@ -7,8 +7,8 @@ proc codegen::generate {doc} {
     set genre [dict get $doc meta genre]
     switch $genre {
         platformer { return [codegen::platformer::generate $doc] }
+        shmup      { return [codegen::shmup::generate $doc] }
         topdown    { error "Genre 'topdown' not yet implemented" }
-        shmup      { error "Genre 'shmup' not yet implemented" }
         default    { error "Unknown genre: $genre" }
     }
 }

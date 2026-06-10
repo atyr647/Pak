@@ -34,6 +34,7 @@ proc wizard::show {parent} {
 
     # State
     set ::wiz_genre   "platformer"
+    set ::wiz_orient  "horizontal"
     set ::wiz_name    "My Game"
     set ::wiz_gravity  0.35
     set ::wiz_jump    -7.5
@@ -84,8 +85,8 @@ proc wizard::show {parent} {
 
     set genres {
         platformer  "2D Platformer"       "Run, jump, collect coins, defeat enemies"
+        shmup       "Shoot-em-Up"         "Horizontal or vertical scrolling shooter"
         topdown     "Top-Down (soon)"     "Birds-eye RPG / adventure  [coming soon]"
-        shmup       "Shoot-em-Up (soon)"  "Scrolling shooter  [coming soon]"
         fps         "FPS (soon)"          "First-person shooter  [coming soon]"
         racer       "Racer (soon)"        "3D racing game  [coming soon]"
     }
@@ -93,13 +94,24 @@ proc wizard::show {parent} {
         set state [expr {[string match "*soon*" $lbl] ? "disabled" : "normal"}]
         set rf [ttk::frame $p1.rf_$id]
         ttk::radiobutton $rf.r -text $lbl -variable ::wiz_genre -value $id \
-            -state $state
+            -state $state -command wizard::_on_genre
         ttk::label $rf.d -text $desc -foreground #3d4a5e \
             -font {TkDefaultFont 8}
         pack $rf.r -anchor w
         pack $rf.d -anchor w -padx {20 0}
         pack $rf -anchor w -padx 24 -pady 3
     }
+
+    # Shoot-em-Up scroll direction (only meaningful for the shmup genre)
+    set of [ttk::frame $p1.orient]
+    ttk::label $of.lbl -text "Scroll Direction:" -foreground #7a8a9f
+    ttk::radiobutton $of.h -text "Horizontal" -variable ::wiz_orient -value horizontal
+    ttk::radiobutton $of.v -text "Vertical"   -variable ::wiz_orient -value vertical
+    pack $of.lbl -side left -padx {0 8}
+    pack $of.h $of.v -side left -padx 6
+    pack $of -anchor w -padx 24 -pady {10 3}
+    set ::wiz_orient_frame $of
+    wizard::_on_genre
 
     # ── Page 2: Name & Physics ────────────────────────────────────────────────
     set p2 [ttk::frame $nb.p2]
@@ -261,9 +273,13 @@ proc wizard::_create {dlg} {
     set name [string trim $::wiz_name]
     if {$name eq ""} { set name "My Game" }
     set doc [project::new $::wiz_genre $name]
-    project::set_field physics gravity    $::wiz_gravity
-    project::set_field physics jump_force $::wiz_jump
-    project::set_field physics move_speed $::wiz_speed
+    if {$::wiz_genre eq "shmup"} {
+        project::set_field settings orientation $::wiz_orient
+    } else {
+        project::set_field physics gravity    $::wiz_gravity
+        project::set_field physics jump_force $::wiz_jump
+        project::set_field physics move_speed $::wiz_speed
+    }
     set result [project::current_doc]
     grab release $dlg
     destroy $dlg
@@ -274,4 +290,13 @@ proc wizard::_cancel {dlg} {
     set result {}
     grab release $dlg
     destroy $dlg
+}
+
+# Enable the scroll-direction selector only when the shmup genre is chosen.
+proc wizard::_on_genre {} {
+    if {![info exists ::wiz_orient_frame] || ![winfo exists $::wiz_orient_frame]} return
+    set st [expr {$::wiz_genre eq "shmup" ? "normal" : "disabled"}]
+    foreach child [winfo children $::wiz_orient_frame] {
+        catch { $child configure -state $st }
+    }
 }

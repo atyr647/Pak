@@ -32,10 +32,11 @@ proc project::new {genre {name "Untitled"}} {
             framebuffers 3 \
             save_type   "eeprom4k" \
             palette     "arcade" \
+            orientation [expr {$genre eq "shmup" ? "horizontal" : "none"}] \
         ] \
         physics  [_default_physics $genre] \
         controls [_default_controls] \
-        levels   [list [_default_level 1 "Level 1"]] \
+        levels   [list [_default_level $genre 1 "Level 1"]] \
         tilesets [list [_default_tileset]] \
         entities [dict create \
             types [_default_entity_types $genre] \
@@ -109,6 +110,12 @@ proc project::_default_physics {genre} {
             coyote_frames 6    \
             jump_buffer   8    \
         ]}
+        shmup      { return [dict create \
+            move_speed    2.6  \
+            scroll_speed  1.0  \
+            fire_rate     8    \
+            bullet_speed  5.5  \
+        ]}
         topdown    { return [dict create \
             move_speed    3.0  \
         ]}
@@ -116,7 +123,8 @@ proc project::_default_physics {genre} {
     }
 }
 
-proc project::_default_level {id name} {
+proc project::_default_level {genre id name} {
+    if {$genre eq "shmup"} { return [_default_shmup_level $id $name] }
     # 32×15 blank level: row 14 = solid ground, rest = empty
     set W 32
     set H 15
@@ -150,6 +158,36 @@ proc project::_default_level {id name} {
             [dict create type enemy_patrol x 16 y 13] \
             [dict create type checkpoint   x 20 y 13] \
             [dict create type goal         x 30 y 13] \
+        ] \
+    ]
+}
+
+# A shmup "level" is a scroll field: the grid's scroll axis is a spawn timeline
+# and the cross axis is the lane an enemy enters on. Tiles are unused (all 0);
+# placed enemy objects become timed spawns. Ships in from the left edge.
+proc project::_default_shmup_level {id name} {
+    set W 64
+    set H 15
+    set tiles [lrepeat [expr {$W * $H}] 0]
+    return [dict create \
+        id       $id \
+        name     $name \
+        width    $W \
+        height   $H \
+        tileset  0 \
+        bg_color "0x070A14FF" \
+        music    "" \
+        tiles    $tiles \
+        objects  [list \
+            [dict create type player_start x 2  y 7] \
+            [dict create type enemy_patrol x 10 y 4] \
+            [dict create type enemy_patrol x 14 y 9] \
+            [dict create type enemy_jumper x 20 y 6] \
+            [dict create type spring       x 28 y 3] \
+            [dict create type enemy_jumper x 34 y 11] \
+            [dict create type spring       x 42 y 7] \
+            [dict create type enemy_patrol x 48 y 5] \
+            [dict create type goal         x 60 y 7] \
         ] \
     ]
 }
@@ -188,6 +226,17 @@ proc project::_default_entity_types {genre} {
                 [dict create id goal          label "Goal / Exit"   ai static  health 0  speed 0.0  loot ""      color "#FFFFFF"] \
             ]
         }
+        shmup {
+            # ids reuse the shared object vocabulary so the level editor and
+            # codegen agree; labels are shmup-flavoured. enemy_patrol=straight
+            # flyer, enemy_jumper=sine flyer, spring=turret/shooter, goal=stage end.
+            return [list \
+                [dict create id enemy_patrol label "Straight"  ai straight health 1 speed 1.4 loot "" color "#FF5555"] \
+                [dict create id enemy_jumper label "Sine"      ai sine     health 1 speed 1.4 loot "" color "#FFAA33"] \
+                [dict create id spring       label "Turret"    ai turret   health 2 speed 1.0 loot "" color "#AA55FF"] \
+                [dict create id goal         label "Stage End" ai static   health 0 speed 0.0 loot "" color "#FFFFFF"] \
+            ]
+        }
         topdown {
             return [list \
                 [dict create id npc    label "NPC"    ai wander  health 0 speed 1.0 loot "" color "#44AAFF"] \
@@ -210,6 +259,15 @@ proc project::_default_audio_events {genre} {
                 death     "" \
                 checkpoint "" \
                 victory   "" \
+                bg_music  "" \
+            ]
+        }
+        shmup {
+            return [dict create \
+                shoot     "" \
+                explode   "" \
+                hit       "" \
+                powerup   "" \
                 bg_music  "" \
             ]
         }
@@ -360,7 +418,8 @@ proc project::add_level {} {
     variable dirty
     set levels [dict get $doc levels]
     set id     [expr {[llength $levels] + 1}]
-    lappend levels [_default_level $id "Level $id"]
+    set genre  [dict get $doc meta genre]
+    lappend levels [_default_level $genre $id "Level $id"]
     dict set doc levels $levels
     set dirty true
     return [expr {$id - 1}]
