@@ -138,6 +138,69 @@ set pak5 [dict get [codegen::generate $d5] "src/main.pk64"]
 assert "gravity 0.5 injected"      {[string match "*const GRAVITY*= 0.5*" $pak5]}
 assert "jump_force -9.0 injected"  {[string match "*const JUMP_FORCE*= -9.0*" $pak5]}
 
+# ── Asset pipeline ────────────────────────────────────────────────────────────
+
+puts "\n=== asset pipeline: codegen + pak check across asset configs ==="
+
+proc with_assets {name binds} {
+    set doc [project::new platformer $name]
+    foreach {kind role path} $binds {
+        project::set_asset $kind $role $path
+    }
+    return [project::current_doc]
+}
+
+# Sprites only
+check_doc_passes "sprites only" [with_assets "Spr" {
+    sprites player /a/p.png  sprites coin /a/c.png  sprites background /a/bg.png
+}]
+# All four tile sprites
+check_doc_passes "all tile sprites" [with_assets "Tiles" {
+    sprites tile_solid /a/s.png  sprites tile_oneway /a/o.png
+    sprites tile_hazard /a/h.png sprites tile_ladder /a/l.png
+}]
+# Only one enemy kind has a sprite (mixed enemy path)
+check_doc_passes "patrol sprite only" [with_assets "Ep" {
+    sprites enemy_patrol /a/ep.png
+}]
+check_doc_passes "jumper sprite only" [with_assets "Ej" {
+    sprites enemy_jumper /a/ej.png
+}]
+# Audio only (sfx + music)
+check_doc_passes "audio only" [with_assets "Aud" {
+    audio jump /a/j.wav  audio coin /a/c.wav  audio music /a/m.xm
+}]
+# Music only — all sfx become no-ops
+check_doc_passes "music only" [with_assets "Mus" { audio music /a/m.xm }]
+# Everything bound
+check_doc_passes "full sprites+audio" [with_assets "Full" {
+    sprites player /a/p.png sprites enemy_patrol /a/ep.png sprites enemy_jumper /a/ej.png
+    sprites coin /a/c.png sprites spring /a/sp.png sprites checkpoint /a/cp.png
+    sprites goal /a/g.png sprites tile_solid /a/s.png sprites tile_oneway /a/o.png
+    sprites tile_hazard /a/h.png sprites tile_ladder /a/l.png sprites background /a/bg.png
+    audio jump /a/j.wav audio coin /a/c.wav audio hurt /a/hu.wav audio stomp /a/st.wav
+    audio spring /a/spr.wav audio checkpoint /a/chk.wav audio win /a/w.wav audio music /a/m.xm
+}]
+
+# Structural checks on a sprite+audio build
+set adoc [with_assets "Probe" {
+    sprites player /a/p.png  audio jump /a/j.wav  audio music /a/m.xm
+}]
+set apak [dict get [codegen::generate $adoc] "src/main.pk64"]
+assert "emits use n64.sprite"        {[string match "*use n64.sprite*" $apak]}
+assert "emits use n64.mixer"         {[string match "*use n64.mixer*" $apak]}
+assert "emits player sprite asset"   {[string match "*asset spr_player: Sprite*" $apak]}
+assert "emits jump Sound asset"      {[string match "*asset snd_jump_data: Sound*" $apak]}
+assert "emits player blit"           {[string match "*sprite.blit(spr_player*" $apak]}
+assert "emits wav64_open jump"       {[string match "*wav64_open(&snd_jump*" $apak]}
+assert "emits xm64 music open"       {[string match "*xm64player_open(&music_player*" $apak]}
+assert "unassigned sfx is no-op"     {[string match "*fn sfx_hurt() \{ \}*" $apak]}
+
+# Forward-migration: a doc with no `assets` key still generates fine
+set legacy [project::new platformer "Legacy"]
+set legacy [dict remove $legacy assets]
+check_doc_passes "legacy doc without assets key" $legacy
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 puts ""

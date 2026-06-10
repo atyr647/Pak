@@ -45,11 +45,45 @@ proc project::new {genre {name "Untitled"}} {
         dialogue [list] \
         quests   [list] \
         flags    [dict create] \
+        assets   [_default_assets] \
     ]
     set path  ""
     set dirty false
     set doc   $newdoc
     return $newdoc
+}
+
+# Asset bindings. Each value is an absolute source-file path the user imported,
+# or "" meaning "use the built-in procedural shape/synth for this role".
+# Sprite roles convert PNG → .sprite; audio roles convert WAV → .wav64 (sfx)
+# or XM → .xm64 (music). An empty project assigns nothing and stays asset-free.
+proc project::_default_assets {} {
+    return [dict create \
+        sprites [dict create \
+            player       "" \
+            enemy_patrol "" \
+            enemy_jumper "" \
+            coin         "" \
+            spring       "" \
+            checkpoint   "" \
+            goal         "" \
+            tile_solid   "" \
+            tile_oneway  "" \
+            tile_hazard  "" \
+            tile_ladder  "" \
+            background   "" \
+        ] \
+        audio [dict create \
+            jump       "" \
+            coin       "" \
+            hurt       "" \
+            stomp      "" \
+            spring     "" \
+            checkpoint "" \
+            win        "" \
+            music      "" \
+        ] \
+    ]
 }
 
 proc project::_default_physics {genre} {
@@ -195,6 +229,10 @@ proc project::load_from {filepath} {
     if {![dict exists $raw schema]} { error "Not a .pakstudio file" }
     set ver [dict get $raw schema]
     if {$ver > $SCHEMA_VERSION} { error "File requires newer PakStudio (schema v$ver)" }
+    # Forward-migrate projects saved before the asset pipeline existed.
+    if {![dict exists $raw assets]} {
+        dict set raw assets [_default_assets]
+    }
     set doc   $raw
     set path  $filepath
     set dirty false
@@ -202,6 +240,21 @@ proc project::load_from {filepath} {
 }
 
 # ── Accessors / mutators ─────────────────────────────────────────────────────
+
+# Bind (or clear with "") an asset path for a role. kind is "sprites" or "audio".
+proc project::set_asset {kind role path} {
+    variable doc
+    variable dirty
+    if {![dict exists $doc assets]} { dict set doc assets [_default_assets] }
+    dict set doc assets $kind $role $path
+    set dirty true
+}
+
+proc project::get_asset {kind role} {
+    variable doc
+    if {![dict exists $doc assets $kind $role]} { return "" }
+    return [dict get $doc assets $kind $role]
+}
 
 proc project::get {args} {
     variable doc

@@ -23,6 +23,7 @@ foreach f {
     editors/audio.tcl
     editors/save_editor.tcl
     editors/preview.tcl
+    editors/assets.tcl
 } {
     source [file join $here $f]
 }
@@ -383,6 +384,11 @@ proc app::_create_centre_panel {f} {
     $nb add $aud -text "  Audio  "
     audio_ed::create $aud
 
+    # Assets
+    set ast [ttk::frame $nb.ast]
+    $nb add $ast -text "  Assets  "
+    assets_ed::create $ast
+
     # ROM Settings
     set rom [ttk::frame $nb.rom]
     $nb add $rom -text "  ROM Settings  "
@@ -669,6 +675,7 @@ proc app::_load_doc {doc} {
     physics_ed::load_doc $doc
     audio_ed::load_doc   $doc
     save_ed::load_doc    $doc
+    assets_ed::load_doc  $doc
     _refresh_level_list
     $::app_level_lb selection clear 0 end
     $::app_level_lb selection set 0

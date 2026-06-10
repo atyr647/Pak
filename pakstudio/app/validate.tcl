@@ -6,7 +6,7 @@ namespace eval validate {}
 proc validate::check_doc {doc} {
     set tmpdir [file join /tmp "pakstudio_validate_[pid]"]
     file mkdir $tmpdir
-    codegen::write_to_dir $doc $tmpdir
+    codegen::write_sources $doc $tmpdir
     set result [_run_pak_check $tmpdir]
     file delete -force $tmpdir
     return $result
