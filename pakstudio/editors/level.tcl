@@ -35,6 +35,7 @@ proc level_ed::_entity_color {type} {
         checkpoint    { return #00DDFF }
         spring        { return #FFCC00 }
         door          { return #8844AA }
+        goal          { return #FFFFFF }
         default       { return #FFFFFF }
     }
 }
@@ -149,8 +150,10 @@ proc level_ed::_make_toolbar {tb} {
     foreach {id lbl} {
         coin         "Coin"
         enemy_patrol "Patrol"
-        checkpoint   "Checkpoint"
+        enemy_jumper "Jumper"
         spring       "Spring"
+        checkpoint   "Checkpoint"
+        goal         "Goal"
         door         "Door"
     } {
         ttk::button $tb.ent_$id -text $lbl \

@@ -241,11 +241,36 @@ proc preview_ed::_draw_object {tx ty type ts} {
             $canvas create text $mx $my -text "E" \
                 -fill #ffaaaa -font "TkDefaultFont $fs bold"
         }
+        enemy_jumper {
+            $canvas create rectangle $x1 $y1 $x2 $y2 \
+                -fill #6e3818 -outline #ff8844 -width 1
+            $canvas create text $mx $my -text "J" \
+                -fill #ffccaa -font "TkDefaultFont $fs bold"
+        }
         spring {
             $canvas create rectangle $x1 [expr {$y2-5}] $x2 $y2 \
                 -fill #1d5c38 -outline #44cc88
             $canvas create text $mx [expr {$my-2}] -text "▲" \
                 -fill #44ff88 -font "TkDefaultFont $fs"
+        }
+        checkpoint {
+            $canvas create rectangle [expr {$mx-1}] $y1 [expr {$mx+1}] $y2 \
+                -fill #00ddff -outline {}
+            $canvas create rectangle $mx $y1 [expr {$mx+$r}] [expr {$y1+$r}] \
+                -fill #00aacc -outline {}
+            $canvas create text $mx $y2 -text "C" \
+                -fill #aaffff -anchor s -font "TkDefaultFont $fs bold"
+        }
+        goal {
+            $canvas create rectangle [expr {$mx-1}] [expr {$y1-$ts}] [expr {$mx+1}] $y2 \
+                -fill #ffffff -outline {}
+            $canvas create polygon \
+                [expr {$mx+1}] [expr {$y1-$ts}] \
+                $x2 [expr {$y1-$ts/2}] \
+                [expr {$mx+1}] $y1 \
+                -fill #ffcc00 -outline {}
+            $canvas create text $mx $my -text "G" \
+                -fill #ffee88 -font "TkDefaultFont $fs bold"
         }
         door {
             $canvas create rectangle $x1 $y1 $x2 $y2 \

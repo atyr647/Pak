@@ -395,13 +395,21 @@ proc app::_create_centre_panel {f} {
 proc app::_on_tab_changed {} {
     set nb  $::app_centre_nb
     set tab [$nb tab current -text]
-    switch -glob $tab {
-        "*Audio*"   { audio_ed::save_to_doc   }
-        "*ROM*"     { save_ed::save_to_doc    }
-        "*Physics*" { physics_ed::save_to_doc }
-        "*Preview*" { preview_ed::refresh     }
+    # Don't flush panel state into the doc until a project is actually loaded —
+    # tab changes fire while the notebook is first being populated.
+    if {![dict exists [project::current_doc] meta name]} {
+        if {[string match "*Preview*" $tab]} { catch { preview_ed::refresh } }
+        return
     }
-    _update_title
+    catch {
+        switch -glob $tab {
+            "*Audio*"   { audio_ed::save_to_doc   }
+            "*ROM*"     { save_ed::save_to_doc    }
+            "*Physics*" { physics_ed::save_to_doc }
+            "*Preview*" { preview_ed::refresh     }
+        }
+    }
+    catch { _update_title }
 }
 
 proc app::_on_level_changed {} {
@@ -673,7 +681,7 @@ proc app::_load_doc {doc} {
 
 proc app::_update_title {} {
     set doc [project::current_doc]
-    if {![dict exists $doc meta]} return
+    if {![dict exists $doc meta name]} return
     set name  [dict get $doc meta name]
     set path  [project::current_path]
     set dirty [project::is_dirty]

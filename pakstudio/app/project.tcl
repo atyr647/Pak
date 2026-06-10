@@ -84,6 +84,8 @@ proc project::_default_level {id name} {
             lset tiles [expr {$py * $W + $px + $dx}] 1
         }
     }
+    # A fresh project is a complete, winnable game out of the box:
+    # spawn, a few coins, one patrol enemy, a checkpoint, and a goal.
     return [dict create \
         id       $id \
         name     $name \
@@ -94,7 +96,13 @@ proc project::_default_level {id name} {
         music    "" \
         tiles    $tiles \
         objects  [list \
-            [dict create type player_start x 2 y 12] \
+            [dict create type player_start x 2  y 13] \
+            [dict create type coin         x 6  y 10] \
+            [dict create type coin         x 7  y 10] \
+            [dict create type coin         x 12 y 8] \
+            [dict create type enemy_patrol x 16 y 13] \
+            [dict create type checkpoint   x 20 y 13] \
+            [dict create type goal         x 30 y 13] \
         ] \
     ]
 }
@@ -130,6 +138,7 @@ proc project::_default_entity_types {genre} {
                 [dict create id checkpoint    label "Checkpoint"    ai static  health 0  speed 0.0  loot ""      color "#00FFAA"] \
                 [dict create id spring        label "Spring"        ai static  health 0  speed 0.0  loot ""      color "#FFCC00"] \
                 [dict create id door          label "Door"          ai static  health 0  speed 0.0  loot ""      color "#8844AA"] \
+                [dict create id goal          label "Goal / Exit"   ai static  health 0  speed 0.0  loot ""      color "#FFFFFF"] \
             ]
         }
         topdown {
