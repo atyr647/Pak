@@ -112,10 +112,16 @@ static inline void pak_rdpq_attach_clear(surface_t *s) { rdpq_attach_clear(s, NU
 /* eeprom_init: current libdragon has no init step. */
 #define eeprom_init() ((void)0)
 
-/* audio_get_buffer: the buffer API changed to write_begin/write_end. Until a
- * full adapter exists, report "not ready" so the game runs silently rather than
- * mis-driving the new API. (Audio codegen itself is validated via `pak check`.) */
-static inline short *pak_audio_get_buffer(void) { return (short *)0; }
+/* audio_get_buffer: old API returned a ready buffer or NULL; new API uses
+ * audio_write_begin() / audio_write_end().  Lazy-submit pattern: commit the
+ * previous frame's buffer on the NEXT call, so the caller fills it in between. */
+static int _pak_audio_pending = 0;
+static inline short *pak_audio_get_buffer(void) {
+    if (_pak_audio_pending) { audio_write_end(); _pak_audio_pending = 0; }
+    if (!audio_can_write()) return (short *)0;
+    _pak_audio_pending = 1;
+    return audio_write_begin();
+}
 #define audio_get_buffer() pak_audio_get_buffer()
 
 #endif /* PAK_API_BRIDGES */

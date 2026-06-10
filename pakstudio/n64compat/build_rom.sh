@@ -10,9 +10,8 @@
 # PakStudio's codegen). Requires N64_INST (default /opt/n64) with a current
 # libdragon + the mips64-elf toolchain.
 #
-# Note: this path covers procedural (asset-free) projects. Projects that bind
-# sprite/audio assets also need pak's PakFS layer, which does not yet build
-# against current libdragon — those should use a matching libdragon instead.
+# Covers both procedural (asset-free) and asset-bound projects. PakFS builds
+# cleanly against current libdragon via the pak_compat.h shim.
 
 set -euo pipefail
 
@@ -36,7 +35,6 @@ echo "[1/5] pak build (Pak -> C + Makefile)"
 MK="$PROJ/Makefile"
 # Inject the compat shim into CFLAGS and drop the (unused, non-building) PakFS.
 sed -i "s|CFLAGS  += -I\$(RUNTIME_DIR)|CFLAGS  += -I$COMPAT -include $COMPAT/pak_compat.h -I\$(RUNTIME_DIR)|" "$MK"
-sed -i 's| *runtime/pakfs.c||' "$MK"
 
 echo "[2/5] compile"
 # `make` builds the object then fails at its (libdragon-incompatible) link step;
