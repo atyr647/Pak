@@ -128,6 +128,7 @@ const ENEMY_SPEED:   f32 = 1.4
 const SHIP_W: i32 = 14
 const SHIP_H: i32 = 12
 const INVULN_F: i32 = 90
+const CTRL_DEADZONE: i32 = 40
 
 const MAX_BULLETS:  i32 = 16
 const MAX_ENEMIES:  i32 = 24
@@ -293,8 +294,19 @@ static level_len:  i32 = 1800
 
 # ── Core gameplay (orientation-aware via ORIENT branches) ────────────────────
 
+proc codegen::shmup::_fire_held_expr {doc} {
+    set jb a_or_b
+    if {[dict exists $doc controls jump_button]} { set jb [dict get $doc controls jump_button] }
+    switch -- $jb {
+        a       { return "pad.held.a" }
+        b       { return "pad.held.b" }
+        z       { return "pad.held.z" }
+        default { return "pad.held.a or pad.held.b" }
+    }
+}
+
 proc codegen::shmup::_gameplay_block {doc} {
-    return {-- ── Gameplay ─────────────────────────────────────────────────────────────────
+    set tmpl {-- ── Gameplay ─────────────────────────────────────────────────────────────────
 fn spawn_enemy(kind: i32, lane: i32) {
     let i: i32 = 0
     while i < MAX_ENEMIES {
@@ -385,15 +397,15 @@ fn hurt_ship() {
 fn ship_update(pad: joypad_status_t) {
     if gs.ship.invuln > 0 { gs.ship.invuln -= 1 }
     if gs.ship.cool > 0 { gs.ship.cool -= 1 }
-    if pad.held.left  { gs.ship.x -= PLAYER_SPEED }
-    if pad.held.right { gs.ship.x += PLAYER_SPEED }
-    if pad.held.up    { gs.ship.y -= PLAYER_SPEED }
-    if pad.held.down  { gs.ship.y += PLAYER_SPEED }
+    if @@LEFT@@  { gs.ship.x -= PLAYER_SPEED }
+    if @@RIGHT@@ { gs.ship.x += PLAYER_SPEED }
+    if @@UP@@    { gs.ship.y -= PLAYER_SPEED }
+    if @@DOWN@@  { gs.ship.y += PLAYER_SPEED }
     if gs.ship.x < 0.0 { gs.ship.x = 0.0 }
     if gs.ship.y < 16.0 { gs.ship.y = 16.0 }
     if gs.ship.x > (SCREEN_W - SHIP_W) as f32 { gs.ship.x = (SCREEN_W - SHIP_W) as f32 }
     if gs.ship.y > (SCREEN_H - SHIP_H) as f32 { gs.ship.y = (SCREEN_H - SHIP_H) as f32 }
-    if pad.held.a or pad.held.b { fire_bullet() }
+    if @@FIRE@@ { fire_bullet() }
 }
 
 fn enemies_update() {
@@ -503,6 +515,13 @@ fn any_enemy_alive() -> bool {
     return false
 }
 }
+    return [string map [list \
+        @@FIRE@@  [_fire_held_expr $doc] \
+        @@LEFT@@  [codegen::platformer::_left_expr  $doc] \
+        @@RIGHT@@ [codegen::platformer::_right_expr $doc] \
+        @@UP@@    [codegen::platformer::_up_expr    $doc] \
+        @@DOWN@@  [codegen::platformer::_down_expr  $doc] \
+    ] $tmpl]
 }
 
 # ── Level data (spawns from placed objects) ──────────────────────────────────
