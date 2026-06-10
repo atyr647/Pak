@@ -9,36 +9,15 @@ namespace eval assets_ed {
     variable panel ""      ;# path of the panel frame once built
 }
 
-# Sprite roles and their human labels.
-proc assets_ed::_sprite_roles {} {
-    return {
-        player       "Player"
-        enemy_patrol "Patrol Enemy"
-        enemy_jumper "Jumper Enemy"
-        coin         "Coin"
-        spring       "Spring"
-        checkpoint   "Checkpoint"
-        goal         "Goal / Exit"
-        tile_solid   "Solid Tile"
-        tile_oneway  "One-Way Tile"
-        tile_hazard  "Hazard Tile"
-        tile_ladder  "Ladder Tile"
-        background   "Background"
-    }
+# Roles are genre-driven (single source of truth in project.tcl) so the panel
+# always matches the active project's vocabulary (platformer vs shmup …).
+proc assets_ed::_genre {} {
+    set d [project::current_doc]
+    if {[dict exists $d meta genre]} { return [dict get $d meta genre] }
+    return platformer
 }
-
-proc assets_ed::_audio_roles {} {
-    return {
-        jump       "Jump"
-        coin       "Coin Pickup"
-        hurt       "Hurt"
-        stomp      "Stomp Enemy"
-        spring     "Spring Bounce"
-        checkpoint "Checkpoint"
-        win        "Win / Goal"
-        music      "Background Music"
-    }
-}
+proc assets_ed::_sprite_roles {} { return [project::sprite_roles [_genre]] }
+proc assets_ed::_audio_roles  {} { return [project::audio_roles  [_genre]] }
 
 proc assets_ed::create {parent} {
     variable thumbs
@@ -137,8 +116,23 @@ proc assets_ed::_clear {kind role} {
     catch { app::_update_title }
 }
 
+# Rebuild the role rows to match the document's genre, then populate them.
+proc assets_ed::_rebuild_rows {} {
+    set base [_panel]
+    if {$base eq "" || ![winfo exists $base.spr]} return
+    foreach w [winfo children $base.spr] { destroy $w }
+    foreach w [winfo children $base.aud] { destroy $w }
+    set r 0
+    foreach {role label} [_sprite_roles] { _make_sprite_row $base.spr $role $label $r; incr r }
+    set r 0
+    foreach {role label} [_audio_roles]  { _make_audio_row  $base.aud $role $label $r; incr r }
+    grid columnconfigure $base.spr 2 -weight 1
+    grid columnconfigure $base.aud 1 -weight 1
+}
+
 # Populate every row from the current document.
 proc assets_ed::load_doc {doc} {
+    _rebuild_rows
     foreach {role _} [_sprite_roles] { _refresh_row sprites $role }
     foreach {role _} [_audio_roles]  { _refresh_row audio   $role }
 }

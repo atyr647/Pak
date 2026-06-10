@@ -63,6 +63,43 @@ proc codegen::shmup::_orient {doc} {
     return 0
 }
 
+# ── Asset queries ────────────────────────────────────────────────────────────
+# Role ids mirror project::sprite_roles/audio_roles for the shmup genre.
+proc codegen::shmup::_sprite_roles {} {
+    return {ship enemy_straight enemy_sine enemy_turret boss bullet ebullet powerup background}
+}
+proc codegen::shmup::_sfx_roles {} {
+    return {shoot explode hit powerup}
+}
+proc codegen::shmup::_has_sprite {doc role} {
+    expr {[dict exists $doc assets sprites $role]
+          && [dict get $doc assets sprites $role] ne ""}
+}
+proc codegen::shmup::_has_audio {doc role} {
+    expr {[dict exists $doc assets audio $role]
+          && [dict get $doc assets audio $role] ne ""}
+}
+proc codegen::shmup::_any_sprite {doc} {
+    foreach r [_sprite_roles] { if {[_has_sprite $doc $r]} { return 1 } }
+    return 0
+}
+proc codegen::shmup::_any_sfx {doc} {
+    foreach r [_sfx_roles] { if {[_has_audio $doc $r]} { return 1 } }
+    return 0
+}
+proc codegen::shmup::_any_audio {doc} {
+    expr {[_any_sfx $doc] || [_has_audio $doc music]}
+}
+
+# Sprite blit snippet (copy mode) or a procedural fallback, for one role.
+# `ind` is the leading indentation for emitted lines.
+proc codegen::shmup::_spr_or {doc role args_str fallback ind} {
+    if {[_has_sprite $doc $role]} {
+        return "${ind}rdpq.sync_pipe()\n${ind}rdpq.set_mode_copy()\n${ind}sprite.blit(spr_${role}, ${args_str})\n${ind}rdpq.sync_pipe()"
+    }
+    return $fallback
+}
+
 # ── Fixed-point helper (reused convention) ───────────────────────────────────
 proc codegen::shmup::_f {v} {
     if {[string is integer -strict $v]} { return "${v}.0" }
@@ -76,8 +113,9 @@ proc codegen::shmup::_main_pk64 {doc} {
     set out {}
     lappend out [_header $doc]
     lappend out [_constants $doc]
+    lappend out [_asset_decls $doc]
     lappend out [codegen::platformer::_font_block]
-    lappend out [_audio_block]
+    lappend out [_audio_block $doc]
     lappend out [_gamestate_block]
     lappend out [codegen::platformer::_save_block $doc]
     lappend out [_gameplay_block $doc]
@@ -102,6 +140,49 @@ proc codegen::shmup::_header {doc} {
     lappend lines "use n64.math"
     if {[_save_on $doc]} {
         lappend lines "use n64.eeprom"
+    }
+    if {[_any_sprite $doc]} {
+        lappend lines "use n64.sprite"
+    }
+    if {[_any_audio $doc]} {
+        lappend lines "use n64.mixer"
+        lappend lines ""
+        lappend lines "extern \"C\" \{"
+        lappend lines "    fn wav64_open(wav: *wav64_t, path: *c_char)"
+        lappend lines "    fn wav64_play(wav: *wav64_t, channel: i32)"
+        lappend lines "    fn xm64player_open(xm: *xm64player_t, path: *c_char)"
+        lappend lines "    fn xm64player_play(xm: *xm64player_t, first_channel: i32)"
+        lappend lines "    fn xm64player_stop(xm: *xm64player_t)"
+        lappend lines "\}"
+    }
+    lappend lines ""
+    return [join $lines "\n"]
+}
+
+proc codegen::shmup::_asset_decls {doc} {
+    set lines {}
+    lappend lines "-- ── Asset bindings ───────────────────────────────────────────────────────────"
+    set any 0
+    foreach role [_sprite_roles] {
+        if {[_has_sprite $doc $role]} {
+            lappend lines "asset spr_${role}: Sprite from \"sprites/${role}.png\""
+            set any 1
+        }
+    }
+    foreach role [_sfx_roles] {
+        if {[_has_audio $doc $role]} {
+            lappend lines "asset snd_${role}_data: Sound from \"audio/${role}.wav\""
+            lappend lines "static snd_${role}: wav64_t = undefined"
+            set any 1
+        }
+    }
+    if {[_has_audio $doc music]} {
+        lappend lines "asset music_data: Sound from \"audio/music.xm\""
+        lappend lines "static music_player: xm64player_t = undefined"
+        set any 1
+    }
+    if {!$any} {
+        lappend lines "-- (none — using built-in procedural graphics & audio)"
     }
     lappend lines ""
     return [join $lines "\n"]
@@ -156,9 +237,55 @@ const SAVE_MAGIC_LO: u8 = 0x48
 "
 }
 
+# ── Sample-based audio (mixer + wav64/xm64) ──────────────────────────────────
+
+proc codegen::shmup::_audio_block_assets {doc} {
+    set chan {shoot 4 explode 5 hit 6 powerup 7}
+    set lines {}
+    lappend lines "-- ── Sample-based audio (mixer + wav64/xm64) ──────────────────────────────────"
+    lappend lines "fn snd_init() \{"
+    lappend lines "    audio.init(44100, 4)"
+    lappend lines "    mixer.init(16)"
+    foreach role [_sfx_roles] {
+        if {[_has_audio $doc $role]} {
+            lappend lines "    wav64_open(&snd_${role}, \"rom:/audio/${role}.wav64\")"
+        }
+    }
+    if {[_has_audio $doc music]} {
+        lappend lines "    xm64player_open(&music_player, \"rom:/audio/music.xm64\")"
+    }
+    lappend lines "\}"
+    lappend lines ""
+    lappend lines "fn fill_audio() \{"
+    lappend lines "    let abuf = audio.get_buffer()"
+    lappend lines "    if abuf != none \{ mixer.poll(*abuf) \}"
+    lappend lines "\}"
+    lappend lines ""
+    if {[_has_audio $doc music]} {
+        lappend lines "fn music_start() \{ xm64player_play(&music_player, 0) \}"
+        lappend lines "fn music_stop()  \{ xm64player_stop(&music_player) \}"
+    } else {
+        lappend lines "fn music_start() \{ \}"
+        lappend lines "fn music_stop()  \{ \}"
+    }
+    lappend lines ""
+    foreach {role ch} $chan {
+        if {[_has_audio $doc $role]} {
+            lappend lines "fn sfx_${role}() \{ if not mixer.ch_playing(${ch}) \{ wav64_play(&snd_${role}, ${ch}) \} \}"
+        } else {
+            lappend lines "fn sfx_${role}() \{ \}"
+        }
+    }
+    lappend lines ""
+    return [join $lines "\n"]
+}
+
 # ── Procedural audio (asset-free, shmup voices) ──────────────────────────────
 
-proc codegen::shmup::_audio_block {} {
+proc codegen::shmup::_audio_block {doc} {
+    if {[_any_audio $doc]} {
+        return [_audio_block_assets $doc]
+    }
     return {-- ── Procedural sound engine (asset-free) ─────────────────────────────────────
 const SR: i32 = 44100
 
@@ -853,42 +980,45 @@ proc codegen::shmup::_load_level {doc} {
 
 # ── Rendering ────────────────────────────────────────────────────────────────
 
+# Per-enemy draw snippet: procedural rect (no sprites) or a per-kind blit/rect
+# dispatch. Uses loop locals ex, ey and enemies[i].
+proc codegen::shmup::_enemy_draw {doc} {
+    set rect {            rdpq.sync_pipe()
+            rdpq.set_mode_fill(enemies[i].color)
+            rdpq.fill_rectangle(ex, ey, ex + 14, ey + 14)
+            rdpq.set_fill_color(0x000000FF)
+            rdpq.fill_rectangle(ex + 3, ey + 5, ex + 5, ey + 8)
+            rdpq.fill_rectangle(ex + 9, ey + 5, ex + 11, ey + 8)}
+    set s0 [_has_sprite $doc enemy_straight]
+    set s1 [_has_sprite $doc enemy_sine]
+    set s2 [_has_sprite $doc enemy_turret]
+    if {!$s0 && !$s1 && !$s2} { return $rect }
+    set b0 [expr {$s0 ? "            rdpq.sync_pipe()\n            rdpq.set_mode_copy()\n            sprite.blit(spr_enemy_straight, ex, ey, 0)" : $rect}]
+    set b1 [expr {$s1 ? "            rdpq.sync_pipe()\n            rdpq.set_mode_copy()\n            sprite.blit(spr_enemy_sine, ex, ey, 0)" : $rect}]
+    set b2 [expr {$s2 ? "            rdpq.sync_pipe()\n            rdpq.set_mode_copy()\n            sprite.blit(spr_enemy_turret, ex, ey, 0)" : $rect}]
+    return "            if enemies\[i\].kind == 0 \{\n$b0\n            \} elif enemies\[i\].kind == 1 \{\n$b1\n            \} else \{\n$b2\n            \}"
+}
+
 proc codegen::shmup::_render_block {doc} {
     set name [string toupper [dict get $doc meta name]]
     regsub -all {[^A-Z0-9 :.!-]} $name " " name
     set name [string range $name 0 19]
-    return "fn render_stars() \{
+    set tmpl "fn render_stars() \{
     rdpq.set_mode_fill(0x070A14FF)
     rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
     rdpq.sync_pipe()
-    let i: i32 = 0
-    while i < 48 \{
-        let base: i32 = i * 71 + 13
-        let sx: i32 = 0
-        let sy: i32 = 0
-        if ORIENT == 0 \{
-            sx = (base + (SCREEN_W - gs.scroll % SCREEN_W) * (1 + i % 3)) % SCREEN_W
-            sy = (i * 37 + i * i * 7) % SCREEN_H
-        \} else \{
-            sx = (i * 37 + i * i * 7) % SCREEN_W
-            sy = (base + (gs.scroll % SCREEN_H) * (1 + i % 3)) % SCREEN_H
-        \}
-        rdpq.set_fill_color(0xFFFFFFFF)
-        rdpq.fill_rectangle(sx, sy, sx + 1 + i % 2, sy + 1 + i % 2)
-        i += 1
-    \}
+@@BG@@
     rdpq.sync_pipe()
 \}
 
 fn render_play() \{
     render_stars()
-    rdpq.set_mode_fill(0xFFEE44FF)
     let i: i32 = 0
     while i < MAX_BULLETS \{
         if bullets\[i\].active \{
             let bx: i32 = bullets\[i\].x as i32
             let by: i32 = bullets\[i\].y as i32
-            rdpq.fill_rectangle(bx, by, bx + 6, by + 2)
+@@BULLET@@
         \}
         i += 1
     \}
@@ -898,41 +1028,28 @@ fn render_play() \{
         if enemies\[i\].alive \{
             let ex: i32 = enemies\[i\].x as i32
             let ey: i32 = enemies\[i\].y as i32
-            rdpq.set_fill_color(enemies\[i\].color)
-            rdpq.fill_rectangle(ex, ey, ex + 14, ey + 14)
-            rdpq.set_fill_color(0x000000FF)
-            rdpq.fill_rectangle(ex + 3, ey + 5, ex + 5, ey + 8)
-            rdpq.fill_rectangle(ex + 9, ey + 5, ex + 11, ey + 8)
+@@ENEMY@@
         \}
         i += 1
     \}
     rdpq.sync_pipe()
-    rdpq.set_mode_fill(0xFF66FFFF)
     i = 0
     while i < MAX_EBULLETS \{
         if ebullets\[i\].active \{
             let xx: i32 = ebullets\[i\].x as i32
             let yy: i32 = ebullets\[i\].y as i32
-            rdpq.fill_rectangle(xx, yy, xx + 4, yy + 4)
+@@EBULLET@@
         \}
         i += 1
     \}
     rdpq.sync_pipe()
-    -- power-ups (green = weapon, orange = bomb, pink = extra life)
-    rdpq.set_mode_fill(0x44FF44FF)
+    -- power-ups
     i = 0
     while i < MAX_POWERUPS \{
         if powerups\[i\].active \{
             let px: i32 = powerups\[i\].x as i32
             let py: i32 = powerups\[i\].y as i32
-            let pc: u32 = 0x44FF44FF
-            if powerups\[i\].kind == PU_BOMB \{ pc = 0xFFAA22FF \}
-            if powerups\[i\].kind == PU_LIFE \{ pc = 0xFF66AAFF \}
-            rdpq.set_fill_color(pc)
-            rdpq.fill_rectangle(px, py, px + 12, py + 12)
-            rdpq.set_fill_color(0xFFFFFFFF)
-            rdpq.fill_rectangle(px + 5, py + 2, px + 7, py + 10)
-            rdpq.fill_rectangle(px + 2, py + 5, px + 10, py + 7)
+@@POWERUP@@
         \}
         i += 1
     \}
@@ -941,14 +1058,7 @@ fn render_play() \{
     if gs.boss_active \{
         let bx: i32 = gs.boss_x as i32
         let by: i32 = gs.boss_y as i32
-        rdpq.set_mode_fill(0xCC3344FF)
-        rdpq.fill_rectangle(bx, by, bx + 40, by + 40)
-        rdpq.set_fill_color(0x661122FF)
-        rdpq.fill_rectangle(bx + 8, by + 14, bx + 18, by + 24)
-        rdpq.fill_rectangle(bx + 22, by + 14, bx + 32, by + 24)
-        rdpq.set_fill_color(0xFFCC00FF)
-        rdpq.fill_rectangle(bx + 10, by + 16, bx + 14, by + 20)
-        rdpq.fill_rectangle(bx + 26, by + 16, bx + 30, by + 20)
+@@BOSSBODY@@
         rdpq.sync_pipe()
     \}
     -- explosions (expanding flash)
@@ -973,14 +1083,7 @@ fn render_play() \{
     \} else \{
         let sx: i32 = gs.ship.x as i32
         let sy: i32 = gs.ship.y as i32
-        rdpq.set_mode_fill(0x44DDFFFF)
-        rdpq.fill_rectangle(sx, sy + 3, sx + SHIP_W, sy + SHIP_H - 3)
-        rdpq.set_fill_color(0xFFFFFFFF)
-        if ORIENT == 0 \{
-            rdpq.fill_rectangle(sx + SHIP_W - 4, sy + 5, sx + SHIP_W, sy + 7)
-        \} else \{
-            rdpq.fill_rectangle(sx + 6, sy, sx + 8, sy + 4)
-        \}
+@@SHIP@@
     \}
     rdpq.sync_pipe()
     -- boss HP bar
@@ -1080,6 +1183,68 @@ fn render() \{
     rdpq.detach_show()
 \}
 "
+    # ── Background ────────────────────────────────────────────────────────────
+    if {[_has_sprite $doc background]} {
+        set bg "    rdpq.set_mode_copy()\n    sprite.blit(spr_background, 0, 0, 0)"
+    } else {
+        set bg {    let i: i32 = 0
+    while i < 48 {
+        let base: i32 = i * 71 + 13
+        let sx: i32 = 0
+        let sy: i32 = 0
+        if ORIENT == 0 {
+            sx = (base + (SCREEN_W - gs.scroll % SCREEN_W) * (1 + i % 3)) % SCREEN_W
+            sy = (i * 37 + i * i * 7) % SCREEN_H
+        } else {
+            sx = (i * 37 + i * i * 7) % SCREEN_W
+            sy = (base + (gs.scroll % SCREEN_H) * (1 + i % 3)) % SCREEN_H
+        }
+        rdpq.set_fill_color(0xFFFFFFFF)
+        rdpq.fill_rectangle(sx, sy, sx + 1 + i % 2, sy + 1 + i % 2)
+        i += 1
+    }}
+    }
+    # ── Per-entity draw snippets (sprite blit or procedural fill) ──────────────
+    set bullet [_spr_or $doc bullet "bx, by, 0" {            rdpq.sync_pipe()
+            rdpq.set_mode_fill(0xFFEE44FF)
+            rdpq.fill_rectangle(bx, by, bx + 6, by + 2)} "            "]
+    set ebul [_spr_or $doc ebullet "xx, yy, 0" {            rdpq.sync_pipe()
+            rdpq.set_mode_fill(0xFF66FFFF)
+            rdpq.fill_rectangle(xx, yy, xx + 4, yy + 4)} "            "]
+    set pu [_spr_or $doc powerup "px, py, 0" {            let pc: u32 = 0x44FF44FF
+            if powerups[i].kind == PU_BOMB { pc = 0xFFAA22FF }
+            if powerups[i].kind == PU_LIFE { pc = 0xFF66AAFF }
+            rdpq.sync_pipe()
+            rdpq.set_mode_fill(pc)
+            rdpq.fill_rectangle(px, py, px + 12, py + 12)
+            rdpq.set_fill_color(0xFFFFFFFF)
+            rdpq.fill_rectangle(px + 5, py + 2, px + 7, py + 10)
+            rdpq.fill_rectangle(px + 2, py + 5, px + 10, py + 7)} "            "]
+    set boss [_spr_or $doc boss "bx, by, 0" {        rdpq.set_mode_fill(0xCC3344FF)
+        rdpq.fill_rectangle(bx, by, bx + 40, by + 40)
+        rdpq.set_fill_color(0x661122FF)
+        rdpq.fill_rectangle(bx + 8, by + 14, bx + 18, by + 24)
+        rdpq.fill_rectangle(bx + 22, by + 14, bx + 32, by + 24)
+        rdpq.set_fill_color(0xFFCC00FF)
+        rdpq.fill_rectangle(bx + 10, by + 16, bx + 14, by + 20)
+        rdpq.fill_rectangle(bx + 26, by + 16, bx + 30, by + 20)} "        "]
+    set ship [_spr_or $doc ship "sx, sy, 0" {        rdpq.set_mode_fill(0x44DDFFFF)
+        rdpq.fill_rectangle(sx, sy + 3, sx + SHIP_W, sy + SHIP_H - 3)
+        rdpq.set_fill_color(0xFFFFFFFF)
+        if ORIENT == 0 {
+            rdpq.fill_rectangle(sx + SHIP_W - 4, sy + 5, sx + SHIP_W, sy + 7)
+        } else {
+            rdpq.fill_rectangle(sx + 6, sy, sx + 8, sy + 4)
+        }} "        "]
+    return [string map [list \
+        @@BG@@       $bg \
+        @@BULLET@@   $bullet \
+        @@ENEMY@@    [_enemy_draw $doc] \
+        @@EBULLET@@  $ebul \
+        @@POWERUP@@  $pu \
+        @@BOSSBODY@@ $boss \
+        @@SHIP@@     $ship \
+    ] $tmpl]
 }
 
 # ── Update / start ───────────────────────────────────────────────────────────

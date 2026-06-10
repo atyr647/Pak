@@ -47,7 +47,7 @@ proc project::new {genre {name "Untitled"}} {
         dialogue [list] \
         quests   [list] \
         flags    [dict create] \
-        assets   [_default_assets] \
+        assets   [_default_assets $genre] \
     ]
     set path  ""
     set dirty false
@@ -59,33 +59,75 @@ proc project::new {genre {name "Untitled"}} {
 # or "" meaning "use the built-in procedural shape/synth for this role".
 # Sprite roles convert PNG → .sprite; audio roles convert WAV → .wav64 (sfx)
 # or XM → .xm64 (music). An empty project assigns nothing and stays asset-free.
-proc project::_default_assets {} {
-    return [dict create \
-        sprites [dict create \
-            player       "" \
-            enemy_patrol "" \
-            enemy_jumper "" \
-            coin         "" \
-            spring       "" \
-            checkpoint   "" \
-            goal         "" \
-            tile_solid   "" \
-            tile_oneway  "" \
-            tile_hazard  "" \
-            tile_ladder  "" \
-            background   "" \
-        ] \
-        audio [dict create \
-            jump       "" \
-            coin       "" \
-            hurt       "" \
-            stomp      "" \
-            spring     "" \
-            checkpoint "" \
-            win        "" \
-            music      "" \
-        ] \
-    ]
+# Asset roles per genre, as {id label id label …}. Single source of truth used
+# by the project model (default bindings), the Assets tab (UI rows) and mirrored
+# by each codegen backend.
+proc project::sprite_roles {genre} {
+    switch $genre {
+        shmup {
+            return {
+                ship           "Player Ship"
+                enemy_straight "Enemy: Straight"
+                enemy_sine     "Enemy: Sine"
+                enemy_turret   "Enemy: Turret"
+                boss           "Boss"
+                bullet         "Player Bullet"
+                ebullet        "Enemy Bullet"
+                powerup        "Power-Up"
+                background     "Background"
+            }
+        }
+        default {
+            return {
+                player       "Player"
+                enemy_patrol "Patrol Enemy"
+                enemy_jumper "Jumper Enemy"
+                coin         "Coin"
+                spring       "Spring"
+                checkpoint   "Checkpoint"
+                goal         "Goal / Exit"
+                tile_solid   "Solid Tile"
+                tile_oneway  "One-Way Tile"
+                tile_hazard  "Hazard Tile"
+                tile_ladder  "Ladder Tile"
+                background   "Background"
+            }
+        }
+    }
+}
+
+proc project::audio_roles {genre} {
+    switch $genre {
+        shmup {
+            return {
+                shoot   "Shoot"
+                explode "Explosion"
+                hit     "Player Hit"
+                powerup "Power-Up"
+                music   "Background Music"
+            }
+        }
+        default {
+            return {
+                jump       "Jump"
+                coin       "Coin Pickup"
+                hurt       "Hurt"
+                stomp      "Stomp Enemy"
+                spring     "Spring Bounce"
+                checkpoint "Checkpoint"
+                win        "Win / Goal"
+                music      "Background Music"
+            }
+        }
+    }
+}
+
+proc project::_default_assets {genre} {
+    set sprites [dict create]
+    foreach {id label} [sprite_roles $genre] { dict set sprites $id "" }
+    set audio [dict create]
+    foreach {id label} [audio_roles $genre] { dict set audio $id "" }
+    return [dict create sprites $sprites audio $audio]
 }
 
 # Controller mapping. jump_button: a | b | a_or_b | z. move_input: dpad |
@@ -302,7 +344,8 @@ proc project::load_from {filepath} {
     if {$ver > $SCHEMA_VERSION} { error "File requires newer PakStudio (schema v$ver)" }
     # Forward-migrate projects saved before the asset pipeline existed.
     if {![dict exists $raw assets]} {
-        dict set raw assets [_default_assets]
+        set g [expr {[dict exists $raw meta genre] ? [dict get $raw meta genre] : "platformer"}]
+        dict set raw assets [_default_assets $g]
     }
     # Forward-migrate projects saved before controller config existed.
     if {![dict exists $raw controls]} {
@@ -320,7 +363,10 @@ proc project::load_from {filepath} {
 proc project::set_asset {kind role path} {
     variable doc
     variable dirty
-    if {![dict exists $doc assets]} { dict set doc assets [_default_assets] }
+    if {![dict exists $doc assets]} {
+        set g [expr {[dict exists $doc meta genre] ? [dict get $doc meta genre] : "platformer"}]
+        dict set doc assets [_default_assets $g]
+    }
     dict set doc assets $kind $role $path
     set dirty true
 }

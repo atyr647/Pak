@@ -280,6 +280,45 @@ lset lvls 0 $l0
 dict set d levels $lvls
 check_doc_passes "shmup no enemies" $d
 
+# ── Shmup asset pipeline (parity with platformer; pak check gate) ─────────────
+
+puts "\n=== shmup asset pipeline: codegen + pak check across asset configs ==="
+
+proc shmup_with {name sprites audio} {
+    project::new shmup $name
+    foreach r $sprites { project::set_asset sprites $r "art/$r.png" }
+    foreach r $audio   { project::set_asset audio   $r "snd/$r.wav" }
+    return [project::current_doc]
+}
+
+# default (procedural) emits no sprite/mixer use and keeps the synth engine
+set pakd [dict get [codegen::generate [project::new shmup "Proc"]] "src/main.pk64"]
+assert "shmup proc: no sprite use"  {![string match "*use n64.sprite*" $pakd]}
+assert "shmup proc: no mixer use"   {![string match "*use n64.mixer*" $pakd]}
+assert "shmup proc: procedural synth" {[string match "*fn square_at(*" $pakd]}
+assert "shmup proc: starfield bg"   {[string match "*while i < 48*" $pakd]}
+
+check_doc_passes "shmup sprites only" [shmup_with "S1" {ship enemy_straight enemy_sine enemy_turret boss bullet ebullet powerup background} {}]
+check_doc_passes "shmup audio only"  [shmup_with "S2" {} {shoot explode hit powerup music}]
+check_doc_passes "shmup full"        [shmup_with "S3" {ship enemy_straight enemy_sine enemy_turret boss bullet ebullet powerup background} {shoot explode hit powerup music}]
+check_doc_passes "shmup one-enemy-sprite" [shmup_with "S4" {enemy_sine} {}]
+
+# structural: bound config switches on the asset-aware paths
+set pakf [dict get [codegen::generate [shmup_with "S5" {ship background} {shoot music}]] "src/main.pk64"]
+assert "shmup assets: use n64.sprite"   {[string match "*use n64.sprite*" $pakf]}
+assert "shmup assets: use n64.mixer"    {[string match "*use n64.mixer*" $pakf]}
+assert "shmup assets: ship sprite decl" {[string match "*asset spr_ship: Sprite*" $pakf]}
+assert "shmup assets: ship blit"        {[string match "*sprite.blit(spr_ship*" $pakf]}
+assert "shmup assets: bg blit"          {[string match "*sprite.blit(spr_background*" $pakf]}
+assert "shmup assets: wav64 open shoot" {[string match "*wav64_open(&snd_shoot*" $pakf]}
+assert "shmup assets: xm64 music"       {[string match "*xm64player_open(&music_player*" $pakf]}
+assert "shmup assets: mixer poll"       {[string match "*mixer.poll(*" $pakf]}
+
+# per-kind enemy sprites: a kind without a sprite falls back to a rect
+set pakm [dict get [codegen::generate [shmup_with "S6" {enemy_turret} {}]] "src/main.pk64"]
+assert "shmup mixed: turret blit"      {[string match "*sprite.blit(spr_enemy_turret*" $pakm]}
+assert "shmup mixed: straight rect"    {[string match "*rdpq.fill_rectangle(ex, ey, ex + 14, ey + 14)*" $pakm]}
+
 # ── Asset pipeline ────────────────────────────────────────────────────────────
 
 puts "\n=== asset pipeline: codegen + pak check across asset configs ==="
