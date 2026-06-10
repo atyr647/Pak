@@ -167,10 +167,54 @@ static void blitf(int dx,int dy,const char*const*a,int w,int h,int sc){
  for(int y=0;y<h;y++){const char*row=a[y]; int len=0; while(row[len])len++;
   for(int x=0;x<w;x++){int sx=w-1-x; uint16_t c=pal(sx<len?row[sx]:' '); if(!c)continue;
    if(sc==1)put(dx+x,dy+y,c); else fillr(dx+x*sc,dy+y*sc,sc,sc,c);}}}
+/* soft elliptical ground shadow (smooth edge, not a diamond) */
 static void gshadow(int cx,int cy,int rw,int rh){
- for(int dy=-rh;dy<=rh;dy++){int hf=rw-(dy<0?-dy:dy)*rw/rh; int y=cy+dy;
+ if(rh<1)rh=1;
+ for(int dy=-rh;dy<=rh;dy++){int hf=rw*isqrt(rh*rh-dy*dy)/rh; int y=cy+dy;
   for(int dx=-hf;dx<=hf;dx++){int x=cx+dx; if((unsigned)x<W&&(unsigned)y<H){
    uint16_t*p=&fb[y*stride_px+x]; *p=C(((*p>>11)&31)*5/8,((*p>>6)&31)*5/8,((*p>>1)&31)*5/8);}}}}
+
+/* additive light: raise a pixel's 5-bit channels with clamp */
+static void lighten(int x,int y,int dr,int dg,int db){
+ if((unsigned)x>=W||(unsigned)y>=H)return;
+ uint16_t*p=&fb[y*stride_px+x];
+ int r=((*p>>11)&31)+dr,g=((*p>>6)&31)+dg,b=((*p>>1)&31)+db;
+ if(r>31)r=31; if(g>31)g=31; if(b>31)b=31;
+ *p=C(r,g,b);}
+
+/* a single moon: lit upper-left, terminator shading, craters — all clipped
+ * inside one disc so it can never read as two overlapping moons */
+static void moon(int cx,int cy,int r){
+ for(int dy=-r;dy<=r;dy++){int hf=isqrt(r*r-dy*dy);
+  for(int dx=-hf;dx<=hf;dx++){
+   int v=27-((dx+dy)*6)/r;          /* light from upper-left */
+   if(v>31)v=31; if(v<19)v=19;
+   put(cx+dx,cy+dy,C(v,v,v-3));}}
+ disc(cx-r/3,cy+r/4,r/5,C(22,23,19));   /* craters (inside the disc) */
+ disc(cx+r/4,cy-r/6,r/7,C(23,24,20));
+ disc(cx+r/3,cy+r/3,r/8,C(22,23,19));
+}
+/* dithered glow halo ring around the moon */
+static void moon_halo(int cx,int cy,int r0,int r1){
+ for(int dy=-r1;dy<=r1;dy++)for(int dx=-r1;dx<=r1;dx++){
+  int d2=dx*dx+dy*dy; if(d2>r1*r1||d2<r0*r0)continue;
+  if(((dx+dy)&1)==0) lighten(cx+dx,cy+dy,1,1,2);}}
+/* volumetric moonbeam: widening dithered shaft from the moon to a target */
+static void moonbeam(int mx,int my,int tx,int ty){
+ for(int y=my+28;y<ty+28&&y<H;y++){
+  int t=(y-my)*256/(ty-my);
+  int cxl=mx+((tx-mx)*t>>8);
+  int hw=10+(t*46>>8);
+  for(int x=cxl-hw;x<=cxl+hw;x++){
+   if((x+y)&1)continue;
+   int ax=x-cxl; if(ax<0)ax=-ax;
+   if(ax<hw/3) lighten(x,y,2,2,3); else lighten(x,y,1,1,2);}}}
+/* pool of moonlight where the beam lands */
+static void lightpool(int cx,int cy,int rw,int rh){
+ if(rh<1)rh=1;
+ for(int dy=-rh;dy<=rh;dy++){int hf=rw*isqrt(rh*rh-dy*dy)/rh;
+  for(int dx=-hf;dx<=hf;dx++){
+   if(((dx+dy)&1)==0) lighten(cx+dx,cy+dy,1,2,3); else lighten(cx+dx,cy+dy,0,1,1);}}}
 
 /* ── handcrafted 16x16 terrain tiles ──────────────────────────────────────── */
 static const char* A_grass[16]={
@@ -270,6 +314,17 @@ static void blit_robe(int dx,int dy,const char*const*a,int w,int h,int sc,uint16
   for(int x=0;x<w;x++){char ch=x<len?row[x]:' '; uint16_t c=(ch=='M')?M:((ch=='m')?m:pal(ch));
    if(!c)continue; if(sc==1)put(dx+x,dy+y,c); else fillr(dx+x*sc,dy+y*sc,sc,sc,c);}}}
 
+/* moonlit rim light: pale edge on every sprite pixel whose top/left neighbour
+ * is transparent — reads as light falling on the unit from above-left */
+static void blit_rim(int dx,int dy,const char*const*a,int w,int h,int sc,uint16_t rim){
+ for(int y=0;y<h;y++){const char*row=a[y]; int len=0; while(row[len])len++;
+  const char*up=(y>0)?a[y-1]:0; int ulen=0; if(up){while(up[ulen])ulen++;}
+  for(int x=0;x<w;x++){char ch=(x<len)?row[x]:' '; if(!pal(ch))continue;
+   char cu=(up&&x<ulen)?up[x]:' ';
+   if(!pal(cu)) fillr(dx+x*sc,dy+y*sc,sc,1,rim);
+   char cl=(x>0&&x-1<len)?row[x-1]:' ';
+   if(!pal(cl)) fillr(dx+x*sc,dy+y*sc,1,sc,rim);}}}
+
 /* hero — 16x22, three facings (side flipped for left) */
 static const char* A_hero_dn[22]={
  ".....XXXXXX.....","....XjjjjjjX....","...XjJJJJJJjX...","...XjiiiiiijX...",
@@ -293,13 +348,14 @@ static const char* A_hero_sd[22]={
  "..XvvXvvX.......","..XOOXOOX.......","..XOOXOOX.......",".XXOOXOOXX......",
  "..XX..XX.......","................"};
 
+/* cy = FEET position; shadow sits exactly under the feet (art feet row 20) */
 static void hero(int cx,int cy,int dir,int step){
- gshadow(cx,cy+20,11,4);
- int dx=cx-16, dy=cy-26+(step?1:0);
- if(dir==1) blit(dx,dy,A_hero_up,16,22,2);
- else if(dir==2) blitf(dx,dy,A_hero_sd,16,22,2);
- else if(dir==3) blit(dx,dy,A_hero_sd,16,22,2);
- else blit(dx,dy,A_hero_dn,16,22,2);
+ gshadow(cx,cy+1,11,4);
+ int dy=cy-40+(step?2:0);
+ if(dir==1) blit(cx-16,dy,A_hero_up,16,22,2);
+ else if(dir==2) blitf(cx-22,dy,A_hero_sd,16,22,2);   /* side art is left-packed */
+ else if(dir==3) blit(cx-10,dy,A_hero_sd,16,22,2);
+ else blit(cx-16,dy,A_hero_dn,16,22,2);
 }
 
 /* generic villager (robe via M/m recolour) — elder, shopkeeper, party portraits */
@@ -310,9 +366,10 @@ static const char* A_villager[22]={
  "..XMmMMMMMmMX..","...XMMMMMMX....","...XMMMMMMX....","...XMMMMMMX....",
  "...XMMMMMMX....","...XMmmmmMX....","...XMMMMMMX....","....XMMMMX.....",
  "....XO..OX.....","....XX..XX....."};
+/* cy = FEET position (art feet row 21) */
 static void npc(int cx,int cy,uint16_t robe,uint16_t robeH,uint16_t hairc){
- (void)hairc; gshadow(cx,cy+20,11,4);
- blit_robe(cx-16,cy-26,A_villager,16,22,2,robe,robeH);
+ (void)hairc; gshadow(cx,cy+1,11,4);
+ blit_robe(cx-16,cy-42,A_villager,16,22,2,robe,robeH);
 }
 
 /* enemies */
@@ -331,9 +388,10 @@ static const char* A_bat[12]={
  "................","k...........k...","kk.kkkkkkk.kk...","kKkkLLLLLkkKk...",
  "kLLLk@@@kLLLk...","kLLLLLLLLLLLk...",".kLLz@LLL@zLLk..","..kLLLLLLLLk....",
  "...kkLLLLkk.....",".....kLLk.......","......kk........","................"};
-static void slime(int cx,int cy,int f){ int b=(f>>3)&1; gshadow(cx,cy+12,12,4);
- blit(cx-16,cy-14-b,A_slime,16,16,2); }
-static void goblin(int cx,int cy){ gshadow(cx,cy+18,12,4); blit(cx-16,cy-22,A_goblin,16,20,2); }
+/* cy = FEET position for all ground units */
+static void slime(int cx,int cy,int f){ int b=(f>>3)&1; gshadow(cx,cy+1,12,4);
+ blit(cx-16,cy-30+b*2,A_slime,16,16,2); }
+static void goblin(int cx,int cy){ gshadow(cx,cy+1,12,4); blit(cx-16,cy-38,A_goblin,16,20,2); }
 static void bat(int cx,int cy,int f){ int b=(f>>2)&1; blit(cx-16,cy-12+b*2,A_bat,16,12,2); }
 
 /* Forest Warden boss — 24x28, ancient treant */
@@ -348,11 +406,12 @@ static const char* A_warden[28]={
  ".....nOOOWWWWOOOn......","....nnOOOOOOOOOOnn.....","...nnOOOnnnnOOOnn n....",
  "..nnOOnn....nnOOnn.....",".nOOnn........nnOOn....","nOOn............nOOn...",
  "nn................nn..."};
+/* cy = FEET position (art feet row 27) */
 static void warden(int cx,int cy,int f){
- gshadow(cx,cy+46,42,11);
- blit(cx-36,cy-44,A_warden,24,28,3);   /* 72x84 — towering treant */
+ gshadow(cx,cy+2,30,8);
+ blit(cx-36,cy-81,A_warden,24,28,3);   /* 72x84 — towering treant */
  /* glowing eyes flicker */
- int gl=(f>>3)&1; if(gl){ disc(cx-15,cy+10,5,C(31,28,6)); disc(cx+15,cy+10,5,C(31,28,6)); }
+ int gl=(f>>3)&1; if(gl){ disc(cx-7,cy-29,4,C(31,28,6)); disc(cx+7,cy-29,4,C(31,28,6)); }
 }
 
 /* ════════════════ SCENES ════════════════ */
@@ -360,7 +419,7 @@ static void scene_title(int f){
  vgrad(0,0,W,300, 8,8,34, 26,20,58);          /* dusk sky */
  for(int i=0;i<90;i++){int n=hsh(i*257); int x=((n&1023)+f/4)%W, y=(n>>10)&255;
    if(y<260) put_rgb(x,y, 180+((n>>4)&60),180+((n>>2)&60),200);}
- /* moon */ disc(540,80,34,C(30,30,26)); disc(528,72,30,C(26,27,22)); disc(548,90,8,C(22,23,20));
+ moon(540,80,30); moon_halo(540,80,32,44);
  /* hills */
  for(int x=0;x<W;x++){int hh=300+ (isqrt((x*3)&255)) - (x/20%7); for(int y=hh;y<340;y++)put_rgb(x,y,16,40,22);}
  vgrad(0,330,W,40, 14,46,24, 22,70,32);
@@ -372,8 +431,8 @@ static void scene_title(int f){
  /* meadow + characters */
  vgrad(0,360,W,120, 22,72,32, 12,52,22);
  for(int i=0;i<60;i++){int n=hsh(i*97); put_rgb((n&1023)%W,360+((n>>10)&119),20,90,36);}
- hero(150,400,3,(f>>3)&1);
- npc(470,402,C(22,6,8),C(28,10,12),C(7,5,3));
+ hero(150,414,3,(f>>3)&1);
+ npc(470,418,C(22,6,8),C(28,10,12),C(7,5,3));
  /* logo */
  gtext_sh(120,90,"RIVERDALE",6,C(31,26,8),C(8,4,1));
  gtext_sh(232,160,"SAGA",6,C(31,18,6),C(8,3,1));
@@ -393,14 +452,14 @@ static void hud_top(){
 }
 static void scene_overworld(int f){
  draw_map(f);
- /* NPCs stand on grass beside their houses (not on the rooftops) */
- npc(2*TS+16,5*TS+16,C(22,8,26),C(28,12,31),C(7,5,3));     /* elder, left of left house */
- npc(15*TS+16,12*TS+16,C(8,20,12),C(13,27,17),C(20,13,5)); /* shopkeep, right of shop */
- /* hero patrols the open main path (row 4 — all walkable) */
+ /* NPCs stand on grass beside their houses (feet-anchored, not on rooftops) */
+ npc(2*TS+16,5*TS+30,C(22,8,26),C(28,12,31),C(7,5,3));     /* elder, left of left house */
+ npc(15*TS+16,12*TS+30,C(8,20,12),C(13,27,17),C(20,13,5)); /* shopkeep, right of shop */
+ /* hero patrols the open main path (row 4 — all walkable), feet on the path */
  int hx=3*TS+16+((f/2)%(8*TS));
- hero(hx,4*TS+14,3,(f>>3)&1);
- /* quest marker bobbing over the elder */
- int by=5*TS-14+ (isin(f*3)*3/31);
+ hero(hx,4*TS+28,3,(f>>3)&1);
+ /* quest marker bobbing over the elder's head */
+ int by=5*TS-26+ (isin(f*3)*3/31);
  gch(2*TS+12,by,'!',3,C(31,28,8)); gch(2*TS+13,by+1,'!',3,C(20,14,2));
  hud_top();
  window(150,446,340,28); gtext(166,453,"WHISPERING WOODS  -  NORTH GATE",2,C(20,24,31));
@@ -412,7 +471,7 @@ static void scene_dialogue(int f){
    *p=C(((*p>>11)&31)/3,((*p>>6)&31)/3,((*p>>1)&31)/3+1);}
  window(16,300,140,150);                        /* portrait */
  fillr(28,316,116,116,C(14,8,18)); rect_outline(28,316,116,116,C(20,14,26));
- npc(86,400,C(22,8,26),C(28,12,31),C(7,5,3));
+ npc(86,418,C(22,8,26),C(28,12,31),C(7,5,3));
  window(170,300,454,150);                       /* text box */
  banner(184,294,170,26,"ELDER MIRA");
  gtext(190,338,"MY FAMILY'S HEIRLOOM IS LOST IN",2,C(28,30,31));
@@ -431,13 +490,13 @@ static void scene_menu(int f){
  gtext_sh(32,28,"PARTY",2,C(31,30,20),C(6,5,1));
  fillr(28,52,276,2,C(16,20,40));
  /* Aria */
- window(28,62,276,100); npc(64,118,C(8,15,28),C(13,21,31),C(20,11,4));
+ window(28,62,276,100); npc(64,136,C(8,15,28),C(13,21,31),C(20,11,4));
  gtext(98,72,"ARIA",2,C(31,31,31)); gtext(230,72,"LV 4",2,C(20,28,31));
  gtext(98,92,"KNIGHT",1,C(18,20,26));
  gtext(98,108,"HP",1,C(18,28,31)); hpbar(122,106,150,28,32,30,210,60); gnum(280,106,28,2,1,C(20,28,31));
  gtext(98,126,"MP",1,C(18,28,31)); hpbar(122,124,150,9,12,40,120,240); gnum(280,124,9,2,1,C(20,28,31));
  /* Loras */
- window(28,170,276,100); npc(64,226,C(18,8,26),C(26,12,31),C(8,6,3));
+ window(28,170,276,100); npc(64,244,C(18,8,26),C(26,12,31),C(8,6,3));
  gtext(98,180,"LORAS",2,C(31,31,31)); gtext(230,180,"LV 3",2,C(20,28,31));
  gtext(98,200,"MAGE",1,C(18,20,26));
  gtext(98,216,"HP",1,C(18,28,31)); hpbar(122,214,150,18,24,30,210,60); gnum(280,214,18,2,1,C(20,28,31));
@@ -496,7 +555,7 @@ static void scene_shop(int f){
    gtext(430,yy+2,"PRICE",2,C(16,18,24)); gnum(520,yy+2,SP[i],4,2,C(31,26,8)); }
  window(16,310,608,154);
  fillr(32,326,116,116,C(14,18,14)); rect_outline(32,326,116,116,C(20,26,20));
- npc(90,408,C(8,20,12),C(13,27,17),C(20,13,5));
+ npc(90,426,C(8,20,12),C(13,27,17),C(20,13,5));
  banner(166,320,90,24,"BRAM");
  gtext(166,358,"\"A POTION HEALS 30 HP -",2,C(26,28,31));
  gtext(166,380,"CAN'T ADVENTURE WITHOUT ONE!\"",2,C(26,28,31));
@@ -547,15 +606,15 @@ static void woods(int f){
 }
 static void scene_action(int f){
  woods(f);
- int hx=300,hy=270;
+ int hx=300,hy=284;                        /* hy = feet */
  int sw=f%40;
- if(sw<12){ for(int a=-12;a<=12;a++){int ax=hx+22+a, ay=hy-12+(a*a)/14;
+ if(sw<12){ for(int a=-12;a<=12;a++){int ax=hx+22+a, ay=hy-26+(a*a)/14;
    put(ax,ay,C(28,30,31)); put(ax,ay+1,C(18,24,31)); put(ax,ay-1,C(31,31,31));}
-   disc(hx+30,hy-4,5,C(31,30,18)); disc(hx+30,hy-4,2,C(31,31,31)); }
+   disc(hx+30,hy-18,5,C(31,30,18)); disc(hx+30,hy-18,2,C(31,31,31)); }
  hero(hx,hy,3,(f>>3)&1);
- slime(450,180,f);   hpbar(420,150,70,8,14,255,40,40);
- slime(510,300,f+8); hpbar(480,270,70,14,14,255,40,40);
- goblin(500,236);    hpbar(470,200,70,18,26,255,40,40);
+ slime(450,196,f);   hpbar(420,150,70,8,14,255,40,40);
+ slime(510,316,f+8); hpbar(480,270,70,14,14,255,40,40);
+ goblin(500,254);    hpbar(470,200,70,18,26,255,40,40);
  if((f%40)<20) gtext_sh(404,140-(f%40),"12",3,C(31,28,8),C(8,4,1));
  if(sw<10){disc(424,160,4+sw,C(31,24,6)); disc(424,160,2,C(31,31,31));}
  int px=500-((f*4)%160); disc(px,236,4,C(31,12,4)); disc(px,236,2,C(31,28,16));
@@ -585,9 +644,10 @@ static const char* A_loras_b[22]={
 /* layered forest battle backdrop — rolling treeline silhouette, no UI overlap */
 static void battle_bg(int f){
  vgrad(0,0,W,205, 9,6,22, 17,12,34);                 /* dusk sky */
- for(int i=0;i<40;i++){int n=hsh(i*193); int x=((n&1023)+f/3)%W,y=(n>>10)&150;
-   put_rgb(x,y,110,95,160);}
- disc(96,60,26,C(26,26,22)); disc(86,52,22,C(22,23,19)); /* moon */
+ for(int i=0;i<46;i++){int n=hsh(i*193); int x=(n&1023)%W,y=(n>>10)&150;
+   int tw=(((f>>3)+i)&7)<2;                          /* twinkle */
+   put_rgb(x,y, tw?180:110, tw?170:95, tw?220:160);}
+ moon(96,56,26); moon_halo(96,56,28,38);             /* ONE moon, glowing */
  /* far treeline (bumpy crowns), then a nearer darker band for depth */
  for(int x=0;x<W;x++){
    int top=150 + isin(x/22)*10/31 - ((isin(x*2)+31)*10/62);
@@ -602,18 +662,37 @@ static void battle_bg(int f){
 }
 static void scene_battle(int f){
  battle_bg(f);
+ uint16_t rim=C(20,24,31);                            /* cool moonlit rim */
  int act=(f/44)%2;
- /* ── enemy party (right), standing on the clearing ── */
- blit(452,150,A_goblin,16,20,3);  gtext(456,132,"GOBLIN",1,C(30,20,20)); hpbar(456,142,72,26,30,30,210,60);
- blit(548,175,A_slime,16,16,3);   hpbar(552,164,56,14,14,30,210,60);
- bat(404,196,f);                  hpbar(380,168,56,10,12,30,210,60);
- if((f%44)<10) disc(476,180,6+(f%44),C(31,28,10));   /* hit flash */
- if((f%44)<22) gtext_sh(474,140-(f%44)/2,"14",3,C(31,28,8),C(8,4,1));
- /* ── hero party (left), facing right; feet ~y300, well above the UI ── */
- gshadow(150,300,15,5); blit(124,236+((act==1)?-6:0),A_loras_b,16,22,3);
- gshadow(96,308,16,6);  blit(70,242+((act==0)?-10:0),A_aria_b,16,22,3);
- if(act==0){ gch(92,214,'>',3,C(31,28,8)); }
- else      { gch(146,210,'>',3,C(31,28,8)); }
+ int alx=(act==0)?16:0, llx=(act==1)?16:0;            /* active battler lunges */
+ /* ── enemy party (right), feet-anchored on the clearing ── */
+ gshadow(470,297,15,5); blit(446,239,A_goblin,16,20,3); blit_rim(446,239,A_goblin,16,20,3,rim);
+ gtext(446,216,"GOBLIN",1,C(30,20,20)); hpbar(446,226,72,26,30,30,210,60);
+ gshadow(565,257,14,4); blit(541,211,A_slime,16,16,3);  blit_rim(541,211,A_slime,16,16,3,rim);
+ hpbar(541,198,60,14,14,30,210,60);
+ int bb=(f>>2)&1;
+ gshadow(412,296,8,3);                                /* faint, far below the bat */
+ blit(388,202+bb*3,A_bat,16,12,3); blit_rim(388,202+bb*3,A_bat,16,12,3,rim);
+ hpbar(388,190,56,10,12,30,210,60);
+ if((f%44)<10) disc(470,266,6+(f%44),C(31,28,10));    /* hit flash */
+ if((f%44)<22) gtext_sh(500,200-(f%44)/2,"14",3,C(31,28,8),C(8,4,1));
+ /* ── hero party (left): Loras back row, Aria front; shadows track the lunge ── */
+ gshadow(124+llx,251,13,4);
+ blit(100+llx,195,A_loras_b,16,22,3); blit_rim(100+llx,195,A_loras_b,16,22,3,rim);
+ gshadow(157+alx,301,14,5);
+ blit(133+alx,246,A_aria_b,16,22,3);  blit_rim(133+alx,246,A_aria_b,16,22,3,rim);
+ if(act==0) gch(111+alx,252,'>',3,C(31,28,8));
+ else       gch(78+llx,201,'>',3,C(31,28,8));
+ /* ── moonlight: beam from the moon onto the party + pool at their feet ── */
+ moonbeam(96,56,150,298);
+ lightpool(152,302,82,13);
+ /* fireflies drifting between the lines */
+ for(int i=0;i<6;i++){
+   int fx2=246+i*26+(isin(f+i*11)*10)/31;
+   int fy2=232+((i&1)*34)+(isin(f*2+i*9)*12)/31;
+   put(fx2,fy2,C(28,31,12));
+   put(fx2-1,fy2,C(14,20,6));put(fx2+1,fy2,C(14,20,6));
+   put(fx2,fy2-1,C(14,20,6));put(fx2,fy2+1,C(14,20,6));}
  /* ── UI: message + command + status (occupy the bottom, clear of sprites) ── */
  window(8,332,624,26);
  gtext(20,339,"ARIA ATTACKS!  GOBLIN TAKES 14 DAMAGE!",2,C(28,30,31));
@@ -636,12 +715,12 @@ static void scene_boss(int f){
  woods(f);
  for(int y=0;y<H;y++)for(int x=0;x<W;x++) if(((x*3+y)&7)==0){uint16_t*p=&fb[y*stride_px+x];
    *p=C(((*p>>11)&31)*3/4,((*p>>6)&31)*3/4,((*p>>1)&31)*3/4);}
- warden(320,170,f);
+ warden(320,207,f);
  window(70,16,500,40);
  gtext_sh(82,24,"FOREST WARDEN",2,C(31,8,8),C(8,1,1));
  hpbar(250,26,300,84,120,((f>>3)&1)?255:200,20,20);
- hero(180,410,1,(f>>3)&1);
- npc(300,420,C(18,8,26),C(26,12,31),C(8,6,3));
+ hero(180,424,1,(f>>3)&1);
+ npc(300,432,C(18,8,26),C(26,12,31),C(8,6,3));
  int fx=300+((f*5)%160), fy=420-((f*5)%220);
  disc(fx,fy,7,C(31,18,2)); disc(fx,fy,4,C(31,31,20));
  for(int t=1;t<5;t++) disc(fx-t*7,fy+t*9,6-t,C(31,10,2));
