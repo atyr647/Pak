@@ -51,7 +51,7 @@ optimization = \"release\"
 
 proc codegen::platformer::_sprite_roles {} {
     return {player enemy_patrol enemy_jumper coin spring checkpoint goal \
-            tile_solid tile_oneway tile_hazard tile_ladder background}
+            tile_solid tile_oneway tile_hazard tile_ladder tile_road tile_dirt background}
 }
 proc codegen::platformer::_audio_roles {} {
     return {jump coin hurt stomp spring checkpoint win music}
@@ -279,6 +279,8 @@ const T_SOLID:  u8 = 1
 const T_ONEWAY: u8 = 2
 const T_HAZARD: u8 = 3
 const T_LADDER: u8 = 4
+const T_ROAD:   u8 = 5
+const T_DIRT:   u8 = 6
 
 const GRAVITY:     f32 = $g
 const JUMP_FORCE:  f32 = $jf
@@ -691,7 +693,7 @@ proc codegen::platformer::_level_dispatch {doc} {
     lappend lines "}"
     lappend lines ""
 
-    lappend lines {fn is_solid(t: u8) -> bool { return t == T_SOLID }}
+    lappend lines {fn is_solid(t: u8) -> bool { return t == T_SOLID or t == T_ROAD or t == T_DIRT }}
     lappend lines {fn is_oneway(t: u8) -> bool { return t == T_ONEWAY }}
     lappend lines {fn is_hazard(t: u8) -> bool { return t == T_HAZARD }}
     lappend lines {fn is_ladder(t: u8) -> bool { return t == T_LADDER }}
@@ -1243,10 +1245,12 @@ proc codegen::platformer::_render_block {doc} {
 proc codegen::platformer::_render_prefix {} {
     return {-- ── Rendering ────────────────────────────────────────────────────────────────
 fn tile_color(t: u8) -> u32 {
-    if t == T_SOLID { return 0x3A5070FF }
+    if t == T_SOLID  { return 0x3A5070FF }
     if t == T_ONEWAY { return 0x55AA44FF }
     if t == T_HAZARD { return 0xCC2222FF }
     if t == T_LADDER { return 0x8A6030FF }
+    if t == T_ROAD   { return 0x505060FF }
+    if t == T_DIRT   { return 0x7A6040FF }
     return 0x000000FF
 }
 }
@@ -1255,7 +1259,7 @@ fn tile_color(t: u8) -> u32 {
 # render_world — background + tiles (sprite-aware via balanced templates).
 proc codegen::platformer::_render_world {doc} {
     set tile_sprite 0
-    foreach r {tile_solid tile_oneway tile_hazard tile_ladder} {
+    foreach r {tile_solid tile_oneway tile_hazard tile_ladder tile_road tile_dirt} {
         if {[_has_sprite $doc $r]} { set tile_sprite 1 }
     }
     set bg_sprite [_has_sprite $doc background]
@@ -1305,7 +1309,7 @@ proc codegen::platformer::_render_world {doc} {
     }
 
     set frags ""
-    foreach {const role} {T_SOLID tile_solid T_ONEWAY tile_oneway T_HAZARD tile_hazard T_LADDER tile_ladder} {
+    foreach {const role} {T_SOLID tile_solid T_ONEWAY tile_oneway T_HAZARD tile_hazard T_LADDER tile_ladder T_ROAD tile_road T_DIRT tile_dirt} {
         if {[_has_sprite $doc $role]} {
             append frags "    if t == $const \{\n        rdpq.sync_pipe()\n        rdpq.set_mode_copy()\n        sprite.blit(spr_$role, sx, sy, 0)\n        return\n    \}\n"
         }

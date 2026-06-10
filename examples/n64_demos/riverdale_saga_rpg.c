@@ -637,83 +637,86 @@ static void moon_halo(int cx, int cy, int r0, int r1) {
     }
 }
 
-/* Atmospheric moonbeam shafts — moonlight filtered through forest canopy gaps.
- * Multiple thin roughly-parallel beams, NOT a spotlight cone.
- * mx,my = moon center; ground_y = y level of ground/party feet area. */
+/* Atmospheric moonbeam shafts — realistic rays from the moon's actual position.
+ * Each beam traces a straight line from (mx,my) to a specific ground point,
+ * giving correct perspective: beams converge toward the moon when extended back.
+ * mx,my = moon center; ground_y = y level where beams terminate. */
 static void moon_rays(int mx, int my, int ground_y) {
-    /* 7 beams: [x_offset_top, x_offset_bottom, brightness(1-4), start_pct, end_pct]
-     * Offsets are perpendicular to the main (moon->ground) axis.
-     * Together they simulate moonlight filtering through separated canopy gaps. */
-    static const int8_t B[7][5] = {
-        { 46, 54, 4, 18, 98},  /* main shaft — strongest, full length */
-        { 26, 32, 3, 15, 90},  /* left of main */
-        { 68, 78, 3, 20, 94},  /* right of main */
-        {  8, 12, 2, 28, 82},  /* far left — shorter, dimmer */
-        { 88, 98, 2, 12, 85},  /* far right — shorter */
-        { 36, 43, 1, 32, 72},  /* near-left — faint, stops early */
-        { 58, 67, 1, 22, 68},  /* near-right — faint, stops early */
+    /* Beams defined by x position at ground level (absolute screen coords).
+     * At any scanline y, beam center = mx + (bx-mx)*(y-my)/(ground_y-my).
+     * Width grows linearly from 0 at moon to ~2px at ground — canopy gaps. */
+    static const int16_t B[7][3] = {
+        /* {x_at_ground, brightness(1-4), end_pct(% of span)} */
+        {168, 4, 97},  /* main — toward party center */
+        {128, 3, 88},  /* left gap */
+        {208, 3, 92},  /* right gap */
+        { 88, 2, 78},  /* far left */
+        {248, 2, 82},  /* far right */
+        {148, 1, 70},  /* near-left, faint */
+        {190, 1, 65},  /* near-right, faint */
     };
     int span = ground_y - my;
     if (span <= 0) return;
 
     for (int i = 0; i < 7; i++) {
-        int ox_t = B[i][0], ox_b = B[i][1];
-        int brt  = B[i][2];
-        int ys   = my + span * B[i][3] / 100;
-        int ye   = my + span * B[i][4] / 100;
+        int bx  = B[i][0];
+        int brt = B[i][1];
+        int ye  = my + span * B[i][2] / 100;
 
-        for (int y = ys; y < ye && y < H; y++) {
-            /* position along beam, 0..255 */
-            int t = (y - ys) * 255 / ((ye - ys) > 0 ? (ye - ys) : 1);
-            /* interpolate x offset along beam */
-            int ox = ox_t + ((ox_b - ox_t) * t >> 8);
-            int bx = mx + ox;  /* beam center x */
+        for (int y = my + 22; y < ye && y < H; y++) {
+            /* t: 0 at moon, 256 at ground_y */
+            int t = (y - my) * 256 / span;
+            /* Beam center: perspective line from moon to ground point */
+            int cx = mx + ((bx - mx) * t >> 8);
+            /* Half-width grows with distance from moon (0→2 pixels) */
+            int hw = (t > 0) ? ((t * 2) >> 8) : 0;
+            if (hw < 1) hw = 1;
 
-            /* 3-pixel wide shaft with edge falloff */
-            for (int dxx = -1; dxx <= 1; dxx++) {
-                int adxx = dxx < 0 ? -dxx : dxx;
-                int eff = brt - adxx;
+            for (int dx = -hw; dx <= hw; dx++) {
+                int adx = dx < 0 ? -dx : dx;
+                /* Edge-weighted brightness */
+                int eff = brt - (adx * brt / (hw + 1));
                 if (eff <= 0) continue;
-                int x = bx + dxx;
-                /* Ordered dithering: higher brt = denser, lower brt = wispy */
+                int x = cx + dx;
                 int bayer = BAYER4[y & 3][x & 3];
-                int thresh = 14 - eff * 3;  /* brt4→thresh2, brt1→thresh11 */
+                int thresh = 14 - eff * 3;
                 if (thresh < 0) thresh = 0;
-                if (bayer >= thresh) {
-                    /* Slight blue-white moonlight tint */
+                if (bayer >= thresh)
                     lighten(x, y, eff, eff, eff < 4 ? eff+1 : eff);
-                }
             }
         }
     }
 }
 
-/* Sunbeams for daytime battle — warm diffuse light from upper right */
+/* Sunbeams from the sun's actual screen position — warm diffuse shafts.
+ * sx,sy = sun center (upper-right); each beam traces from (sx,sy) to a
+ * specific ground point, matching moon_rays' perspective approach. */
 static void sun_rays(int sx, int sy, int ground_y) {
-    /* 5 sunbeam shafts, warmer color, coming from upper-right */
-    static const int8_t S[5][5] = {
-        {-50,-58, 4, 15, 100},
-        {-30,-36, 3, 10,  90},
-        {-70,-80, 3, 20,  95},
-        {-15,-18, 2, 25,  80},
-        {-85,-96, 1, 12,  75},
+    /* x_at_ground: to the left/center of the scene since sun is upper-right */
+    static const int16_t S[5][3] = {
+        /* {x_at_ground, brightness, end_pct} */
+        {320, 4, 100},
+        {240, 3,  90},
+        {400, 3,  95},
+        {160, 2,  80},
+        {480, 1,  75},
     };
     int span = ground_y - sy;
     if (span <= 0) return;
     for (int i = 0; i < 5; i++) {
-        int ox_t = S[i][0], ox_b = S[i][1];
-        int brt  = S[i][2];
-        int ys   = sy + span * S[i][3] / 100;
-        int ye   = sy + span * S[i][4] / 100;
-        for (int y = ys; y < ye && y < H; y++) {
-            int t = (y - ys) * 255 / ((ye - ys) > 0 ? (ye - ys) : 1);
-            int ox = ox_t + ((ox_b - ox_t) * t >> 8);
-            int bx = sx + ox;
-            for (int dxx = -1; dxx <= 1; dxx++) {
-                int adxx = dxx < 0 ? -dxx : dxx;
-                int eff = brt - adxx;
+        int bx  = S[i][0];
+        int brt = S[i][1];
+        int ye  = sy + span * S[i][2] / 100;
+        for (int y = sy + 20; y < ye && y < H; y++) {
+            int t = (y - sy) * 256 / span;
+            int cx = sx + ((bx - sx) * t >> 8);
+            int hw = (t * 2) >> 8;
+            if (hw < 1) hw = 1;
+            for (int dx = -hw; dx <= hw; dx++) {
+                int adx = dx < 0 ? -dx : dx;
+                int eff = brt - (adx * brt / (hw + 1));
                 if (eff <= 0) continue;
-                int x = bx + dxx;
+                int x = cx + dx;
                 int bayer = BAYER4[y & 3][x & 3];
                 int thresh = 14 - eff * 3;
                 if (thresh < 0) thresh = 0;

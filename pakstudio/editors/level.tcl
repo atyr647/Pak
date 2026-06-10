@@ -21,7 +21,22 @@ proc level_ed::_tile_color {t} {
         2  { return #558844 }
         3  { return #FF2200 }
         4  { return #AA8844 }
+        5  { return #666677 }
+        6  { return #887755 }
         default { return #888888 }
+    }
+}
+
+# Tile type → short label for toolbar buttons
+proc level_ed::_tile_label {t} {
+    switch $t {
+        1 { return "Solid" }
+        2 { return "Platform" }
+        3 { return "Hazard" }
+        4 { return "Ladder" }
+        5 { return "Road" }
+        6 { return "Dirt" }
+        default { return "Tile$t" }
     }
 }
 
@@ -99,6 +114,9 @@ proc level_ed::create {parent on_change_cb on_sel_cb} {
     bind $cv <Key-1>  [list level_ed::set_cur_tile 1]
     bind $cv <Key-2>  [list level_ed::set_cur_tile 2]
     bind $cv <Key-3>  [list level_ed::set_cur_tile 3]
+    bind $cv <Key-4>  [list level_ed::set_cur_tile 4]
+    bind $cv <Key-5>  [list level_ed::set_cur_tile 5]
+    bind $cv <Key-6>  [list level_ed::set_cur_tile 6]
     focus $cv
 
     pack $f -fill both -expand 1
@@ -126,19 +144,11 @@ proc level_ed::_make_toolbar {tb} {
     ttk::separator $tb.sep1 -orient vertical
     pack $tb.sep1 -side left -fill y -padx 4
 
-    # Tile type palette
+    # Tile type palette — rebuilt by _rebuild_tile_palette
     ttk::label $tb.tlbl -text "Tile:"
     pack $tb.tlbl -side left -padx 2
-
-    foreach {t lbl col} {
-        1 "■ Solid"    #AA5533
-        2 "▤ Platform" #558844
-        3 "✕ Hazard"  #FF2200
-    } {
-        ttk::button $tb.tile_$t -text $lbl \
-            -command [list level_ed::set_cur_tile $t] -style Toolbutton
-        pack $tb.tile_$t -side left -padx 1
-    }
+    set ::level_ed_tilebar $tb
+    _rebuild_tile_palette {1 2 3 4 5 6}
 
     ttk::separator $tb.sep2 -orient vertical
     pack $tb.sep2 -side left -fill y -padx 4
@@ -209,6 +219,29 @@ proc level_ed::_palette_for_genre {genre} {
             spring "Spring" checkpoint "Checkpoint" goal "Goal" door "Door"
     }
     _set_entity_palette $pairs
+}
+
+# Build (or rebuild) the tile palette buttons from a list of tile IDs.
+proc level_ed::_rebuild_tile_palette {ids} {
+    set tb $::level_ed_tilebar
+    if {[info exists ::level_ed_tileids]} {
+        foreach id $::level_ed_tileids {
+            catch { destroy $tb.tile_$id }
+        }
+    }
+    set ::level_ed_tileids $ids
+    set before ""
+    if {[winfo exists $tb.sep2]} { set before [list -before $tb.sep2] }
+    foreach t $ids {
+        set lbl [level_ed::_tile_label $t]
+        set col [level_ed::_tile_color $t]
+        ttk::button $tb.tile_$t -text $lbl \
+            -command [list level_ed::set_cur_tile $t] -style Toolbutton
+        if {$col ne {}} {
+            catch { $tb.tile_$t configure -foreground $col }
+        }
+        pack $tb.tile_$t -side left -padx 1 {*}$before
+    }
 }
 
 proc level_ed::set_tool {t} {
