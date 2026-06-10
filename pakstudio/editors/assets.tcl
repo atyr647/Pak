@@ -89,9 +89,9 @@ proc assets_ed::_make_sprite_row {parent role label row} {
         -bg #0d1118 -highlightthickness 1 -highlightbackground #1e2540]
     ttk::label $parent.lbl_$role -text $label -width 13 -anchor w
     ttk::label $parent.file_$role -text "(none)" -style Subtitle.TLabel -anchor w
-    ttk::button $parent.imp_$role -text "Import…" -style Toolbutton \
+    ttk::button $parent.imp_$role -text "Import" -style Toolbutton \
         -command [list assets_ed::_import sprites $role]
-    ttk::button $parent.clr_$role -text "✕" -width 2 -style Toolbutton \
+    ttk::button $parent.clr_$role -text "Clear" -width 5 -style Toolbutton \
         -command [list assets_ed::_clear sprites $role]
 
     grid $cv               -row $row -column 0 -padx {6 4} -pady 3
@@ -104,9 +104,9 @@ proc assets_ed::_make_sprite_row {parent role label row} {
 proc assets_ed::_make_audio_row {parent role label row} {
     ttk::label $parent.lbl_$role -text $label -width 15 -anchor w
     ttk::label $parent.file_$role -text "(none)" -style Subtitle.TLabel -anchor w
-    ttk::button $parent.imp_$role -text "Import…" -style Toolbutton \
+    ttk::button $parent.imp_$role -text "Import" -style Toolbutton \
         -command [list assets_ed::_import audio $role]
-    ttk::button $parent.clr_$role -text "✕" -width 2 -style Toolbutton \
+    ttk::button $parent.clr_$role -text "Clear" -width 5 -style Toolbutton \
         -command [list assets_ed::_clear audio $role]
 
     grid $parent.lbl_$role  -row $row -column 0 -sticky w -padx {6 2} -pady 4
