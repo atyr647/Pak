@@ -167,6 +167,18 @@ static const uint8_t BAYER4[4][4] = {
     {15,  7, 13,  5}
 };
 
+/* 8×8 Bayer matrix (0-63) — fine dithering for smooth volumetric glows */
+static const uint8_t BAYER8[8][8] = {
+    { 0,32, 8,40, 2,34,10,42},
+    {48,16,56,24,50,18,58,26},
+    {12,44, 4,36,14,46, 6,38},
+    {60,28,52,20,62,30,54,22},
+    { 3,35,11,43, 1,33, 9,41},
+    {51,19,59,27,49,17,57,25},
+    {15,47, 7,39,13,45, 5,37},
+    {63,31,55,23,61,29,53,21}
+};
+
 /* ── Blitter ── */
 static void blit(int dx, int dy, const char *const *art, int w, int h, int sc) {
     for (int row = 0; row < h; row++) {
@@ -621,110 +633,90 @@ static void moon(int cx, int cy, int r) {
     }
 }
 
-/* Halo: dithered glow ring around moon */
+/* Halo: large soft dithered glow around the moon (smooth radial falloff). */
 static void moon_halo(int cx, int cy, int r0, int r1) {
     for (int dy = -(r1+2); dy <= r1+2; dy++) {
+        int yy = cy + dy;
+        if ((unsigned)yy >= H) continue;
         for (int dx = -(r1+2); dx <= r1+2; dx++) {
             int dist2 = dx*dx + dy*dy;
             if (dist2 < r0*r0 || dist2 > r1*r1) continue;
-            int bayer = BAYER4[((cy+dy)&3)][((cx+dx)&3)];
             int dist = isqrt(dist2);
-            int fade = (dist - r0) * 15 / ((r1 - r0) > 0 ? r1-r0 : 1);
-            if (bayer > fade + 6) {
-                lighten(cx+dx, cy+dy, 2, 2, 3);
-            }
+            /* intensity 255 at inner edge → 0 at outer edge */
+            int inten = 255 - (dist - r0) * 255 / ((r1 - r0) > 0 ? r1-r0 : 1);
+            inten = inten * inten >> 8;                 /* gentle quadratic */
+            int q = inten * 5;
+            int add = q >> 8;
+            if ((q & 255) > (BAYER8[yy & 7][(cx+dx) & 7] << 2)) add++;
+            if (add > 0) lighten(cx+dx, yy, (add*3)>>2, (add*3)>>2, add);
         }
     }
 }
 
-/* Atmospheric moonbeam shafts — realistic rays from the moon's actual position.
- * Each beam traces a straight line from (mx,my) to a specific ground point,
- * giving correct perspective: beams converge toward the moon when extended back.
- * mx,my = moon center; ground_y = y level where beams terminate. */
-static void moon_rays(int mx, int my, int ground_y) {
-    /* Beams defined by x position at ground level (absolute screen coords).
-     * At any scanline y, beam center = mx + (bx-mx)*(y-my)/(ground_y-my).
-     * Width grows linearly from 0 at moon to ~2px at ground — canopy gaps. */
-    static const int16_t B[7][3] = {
-        /* {x_at_ground, brightness(1-4), end_pct(% of span)} */
-        {168, 4, 97},  /* main — toward party center */
-        {128, 3, 88},  /* left gap */
-        {208, 3, 92},  /* right gap */
-        { 88, 2, 78},  /* far left */
-        {248, 2, 82},  /* far right */
-        {148, 1, 70},  /* near-left, faint */
-        {190, 1, 65},  /* near-right, faint */
-    };
-    int span = ground_y - my;
+/* ── Volumetric god-ray system ──────────────────────────────────────────────
+ * One soft light shaft from source (sx,sy) to far point (ex,ey).
+ *   w_end  : half-width in px at the far end (the shaft widens with distance)
+ *   peak   : peak intensity, 0..255
+ *   tint   : 0 = cool moonlight (blue-white), 1 = warm sunlight (gold)
+ *   phase  : per-beam phase so the gentle sway differs between shafts
+ * The cross-section is a smooth parabola (soft feathered edges); along the
+ * beam the light ramps in at the source then fades to zero at the far end
+ * (true crepuscular falloff). Intensity is 8×8-dithered into a small additive
+ * lighten so the gradient stays smooth on the 5-bit framebuffer. */
+static void godray(int sx, int sy, int ex, int ey, int w_end, int peak,
+                   int tint, int phase, int frame) {
+    int span = ey - sy;
     if (span <= 0) return;
-
-    for (int i = 0; i < 7; i++) {
-        int bx  = B[i][0];
-        int brt = B[i][1];
-        int ye  = my + span * B[i][2] / 100;
-
-        for (int y = my + 22; y < ye && y < H; y++) {
-            /* t: 0 at moon, 256 at ground_y */
-            int t = (y - my) * 256 / span;
-            /* Beam center: perspective line from moon to ground point */
-            int cx = mx + ((bx - mx) * t >> 8);
-            /* Half-width grows with distance from moon (0→2 pixels) */
-            int hw = (t > 0) ? ((t * 2) >> 8) : 0;
-            if (hw < 1) hw = 1;
-
-            for (int dx = -hw; dx <= hw; dx++) {
-                int adx = dx < 0 ? -dx : dx;
-                /* Edge-weighted brightness */
-                int eff = brt - (adx * brt / (hw + 1));
-                if (eff <= 0) continue;
-                int x = cx + dx;
-                int bayer = BAYER4[y & 3][x & 3];
-                int thresh = 14 - eff * 3;
-                if (thresh < 0) thresh = 0;
-                if (bayer >= thresh)
-                    lighten(x, y, eff, eff, eff < 4 ? eff+1 : eff);
-            }
+    for (int y = sy + 4; y < ey && y < H; y++) {
+        if (y < 0) continue;
+        int t = (y - sy) * 256 / span;                 /* 0..256 along shaft */
+        int sway = (isin((frame + phase + (y >> 2)) & 63) * 3) >> 5; /* ±3px */
+        int cx = sx + ((ex - sx) * t >> 8) + sway;
+        int hw = 3 + (w_end * t >> 8);                 /* widen with distance */
+        int hw2 = hw * hw;
+        int along;
+        if (t < 24) along = peak * t / 24;             /* fade in at the gap */
+        else        along = peak * (256 - t) / 232;    /* fade to 0 at the end */
+        if (along <= 0) continue;
+        for (int dx = -hw; dx <= hw; dx++) {
+            int adx = dx < 0 ? -dx : dx;
+            int cross = (hw2 - adx*adx) * 256 / hw2;    /* 0..256 soft parabola */
+            int inten = (along * cross) >> 8;           /* 0..peak */
+            if (inten <= 0) continue;
+            int x = cx + dx;
+            if ((unsigned)x >= W || (unsigned)y >= H) continue;
+            int q = inten * 7;                          /* up to ~1785 */
+            int add = q >> 8;                           /* 0..6 */
+            if ((q & 255) > (BAYER8[y & 7][x & 7] << 2)) add++;
+            if (add <= 0) continue;
+            if (tint == 0) lighten(x, y, (add*3)>>2, (add*3)>>2, add);   /* cool */
+            else           lighten(x, y, add, (add*4)/5, add>>1);        /* warm */
         }
     }
 }
 
-/* Sunbeams from the sun's actual screen position — warm diffuse shafts.
- * sx,sy = sun center (upper-right); each beam traces from (sx,sy) to a
- * specific ground point, matching moon_rays' perspective approach. */
-static void sun_rays(int sx, int sy, int ground_y) {
-    /* x_at_ground: to the left/center of the scene since sun is upper-right */
-    static const int16_t S[5][3] = {
-        /* {x_at_ground, brightness, end_pct} */
-        {320, 4, 100},
-        {240, 3,  90},
-        {400, 3,  95},
-        {160, 2,  80},
-        {480, 1,  75},
-    };
-    int span = ground_y - sy;
-    if (span <= 0) return;
-    for (int i = 0; i < 5; i++) {
-        int bx  = S[i][0];
-        int brt = S[i][1];
-        int ye  = sy + span * S[i][2] / 100;
-        for (int y = sy + 20; y < ye && y < H; y++) {
-            int t = (y - sy) * 256 / span;
-            int cx = sx + ((bx - sx) * t >> 8);
-            int hw = (t * 2) >> 8;
-            if (hw < 1) hw = 1;
-            for (int dx = -hw; dx <= hw; dx++) {
-                int adx = dx < 0 ? -dx : dx;
-                int eff = brt - (adx * brt / (hw + 1));
-                if (eff <= 0) continue;
-                int x = cx + dx;
-                int bayer = BAYER4[y & 3][x & 3];
-                int thresh = 14 - eff * 3;
-                if (thresh < 0) thresh = 0;
-                if (bayer >= thresh)
-                    lighten(x, y, eff+1, eff, eff-1 < 0 ? 0 : eff-1);
-            }
-        }
-    }
+/* Moonlight: a fan of soft shafts pouring from the moon over the battlefield,
+ * plus two thin bright accent cores. */
+static void moon_rays(int mx, int my, int ground_y, int frame) {
+    godray(mx, my, mx+ 70, ground_y-40, 16, 110, 0, 31, frame);
+    godray(mx, my, mx+120, ground_y-20, 22, 150, 0,  0, frame);
+    godray(mx, my, mx+180, ground_y,    26, 180, 0, 11, frame);
+    godray(mx, my, mx+240, ground_y-10, 20, 145, 0, 23, frame);
+    godray(mx, my, mx+300, ground_y-30, 18, 120, 0, 41, frame);
+    /* thin bright accent cores */
+    godray(mx, my, mx+170, ground_y,     6, 205, 0,  7, frame);
+    godray(mx, my, mx+215, ground_y-15,  5, 185, 0, 17, frame);
+}
+
+/* Sunlight: warm shafts fanning down-left from a high sun. */
+static void sun_rays(int sx, int sy, int ground_y, int frame) {
+    godray(sx, sy, sx-120, ground_y-30, 18, 100, 1, 37, frame);
+    godray(sx, sy, sx-200, ground_y,    24, 135, 1,  0, frame);
+    godray(sx, sy, sx-300, ground_y-10, 26, 150, 1, 13, frame);
+    godray(sx, sy, sx-400, ground_y,    22, 120, 1, 27, frame);
+    godray(sx, sy, sx-480, ground_y-20, 20, 110, 1, 45, frame);
+    /* thin bright accent core */
+    godray(sx, sy, sx-320, ground_y,     6, 175, 1,  9, frame);
 }
 
 /* Soft light pool on the ground (additive glow ellipse) */
@@ -914,13 +906,31 @@ static const uint8_t FONT55[26][5] = {
     {0xF,0x2,0x4,0x8,0xF}, /* Z */
 };
 
+/* Digits 0-9 (4×5) */
+static const uint8_t DIGIT55[10][5] = {
+    {0x6,0x9,0x9,0x9,0x6}, /* 0 */
+    {0x2,0x6,0x2,0x2,0x7}, /* 1 */
+    {0xE,0x1,0x6,0x8,0xF}, /* 2 */
+    {0xE,0x1,0x6,0x1,0xE}, /* 3 */
+    {0x9,0x9,0xF,0x1,0x1}, /* 4 */
+    {0xF,0x8,0xE,0x1,0xE}, /* 5 */
+    {0x6,0x8,0xE,0x9,0x6}, /* 6 */
+    {0xF,0x1,0x2,0x4,0x4}, /* 7 */
+    {0x6,0x9,0x6,0x9,0x6}, /* 8 */
+    {0x6,0x9,0x7,0x1,0x6}, /* 9 */
+};
+
+/* Punctuation: bitmasks for a few useful glyphs */
 static void draw_char(int x, int y, char c, int sc, uint16_t col) {
-    if (c < 'A' || c > 'Z') {
-        if (c == ' ') return;
-        if (c >= 'a' && c <= 'z') c -= 32;
-        else return;
-    }
-    const uint8_t *g = FONT55[c - 'A'];
+    const uint8_t *g = 0;
+    if (c >= 'A' && c <= 'Z')      g = FONT55[c - 'A'];
+    else if (c >= 'a' && c <= 'z') g = FONT55[c - 'a'];
+    else if (c >= '0' && c <= '9') g = DIGIT55[c - '0'];
+    else if (c == '%') { static const uint8_t pc[5]={0x9,0x2,0x4,0x4,0x9}; g = pc; }
+    else if (c == '!') { static const uint8_t pc[5]={0x4,0x4,0x4,0x0,0x4}; g = pc; }
+    else if (c == '/') { static const uint8_t pc[5]={0x1,0x2,0x4,0x8,0x8}; g = pc; }
+    else if (c == '-') { static const uint8_t pc[5]={0x0,0x0,0xF,0x0,0x0}; g = pc; }
+    else return;  /* space / unknown → blank */
     for (int row = 0; row < 5; row++) {
         for (int bit = 0; bit < 4; bit++) {
             if (g[row] & (0x8 >> bit)) {
@@ -952,6 +962,32 @@ static void panel(int x0, int y0, int x1, int y1, uint16_t bg, uint16_t border) 
     rect(x0, y0, x1, y1, bg);
     hline(x0, x1, y0, border); hline(x0, x1, y1, border);
     for (int y = y0; y <= y1; y++) { put(x0, y, border); put(x1, y, border); }
+}
+
+/* Labeled HP/MP bar row. The name is drawn at (x,y); the bar always begins at
+ * bar_x (chosen by the caller to clear the longest name) so the fill never
+ * overlaps the text. cur/max give the fill fraction. */
+static void stat_bar(int x, int y, const char *name, int bar_x, int bar_w,
+                     int cur, int max, uint16_t fillc) {
+    draw_str(x, y, name, 2, C(22,22,28));
+    int by0 = y, by1 = y + 9;
+    /* track */
+    rect(bar_x, by0, bar_x + bar_w, by1, C(5,4,4));
+    /* border */
+    hline(bar_x, bar_x + bar_w, by0, C(12,12,18));
+    hline(bar_x, bar_x + bar_w, by1, C(12,12,18));
+    for (int yy = by0; yy <= by1; yy++) { put(bar_x, yy, C(12,12,18)); put(bar_x+bar_w, yy, C(12,12,18)); }
+    /* fill */
+    int fw = (max > 0) ? bar_w * cur / max : 0;
+    if (fw < 0) fw = 0; if (fw > bar_w) fw = bar_w;
+    if (fw > 1) {
+        rect(bar_x+1, by0+1, bar_x + fw, by1-1, fillc);
+        /* glossy top line */
+        hline(bar_x+1, bar_x + fw, by0+1, C(
+            ((fillc>>11)&0x1F)*5/4 > 31 ? 31 : ((fillc>>11)&0x1F)*5/4,
+            ((fillc>> 6)&0x1F)*5/4 > 31 ? 31 : ((fillc>> 6)&0x1F)*5/4,
+            ((fillc>> 1)&0x1F)*5/4 > 31 ? 31 : ((fillc>> 1)&0x1F)*5/4));
+    }
 }
 
 /* ── Scene: Title ── */
@@ -1120,13 +1156,9 @@ static void scene_overworld(int f) {
     draw_elder(ex, ey);
 
     /* HUD */
-    panel(4, 4, 200, 36, C(0,0,8), C(14,16,24));
-    draw_str(12, 12, "ARIA  HP", 2, C(22,22,28));
-    rect(90, 14, 190, 24, C(6,4,4));
-    rect(90, 14, 90 + 80, 24, C(20,4,4));  /* HP bar */
-    draw_str(12, 26, "  MP", 2, C(16,18,28));
-    rect(90, 26, 190, 34, C(4,4,6));
-    rect(90, 26, 90 + 60, 34, C(4,8,20));  /* MP bar */
+    panel(4, 4, 214, 42, C(0,0,8), C(14,16,24));
+    stat_bar(12, 12, "ARIA", 80, 124, 80, 100, C(20,4,4));   /* HP */
+    stat_bar(12, 28, "MP",   80, 124, 60, 100, C(4,8,20));   /* MP */
 }
 
 /* ── Scene: Dialogue ── */
@@ -1412,164 +1444,153 @@ static void scene_action(int f) {
     }
 
     /* HUD */
-    panel(4, 4, 200, 28, C(0,0,8), C(14,16,24));
-    draw_str(12, 10, "ARIA  HP", 2, C(22,22,28));
-    rect(90, 12, 190, 22, C(6,4,4));
-    rect(90, 12, 140, 22, C(20,4,4));
+    panel(4, 4, 214, 30, C(0,0,8), C(14,16,24));
+    stat_bar(12, 10, "ARIA", 80, 124, 50, 100, C(20,4,4));
 }
 
-/* ── Scene: Battle ── */
+/* ── Scene: Battle ──
+ * Layout (640×480):
+ *   sky / treeline      y 0..184
+ *   battlefield ground  y 185..330  (enemies back row ~230, party front ~310)
+ *   UI panels           y 332..476
+ */
 static void scene_battle(int f) {
     /* Cycle day/night every 55 frames */
     int is_night = ((f / 55) & 1);
 
-    if (is_night) {
-        battle_bg_night(f);
-    } else {
-        battle_bg_day(f);
-    }
+    if (is_night) battle_bg_night(f);
+    else          battle_bg_day(f);
 
-    /* ── Enemies ── */
     uint16_t rim = is_night ? C(18,22,30) : C(28,26,14);
 
-    /* Goblin 1 */
-    gshadow(180, 132, 20, 5);
-    draw_goblin(180, 128);
-    if (is_night) blit_rim(180-8, 128-20, A_goblin, 8, 10, 2, rim);
+    /* God-rays are cast over the whole field BEFORE the actors so the actors
+     * read as lit objects sitting in the light rather than being washed out. */
+    if (is_night) moon_rays(96, 56, 320, f);
+    else          sun_rays (W-80, 50, 320, f);
 
-    /* Goblin 2 */
-    gshadow(280, 128, 20, 5);
-    draw_goblin(280, 124);
-    if (is_night) blit_rim(280-8, 124-20, A_goblin, 8, 10, 2, rim);
+    /* ── Enemies: back row, standing on the ground (feet y ≈ 222..236) ── */
+    /* Bat hovers above the back row */
+    int bat_y = 165 + (isin(f*3) * 10 >> 5);
+    draw_bat(360, bat_y, f);
 
-    /* Warden (boss-lite) */
-    gshadow(440, 140, 28, 6);
-    blit(440-24, 140-28, A_warden, 12, 14, 2);
-    if (is_night) blit_rim(440-24, 140-28, A_warden, 12, 14, 2, rim);
+    /* Goblin A */
+    gshadow(180, 224, 18, 5);
+    draw_goblin(180, 222);
+    if (is_night) blit_rim(180-8, 222-20, A_goblin, 8, 10, 2, rim);
 
-    /* Bat */
-    int bat_y = 100 + (isin(f*3) * 12 >> 5);
-    draw_bat(350, bat_y, f);
+    /* Goblin B */
+    gshadow(268, 230, 18, 5);
+    draw_goblin(268, 228);
+    if (is_night) blit_rim(268-8, 228-20, A_goblin, 8, 10, 2, rim);
 
-    /* ── Moonbeams / Sunbeams ── */
-    if (is_night) {
-        moon_rays(96, 56, 310);
-        lightpool(200, 315, 90, 14);
-    } else {
-        sun_rays(W-80, 50, 310);
-    }
+    /* Warden (boss-lite), larger and further back-right */
+    gshadow(430, 238, 30, 7);
+    blit(430-24, 236-28, A_warden, 12, 14, 2);
+    if (is_night) blit_rim(430-24, 236-28, A_warden, 12, 14, 2, rim);
 
-    /* ── Party battlers (side-view) ── */
+    /* ── Party battlers: front row, lower and larger (feet y ≈ 308..320) ── */
+    if (is_night) lightpool(210, 322, 130, 16);
+
     /* Aria */
-    gshadow(130, 260, 20, 5);
-    blit(130-10, 260-28, A_aria_b, 10, 14, 2);
-    if (is_night) blit_rim(130-10, 260-28, A_aria_b, 10, 14, 2, rim);
+    gshadow(150, 312, 20, 5);
+    blit(150-10, 312-28, A_aria_b, 10, 14, 2);
+    if (is_night) blit_rim(150-10, 312-28, A_aria_b, 10, 14, 2, rim);
 
     /* Loras */
-    gshadow(200, 275, 20, 5);
-    blit(200-10, 275-28, A_loras_b, 10, 14, 2);
-    if (is_night) blit_rim(200-10, 275-28, A_loras_b, 10, 14, 2, rim);
+    gshadow(240, 320, 20, 5);
+    blit(240-10, 320-28, A_loras_b, 10, 14, 2);
+    if (is_night) blit_rim(240-10, 320-28, A_loras_b, 10, 14, 2, rim);
 
     /* Knight */
-    gshadow(270, 268, 20, 5);
-    draw_knight(270, 268);
-    if (is_night) blit_rim(270-8, 268-24, A_knight, 8, 12, 2, rim);
+    gshadow(330, 316, 20, 5);
+    draw_knight(330, 316);
+    if (is_night) blit_rim(330-8, 316-24, A_knight, 8, 12, 2, rim);
 
-    /* Fireflies (night only) */
+    /* Fireflies (night only) — confined to the lower field so they read */
     if (is_night) {
         for (int i = 0; i < 12; i++) {
             int bx = 40 + (i * 173 + f * (i+1)/3) % (W-80);
-            int by = 180 + (isin((f+i*11)*4) * 30 >> 5);
+            int by = 250 + (isin((f+i*11)*4) * 28 >> 5);
             put(bx, by, C(26,28,8));
             if ((f>>2)&1) put(bx+1, by, C(20,24,6));
         }
     }
 
-    /* ── UI panels ── */
-    int ui_y = H - 148;
+    /* ── UI ── */
+    int ui_y = H - 144;          /* 336 */
 
-    /* Enemy info */
-    panel(4, ui_y, W/2-4, ui_y+64, C(0,1,6), C(10,12,22));
-    draw_str(12, ui_y+6,  "GOBLIN A", 2, C(22,22,28));
-    draw_str(12, ui_y+24, "HP", 2, C(22,8,8));
-    rect(40, ui_y+26, 160, ui_y+36, C(6,4,4));
-    rect(40, ui_y+26, 110, ui_y+36, C(22,4,4));
-    draw_str(12, ui_y+40, "WARDEN  HP", 2, C(22,22,28));
-    rect(96, ui_y+42, 290, ui_y+52, C(6,4,4));
-    rect(96, ui_y+42, 200, ui_y+52, C(22,8,4));
+    /* Enemy info (left) */
+    panel(4, ui_y, W/2-6, ui_y+62, C(0,1,6), C(10,12,22));
+    draw_str(14, ui_y+6, "ENEMIES", 1, C(14,16,24));
+    stat_bar(14, ui_y+18, "GOBLIN", 110, 220, 62, 100, C(22,6,6));
+    stat_bar(14, ui_y+34, "WARDEN", 110, 220, 84, 100, C(22,10,6));
 
-    /* Party info */
-    panel(W/2+4, ui_y, W-4, ui_y+64, C(0,1,6), C(10,12,22));
-    draw_str(W/2+12, ui_y+6,  "ARIA  HP", 2, C(22,22,28));
-    rect(W/2+72, ui_y+8,  W/2+190, ui_y+18, C(6,4,4));
-    rect(W/2+72, ui_y+8,  W/2+140, ui_y+18, C(20,4,4));
-    draw_str(W/2+12, ui_y+24, "LORAS HP", 2, C(22,22,28));
-    rect(W/2+72, ui_y+26, W/2+190, ui_y+36, C(6,4,4));
-    rect(W/2+72, ui_y+26, W/2+160, ui_y+36, C(20,4,4));
-    draw_str(W/2+12, ui_y+42, "KNIGHT HP", 2, C(22,22,28));
-    rect(W/2+80, ui_y+44, W/2+190, ui_y+54, C(6,4,4));
-    rect(W/2+80, ui_y+44, W/2+120, ui_y+54, C(20,4,4));
+    /* Party info (right) */
+    panel(W/2+6, ui_y, W-4, ui_y+62, C(0,1,6), C(10,12,22));
+    draw_str(W/2+16, ui_y+6, "PARTY", 1, C(14,16,24));
+    stat_bar(W/2+16, ui_y+16, "ARIA",   W/2+96, 200, 70, 100, C(18,6,6));
+    stat_bar(W/2+16, ui_y+30, "LORAS",  W/2+96, 200, 88, 100, C(18,6,6));
+    stat_bar(W/2+16, ui_y+44, "KNIGHT", W/2+96, 200, 60, 100, C(18,6,6));
 
-    /* Command panel */
-    panel(4, ui_y+68, W/2-4, H-4, C(0,1,6), C(10,12,22));
+    /* Command panel (left) */
+    panel(4, ui_y+66, W/2-6, H-4, C(0,1,6), C(10,12,22));
     const char *cmds[] = {"ATTACK", "SKILL", "ITEM", "RUN"};
     int cmd_sel = (f/30) & 3;
     for (int i = 0; i < 4; i++) {
-        int cx = W/4 + (i%2)*(W/4) - W/8;
-        int cy = ui_y + 78 + (i/2)*36;
+        int cx = 84 + (i & 1) * 150;
+        int cy = ui_y + 80 + (i >> 1) * 30;
         if (i == cmd_sel) {
-            rect(cx-42, cy-4, cx+42, cy+20, C(6,8,20));
-            hline(cx-42, cx+42, cy-4, C(12,16,28));
+            rect(cx-58, cy-5, cx+58, cy+18, C(6,8,20));
+            hline(cx-58, cx+58, cy-5,  C(14,18,30));
+            hline(cx-58, cx+58, cy+18, C(14,18,30));
+            /* cursor */
+            draw_char(cx-54, cy, 'Z', 1, C(28,26,14));
         }
         draw_strc(cx, cy, cmds[i], 2, (i==cmd_sel) ? C(30,28,14) : C(18,20,26));
     }
 
-    /* Battle log */
-    panel(W/2+4, ui_y+68, W-4, H-4, C(0,1,6), C(10,12,22));
-    draw_str(W/2+12, ui_y+76, "ARIA ATTACKS", 2, C(22,22,28));
-    draw_str(W/2+12, ui_y+98, "GOBLIN A TAKES 42 DMG", 1, C(20,12,8));
-    draw_str(W/2+12, ui_y+114,"GOBLIN A USES SLASH", 2, C(22,22,28));
-    draw_str(W/2+12, ui_y+136,"ARIA TAKES 18 DMG", 1, C(20,12,8));
+    /* Battle log (right) */
+    panel(W/2+6, ui_y+66, W-4, H-4, C(0,1,6), C(10,12,22));
+    draw_str(W/2+16, ui_y+76, "ARIA ATTACKS GOBLIN", 1, C(20,22,28));
+    draw_str(W/2+16, ui_y+90, "GOBLIN TAKES 42 DAMAGE!", 1, C(22,14,8));
+    draw_str(W/2+16, ui_y+108,"GOBLIN USES SLASH", 1, C(20,22,28));
+    draw_str(W/2+16, ui_y+122,"ARIA TAKES 18 DAMAGE", 1, C(22,14,8));
 
     /* Day/night indicator */
-    draw_str(W-80, 4, is_night ? "NIGHT" : "DAY  ", 1, C(16,18,26));
+    draw_str(W-72, 6, is_night ? "NIGHT" : "DAY", 1, C(16,18,26));
 }
 
 /* ── Scene: Boss ── */
 static void scene_boss(int f) {
     /* Night battle bg for boss */
     battle_bg_night(f);
-    moon_rays(96, 56, 310);
+    moon_rays(96, 56, 300, f);
 
-    /* Boss warden — large, centered */
-    int bx = W/2, by = 190;
-    gshadow(bx, by+4, 40, 8);
+    /* Boss warden — large, centered, standing on the ground.
+     * A_warden has a blank trailing row, so its visible feet are ~4px above by;
+     * the shadow + light pool are anchored to the visible feet, not the cell. */
+    int bx = W/2, by = 230;
+    lightpool(bx, by-6, 110, 16);
+    gshadow(bx, by-4, 44, 8);
     blit(bx-48, by-56, A_warden, 12, 14, 4);
 
     uint16_t boss_rim = C(20,24,30);
     blit_rim(bx-48, by-56, A_warden, 12, 14, 4, boss_rim);
 
-    /* Boss health bar */
-    panel(80, 14, W-80, 38, C(2,0,4), C(16,8,20));
-    draw_str(88, 18, "FOREST WARDEN", 2, C(26,20,28));
-    rect(240, 20, W-88, 34, C(8,4,8));
-    int hpbar = (W-88-240) * (100 - (f % 100)) / 100;
-    rect(240, 20, 240+hpbar, 34, C(20,4,20));
-    lightpool(bx, by+10, 100, 16);
+    /* Boss name + health bar (top banner) */
+    panel(70, 12, W-70, 40, C(2,0,4), C(16,8,20));
+    draw_str(80, 18, "FOREST WARDEN", 2, C(26,20,28));
+    {
+        int barx = 250, barw = (W-78) - barx;
+        rect(barx, 20, barx+barw, 34, C(8,4,8));
+        hline(barx, barx+barw, 20, C(20,10,24));
+        hline(barx, barx+barw, 34, C(20,10,24));
+        int hpbar = barw * (100 - (f % 100)) / 100;
+        if (hpbar > 1) rect(barx+1, 21, barx+hpbar, 33, C(20,4,20));
+    }
 
-    /* Party */
-    gshadow(130, 260, 20, 5);
-    blit(130-10, 260-28, A_aria_b, 10, 14, 2);
-
-    gshadow(200, 275, 20, 5);
-    blit(200-10, 275-28, A_loras_b, 10, 14, 2);
-
-    gshadow(270, 268, 20, 5);
-    draw_knight(270, 268);
-
-    /* Boss attack VFX */
+    /* Boss attack VFX — purple shockwave radiating from the warden */
     if ((f/15)%4 < 2) {
-        /* Purple shockwave */
         int wave_r = ((f*4) % 200);
         for (int dy = -wave_r; dy <= wave_r; dy += 2) {
             int hw = isqrt(wave_r*wave_r - dy*dy);
@@ -1581,31 +1602,44 @@ static void scene_boss(int f) {
         }
     }
 
-    /* Fireflies */
-    for (int i = 0; i < 16; i++) {
+    /* Party — front row, on the ground (feet y ≈ 312..320) */
+    lightpool(210, 322, 130, 16);
+    gshadow(150, 312, 20, 5);
+    blit(150-10, 312-28, A_aria_b, 10, 14, 2);
+    blit_rim(150-10, 312-28, A_aria_b, 10, 14, 2, boss_rim);
+
+    gshadow(240, 320, 20, 5);
+    blit(240-10, 320-28, A_loras_b, 10, 14, 2);
+    blit_rim(240-10, 320-28, A_loras_b, 10, 14, 2, boss_rim);
+
+    gshadow(330, 316, 20, 5);
+    draw_knight(330, 316);
+    blit_rim(330-8, 316-24, A_knight, 8, 12, 2, boss_rim);
+
+    /* Fireflies — confined to mid-field */
+    for (int i = 0; i < 14; i++) {
         int fix = 40 + (i * 173 + f*(i+1)/2) % (W-80);
-        int fiy = 160 + (isin((f+i*11)*4) * 40 >> 5);
+        int fiy = 250 + (isin((f+i*11)*4) * 30 >> 5);
         put(fix, fiy, C(24,28,8));
         if ((f>>2)&1) put(fix+1, fiy, C(20,22,6));
     }
 
-    /* UI */
-    int ui_y = H - 88;
-    panel(4, ui_y, W-4, H-4, C(0,1,6), C(10,12,22));
-    draw_str(12, ui_y+6,  "ARIA  HP", 2, C(22,22,28));
-    rect(72, ui_y+8, 220, ui_y+18, C(6,4,4));
-    rect(72, ui_y+8, 180, ui_y+18, C(20,4,4));
-    draw_str(12, ui_y+24, "LORAS HP", 2, C(22,22,28));
-    rect(72, ui_y+26, 220, ui_y+36, C(6,4,4));
-    rect(72, ui_y+26, 150, ui_y+36, C(20,4,4));
-    draw_str(12, ui_y+42, "KNIGHT HP", 2, C(22,22,28));
-    rect(80, ui_y+44, 220, ui_y+54, C(6,4,4));
-    rect(80, ui_y+44, 130, ui_y+54, C(20,4,4));
+    /* ── UI ── */
+    int ui_y = H - 90;
 
-    panel(W/2-50, ui_y, W-4, H-4, C(0,1,6), C(10,12,22));
-    draw_str(W/2-40, ui_y+8,  "WARDEN CASTS DARK VEIL", 2, C(22,8,28));
-    draw_str(W/2-40, ui_y+30, "ARIA COUNTERS WITH HOLY", 2, C(22,22,8));
-    draw_str(W/2-40, ui_y+52, "WARDEN TAKES 180 DMG", 2, C(28,12,4));
+    /* Party HP (left) */
+    panel(4, ui_y, W/2-6, H-4, C(0,1,6), C(10,12,22));
+    draw_str(14, ui_y+6, "PARTY", 1, C(14,16,24));
+    stat_bar(14, ui_y+18, "ARIA",   96, W/2-120, 78, 100, C(18,6,6));
+    stat_bar(14, ui_y+38, "LORAS",  96, W/2-120, 64, 100, C(18,6,6));
+    stat_bar(14, ui_y+58, "KNIGHT", 96, W/2-120, 56, 100, C(18,6,6));
+
+    /* Battle log (right) */
+    panel(W/2+6, ui_y, W-4, H-4, C(0,1,6), C(10,12,22));
+    draw_str(W/2+16, ui_y+8,  "WARDEN CASTS DARK VEIL", 1, C(22,10,28));
+    draw_str(W/2+16, ui_y+26, "ARIA COUNTERS WITH HOLY", 1, C(24,24,10));
+    draw_str(W/2+16, ui_y+44, "WARDEN TAKES 180 DAMAGE!", 1, C(28,14,6));
+    draw_str(W/2+16, ui_y+62, "THE WARDEN STAGGERS", 1, C(20,22,28));
 }
 
 /* ── Main ── */
