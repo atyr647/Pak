@@ -362,7 +362,7 @@ proc codegen::platformer::_audio_block_assets {doc} {
     set chan {jump 4 coin 5 hurt 6 stomp 7 spring 8 checkpoint 9 win 10}
     set lines {}
     lappend lines "-- ── Sample-based audio (mixer + wav64/xm64) ──────────────────────────────────"
-    lappend lines "fn audio_init() \{"
+    lappend lines "fn snd_init() \{"
     lappend lines "    audio.init(44100, 4)"
     lappend lines "    mixer.init(16)"
     foreach role {jump coin hurt stomp spring checkpoint win} {
@@ -507,7 +507,7 @@ fn fill_audio() {
     }
 }
 
-fn audio_init() {
+fn snd_init() {
     audio.init(44100, 4)
     init_music_table()
 }
@@ -1619,7 +1619,7 @@ entry {
     defer { rdpq.close() }
 
     init_font()
-    audio_init()
+    snd_init()
 
     gs.phase = Phase.title
     gs.frame = 0
