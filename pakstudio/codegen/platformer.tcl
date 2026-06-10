@@ -89,7 +89,7 @@ proc codegen::platformer::_main_pk64 {doc} {
     lappend out [_level_dispatch $doc]
     lappend out [_entity_block]
     lappend out [_gamestate_block]
-    lappend out [_save_block]
+    lappend out [_save_block $doc]
     lappend out [_spawn_block]
     lappend out [_load_level $doc]
     lappend out [_player_block $doc]
@@ -98,8 +98,24 @@ proc codegen::platformer::_main_pk64 {doc} {
     lappend out [_render_title $doc]
     lappend out [_render_dispatch]
     lappend out [_update_block]
-    lappend out [_entry_block]
+    lappend out [_entry_block $doc]
     return [join $out "\n"]
+}
+
+# ── Save storage ─────────────────────────────────────────────────────────────
+# save_type "none" disables persistence entirely (no EEPROM use, stub save/load).
+# Every other mode uses EEPROM block 0 for the compact save (high score + best
+# stage): it is the universal tiny-save medium and links against stock libdragon.
+# The selected type is still advertised in pak.toml / the ROM header.
+
+proc codegen::platformer::_save_type {doc} {
+    if {[dict exists $doc settings save_type]} {
+        return [dict get $doc settings save_type]
+    }
+    return "none"
+}
+proc codegen::platformer::_save_on {doc} {
+    expr {[_save_type $doc] ne "none"}
 }
 
 # ── Controller mapping ───────────────────────────────────────────────────────
@@ -172,7 +188,9 @@ proc codegen::platformer::_header {doc} {
     lappend lines "use n64.timer"
     lappend lines "use n64.audio"
     lappend lines "use n64.math"
-    lappend lines "use n64.eeprom"
+    if {[_save_on $doc]} {
+        lappend lines "use n64.eeprom"
+    }
     if {[_any_sprite $doc]} {
         lappend lines "use n64.sprite"
     }
@@ -749,6 +767,7 @@ struct GameState {
     frame: i32
     menu_sel: i32
     hi_score: i32
+    best_stage: i32
 }
 
 static gs: GameState = undefined
@@ -757,8 +776,17 @@ static gs: GameState = undefined
 
 # ── Save / load (static) ─────────────────────────────────────────────────────
 
-proc codegen::platformer::_save_block {} {
-    return {-- ── EEPROM save / load (high score) ──────────────────────────────────────────
+proc codegen::platformer::_save_block {doc} {
+    if {![_save_on $doc]} {
+        return {-- ── Save / load (disabled: save_type = none) ────────────────────────────────
+fn save_present() -> bool { return false }
+
+fn load_hi() -> i32 { return 0 }
+
+fn save_hi(score: i32) { }
+}
+    }
+    return {-- ── EEPROM save / load (high score + best stage) ─────────────────────────────
 @aligned(16)
 static save_buf: [8]u8 = undefined
 
@@ -766,11 +794,13 @@ fn save_present() -> bool {
     return eeprom.present()
 }
 
+-- Reads the save block; sets gs.best_stage and returns the stored high score.
 fn load_hi() -> i32 {
     if not save_present() { return 0 }
     eeprom.read(SAVE_BLOCK, &save_buf[0])
     if save_buf[0] != SAVE_MAGIC_HI { return 0 }
     if save_buf[1] != SAVE_MAGIC_LO { return 0 }
+    gs.best_stage = save_buf[6] as i32
     return (save_buf[2] as i32 << 24)
          | (save_buf[3] as i32 << 16)
          | (save_buf[4] as i32 << 8)
@@ -785,7 +815,7 @@ fn save_hi(score: i32) {
     save_buf[3] = (score >> 16) as u8
     save_buf[4] = (score >> 8) as u8
     save_buf[5] = score as u8
-    save_buf[6] = 0
+    save_buf[6] = gs.best_stage as u8
     save_buf[7] = 0
     eeprom.write(SAVE_BLOCK, &save_buf[0])
 }
@@ -1612,8 +1642,12 @@ proc codegen::platformer::_render_title {doc} {
     if (gs.frame / 20) % 2 == 0 \{
         draw_text_centered(\"PRESS START\", SCREEN_W / 2, 150, 2, 0xFFFFFFFF)
     \}
-    draw_text(\"HI\", 130, 200, 1, 0xFFFFFFFF)
-    draw_number(gs.hi_score, 144, 200, 1, 0xFFDD00FF)
+    draw_text(\"HI\", 110, 195, 1, 0xFFFFFFFF)
+    draw_number(gs.hi_score, 124, 195, 1, 0xFFDD00FF)
+    if gs.best_stage > 0 \{
+        draw_text(\"BEST STAGE\", 110, 210, 1, 0x88FF88FF)
+        draw_number(gs.best_stage, 180, 210, 1, 0x88FF88FF)
+    \}
 \}
 "
 }
@@ -1647,6 +1681,7 @@ fn start_game() {
     gs.lives = 3
     gs.level = 0
     gs.player.health = 3
+    if gs.best_stage < 1 { gs.best_stage = 1 }
     load_level(0)
     gs.phase = Phase.playing
     music_start()
@@ -1682,6 +1717,7 @@ fn update(pad: joypad_status_t) {
         .levelclear => {
             if pad.pressed.start or pad.pressed.a {
                 gs.level += 1
+                if gs.level + 1 > gs.best_stage { gs.best_stage = gs.level + 1 }
                 load_level(gs.level)
                 gs.player.health = 3
                 gs.phase = Phase.playing
@@ -1689,19 +1725,15 @@ fn update(pad: joypad_status_t) {
         }
         .gameover => {
             if pad.pressed.start or pad.pressed.a {
-                if gs.score > gs.hi_score {
-                    gs.hi_score = gs.score
-                    save_hi(gs.hi_score)
-                }
+                if gs.score > gs.hi_score { gs.hi_score = gs.score }
+                save_hi(gs.hi_score)
                 gs.phase = Phase.title
             }
         }
         .win => {
             if pad.pressed.start or pad.pressed.a {
-                if gs.score > gs.hi_score {
-                    gs.hi_score = gs.score
-                    save_hi(gs.hi_score)
-                }
+                if gs.score > gs.hi_score { gs.hi_score = gs.score }
+                save_hi(gs.hi_score)
                 gs.phase = Phase.title
             }
         }
@@ -1713,15 +1745,19 @@ fn update(pad: joypad_status_t) {
 
 # ── Entry (static) ───────────────────────────────────────────────────────────
 
-proc codegen::platformer::_entry_block {} {
-    return {-- ── Entry ────────────────────────────────────────────────────────────────────
+proc codegen::platformer::_entry_block {doc} {
+    if {[_save_on $doc]} {
+        set eeprom_init "    eeprom.init()\n"
+    } else {
+        set eeprom_init ""
+    }
+    set tmpl {-- ── Entry ────────────────────────────────────────────────────────────────────
 entry {
     display.init(0, 2, 3, 0, 1)
     rdpq.init()
     controller.init()
     timer.init()
-    eeprom.init()
-
+@@EEPROMINIT@@
     defer { rdpq.close() }
 
     init_font()
@@ -1734,6 +1770,7 @@ entry {
     gs.coins = 0
     gs.lives = 3
     gs.level = 0
+    gs.best_stage = 0
     gs.hi_score = load_hi()
     gs.player.health = 3
     gs.player.spawn_x = 32.0
@@ -1751,4 +1788,5 @@ entry {
     }
 }
 }
+    return [string map [list @@EEPROMINIT@@ $eeprom_init] $tmpl]
 }

@@ -189,6 +189,36 @@ check_doc_passes "legacy doc without controls key" $dleg
 set pakleg [dict get [codegen::generate $dleg] "src/main.pk64"]
 assert "legacy doc falls back to default jump" {[string match "*pad.pressed.a or pad.pressed.b*" $pakleg]}
 
+# ── Save modes ────────────────────────────────────────────────────────────────
+
+puts "\n=== save modes: codegen + pak check across save types ==="
+
+foreach st {none eeprom4k eeprom16k sram flashram} {
+    project::new platformer "Save $st"
+    project::set_field settings save_type $st
+    set d [project::current_doc]
+    set pakk [dict get [codegen::generate $d] "src/main.pk64"]
+    if {$st eq "none"} {
+        assert "save=none: no eeprom use"   {![string match "*use n64.eeprom*" $pakk]}
+        assert "save=none: no eeprom.init"  {![string match "*eeprom.init()*" $pakk]}
+        assert "save=none: stub save_hi"    {[string match "*fn save_hi(score: i32) \{ \}*" $pakk]}
+    } else {
+        assert "save=$st: uses eeprom"      {[string match "*use n64.eeprom*" $pakk]}
+        assert "save=$st: calls eeprom.init" {[string match "*eeprom.init()*" $pakk]}
+        assert "save=$st: persists best_stage" {[string match "*= gs.best_stage as u8*" $pakk]}
+    }
+    # pak.toml advertises the chosen mode
+    set tomlk [dict get [codegen::generate $d] "pak.toml"]
+    assert "save=$st: pak.toml advertises $st" {[string match "*save_type = \"$st\"*" $tomlk]}
+    check_doc_passes "save=$st mapping" $d
+}
+
+# best-stage progression is tracked on level clear and persisted
+project::new platformer "Progress"
+set pakp [dict get [codegen::generate [project::current_doc]] "src/main.pk64"]
+assert "best_stage bumped on level clear" {[string match "*if gs.level + 1 > gs.best_stage*" $pakp]}
+assert "title shows BEST STAGE"           {[string match "*BEST STAGE*" $pakp]}
+
 # ── Asset pipeline ────────────────────────────────────────────────────────────
 
 puts "\n=== asset pipeline: codegen + pak check across asset configs ==="

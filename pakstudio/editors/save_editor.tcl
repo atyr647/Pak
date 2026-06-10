@@ -1,6 +1,32 @@
 # editors/save_editor.tcl — save type & ROM settings panel
 
-namespace eval save_ed {}
+namespace eval save_ed {
+    # code <-> friendly label for cartridge save backends
+    variable SAVE {
+        none      "None (no saving)"
+        eeprom4k  "EEPROM 4 Kbit"
+        eeprom16k "EEPROM 16 Kbit"
+        sram      "SRAM 256 Kbit"
+        flashram  "FlashRAM 1 Mbit"
+    }
+}
+
+proc save_ed::_st_labels {} {
+    variable SAVE
+    set out {}
+    foreach {code label} $SAVE { lappend out $label }
+    return $out
+}
+proc save_ed::_st_label {code} {
+    variable SAVE
+    if {[dict exists $SAVE $code]} { return [dict get $SAVE $code] }
+    return [lindex $SAVE 1]
+}
+proc save_ed::_st_code {label} {
+    variable SAVE
+    foreach {code l} $SAVE { if {$l eq $label} { return $code } }
+    return "none"
+}
 
 proc save_ed::create {parent} {
     set f [ttk::frame $parent.saveed]
@@ -11,18 +37,17 @@ proc save_ed::create {parent} {
     grid $f.title -row 0 -columnspan 2 -sticky w  -padx 8 -pady {8 2}
     grid $f.sep   -row 1 -columnspan 2 -sticky ew -padx 8 -pady 4
 
-    set ::save_type        "none"
+    set ::save_label       [save_ed::_st_label "eeprom4k"]
     set ::save_rom_title   ""
     set ::save_resolution  "320x240"
     set ::save_bit_depth   16
     set ::save_framebuffers 3
 
-    # Save type
+    # Save type — friendly labels mapped to internal codes
     ttk::label $f.stlbl -text "Save Type:" -anchor w
-    set save_types {none eeprom4k eeprom16k sram flashram}
-    ttk::combobox $f.stcmb -textvariable ::save_type -values $save_types \
-        -state readonly -width 14
-    ttk::label $f.stinfo -text "Note: EEPROM = 8-byte blocks" \
+    ttk::combobox $f.stcmb -textvariable ::save_label -values [save_ed::_st_labels] \
+        -state readonly -width 22
+    ttk::label $f.stinfo -text "Saves high score + best stage (None = no saving)" \
         -foreground #888888 -font {TkDefaultFont 8}
 
     grid $f.stlbl  -row 2 -column 0 -sticky w  -padx {8 2} -pady 4
@@ -69,7 +94,7 @@ proc save_ed::create {parent} {
 
 proc save_ed::load_doc {doc} {
     set s [dict get $doc settings]
-    set ::save_type         [dict get $s save_type]
+    set ::save_label        [save_ed::_st_label [dict get $s save_type]]
     set ::save_resolution   [dict get $s resolution]
     set ::save_bit_depth    [dict get $s bit_depth]
     set ::save_framebuffers [dict get $s framebuffers]
@@ -77,7 +102,7 @@ proc save_ed::load_doc {doc} {
 }
 
 proc save_ed::save_to_doc {} {
-    project::set_field settings save_type    $::save_type
+    project::set_field settings save_type    [save_ed::_st_code $::save_label]
     project::set_field settings resolution   $::save_resolution
     project::set_field settings bit_depth    $::save_bit_depth
     project::set_field settings framebuffers $::save_framebuffers

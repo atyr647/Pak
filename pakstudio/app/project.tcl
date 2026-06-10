@@ -30,7 +30,7 @@ proc project::new {genre {name "Untitled"}} {
             resolution  "320x240" \
             bit_depth   16 \
             framebuffers 3 \
-            save_type   "none" \
+            save_type   "eeprom4k" \
             palette     "arcade" \
         ] \
         physics  [_default_physics $genre] \
