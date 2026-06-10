@@ -8,6 +8,7 @@ package require Tk
 set here [file dirname [file normalize [info script]]]
 
 foreach f {
+    app/rpg_schema.tcl
     app/project.tcl
     codegen/platformer.tcl
     codegen/shmup.tcl
@@ -26,6 +27,14 @@ foreach f {
     editors/save_editor.tcl
     editors/preview.tcl
     editors/assets.tcl
+    editors/rpg_common.tcl
+    editors/rpg_db.tcl
+    editors/rpg_events.tcl
+    editors/rpg_quests.tcl
+    editors/rpg_craft.tcl
+    editors/rpg_dialogue.tcl
+    editors/rpg_world.tcl
+    editors/rpg.tcl
 } {
     source [file join $here $f]
 }
@@ -216,10 +225,10 @@ proc app::_create_toolbar {} {
         open   "Open"      app::cmd_open
         save   "Save"      app::cmd_save
         -      -           -
-        build  "Build ▶"  app::cmd_build
+        build  "Build"     app::cmd_build
         run    "Run"       app::cmd_run
         -      -           -
-        check  "Check ✓"  app::cmd_validate
+        check  "Check"     app::cmd_validate
     } {
         if {$id eq "-"} {
             incr n
@@ -312,6 +321,7 @@ proc app::_create_left_panel {f} {
 }
 
 proc app::_on_level_select {lb} {
+    if {$::app_genre eq "topdown"} return
     set sel [$lb curselection]
     if {$sel eq {}} return
     set idx [lindex $sel 0]
@@ -360,53 +370,59 @@ proc app::_refresh_level_list {} {
 
 # ── Centre panel ──────────────────────────────────────────────────────────────
 
+# The centre notebook is populated lazily per-genre by _populate_centre, which
+# runs when a project loads. ::app_genre tracks which tab set is currently live.
+set ::app_genre ""
+
 proc app::_create_centre_panel {f} {
     set nb [ttk::notebook $f.nb]
     pack $nb -fill both -expand 1
-
-    # Level Editor
-    set led [ttk::frame $nb.led]
-    $nb add $led -text "  Level Editor  "
-    level_ed::create $led \
-        app::_on_level_changed \
-        app::_on_object_selected
-
-    # Live Preview
-    set prv [ttk::frame $nb.prv]
-    $nb add $prv -text "  Preview  "
-    preview_ed::create $prv
-
-    # Physics
-    set phy [ttk::frame $nb.phy]
-    $nb add $phy -text "  Physics  "
-    physics_ed::create $phy app::_on_physics_changed
-
-    # Controls
-    set ctl [ttk::frame $nb.ctl]
-    $nb add $ctl -text "  Controls  "
-    controls_ed::create $ctl
-
-    # Audio
-    set aud [ttk::frame $nb.aud]
-    $nb add $aud -text "  Audio  "
-    audio_ed::create $aud
-
-    # Assets
-    set ast [ttk::frame $nb.ast]
-    $nb add $ast -text "  Assets  "
-    assets_ed::create $ast
-
-    # ROM Settings
-    set rom [ttk::frame $nb.rom]
-    $nb add $rom -text "  ROM Settings  "
-    save_ed::create $rom
-
     bind $nb <<NotebookTabChanged>> app::_on_tab_changed
     set ::app_centre_nb $nb
 }
 
+# Build the tab set appropriate to $genre, replacing whatever was there.
+proc app::_populate_centre {genre} {
+    set nb $::app_centre_nb
+    if {$::app_genre eq $genre && [llength [$nb tabs]] > 0} return
+    foreach t [$nb tabs] { destroy $t }
+    set ::app_genre $genre
+    if {$genre eq "topdown"} {
+        rpg_ed::create_tabs $nb
+    } else {
+        set led [ttk::frame $nb.led]
+        $nb add $led -text "  Level Editor  "
+        level_ed::create $led app::_on_level_changed app::_on_object_selected
+
+        set prv [ttk::frame $nb.prv]
+        $nb add $prv -text "  Preview  "
+        preview_ed::create $prv
+
+        set phy [ttk::frame $nb.phy]
+        $nb add $phy -text "  Physics  "
+        physics_ed::create $phy app::_on_physics_changed
+
+        set ctl [ttk::frame $nb.ctl]
+        $nb add $ctl -text "  Controls  "
+        controls_ed::create $ctl
+
+        set aud [ttk::frame $nb.aud]
+        $nb add $aud -text "  Audio  "
+        audio_ed::create $aud
+
+        set ast [ttk::frame $nb.ast]
+        $nb add $ast -text "  Assets  "
+        assets_ed::create $ast
+
+        set rom [ttk::frame $nb.rom]
+        $nb add $rom -text "  ROM Settings  "
+        save_ed::create $rom
+    }
+}
+
 proc app::_on_tab_changed {} {
     set nb  $::app_centre_nb
+    if {[llength [$nb tabs]] == 0} return
     set tab [$nb tab current -text]
     # Don't flush panel state into the doc until a project is actually loaded —
     # tab changes fire while the notebook is first being populated.
@@ -414,6 +430,7 @@ proc app::_on_tab_changed {} {
         if {[string match "*Preview*" $tab]} { catch { preview_ed::refresh } }
         return
     }
+    if {$::app_genre eq "topdown"} return
     catch {
         switch -glob $tab {
             "*Audio*"    { audio_ed::save_to_doc    }
@@ -571,10 +588,7 @@ proc app::cmd_open {} {
 proc app::cmd_save {} {
     set path [project::current_path]
     if {$path eq ""} { cmd_save_as; return }
-    audio_ed::save_to_doc
-    save_ed::save_to_doc
-    physics_ed::save_to_doc
-    controls_ed::save_to_doc
+    app::_flush_editors
     project::save_to $path
     status "Saved: $path"
     _update_title
@@ -585,10 +599,7 @@ proc app::cmd_save_as {} {
         -filetypes {{"PakStudio Projects" .pakstudio} {"All Files" *}} \
         -defaultextension .pakstudio]
     if {$path eq ""} return
-    audio_ed::save_to_doc
-    save_ed::save_to_doc
-    physics_ed::save_to_doc
-    controls_ed::save_to_doc
+    app::_flush_editors
     project::save_to $path
     status "Saved: $path"
     _update_title
@@ -608,10 +619,7 @@ proc app::cmd_validate {} {
     variable log_widget
     log_panel::clear $log_widget
     log_panel::append $log_widget "--- Running pak check ---"
-    audio_ed::save_to_doc
-    save_ed::save_to_doc
-    physics_ed::save_to_doc
-    controls_ed::save_to_doc
+    app::_flush_editors
     set doc    [project::current_doc]
     set result [validate::check_doc $doc]
     if {[dict get $result ok]} {
@@ -632,10 +640,7 @@ proc app::cmd_build {} {
     variable outdir
     if {$build_running} return
 
-    audio_ed::save_to_doc
-    save_ed::save_to_doc
-    physics_ed::save_to_doc
-    controls_ed::save_to_doc
+    app::_flush_editors
 
     if {$outdir eq "" || ![file isdirectory $outdir]} {
         set outdir [tk_chooseDirectory \
@@ -683,13 +688,34 @@ proc app::cmd_run {} {
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
+# Flush in-memory editor panel state into the doc before save/build/validate.
+proc app::_flush_editors {} {
+    if {$::app_genre eq "topdown"} {
+        catch { rpg_ed::save_to_doc }
+    } else {
+        catch { audio_ed::save_to_doc }
+        catch { save_ed::save_to_doc }
+        catch { physics_ed::save_to_doc }
+        catch { controls_ed::save_to_doc }
+    }
+}
+
 proc app::_load_doc {doc} {
+    set genre [expr {[dict exists $doc meta genre] ? [dict get $doc meta genre] : "platformer"}]
+    _populate_centre $genre
+    _refresh_level_list
+    if {$genre eq "topdown"} {
+        rpg_ed::load_doc $doc
+        catch { $::app_level_lb selection clear 0 end }
+        _update_title
+        status "RPG project loaded"
+        return
+    }
     physics_ed::load_doc  $doc
     controls_ed::load_doc $doc
     audio_ed::load_doc    $doc
     save_ed::load_doc     $doc
     assets_ed::load_doc   $doc
-    _refresh_level_list
     $::app_level_lb selection clear 0 end
     $::app_level_lb selection set 0
     level_ed::load_doc $doc 0
