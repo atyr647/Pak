@@ -699,7 +699,7 @@ static gs: GameState = undefined
 
 proc codegen::platformer::_save_block {} {
     return {-- ── EEPROM save / load (high score) ──────────────────────────────────────────
-@aligned(8)
+@aligned(16)
 static save_buf: [8]u8 = undefined
 
 fn save_present() -> bool {
@@ -1002,6 +1002,12 @@ fn player_update(pad: joypad_status_t) {
     let max_cam: i32 = level_w(lvl) * TILE_SZ - SCREEN_W
     if max_cam < 0 { max_cam = 0 }
     if gs.cam_x > max_cam { gs.cam_x = max_cam }
+
+    gs.cam_y = gs.player.y as i32 - SCREEN_H / 2
+    if gs.cam_y < 0 { gs.cam_y = 0 }
+    let max_cam_y: i32 = level_h(lvl) * TILE_SZ - SCREEN_H
+    if max_cam_y < 0 { max_cam_y = 0 }
+    if gs.cam_y > max_cam_y { gs.cam_y = max_cam_y }
 }
 }
 }
@@ -1139,15 +1145,18 @@ proc codegen::platformer::_render_world {doc} {
     let start_tx: i32 = gs.cam_x / TILE_SZ
     let end_tx: i32 = start_tx + SCREEN_W / TILE_SZ + 2
     if end_tx > w { end_tx = w }
+    let start_ty: i32 = gs.cam_y / TILE_SZ
+    let end_ty: i32 = start_ty + SCREEN_H / TILE_SZ + 2
+    if end_ty > h { end_ty = h }
 
-    let ty: i32 = 0
-    while ty < h {
+    let ty: i32 = start_ty
+    while ty < end_ty {
         let tx: i32 = start_tx
         while tx < end_tx {
             let t: u8 = tile_at(lvl, tx, ty)
             if t != T_EMPTY {
                 let sx: i32 = tx * TILE_SZ - gs.cam_x
-                let sy: i32 = ty * TILE_SZ
+                let sy: i32 = ty * TILE_SZ - gs.cam_y
                 rdpq.set_fill_color(tile_color(t))
                 rdpq.fill_rectangle(sx, sy, sx + TILE_SZ, sy + TILE_SZ)
             }
@@ -1185,13 +1194,16 @@ fn render_world() {
     let start_tx: i32 = gs.cam_x / TILE_SZ
     let end_tx: i32 = start_tx + SCREEN_W / TILE_SZ + 2
     if end_tx > w { end_tx = w }
-    let ty: i32 = 0
-    while ty < h {
+    let start_ty: i32 = gs.cam_y / TILE_SZ
+    let end_ty: i32 = start_ty + SCREEN_H / TILE_SZ + 2
+    if end_ty > h { end_ty = h }
+    let ty: i32 = start_ty
+    while ty < end_ty {
         let tx: i32 = start_tx
         while tx < end_tx {
             let t: u8 = tile_at(lvl, tx, ty)
             if t != T_EMPTY {
-                draw_tile(t, tx * TILE_SZ - gs.cam_x, ty * TILE_SZ)
+                draw_tile(t, tx * TILE_SZ - gs.cam_x, ty * TILE_SZ - gs.cam_y)
             }
             tx += 1
         }
@@ -1210,11 +1222,12 @@ proc codegen::platformer::_render_entities {doc} {
     if {!$any} {
         return {fn render_entities() {
     rdpq.sync_pipe()
+    rdpq.set_mode_fill(0xFFDD00FF)
     let ci: i32 = 0
     while ci < num_coins {
         if coins[ci].active {
             let sx: i32 = coins[ci].x as i32 - gs.cam_x
-            let sy: i32 = coins[ci].y as i32
+            let sy: i32 = coins[ci].y as i32 - gs.cam_y
             let bob: i32 = (gs.frame / 8 + ci) % 4 - 2
             rdpq.set_fill_color(0xFFDD00FF)
             rdpq.fill_rectangle(sx + 4, sy + 3 + bob, sx + 12, sy + 11 + bob)
@@ -1224,7 +1237,7 @@ proc codegen::platformer::_render_entities {doc} {
     let si: i32 = 0
     while si < num_springs {
         let sx: i32 = springs[si].x as i32 - gs.cam_x
-        let sy: i32 = springs[si].y as i32
+        let sy: i32 = springs[si].y as i32 - gs.cam_y
         rdpq.set_fill_color(0x44CC88FF)
         rdpq.fill_rectangle(sx + 2, sy + 10, sx + 14, sy + 16)
         si += 1
@@ -1232,7 +1245,7 @@ proc codegen::platformer::_render_entities {doc} {
     let ki: i32 = 0
     while ki < num_checks {
         let sx: i32 = checks[ki].x as i32 - gs.cam_x
-        let sy: i32 = checks[ki].y as i32
+        let sy: i32 = checks[ki].y as i32 - gs.cam_y
         let col: u32 = 0x888888FF
         if checks[ki].reached { col = 0x00DDFFFF }
         rdpq.set_fill_color(col)
@@ -1240,7 +1253,7 @@ proc codegen::platformer::_render_entities {doc} {
         ki += 1
     }
     let gx: i32 = goal.x as i32 - gs.cam_x
-    let gy: i32 = goal.y as i32
+    let gy: i32 = goal.y as i32 - gs.cam_y
     rdpq.set_fill_color(0xFFFFFFFF)
     rdpq.fill_rectangle(gx + 7, gy - 16, gx + 9, gy + 16)
     rdpq.set_fill_color(0xFFCC00FF)
@@ -1249,7 +1262,7 @@ proc codegen::platformer::_render_entities {doc} {
     while eii < num_enemies {
         if enemies[eii].alive {
             let sx: i32 = enemies[eii].x as i32 - gs.cam_x
-            let sy: i32 = enemies[eii].y as i32
+            let sy: i32 = enemies[eii].y as i32 - gs.cam_y
             rdpq.set_fill_color(enemies[eii].color)
             rdpq.fill_rectangle(sx, sy, sx + 14, sy + 14)
             rdpq.set_fill_color(0xFFFFFFFF)
@@ -1257,7 +1270,7 @@ proc codegen::platformer::_render_entities {doc} {
             rdpq.fill_rectangle(sx + 8, sy + 3, sx + 11, sy + 6)
         } elif enemies[eii].squash > 0 {
             let sx: i32 = enemies[eii].x as i32 - gs.cam_x
-            let sy: i32 = enemies[eii].y as i32
+            let sy: i32 = enemies[eii].y as i32 - gs.cam_y
             rdpq.set_fill_color(enemies[eii].color)
             rdpq.fill_rectangle(sx, sy + 10, sx + 14, sy + 14)
         }
@@ -1351,7 +1364,7 @@ proc codegen::platformer::_render_entities {doc} {
     while ci < num_coins {
         if coins[ci].active {
             let sx: i32 = coins[ci].x as i32 - gs.cam_x
-            let sy: i32 = coins[ci].y as i32
+            let sy: i32 = coins[ci].y as i32 - gs.cam_y
 @@COIN@@
         }
         ci += 1
@@ -1359,24 +1372,24 @@ proc codegen::platformer::_render_entities {doc} {
     let si: i32 = 0
     while si < num_springs {
         let sx: i32 = springs[si].x as i32 - gs.cam_x
-        let sy: i32 = springs[si].y as i32
+        let sy: i32 = springs[si].y as i32 - gs.cam_y
 @@SPRING@@
         si += 1
     }
     let ki: i32 = 0
     while ki < num_checks {
         let sx: i32 = checks[ki].x as i32 - gs.cam_x
-        let sy: i32 = checks[ki].y as i32
+        let sy: i32 = checks[ki].y as i32 - gs.cam_y
 @@CHECK@@
         ki += 1
     }
     let gx: i32 = goal.x as i32 - gs.cam_x
-    let gy: i32 = goal.y as i32
+    let gy: i32 = goal.y as i32 - gs.cam_y
 @@GOAL@@
     let eii: i32 = 0
     while eii < num_enemies {
         let sx: i32 = enemies[eii].x as i32 - gs.cam_x
-        let sy: i32 = enemies[eii].y as i32
+        let sy: i32 = enemies[eii].y as i32 - gs.cam_y
         if enemies[eii].alive {
 @@ENEMY@@
         } elif enemies[eii].squash > 0 {
@@ -1396,9 +1409,9 @@ proc codegen::platformer::_render_player {doc} {
         return {fn render_player() {
     if gs.player.invuln > 0 and (gs.frame / 3) % 2 == 0 { return }
     let sx: i32 = gs.player.x as i32 - gs.cam_x
-    let sy: i32 = gs.player.y as i32
+    let sy: i32 = gs.player.y as i32 - gs.cam_y
     rdpq.sync_pipe()
-    rdpq.set_fill_color(0xFF4444FF)
+    rdpq.set_mode_fill(0xFF4444FF)
     rdpq.fill_rectangle(sx + 2, sy + 4, sx + 10, sy + 15)
     rdpq.set_fill_color(0xFFCC99FF)
     rdpq.fill_rectangle(sx + 2, sy, sx + 10, sy + 5)
@@ -1414,7 +1427,7 @@ proc codegen::platformer::_render_player {doc} {
     return {fn render_player() {
     if gs.player.invuln > 0 and (gs.frame / 3) % 2 == 0 { return }
     let sx: i32 = gs.player.x as i32 - gs.cam_x
-    let sy: i32 = gs.player.y as i32
+    let sy: i32 = gs.player.y as i32 - gs.cam_y
     rdpq.sync_pipe()
     rdpq.set_mode_copy()
     sprite.blit(spr_player, sx, sy, 0)
@@ -1425,7 +1438,7 @@ proc codegen::platformer::_render_player {doc} {
 proc codegen::platformer::_render_suffix {} {
     return {fn render_hud() {
     rdpq.sync_pipe()
-    rdpq.set_fill_color(0x000000AA)
+    rdpq.set_mode_fill(0x000000AA)
     rdpq.fill_rectangle(0, 0, SCREEN_W, 16)
     rdpq.sync_pipe()
     draw_text("SCORE", 4, 4, 1, 0xFFFFFFFF)
@@ -1434,9 +1447,10 @@ proc codegen::platformer::_render_suffix {} {
     draw_number(gs.coins, 136, 4, 1, 0xFFDD00FF)
     draw_text("LIVES", 200, 4, 1, 0xFFFFFFFF)
     draw_number(gs.lives, 226, 4, 1, 0xFF4444FF)
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(0xFF2222FF)
     let hi: i32 = 0
     while hi < gs.player.health {
-        rdpq.set_fill_color(0xFF2222FF)
         rdpq.fill_rectangle(260 + hi * 8, 4, 266 + hi * 8, 12)
         hi += 1
     }
