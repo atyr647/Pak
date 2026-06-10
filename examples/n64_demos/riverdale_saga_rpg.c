@@ -27,6 +27,10 @@ static void rect_outline(int x,int y,int w,int h,uint16_t c){
  hbar(x,x+w-1,y,c); hbar(x,x+w-1,y+h-1,c);
  for(int i=0;i<h;i++){put(x,y+i,c);put(x+w-1,y+i,c);}}
 static int isqrt(int v){int r=0;while((r+1)*(r+1)<=v)r++;return r;}
+static const int8_t SIN64[64]={0,3,6,9,12,15,17,20,22,24,26,27,29,30,30,31,
+ 31,31,30,30,29,27,26,24,22,20,17,15,12,9,6,3,0,-3,-6,-9,-12,-15,-17,-20,-22,
+ -24,-26,-27,-29,-30,-30,-31,-31,-31,-30,-30,-29,-27,-26,-24,-22,-20,-17,-15,-12,-9,-6,-3};
+static inline int isin(int a){return SIN64[a&63];}
 static void disc(int cx,int cy,int r,uint16_t c){
  for(int dy=-r;dy<=r;dy++){int hf=isqrt(r*r-dy*dy); hbar(cx-hf,cx+hf,cy+dy,c);}}
 static void ring(int cx,int cy,int r,uint16_t c){
@@ -126,118 +130,104 @@ static void hpbar(int x,int y,int w,int v,int max,int r,int g,int b){
 #define TS 32
 static int hsh(int v){v^=v<<13;v^=v>>7;v^=v<<5;return v;}
 
-/* ── value noise: smooth organic variation for painterly terrain ──────────── */
-static inline int nhash(int x,int y){
- unsigned h=(unsigned)(x*374761393 + y*668265263); h=(h^(h>>13))*1274126177u; return (h>>16)&0xFF; }
-/* bilinear value noise at lattice scale 1<<sh, returns 0..255 */
-static int vnoise(int x,int y,int sh){
- int m=(1<<sh)-1, x0=x>>sh, y0=y>>sh, fx=x&m, fy=y&m;
- int n00=nhash(x0,y0),n10=nhash(x0+1,y0),n01=nhash(x0,y0+1),n11=nhash(x0+1,y0+1);
- int a=n00+(((n10-n00)*fx)>>sh), b=n01+(((n11-n01)*fx)>>sh);
- return a+(((b-a)*fy)>>sh); }
-static inline int clampc(int v){return v<0?0:(v>255?255:v);}
-
-/* a soft, top-left-lit foliage/rock blob with noisy leaf detail */
-static void blob(int cx,int cy,int r,int br,int bg,int bb,int rough){
- for(int dy=-r;dy<=r;dy++){int hf=isqrt(r*r-dy*dy);
-  for(int dx=-hf;dx<=hf;dx++){
-   int lt=-(dx+dy)*44/r;                       /* directional light */
-   int edge=(dx*dx+dy*dy)*36/(r*r);            /* darker rim */
-   int n=((((hsh((cx+dx)*131+(cy+dy)*977))>>5)&127)-64)*rough/100;
-   put_rgb(cx+dx,cy+dy, clampc(br+lt-edge+n), clampc(bg+lt-edge+n), clampc(bb+lt/2-edge+n));}}}
-
-static void t_grass(int sx,int sy,int wx,int wy){
- for(int y=0;y<TS;y++){int gy=wy+y;
-  for(int x=0;x<TS;x++){int gx=wx+x;
-   int patch=vnoise(gx,gy,5);                           /* soft meadow patches */
-   int blade=(hsh(gx*131+gy*977)>>4)&255;               /* fine blades */
-   int r=30 + patch*30/255 + (blade>210?16:0);
-   int g=58 + patch*78/255 + (blade>210?34:0) - (blade<40?20:0);
-   int b=22 + patch*22/255;
-   put_rgb(sx+x,sy+y, r,g,b);}}}
-static void t_path(int sx,int sy,int wx,int wy){
- for(int y=0;y<TS;y++){int gy=wy+y;
-  for(int x=0;x<TS;x++){int gx=wx+x;
-   int n=vnoise(gx,gy,4);
-   int st=(hsh(gx*71+gy*37)>>3)&255;
-   int r=104+n*46/255, g=80+n*34/255, b=48+n*22/255;
-   if(st>214){r+=34;g+=28;b+=20;}                       /* pale pebble */
-   else if(st<40){r-=34;g-=28;b-=18;}                   /* rut/shadow */
-   put_rgb(sx+x,sy+y, clampc(r),clampc(g),clampc(b));}}}
-static void t_water(int sx,int sy,int wx,int wy,int f){
- for(int y=0;y<TS;y++){int gy=wy+y;
-  for(int x=0;x<TS;x++){int gx=wx+x;
-   int wv=vnoise(gx, gy*2 - f*2, 3);                    /* drifting body */
-   int sp=(hsh((gx*2+f)*71+(gy*2)*37)>>3)&255;          /* sparkle field */
-   int r=16+wv/12, g=58+wv/4, b=128+wv/5;
-   if(sp>236){r+=120;g+=120;b+=90;}                     /* sun specular */
-   else if(sp>210){r+=40;g+=50;b+=40;}                  /* ripple crest */
-   put_rgb(sx+x,sy+y, clampc(r),clampc(g),clampc(b));}}
- (void)wy;}
-static void ground_shadow(int cx,int cy,int rw,int rh){
+/* ── handcrafted pixel-art system: indexed palette + blitter ────────────────
+ * Tiles and sprites are authored as rows of characters; each char maps to a
+ * colour via pal(). ' ' and '.' are transparent. Art is 16-wide and blitted at
+ * 2x so 16x16 tiles fill the 32px grid and sprites read as chunky pixel art. */
+static uint16_t pal(char c){
+ switch(c){
+  case ' ': case '.': return 0;                 /* transparent */
+  case 'X': return C(2,2,5);    case 'W': return C(30,30,31); case '*': return C(31,31,31);
+  case 'g': return C(13,23,11); case 'G': return C(8,18,8);   case 'h': return C(5,12,5);
+  case 'd': return C(22,16,10); case 'D': return C(16,11,6);  case 'e': return C(10,7,3);
+  case 's': return C(22,21,19); case 'S': return C(16,15,14); case 't': return C(9,9,10);
+  case 'b': return C(13,23,31); case 'B': return C(6,13,27);  case 'c': return C(3,7,17);
+  case 'w': return C(26,29,31);
+  case 'r': return C(26,10,8);  case 'R': return C(18,6,5);   case 'q': return C(11,3,3);
+  case 'o': return C(20,14,7);  case 'O': return C(14,9,4);   case 'n': return C(8,5,2);
+  case 'l': return C(14,25,13); case 'L': return C(7,16,7);   case 'k': return C(3,9,4);
+  case 'i': return C(31,24,18); case 'I': return C(24,17,12); case 'p': return C(17,11,8);
+  case 'j': return C(14,8,3);   case 'J': return C(21,13,5);
+  case 'u': return C(14,21,31); case 'U': return C(8,14,25);  case 'v': return C(4,8,15);
+  case 'm': return C(24,13,30); case 'M': return C(15,7,20);  case 'N': return C(9,3,13);
+  case 'f': return C(12,22,9);  case 'F': return C(7,15,5);
+  case 'y': return C(31,28,8);  case 'Y': return C(27,19,4);  case 'z': return C(30,6,6);
+  case 'a': return C(18,31,21); case 'A': return C(10,26,13); case '+': return C(4,16,7);
+  case '=': return C(20,21,25); case '/': return C(28,30,31); case '%': return C(11,12,17);
+  case '@': return C(2,3,10);   case '#': return C(17,11,5);  case '!': return C(28,24,20);
+  default:  return 0;
+ }
+}
+static void blit(int dx,int dy,const char*const*a,int w,int h,int sc){
+ for(int y=0;y<h;y++){const char*row=a[y]; int len=0; while(row[len])len++;
+  for(int x=0;x<w;x++){uint16_t c=pal(x<len?row[x]:' '); if(!c)continue;
+   if(sc==1)put(dx+x,dy+y,c); else fillr(dx+x*sc,dy+y*sc,sc,sc,c);}}}
+/* horizontally-flipped blit (for facing) */
+static void blitf(int dx,int dy,const char*const*a,int w,int h,int sc){
+ for(int y=0;y<h;y++){const char*row=a[y]; int len=0; while(row[len])len++;
+  for(int x=0;x<w;x++){int sx=w-1-x; uint16_t c=pal(sx<len?row[sx]:' '); if(!c)continue;
+   if(sc==1)put(dx+x,dy+y,c); else fillr(dx+x*sc,dy+y*sc,sc,sc,c);}}}
+static void gshadow(int cx,int cy,int rw,int rh){
  for(int dy=-rh;dy<=rh;dy++){int hf=rw-(dy<0?-dy:dy)*rw/rh; int y=cy+dy;
   for(int dx=-hf;dx<=hf;dx++){int x=cx+dx; if((unsigned)x<W&&(unsigned)y<H){
-   uint16_t*p=&fb[y*stride_px+x]; *p=C(((*p>>11)&31)*3/5,((*p>>6)&31)*3/5,((*p>>1)&31)*3/5);}}}}
-static void t_tree(int sx,int sy,int wx,int wy){
- t_grass(sx,sy,wx,wy);
- ground_shadow(sx+18,sy+28,12,5);
- /* trunk with bark shading */
- for(int y=18;y<31;y++)for(int x=13;x<19;x++){
-   int sh=(x-13)*8-12; int n=(vnoise((sx+x)*2,(sy+y),1)-128)/8;
-   put_rgb(sx+x,sy+y, clampc(78+sh+n),clampc(48+sh+n),clampc(24+sh/2+n));}
- /* layered volumetric canopy (dark base → lit clumps) */
- blob(sx+16,sy+15,15, 26,72,30, 60);
- blob(sx+14,sy+12,11, 40,104,44, 70);
- blob(sx+12,sy+10,7,  64,140,66, 80);
- blob(sx+11,sy+9,4,   96,176,90, 80);
-}
-static void t_wall(int sx,int sy){
- /* plastered stone with beveled blocks */
- for(int y=0;y<TS;y++)for(int x=0;x<TS;x++){
-  int n=vnoise(sx+x,sy+y,3);
-  int r=150+n*30/255-15, g=128+n*26/255-13, b=92+n*20/255-10;
-  int by=y&15, bx=(x + (y/16)*8)&15;                   /* offset courses */
-  if(by==0||by==15){r-=46;g-=40;b-=30;}                /* mortar */
-  else if(by==1){r+=26;g+=22;b+=16;}                   /* top bevel light */
-  else if(by==14){r-=26;g-=22;b-=16;}                  /* bottom bevel dark */
-  if(bx==0){r-=40;g-=34;b-=26;} else if(bx==1){r+=22;g+=18;b+=12;}
-  put_rgb(sx+x,sy+y, clampc(r),clampc(g),clampc(b));}}
-static void t_roof(int sx,int sy){
- for(int y=0;y<TS;y++)for(int x=0;x<TS;x++){
-  int row=y/8, ph=y%8;
-  int ofx=(x + row*8)%16;                              /* staggered tiles */
-  int n=vnoise(sx+x,sy+y,2);
-  int r=150+n*40/255, g=44+n*20/255, b=38+n*16/255;
-  if(ph==0){r+=44;g+=24;b+=20;}                        /* tile lip highlight */
-  else if(ph>=6){r-=50;g-=22;b-=18;}                   /* shadow under lip */
-  if(ofx==0||ofx==15){r-=30;g-=14;b-=12;}              /* tile seam */
-  put_rgb(sx+x,sy+y, clampc(r),clampc(g),clampc(b));}}
-static void t_door(int sx,int sy){
- t_wall(sx,sy);
- /* stone arch frame */ for(int i=0;i<7;i++){put(sx+6+i,sy+4,C(20,16,11));put(sx+25-i,sy+4,C(20,16,11));}
- for(int y=5;y<32;y++){int x0=sx+6,x1=sx+25; put(x0,y,C(8,6,4));put(x1,y,C(8,6,4));}
- /* planked wood door with grain + iron bands */
- for(int y=6;y<32;y++)for(int x=8;x<24;x++){
-   int n=(vnoise((sx+x)*3,(sy+y),1)-128)/6;
-   int pl=((x-8)/5); int sh=(pl&1)?-10:6;
-   put_rgb(sx+x,sy+y, clampc(86+sh+n),clampc(54+sh+n),clampc(26+sh/2+n));
-   if((x-8)%5==4) put(sx+x,sy+y,C(5,3,2)); }
- hbar(sx+8,sx+23,sy+12,C(7,5,3)); hbar(sx+8,sx+23,sy+25,C(7,5,3)); /* iron bands */
- disc(sx+21,sy+19,1,C(28,24,8)); put(sx+21,sy+19,C(31,28,12)); }
-static void t_flower(int sx,int sy,int wx,int wy){
- t_grass(sx,sy,wx,wy);
- int n=hsh(wx*5+wy*9);
- for(int i=0;i<4;i++){int cx=sx+6+((n>>(i*3))&18), cy=sy+6+((n>>(i*3+2))&18);
-   uint16_t pc=(i&1)?C(31,26,10):((i&2)?C(31,12,18):C(22,14,31));
-   put(cx,cy-2,pc);put(cx,cy+2,pc);put(cx-2,cy,pc);put(cx+2,cy,pc);
-   put(cx-1,cy-1,pc);put(cx+1,cy+1,pc); put(cx,cy,C(31,29,18));}}
-static void t_fence(int sx,int sy,int wx,int wy){
- t_grass(sx,sy,wx,wy);
- for(int y=12;y<17;y++)for(int x=0;x<TS;x++){int n=(vnoise((sx+x)*2,sy+y,1)-128)/8;
-   int sh=(y==12)?20:(y>=16?-18:0); put_rgb(sx+x,sy+y,clampc(110+sh+n),clampc(78+sh+n),clampc(42+sh+n));}
- for(int x=6;x<TS;x+=16)for(int y=6;y<26;y++){int n=(vnoise(sx+x,sy+y,1)-128)/8;
-   int sh=(y<8)?18:0; put_rgb(sx+x,sy+y,clampc(98+sh+n),clampc(66+sh+n),clampc(34+n));
-   put_rgb(sx+x+3,sy+y,clampc(60+n),clampc(40+n),clampc(20+n));}}
+   uint16_t*p=&fb[y*stride_px+x]; *p=C(((*p>>11)&31)*5/8,((*p>>6)&31)*5/8,((*p>>1)&31)*5/8);}}}}
+
+/* ── handcrafted 16x16 terrain tiles ──────────────────────────────────────── */
+static const char* A_grass[16]={
+ "GGgGGGGGGhGGGGgG","GhGGGgGGGGGGGGGG","GGGGGGGGGgGGGhGG","gGGhGGGGGGGGGGgG",
+ "GGGGGGgGGGhGGGGG","GGgGGGGGGGGGgGGG","GGGGGhGGgGGGGGGG","GGGGGGGGGGGGGGgG",
+ "GhGGGgGGGGGGhGGG","GGGGGGGGGgGGGGGG","GGgGGhGGGGGGGGgG","GGGGGGGgGGGGGGGG",
+ "gGGGGGGGGGhGGGGG","GGGGhGGgGGGGGgGG","GGGGGGGGGGGGGGGG","GhGGGgGGGhGGGGgG"};
+static const char* A_flower[16]={
+ "GGgGGGGGGhGGGGgG","GhGGGyGGGGGGzGGG","GGGGgygGGGgGGhGG","gGGhGGGGGGGmGGgG",
+ "GGGGGGgGGmhmGGGG","GGgGGGGGGGmGgGGG","GGGGGhGGgGGGGGGG","GGGGGGGGGGGzGGgG",
+ "GhGGGgGyGGzmzGGG","GGGGGGyyyGGmGGGG","GGgGGhGyGGGGGGgG","GGGGGGGgGGGGGGGG",
+ "gGGGmGGGGGhGGGGG","GGGGhmhGgGGGGGgG","GGGGGmGGGGGGGGGG","GhGGGgGGGhGGGGgG"};
+static const char* A_path[16]={
+ "DDdDDDDDeDDDDdDD","DdDDDsSDDDDDDDDD","DDDDDStDDDeDDsSD","DDsSDDdDDDDDDDtD",
+ "dDDtDDDDDsSDDDeD","DDDDeDDDDStDDdDD","DDdDDDDDsSDDDDDD","DDDDDDDDtDDdDDDD",
+ "DsSDDdDDDDDDeDDD","DDtDDDDDdDDsSDDD","DDdDDeDDDDDDtDdD","DDDDDDDsSDDDDDDD",
+ "dDDDDDDDtDeDDDDD","DDDeDDdDDDDDsSDD","DDDDDDDDDDDDDtDD","DdDDsSDDeDDDDDDD"};
+static const char* A_water[16]={
+ "BBBBBBBBBBBBBBBB","BbBBBBBwBBBBBbBB","BBBBBBBBBBBBBBBB","BBBcBBBBBBbBBBBB",
+ "wBBBBBBBBBBBBBwB","BBBBBBBbBBBBBBBB","BBbBBBBBBBcBBBBB","BBBBBBBBBBBBBBBB",
+ "BBBBwBBBBBBBBbBB","BbBBBBBBBwBBBBBB","BBBBBBcBBBBBBBBB","BBBBBBBBBbBBBBBB",
+ "wBBBBBBBBBBBBBBw","BBBbBBBwBBBBBBBB","BBBBBBBBBBBcBBBB","BBBBBbBBBBBBBBBB"};
+static const char* A_tree[16]={
+ "GGGGGkkkkkGGGGGG","GGGGkLLLLLkGGGGG","GGGkLLllLLLkGGGG","GGkLLlllllLLkGGG",
+ "GGkLllllllLLkGGG","GkLLlllllllLLkGG","GkLLllllllLLLkGG","GGkLLllllLLLkGGG",
+ "GGkLLLllLLLkGGGG","GGGkLLLLLLkGGGGG","GGGGGkOOkGGGGGGG","GGGGGnOOnGGGGGGG",
+ "GGGGGnOOnGGGGGGG","GGGGhnOOnhGGGGGG","GGGhhnnnnhhGGGGG","GGGGhhhhhhGGGGGG"};
+static const char* A_wall[16]={
+ "ssSSSSSStSSSSSSS","SSSSSSSStSSSSSSS","SSSStSSStSSSStSS","tttttttttttttttt",
+ "SSSSSSSSSSSSSStS","SSStSSSSSSStSSSS","sSSSSSSStSSSSSSS","tttttttttttttttt",
+ "SSSStSSSSSSSStSS","SStSSSSStSSSSSSS","SSSSSSSSSSStSSSs","tttttttttttttttt",
+ "SsSSStSSSSSSSStS","SSSSSSSStSSSSSSS","SSStSSSSSSStSSSS","tttttttttttttttt"};
+static const char* A_roof[16]={
+ "rRrRrRrRrRrRrRrR","RRRRRRRRRRRRRRRR","qqqqqqqqqqqqqqqq","RrRrRrRrRrRrRrRr",
+ "RRRRRRRRRRRRRRRR","qqqqqqqqqqqqqqqq","rRrRrRrRrRrRrRrR","RRRRRRRRRRRRRRRR",
+ "qqqqqqqqqqqqqqqq","RrRrRrRrRrRrRrRr","RRRRRRRRRRRRRRRR","qqqqqqqqqqqqqqqq",
+ "rRrRrRrRrRrRrRrR","RRRRRRRRRRRRRRRR","qqqqqqqqqqqqqqqq","rRrRrRrRrRrRrRrR"};
+static const char* A_door[16]={
+ "SSSSSSSSSSSSSSSS","SSSnnnnnnnnnSSSS","SSnoOOOOOOOonSSS","SnoOnOOnOOOOonSS",
+ "SnOOnOOnOOnOOnSS","SnOOnOOnOOnOOnSS","SnOOnOOnOOnOOnSS","SnOOnOOnOOnyOnSS",
+ "SnOOnOOnOOnOOnSS","SnOOnOOnOOnOOnSS","SnOOnOOnOOnOOnSS","SnOOnOOnOOnOOnSS",
+ "SnoOOOOOOOOonSSS","SSnnnnnnnnnnSSSS","SSSSSSSSSSSSSSSS","SSSSSSSSSSSSSSSS"};
+static const char* A_fence[16]={
+ "GGGGGGGGGGGGGGGG","GGGGGGGGGGGGGGGG","GoGGGGGGoGGGGGGo","GoGGGGGGoGGGGGGo",
+ "oooooooooooooooo","nnnnnnnnnnnnnnnn","GoGGGGGGoGGGGGGo","GoGGGGGGoGGGGGGo",
+ "oooooooooooooooo","nnnnnnnnnnnnnnnn","GoGGGGGGoGGGGGGo","GGGGGGGGGGGGGGGG",
+ "GGGGGGGGGGGGGGGG","GhGGGgGGGhGGGGGG","GGGGGGGGGGGGGGGG","GGGGGgGGGGGhGGGG"};
+
+static void t_grass(int sx,int sy,int wx,int wy){ (void)wx;(void)wy; blit(sx,sy,A_grass,16,16,2); }
+static void t_path (int sx,int sy,int wx,int wy){ (void)wx;(void)wy; blit(sx,sy,A_path,16,16,2); }
+static void t_water(int sx,int sy,int wx,int wy,int f){ (void)wx;(void)wy;(void)f; blit(sx,sy,A_water,16,16,2); }
+static void t_tree (int sx,int sy,int wx,int wy){ (void)wx;(void)wy; blit(sx,sy,A_grass,16,16,2); gshadow(sx+16,sy+28,11,4); blit(sx,sy,A_tree,16,16,2); }
+static void t_wall (int sx,int sy){ blit(sx,sy,A_wall,16,16,2); }
+static void t_roof (int sx,int sy){ blit(sx,sy,A_roof,16,16,2); }
+static void t_door (int sx,int sy){ blit(sx,sy,A_door,16,16,2); }
+static void t_flower(int sx,int sy,int wx,int wy){ (void)wx;(void)wy; blit(sx,sy,A_flower,16,16,2); }
+static void t_fence(int sx,int sy,int wx,int wy){ (void)wx;(void)wy; blit(sx,sy,A_fence,16,16,2); }
 static const uint8_t MAP[15][20]={
  {3,3,3,0,0,7,0,0,0,0,0,0,7,0,0,0,3,3,3,3},
  {3,0,0,0,5,5,5,5,0,0,0,0,5,5,5,5,0,0,0,3},
@@ -273,102 +263,96 @@ static void draw_map(int f){
    draw_tile(tx*TS,ty*TS,tx*TS,ty*TS,MAP[ty][tx],f);
 }
 
-/* ════════════════ SPRITES (outlined, shaded) ════════════════ */
-static void shadow(int cx,int cy,int rw){ for(int dy=-3;dy<=3;dy++){int hf=rw-(dy<0?-dy:dy);
- for(int dx=-hf;dx<=hf;dx++){int x=cx+dx,y=cy+dy; if((unsigned)x<W&&(unsigned)y<H){
-   uint16_t*p=&fb[y*stride_px+x]; *p=C(((*p>>11)&31)/2,((*p>>6)&31)/2,((*p>>1)&31)/2);}}}}
+/* ════════════════ SPRITES (handcrafted pixel art) ════════════════ */
+/* robe-recolour blit: maps 'M'/'m' to a chosen mid/light colour for NPC variety */
+static void blit_robe(int dx,int dy,const char*const*a,int w,int h,int sc,uint16_t M,uint16_t m){
+ for(int y=0;y<h;y++){const char*row=a[y]; int len=0; while(row[len])len++;
+  for(int x=0;x<w;x++){char ch=x<len?row[x]:' '; uint16_t c=(ch=='M')?M:((ch=='m')?m:pal(ch));
+   if(!c)continue; if(sc==1)put(dx+x,dy+y,c); else fillr(dx+x*sc,dy+y*sc,sc,sc,c);}}}
 
-/* hero: ~22x36, dir 0=down 1=up 2=left 3=right, step toggles legs */
+/* hero — 16x22, three facings (side flipped for left) */
+static const char* A_hero_dn[22]={
+ ".....XXXXXX.....","....XjjjjjjX....","...XjJJJJJJjX...","...XjiiiiiijX...",
+ "...XjiiiiiijX...","...Xi@iiii@iX...","...XiiiiiiiiX...","....XipppiiX....",
+ "....XIiiiiX.....","...X==uuuu==X...","..X=uUUUUUu=X...","..XiuUUUUUuiX..",
+ "..XiuUUUUUuiX..","...XU####UX.....","...XUUvvUUX.....","...XUvvvvUX.....",
+ "...XvvX.XvvX....","...XOOX.XOOX....","...XOOX.XOOX....","..XXOOX.XOOXX...",
+ "...XX.....XX....",".....X...X....."};
+static const char* A_hero_up[22]={
+ ".....XXXXXX.....","....XjjjjjjX....","...XjjjjjjjjX...","...XjjjjjjjjX...",
+ "...XjjjjjjjjX...","...XjjjjjjjjX...","...XjjjjjjjjX...","....XjjjjjX.....",
+ "....XjjjjjX.....","...X==UUUU==X...","..X=UUUUUUU=X...","..XiUUUUUUUiX..",
+ "..XiUUUUUUUiX..","...XU####UX.....","...XUUvvUUX.....","...XUvvvvUX.....",
+ "...XvvX.XvvX....","...XOOX.XOOX....","...XOOX.XOOX....","..XXOOX.XOOXX...",
+ "...XX.....XX....",".....X...X....."};
+static const char* A_hero_sd[22]={
+ "....XXXXX.......","...XjjjjjX......","..XjJJJJjX......","..XjiiiijX......",
+ "..Xji@iiX.......","..XjiiiiX.......","...Xippi X......","...XIiiX.......",
+ "..X==uuu===.....",".X=uUUUu=//.....","XiuUUUUu=/X.....","XiuUUUUUuX/.....",
+ ".XiUUUUUuX/.....","..XU###UX.//....","..XUUvvUX..//...","..XUvvvUX.......",
+ "..XvvXvvX.......","..XOOXOOX.......","..XOOXOOX.......",".XXOOXOOXX......",
+ "..XX..XX.......","................"};
+
 static void hero(int cx,int cy,int dir,int step){
- uint16_t OL=C(2,2,5), skin=C(30,23,17),skinS=C(24,17,12),hair=C(20,11,4),hairH=C(27,17,7),
-  tunic=C(8,15,28),tunicH=C(13,21,31),tunicS=C(5,10,20),belt=C(20,14,5),
-  boot=C(12,8,4),blade=C(27,29,31),hilt=C(26,20,6);
- shadow(cx,cy+18,10);
- int lo=step?2:-2;
- /* legs */
- fillr(cx-6,cy+8,5,12,boot); fillr(cx+2,cy+8,5,12,boot);
- rect_outline(cx-6,cy+8,5,12,OL); rect_outline(cx+2,cy+8,5,12,OL);
- fillr(cx-6,cy+18+ (lo>0?0:lo),5,3,boot); fillr(cx+2,cy+18+(lo>0?lo:0),5,3,boot);
- /* body */
- fillr(cx-8,cy-6,17,16,tunic);
- fillr(cx-8,cy-6,5,16,tunicH);            /* lit left */
- fillr(cx+5,cy-6,4,16,tunicS);            /* shaded right */
- fillr(cx-8,cy+5,17,3,belt);
- rect_outline(cx-8,cy-6,17,16,OL);
- /* arms */
- fillr(cx-10,cy-4,3,10,skin); fillr(cx+9,cy-4,3,10,skin);
- rect_outline(cx-10,cy-4,3,10,OL); rect_outline(cx+9,cy-4,3,10,OL);
- /* head */
- disc(cx,cy-13,8,OL); disc(cx,cy-13,7,skin);
- fillr(cx+3,cy-16,4,8,skinS);
- /* hair */
- fillr(cx-7,cy-21,15,6,hair); disc(cx,cy-19,7,hair);
- fillr(cx-7,cy-21,5,4,hairH);
- if(dir==1){ disc(cx,cy-15,7,hair); }                 /* back of head */
- else {
-   uint16_t eye=C(2,4,12);
-   if(dir==0){put(cx-3,cy-13,eye);put(cx-2,cy-13,eye);put(cx+2,cy-13,eye);put(cx+3,cy-13,eye);
-     put(cx-2,cy-9,skinS);put(cx+2,cy-9,skinS);}
-   if(dir==2){put(cx-4,cy-13,eye);put(cx-3,cy-13,eye);}
-   if(dir==3){put(cx+3,cy-13,eye);put(cx+4,cy-13,eye);}
- }
- /* sword */
- if(dir==3){ fillr(cx+12,cy-12,3,16,blade); rect_outline(cx+12,cy-12,3,16,OL);
-   fillr(cx+10,cy+3,7,3,hilt); put(cx+13,cy-13,C(31,31,31)); }
- else if(dir==2){ fillr(cx-14,cy-12,3,16,blade); rect_outline(cx-14,cy-12,3,16,OL);
-   fillr(cx-16,cy+3,7,3,hilt); put(cx-13,cy-13,C(31,31,31)); }
+ gshadow(cx,cy+20,11,4);
+ int dx=cx-16, dy=cy-26+(step?1:0);
+ if(dir==1) blit(dx,dy,A_hero_up,16,22,2);
+ else if(dir==2) blitf(dx,dy,A_hero_sd,16,22,2);
+ else if(dir==3) blit(dx,dy,A_hero_sd,16,22,2);
+ else blit(dx,dy,A_hero_dn,16,22,2);
 }
-/* generic NPC */
+
+/* generic villager (robe via M/m recolour) — elder, shopkeeper, party portraits */
+static const char* A_villager[22]={
+ ".....XXXXX......","....XjjjjjX.....","...XjiiiiijX....","...Xi@ii@iiX....",
+ "...XiiiiiiiX....","....XippiX......","....XIiiiX......","...XMMMMMMX....",
+ "..XMmmmmmmMX...","..XMmMMMMMmMX..","..XMmMMMMMmMX..","..XMmMMMMMmMX..",
+ "..XMmMMMMMmMX..","...XMMMMMMX....","...XMMMMMMX....","...XMMMMMMX....",
+ "...XMMMMMMX....","...XMmmmmMX....","...XMMMMMMX....","....XMMMMX.....",
+ "....XO..OX.....","....XX..XX....."};
 static void npc(int cx,int cy,uint16_t robe,uint16_t robeH,uint16_t hairc){
- uint16_t OL=C(2,2,5),skin=C(30,23,17);
- shadow(cx,cy+18,10);
- fillr(cx-8,cy-6,17,22,robe); fillr(cx-8,cy-6,5,22,robeH);
- rect_outline(cx-8,cy-6,17,22,OL);
- fillr(cx-10,cy-2,3,9,skin); fillr(cx+9,cy-2,3,9,skin);
- disc(cx,cy-13,8,OL); disc(cx,cy-13,7,skin);
- fillr(cx-7,cy-21,15,6,hairc); disc(cx,cy-19,7,hairc);
- put(cx-3,cy-13,C(2,4,12));put(cx-2,cy-13,C(2,4,12));
- put(cx+2,cy-13,C(2,4,12));put(cx+3,cy-13,C(2,4,12));
+ (void)hairc; gshadow(cx,cy+20,11,4);
+ blit_robe(cx-16,cy-26,A_villager,16,22,2,robe,robeH);
 }
-static void slime(int cx,int cy,int f){
- int sq=isqrt((f*4)&31)-2; uint16_t OL=C(1,5,2);
- shadow(cx,cy+10,11);
- disc(cx,cy+2-sq,13+sq,OL); disc(cx,cy+2-sq,12+sq,C(8,26,12));
- disc(cx,cy-2,8,C(14,31,18));                /* highlight */
- disc(cx-4,cy-5,3,C(22,31,26));
- put(cx-4,cy,C(2,2,4));put(cx-3,cy,C(2,2,4));put(cx+3,cy,C(2,2,4));put(cx+4,cy,C(2,2,4));
- put(cx-4,cy+1,C(31,31,31));put(cx+4,cy+1,C(31,31,31));
-}
-static void goblin(int cx,int cy){
- uint16_t OL=C(1,4,1),body=C(9,16,6),bodyH=C(13,22,9),skin=C(11,18,7);
- shadow(cx,cy+16,11);
- fillr(cx-9,cy-2,19,18,body); fillr(cx-9,cy-2,5,18,bodyH);
- rect_outline(cx-9,cy-2,19,18,OL);
- disc(cx,cy-11,8,OL); disc(cx,cy-11,7,skin);
- fillr(cx-11,cy-15,3,5,skin); fillr(cx+9,cy-15,3,5,skin); /* ears */
- put(cx-3,cy-11,C(31,6,2));put(cx-2,cy-11,C(31,6,2));put(cx+2,cy-11,C(31,6,2));put(cx+3,cy-11,C(31,6,2));
- fillr(cx-3,cy-7,7,2,C(22,18,4));            /* fang grin */
- fillr(cx+11,cy-8,4,20,C(16,12,6)); rect_outline(cx+11,cy-8,4,20,OL); /* club */
- disc(cx+13,cy-9,4,C(14,10,5));
-}
+
+/* enemies */
+static const char* A_slime[16]={
+ "................","......++++......",".....+AAAA+.....","....+AaaaaA+....",
+ "...+AaaaaaaA+...","..+Aaa**aaaaA+..","..+Aa****aaaA+..","..+AaaaaaaaaA+..",
+ ".+Aaaaaaaaaaa A.","+Aaa@aaaa@aaaA+","+Aaa@@aaa@@aaA+","+AaaaaWaaWaaaA+",
+ "+Aaaaaaaaaaaa A+",".+AAaaaaaaaaA+..","..++AAAAAAAA++..","....++++++++...."};
+static const char* A_goblin[20]={
+ "...k.......k....","..kFk.....kFk...","..kFFk...kFFk...","...kFFkkkFFk....",
+ "....kFFFFFFk....","...kFiiiiiiFk...","..kFiz@ii@ziFk..","..kFiiiiiiiiFk..",
+ "...kFipppppiFk..","...kFiiiiiiFk...","....kFFFFFk.....","...kfFFFFFfk..o.",
+ "..kfFFFFFFFfk.O.","..kfFFFFFFFfk.O.","..kfFffffFFfk.O.","...kfFFFFFfk.O..",
+ "...kFFkkFFk..O..","...kFk..kFk.....","..kFk....kFk....","..kk......kk...."};
+static const char* A_bat[12]={
+ "................","k...........k...","kk.kkkkkkk.kk...","kKkkLLLLLkkKk...",
+ "kLLLk@@@kLLLk...","kLLLLLLLLLLLk...",".kLLz@LLL@zLLk..","..kLLLLLLLLk....",
+ "...kkLLLLkk.....",".....kLLk.......","......kk........","................"};
+static void slime(int cx,int cy,int f){ int b=(f>>3)&1; gshadow(cx,cy+12,12,4);
+ blit(cx-16,cy-14-b,A_slime,16,16,2); }
+static void goblin(int cx,int cy){ gshadow(cx,cy+18,12,4); blit(cx-16,cy-22,A_goblin,16,20,2); }
+static void bat(int cx,int cy,int f){ int b=(f>>2)&1; blit(cx-16,cy-12+b*2,A_bat,16,12,2); }
+
+/* Forest Warden boss — 24x28, ancient treant */
+static const char* A_warden[28]={
+ ".........kkkkkk.........",".......kkLLLLLLkk.......","......kLLlllllLLk.......",
+ ".....kLLlllllllLLk......","....kLLlllllllllLLk.....","...kLLllllllllllLLLk....",
+ "...kLlllllllllllllLk....","..kLLlllllllllllllLLk...","..kLllllllllllllllLk...",
+ "..kLLlllllllllllllLLk...","...kLLlllllllllllLLk....","....kLLLlllllllLLLk.....",
+ ".....kkLLLLLLLLLkk......","......kkkkkkkkkkk.......","........nnOOnn.........",
+ ".......nOOOOOOn........",".......nOyyyyOn........",".......nOy@@yOn........",
+ "......nOOy@@yOOn.......","......nOzzzzzzOn......",".....nOOzzzzzzOOn......",
+ ".....nOOOWWWWOOOn......","....nnOOOOOOOOOOnn.....","...nnOOOnnnnOOOnn n....",
+ "..nnOOnn....nnOOnn.....",".nOOnn........nnOOn....","nOOn............nOOn...",
+ "nn................nn..."};
 static void warden(int cx,int cy,int f){
- uint16_t OL=C(1,4,1);
- shadow(cx,cy+34,32);
- fillr(cx-30,cy-18,61,56,C(7,12,5));         /* trunk body */
- for(int i=-30;i<31;i+=5) fillr(cx+i,cy-18,3,56,C(4,9,3));
- rect_outline(cx-30,cy-18,61,56,OL);
- /* roots/arms */ fillr(cx-46,cy-6,16,7,C(6,11,4)); fillr(cx+30,cy-6,16,7,C(6,11,4));
- /* canopy crown — volumetric lit foliage */
- disc(cx,cy-30,31,OL);
- blob(cx,cy-30,29, 22,60,28, 55);
- blob(cx-18,cy-24,17, 34,92,40, 70); blob(cx+16,cy-26,15, 30,84,36, 70);
- blob(cx-8,cy-38,13, 56,128,60, 80); blob(cx+12,cy-34,10, 48,116,52, 80);
- /* glowing eyes + maw */
- int gl=18+isqrt((f*3)&63); if(gl>31)gl=31;
- disc(cx-12,cy-2,5,C(31,gl,2)); disc(cx-12,cy-2,2,C(31,31,20));
- disc(cx+12,cy-2,5,C(31,gl,2)); disc(cx+12,cy-2,2,C(31,31,20));
- fillr(cx-14,cy+14,29,4,C(20,4,2));
- for(int x=-14;x<15;x+=4){put(cx+x,cy+14,C(28,10,4));}
+ gshadow(cx,cy+46,42,11);
+ blit(cx-36,cy-44,A_warden,24,28,3);   /* 72x84 — towering treant */
+ /* glowing eyes flicker */
+ int gl=(f>>3)&1; if(gl){ disc(cx-15,cy+10,5,C(31,28,6)); disc(cx+15,cy+10,5,C(31,28,6)); }
 }
 
 /* ════════════════ SCENES ════════════════ */
@@ -409,13 +393,15 @@ static void hud_top(){
 }
 static void scene_overworld(int f){
  draw_map(f);
- npc(4*TS+16,2*TS+16,C(22,8,26),C(28,12,31),C(7,5,3));     /* elder */
- npc(12*TS+16,10*TS+12,C(8,20,12),C(13,27,17),C(20,13,5)); /* shopkeep */
- int hx=2*TS+16+((f/2)%(9*TS));
- hero(hx,4*TS+12,3,(f>>3)&1);
- /* quest marker */
- int by=2*TS-2+ (isqrt((f*3)&31));
- gch(4*TS+12,by-12,'!',3,C(31,28,8)); gch(4*TS+13,by-11,'!',3,C(20,14,2));
+ /* NPCs stand on grass beside their houses (not on the rooftops) */
+ npc(2*TS+16,5*TS+16,C(22,8,26),C(28,12,31),C(7,5,3));     /* elder, left of left house */
+ npc(15*TS+16,12*TS+16,C(8,20,12),C(13,27,17),C(20,13,5)); /* shopkeep, right of shop */
+ /* hero patrols the open main path (row 4 — all walkable) */
+ int hx=3*TS+16+((f/2)%(8*TS));
+ hero(hx,4*TS+14,3,(f>>3)&1);
+ /* quest marker bobbing over the elder */
+ int by=5*TS-14+ (isin(f*3)*3/31);
+ gch(2*TS+12,by,'!',3,C(31,28,8)); gch(2*TS+13,by+1,'!',3,C(20,14,2));
  hud_top();
  window(150,446,340,28); gtext(166,453,"WHISPERING WOODS  -  NORTH GATE",2,C(20,24,31));
 }
@@ -548,22 +534,15 @@ static void scene_craft(int f){
 }
 
 static void woods(int f){
- /* dappled forest floor */
- for(int y=0;y<H;y++)for(int x=0;x<W;x++){
-   int p=vnoise(x,y,5);
-   int r=16+p*22/255, g=40+p*52/255, b=18+p*16/255;
-   put_rgb(x,y, r,g,b);}
- /* winding river with banks + specular */
- for(int y=0;y<H;y++){int rx=150 + (vnoise(0,y,5)-128)*40/128 - y/14;
-  for(int k=0;k<22;k++){int x=rx+k; int sp=(hsh((x*2+f)*71+(y*2)*37)>>3)&255;
-   int r=16,g=58,b=132; if(sp>232){r+=120;g+=120;b+=90;} else if(sp>204){r+=36;g+=46;b+=36;}
-   put_rgb(x,y,clampc(r),clampc(g),clampc(b));}
-  put_rgb(rx-1,y,30,52,28); put_rgb(rx+22,y,30,52,28);}
- /* shaded canopy trees */
- for(int i=0;i<15;i++){int n=hsh(i*151); int tx=(n&1023)%W, ty=40+((n>>10)&400);
-   ground_shadow(tx+6,ty+24,20,7);
-   for(int y=22;y<34;y++)for(int x=-3;x<3;x++){int sh=x*7; put_rgb(tx+x+1,ty+y,clampc(70+sh),clampc(44+sh),clampc(22+sh/2));}
-   blob(tx,ty,21, 22,64,28, 60); blob(tx-3,ty-6,15, 36,98,42, 70); blob(tx-7,ty-11,8, 60,136,64, 80);}
+ /* grassy clearing from handcrafted tiles */
+ for(int ty=0;ty<15;ty++)for(int tx=0;tx<20;tx++) blit(tx*32,ty*32,A_grass,16,16,2);
+ /* winding brook (handcrafted water tiles, offset per row band) */
+ for(int by=0;by<15;by++){int rx=150+isin(by*3+f/16)*40/31; rx&=~1;
+   blit(rx,by*32,A_water,16,16,2); blit(rx+16,by*32,A_water,16,16,2);
+   for(int y=0;y<32;y++){put(rx-1,by*32+y,C(8,16,8));put(rx+32,by*32+y,C(8,16,8));}}
+ /* scattered trees */
+ for(int i=0;i<16;i++){int n=hsh(i*151); int tx=((n&511)%(W-48))&~1, ty=(16+((n>>9)&13)*30);
+   gshadow(tx+16,ty+30,12,4); blit(tx,ty,A_tree,16,16,2);}
  (void)f;
 }
 static void scene_action(int f){
@@ -587,37 +566,77 @@ static void scene_action(int f){
  gtext(W-138,456,"B  MAGIC",2,C(20,24,30));
 }
 
+/* side-view battlers (facing right, toward the enemy line) */
+static const char* A_aria_b[22]={
+ ".....XXXX.......","....XjjjjX......","...XjJJJjX......","...Xji@ijX...//.",
+ "...XjiiijX../X..","...XippiX..//...","...XIiiX..//....","..X==uu=//......",
+ ".X=uUUUu/.......",".XiuUUUUX.......",".XiuUUUUuX......","..XU####UX......",
+ "..XUUvvUUX......","..XUvvvvUX......","..XvvX.XvvX.....","..XOOX.XOOX.....",
+ "..XOOX.XOOX.....",".XXOOX.XOOXX....","..XX....XX......","................",
+ "................","................"};
+static const char* A_loras_b[22]={
+ "....XNNNN.......","...XNMMMMNX.....","..XNMMMMMMNX....","...XjiiiijX.....",
+ "...Xi@iiijX..o..","...XiiiiiX...o..","...XippiX...o...","...XMMMMMX.WWW..",
+ "..XMmmmmMX..o...","..XMmMMMmX..o...","..XMmMMMmX..o...","..XMMMMMMX..o...",
+ "...XMMMMMX..o...","...XMMMMMX......","...XMmmmMX......","...XMMMMMX......",
+ "....XMMMX.......","....XMMMX.......","....XO.OX.......","....XX.XX.......",
+ "................","................"};
+
+/* layered forest battle backdrop — rolling treeline silhouette, no UI overlap */
+static void battle_bg(int f){
+ vgrad(0,0,W,205, 9,6,22, 17,12,34);                 /* dusk sky */
+ for(int i=0;i<40;i++){int n=hsh(i*193); int x=((n&1023)+f/3)%W,y=(n>>10)&150;
+   put_rgb(x,y,110,95,160);}
+ disc(96,60,26,C(26,26,22)); disc(86,52,22,C(22,23,19)); /* moon */
+ /* far treeline (bumpy crowns), then a nearer darker band for depth */
+ for(int x=0;x<W;x++){
+   int top=150 + isin(x/22)*10/31 - ((isin(x*2)+31)*10/62);
+   for(int y=top;y<206;y++) put_rgb(x,y, 8+((x>>3)&3), 26+((x+y)&3), 11);}
+ for(int x=0;x<W;x++){
+   int top=176 + isin(x/16+18)*12/31 - ((isin(x*3+5)+31)*8/62);
+   for(int y=top;y<206;y++) put_rgb(x,y, 4, 16+((x+y)&2), 6);}
+ /* battle ground (mossy clearing) the units stand on */
+ vgrad(0,205,W,125, 16,40,16, 9,24,11);
+ hbar(0,W-1,205,C(20,46,20)); hbar(0,W-1,206,C(6,16,8));
+ for(int i=0;i<120;i++){int n=hsh(i*37+1); put_rgb((n&1023)%W,206+((n>>10)&120),10,30,12);}
+}
 static void scene_battle(int f){
- vgrad(0,0,W,H, 12,4,22, 3,1,8);
- for(int i=0;i<60;i++){int n=hsh(i*193); int x=((n&1023)+f)%W; put_rgb(x,(n>>10)&300,90,70,140);}
- disc(320,150,160,C(5,2,12)); disc(320,150,90,C(8,3,18)); /* arena glow */
- goblin(220,150);  hpbar(180,108,90,26,30,255,40,40); gtext(180,92,"GOBLIN",1,C(28,18,18));
- goblin(390,170);  hpbar(350,128,90,18,30,255,40,40);
- slime(500,150,f); hpbar(466,110,70,14,14,255,40,40);
- hero(150,320,1,0);
- npc(230,332,C(18,8,26),C(26,12,31),C(8,6,3));
- if((f>>3)&1) gch(132,272,'!',3,C(31,28,8));
- window(8,376,300,96);
+ battle_bg(f);
+ int act=(f/44)%2;
+ /* ── enemy party (right), standing on the clearing ── */
+ blit(452,150,A_goblin,16,20,3);  gtext(456,132,"GOBLIN",1,C(30,20,20)); hpbar(456,142,72,26,30,30,210,60);
+ blit(548,175,A_slime,16,16,3);   hpbar(552,164,56,14,14,30,210,60);
+ bat(404,196,f);                  hpbar(380,168,56,10,12,30,210,60);
+ if((f%44)<10) disc(476,180,6+(f%44),C(31,28,10));   /* hit flash */
+ if((f%44)<22) gtext_sh(474,140-(f%44)/2,"14",3,C(31,28,8),C(8,4,1));
+ /* ── hero party (left), facing right; feet ~y300, well above the UI ── */
+ gshadow(150,300,15,5); blit(124,236+((act==1)?-6:0),A_loras_b,16,22,3);
+ gshadow(96,308,16,6);  blit(70,242+((act==0)?-10:0),A_aria_b,16,22,3);
+ if(act==0){ gch(92,214,'>',3,C(31,28,8)); }
+ else      { gch(146,210,'>',3,C(31,28,8)); }
+ /* ── UI: message + command + status (occupy the bottom, clear of sprites) ── */
+ window(8,332,624,26);
+ gtext(20,339,"ARIA ATTACKS!  GOBLIN TAKES 14 DAMAGE!",2,C(28,30,31));
+ window(8,364,300,108);
+ banner(20,358,118,22,"COMMAND");
  const char*cmd[]={"FIGHT","SKILL","ITEM","RUN"}; int sel=(f/16)%4;
- for(int i=0;i<4;i++){int cx=24+(i%2)*150, cy=392+(i/2)*40;
-   if(i==sel){ vgrad(cx-8,cy-6,140,30, 20,30,70, 12,18,46); rect_outline(cx-8,cy-6,140,30,C(24,30,31));
+ for(int i=0;i<4;i++){int cx=24+(i%2)*150, cy=394+(i/2)*38;
+   if(i==sel){ vgrad(cx-8,cy-6,140,28, 22,32,74, 12,18,46); rect_outline(cx-8,cy-6,140,28,C(26,31,31));
      gch(cx,cy,'>',2,C(31,28,8)); }
    gtext(cx+22,cy,cmd[i],2,i==sel?C(31,31,22):C(20,22,28)); }
- window(320,376,312,96);
- gtext(336,386,"ARIA",2,C(31,31,31));  gtext(540,386,"TURN 3",2,C(31,26,8));
- gtext(336,406,"HP",1,C(18,28,31)); hpbar(360,404,150,26,32,30,210,60); gnum(520,404,26,2,2,C(20,28,31));
- gtext(336,422,"MP",1,C(18,28,31)); hpbar(360,420,150,9,12,40,120,240); gnum(520,420,9,2,2,C(20,28,31));
- gtext(336,442,"LORAS",2,C(31,31,31));
- gtext(336,460,"HP",1,C(18,28,31)); hpbar(360,458,150,18,24,30,210,60); gnum(520,458,18,2,2,C(20,28,31));
- window(8,344,624,28);
- gtext(20,351,"ARIA ATTACKS!  GOBLIN TAKES 14 DAMAGE!",2,C(28,30,31));
+ window(320,364,312,108);
+ gtext(336,376,"ARIA",2,C(31,31,31));  gtext(548,376,"TURN 3",2,C(31,26,8));
+ gtext(336,396,"HP",1,C(18,28,31)); hpbar(360,394,150,26,32,30,210,60); gnum(520,394,26,2,2,C(20,28,31));
+ gtext(336,412,"MP",1,C(18,28,31)); hpbar(360,410,150,9,12,40,120,240); gnum(520,410,9,2,2,C(20,28,31));
+ gtext(336,434,"LORAS",2,C(31,31,31));
+ gtext(336,454,"HP",1,C(18,28,31)); hpbar(360,452,150,18,24,30,210,60); gnum(520,452,18,2,2,C(20,28,31));
 }
 
 static void scene_boss(int f){
  woods(f);
  for(int y=0;y<H;y++)for(int x=0;x<W;x++) if(((x*3+y)&7)==0){uint16_t*p=&fb[y*stride_px+x];
    *p=C(((*p>>11)&31)*3/4,((*p>>6)&31)*3/4,((*p>>1)&31)*3/4);}
- warden(320,200,f);
+ warden(320,170,f);
  window(70,16,500,40);
  gtext_sh(82,24,"FOREST WARDEN",2,C(31,8,8),C(8,1,1));
  hpbar(250,26,300,84,120,((f>>3)&1)?255:200,20,20);
