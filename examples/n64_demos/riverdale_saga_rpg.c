@@ -21,6 +21,16 @@
 #define H 480
 #define TS 24  /* tile size */
 
+/* ── Key-light positions for the battle/boss scenes ──
+ * The disc art (moon/sun) and the god-rays and the cast shadows all read
+ * from these so the light source, its rays, and every shadow stay in sync. */
+#define MOON_CX 96
+#define MOON_CY 56
+#define MOON_R  28
+#define SUN_CX  (W-96)
+#define SUN_CY  48
+#define SUN_R   22
+
 /* RGBA5551 color — R,G,B each 0-31 */
 #define C(r,g,b) ((uint16_t)(((r)<<11)|((g)<<6)|((b)<<1)|1))
 
@@ -590,6 +600,42 @@ static void gshadow(int cx, int cy, int rw, int rh) {
     }
 }
 
+/* Directional cast shadow: throws a figure's blob shadow onto the ground in
+ * the direction *opposite* a key light at (lx,ly). The shadow is anchored at
+ * the feet (cx,cy) and stretched/offset away from the light; its length grows
+ * as the light gets lower/further to the side (fig_h = figure pixel height).
+ * The far end fades into a soft penumbra. */
+static void cast_shadow(int cx, int cy, int rw, int rh, int lx, int ly, int fig_h) {
+    int hdx = cx - lx;                          /* + : light is to the left  */
+    int vdy = cy - ly; if (vdy < 8) vdy = 8;    /* light sits above the figure */
+    int tip = hdx * fig_h / vdy;                /* horizontal throw of the tip */
+    int maxtip = rw * 5;
+    if (tip >  maxtip) tip =  maxtip;
+    if (tip < -maxtip) tip = -maxtip;
+    int s    = (tip >= 0) ? 1 : -1;
+    int atip = tip * s;
+    int ecx  = cx + tip / 2;                    /* ellipse centre (mid-throw) */
+    int erw  = rw + atip / 2;                   /* elongated along the throw  */
+    int reach = atip + rw; if (reach < 1) reach = 1;
+    for (int dy = -rh; dy <= rh; dy++) {
+        int y = cy + dy;
+        if ((unsigned)y >= H) continue;
+        int hw = erw * isqrt(rh*rh - dy*dy) / (rh > 0 ? rh : 1);
+        for (int x = ecx - hw; x <= ecx + hw; x++) {
+            if ((unsigned)x >= W) continue;
+            int along = (x - cx) * s;           /* 0 at feet → reach at tip   */
+            if (along < 0) along = 0;
+            int m = 9 + along * 6 / reach;      /* 9 (dark) → 15 (faded out)  */
+            if (m > 15) m = 15;
+            uint16_t px = get(x, y);
+            int r = ((px >> 11) & 0x1F) * m / 16;
+            int g = ((px >>  6) & 0x1F) * m / 16;
+            int b = ((px >>  1) & 0x1F) * m / 16;
+            put(x, y, C(r, g, b));
+        }
+    }
+}
+
 /* ── Lighting ── */
 static void lighten(int x, int y, int dr, int dg, int db) {
     if ((unsigned)x >= W || (unsigned)y >= H) return;
@@ -782,8 +828,8 @@ static void battle_bg_night(int f) {
     }
 
     /* Moon */
-    moon(96, 56, 28);
-    moon_halo(96, 56, 30, 44);
+    moon(MOON_CX, MOON_CY, MOON_R);
+    moon_halo(MOON_CX, MOON_CY, MOON_R+2, MOON_R+16);
 
     /* Far treeline */
     treeline_far(168, C(2,5,2), 24, 3);
@@ -809,18 +855,18 @@ static void battle_bg_day(int f) {
     vgrad(0, 0, W-1, 160, 7,16,30, 12,22,30);
 
     /* Sun */
-    disc(W-96, 48, 22, C(30,28,12));
-    disc(W-96, 48, 18, C(31,30,18));
+    disc(SUN_CX, SUN_CY, SUN_R,   C(30,28,12));
+    disc(SUN_CX, SUN_CY, SUN_R-4, C(31,30,18));
     /* Sun glow */
     for (int dy = -40; dy <= 40; dy++) {
         for (int dx = -40; dx <= 40; dx++) {
             int d2 = dx*dx + dy*dy;
-            if (d2 < 22*22 || d2 > 40*40) continue;
-            int bayer = BAYER4[(48+dy)&3][(W-96+dx)&3];
+            if (d2 < SUN_R*SUN_R || d2 > 40*40) continue;
+            int bayer = BAYER4[(SUN_CY+dy)&3][(SUN_CX+dx)&3];
             int dist = isqrt(d2);
-            int fade = (dist - 22) * 14 / 18;
+            int fade = (dist - SUN_R) * 14 / 18;
             if (bayer > fade + 4)
-                lighten(W-96+dx, 48+dy, 3, 2, 0);
+                lighten(SUN_CX+dx, SUN_CY+dy, 3, 2, 0);
         }
     }
 
@@ -1463,10 +1509,14 @@ static void scene_battle(int f) {
 
     uint16_t rim = is_night ? C(18,22,30) : C(28,26,14);
 
+    /* Key-light position — all shadows are thrown away from this point. */
+    int lcx = is_night ? MOON_CX : SUN_CX;
+    int lcy = is_night ? MOON_CY : SUN_CY;
+
     /* God-rays are cast over the whole field BEFORE the actors so the actors
      * read as lit objects sitting in the light rather than being washed out. */
-    if (is_night) moon_rays(96, 56, 320, f);
-    else          sun_rays (W-80, 50, 320, f);
+    if (is_night) moon_rays(MOON_CX, MOON_CY, 320, f);
+    else          sun_rays (SUN_CX,  SUN_CY,  320, f);
 
     /* ── Enemies: back row, standing on the ground (feet y ≈ 222..236) ── */
     /* Bat hovers above the back row */
@@ -1474,17 +1524,17 @@ static void scene_battle(int f) {
     draw_bat(360, bat_y, f);
 
     /* Goblin A */
-    gshadow(180, 224, 18, 5);
+    cast_shadow(180, 224, 14, 5, lcx, lcy, 20);
     draw_goblin(180, 222);
     if (is_night) blit_rim(180-8, 222-20, A_goblin, 8, 10, 2, rim);
 
     /* Goblin B */
-    gshadow(268, 230, 18, 5);
+    cast_shadow(268, 230, 14, 5, lcx, lcy, 20);
     draw_goblin(268, 228);
     if (is_night) blit_rim(268-8, 228-20, A_goblin, 8, 10, 2, rim);
 
     /* Warden (boss-lite), larger and further back-right */
-    gshadow(430, 238, 30, 7);
+    cast_shadow(430, 236, 22, 6, lcx, lcy, 24);
     blit(430-24, 236-28, A_warden, 12, 14, 2);
     if (is_night) blit_rim(430-24, 236-28, A_warden, 12, 14, 2, rim);
 
@@ -1492,17 +1542,17 @@ static void scene_battle(int f) {
     if (is_night) lightpool(210, 322, 130, 16);
 
     /* Aria */
-    gshadow(150, 312, 20, 5);
+    cast_shadow(150, 312, 16, 5, lcx, lcy, 28);
     blit(150-10, 312-28, A_aria_b, 10, 14, 2);
     if (is_night) blit_rim(150-10, 312-28, A_aria_b, 10, 14, 2, rim);
 
     /* Loras */
-    gshadow(240, 320, 20, 5);
+    cast_shadow(240, 320, 16, 5, lcx, lcy, 28);
     blit(240-10, 320-28, A_loras_b, 10, 14, 2);
     if (is_night) blit_rim(240-10, 320-28, A_loras_b, 10, 14, 2, rim);
 
     /* Knight */
-    gshadow(330, 316, 20, 5);
+    cast_shadow(330, 316, 16, 5, lcx, lcy, 24);
     draw_knight(330, 316);
     if (is_night) blit_rim(330-8, 316-24, A_knight, 8, 12, 2, rim);
 
@@ -1564,14 +1614,14 @@ static void scene_battle(int f) {
 static void scene_boss(int f) {
     /* Night battle bg for boss */
     battle_bg_night(f);
-    moon_rays(96, 56, 300, f);
+    moon_rays(MOON_CX, MOON_CY, 300, f);
 
     /* Boss warden — large, centered, standing on the ground.
      * A_warden has a blank trailing row, so its visible feet are ~4px above by;
      * the shadow + light pool are anchored to the visible feet, not the cell. */
     int bx = W/2, by = 230;
     lightpool(bx, by-6, 110, 16);
-    gshadow(bx, by-4, 44, 8);
+    cast_shadow(bx, by-4, 40, 8, MOON_CX, MOON_CY, 52);
     blit(bx-48, by-56, A_warden, 12, 14, 4);
 
     uint16_t boss_rim = C(20,24,30);
@@ -1604,15 +1654,15 @@ static void scene_boss(int f) {
 
     /* Party — front row, on the ground (feet y ≈ 312..320) */
     lightpool(210, 322, 130, 16);
-    gshadow(150, 312, 20, 5);
+    cast_shadow(150, 312, 16, 5, MOON_CX, MOON_CY, 28);
     blit(150-10, 312-28, A_aria_b, 10, 14, 2);
     blit_rim(150-10, 312-28, A_aria_b, 10, 14, 2, boss_rim);
 
-    gshadow(240, 320, 20, 5);
+    cast_shadow(240, 320, 16, 5, MOON_CX, MOON_CY, 28);
     blit(240-10, 320-28, A_loras_b, 10, 14, 2);
     blit_rim(240-10, 320-28, A_loras_b, 10, 14, 2, boss_rim);
 
-    gshadow(330, 316, 20, 5);
+    cast_shadow(330, 316, 16, 5, MOON_CX, MOON_CY, 24);
     draw_knight(330, 316);
     blit_rim(330-8, 316-24, A_knight, 8, 12, 2, boss_rim);
 
