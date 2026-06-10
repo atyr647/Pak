@@ -49,6 +49,9 @@ proc project::new {genre {name "Untitled"}} {
         flags    [dict create] \
         assets   [_default_assets $genre] \
     ]
+    # Top-down RPG projects get the full RPG schema (database, events, quests,
+    # crafting, dialogue, switches/variables, shops, sample maps) layered on.
+    if {$genre eq "topdown"} { rpg::install newdoc }
     set path  ""
     set dirty false
     set doc   $newdoc
@@ -351,6 +354,8 @@ proc project::load_from {filepath} {
     if {![dict exists $raw controls]} {
         dict set raw controls [_default_controls]
     }
+    # Forward-migrate topdown RPG projects missing newer schema fields.
+    rpg::migrate raw
     set doc   $raw
     set path  $filepath
     set dirty false

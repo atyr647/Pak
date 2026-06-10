@@ -1,0 +1,53 @@
+N64_INST    = /opt/n64
+N64_LIBDIR  = $(N64_INST)/mips64-elf/lib
+N64_BINDIR  = $(N64_INST)/bin
+CC          = $(N64_BINDIR)/mips64-elf-gcc
+CXX         = $(N64_BINDIR)/mips64-elf-g++
+N64_CFLAGS  = -mabi=o64 -mfix4300 -ffreestanding -G0 -ffunction-sections -fdata-sections
+
+PROJECT_NAME = star_assault
+BUILD_DIR    = build
+
+SRCS = build/src/main.c \
+       runtime/pakfs.c \
+       runtime/pak_embedded_sprites.c
+
+OBJS = $(SRCS:%.c=$(BUILD_DIR)/%.o)
+DEPS = $(OBJS:.o=.d)
+
+CFLAGS  = -O2 -Wall -Wextra
+CFLAGS += -I/home/user/Pak/pakstudio/n64compat -include /home/user/Pak/pakstudio/n64compat/pak_compat.h
+CFLAGS += -I$(BUILD_DIR) -Iruntime -I$(N64_INST)/mips64-elf/include
+CFLAGS += -Wno-deprecated-declarations -Wno-unused-parameter -Wno-unused-variable
+CFLAGS += $(N64_CFLAGS)
+
+LDFLAGS  = -L$(N64_LIBDIR) -ldragon -lm -ldragonsys -lc -mabi=o64
+LDFLAGS += -Wl,-Tn64.ld -Wl,--gc-sections -Wl,--wrap -Wl,__do_global_ctors
+# Allow our sprite_load in pak_embedded_sprites.o to override libdragon's
+LDFLAGS += -Wl,--allow-multiple-definition
+# Alias renamed libdragon symbols to their real binary names
+LDFLAGS += -Wl,--defsym -Wl,_pak_h_rdpq_set_mode_copy=rdpq_set_mode_copy
+
+.PHONY: all clean
+
+all: $(PROJECT_NAME).z64
+
+$(BUILD_DIR)/$(PROJECT_NAME).elf: $(OBJS)
+	@mkdir -p $(dir $@)
+	$(CXX) -o $@ $(OBJS) $(LDFLAGS)
+
+$(PROJECT_NAME).z64: $(BUILD_DIR)/$(PROJECT_NAME).elf
+	N64_INST=$(N64_INST) $(N64_BINDIR)/n64sym $< $<.sym
+	cp $< $<.stripped
+	$(N64_BINDIR)/mips64-elf-strip -s $<.stripped
+	$(N64_BINDIR)/n64elfcompress -o $(BUILD_DIR) -c 2 $<.stripped 2>/dev/null || cp $<.stripped $<.compressed
+	if [ -f $(BUILD_DIR)/$(PROJECT_NAME).elf.compressed ]; then 	    $(N64_BINDIR)/n64tool --title 'Star Assault' --output $@ --align 256 $(BUILD_DIR)/$(PROJECT_NAME).elf.compressed --align 8 $<.sym; 	else 	    $(N64_BINDIR)/n64tool --title 'Star Assault' --output $@ --align 256 $<.stripped --align 8 $<.sym; 	fi
+
+$(BUILD_DIR)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -MMD -c $< -o $@
+
+-include $(DEPS)
+
+clean:
+	rm -rf $(BUILD_DIR) $(PROJECT_NAME).z64

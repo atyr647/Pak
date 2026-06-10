@@ -86,7 +86,7 @@ proc wizard::show {parent} {
     set genres {
         platformer  "2D Platformer"       "Run, jump, collect coins, defeat enemies"
         shmup       "Shoot-em-Up"         "Horizontal or vertical scrolling shooter"
-        topdown     "Top-Down (soon)"     "Birds-eye RPG / adventure  [coming soon]"
+        topdown     "Top-Down RPG"        "Birds-eye RPG: events, quests, crafting, battles"
         fps         "FPS (soon)"          "First-person shooter  [coming soon]"
         racer       "Racer (soon)"        "3D racing game  [coming soon]"
     }
