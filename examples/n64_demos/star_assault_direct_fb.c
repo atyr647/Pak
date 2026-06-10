@@ -9,7 +9,8 @@
 #include <string.h>
 #include "pak_math.h"
 
-#define RGB16(r,g,b) ((uint16_t)(((r)<<11)|((g)<<6)|(b)))
+/* N64 RGBA5551: R=[15:11], G=[10:6], B=[5:1], A=[0]=1(opaque). All values 0-31. */
+#define RGB16(r,g,b) ((uint16_t)(((r)<<11)|((g)<<6)|((b)<<1)|1))
 #define W 320
 #define H 240
 
@@ -90,7 +91,7 @@ static void stars_init(void) {
     }
 }
 static void stars_tick(void) {
-    static const uint16_t sc[3]={RGB16(6,12,6),RGB16(14,28,14),RGB16(28,56,28)};
+    static const uint16_t sc[3]={RGB16(6,12,6),RGB16(14,28,14),RGB16(20,31,20)};
     for (int i=0;i<NS;i++) {
         sy[i]=(uint8_t)((sy[i]+sspd[i])%H);
         put(sx[i],sy[i],sc[sspd[i]-1]);
@@ -98,7 +99,7 @@ static void stars_tick(void) {
 }
 
 static void ship(int cx,int cy) {
-    uint16_t b=RGB16(10,22,28), cr=RGB16(24,50,31), e=RGB16(31,18,0);
+    uint16_t b=RGB16(10,22,28), cr=RGB16(24,25,31), e=RGB16(31,18,0);
     for (int i=-6;i<=6;i++) put(cx+i,cy+2,b);
     for (int i=-4;i<=4;i++) put(cx+i,cy,b);
     for (int i=-1;i<=1;i++) { put(cx+i,cy-3,cr); put(cx+i,cy-2,cr); }
@@ -115,11 +116,11 @@ static void boss(int cx,int cy) {
     fillr(cx-25,cy-8,51,17,RGB16(12,0,18));
     fillr(cx-12,cy-5,25,11,RGB16(22,0,28));
     fillr(cx-6,cy-2,13,5,RGB16(31,0,16));
-    put(cx,cy,RGB16(31,63,31));
+    put(cx,cy,RGB16(31,31,31));
 }
 static void bullet(int x,int y,int friendly) {
-    uint16_t c=friendly?RGB16(31,63,0):RGB16(31,0,0);
-    put(x,y,c); put(x,y+1,RGB16(31,63,31)); put(x,y+2,c);
+    uint16_t c=friendly?RGB16(31,31,0):RGB16(31,0,0);
+    put(x,y,c); put(x,y+1,RGB16(31,31,31)); put(x,y+2,c);
 }
 static void hpbar(int x,int y,int v,int m,uint16_t c) {
     int w=60*v/m;
@@ -152,15 +153,15 @@ int main(void) {
         int t = f % 180;
         if (t < 90) {
             /* Title */
-            draw_str(46, 55, "STAR ASSAULT", RGB16(20,42,31));
-            draw_str(70, 65, "N64 SHMUP", RGB16(0,32,31));
+            draw_str(46, 55, "STAR ASSAULT", RGB16(20,21,31));
+            draw_str(70, 65, "N64 SHMUP", RGB16(0,16,31));
             draw_str(40, 78, "BUILT WITH PAKSTUDIO", RGB16(14,14,8));
             draw_str(52, 90, "PAK COMPILER", RGB16(12,6,0));
             draw_str(52, 102, "LIBDRAGON N64", RGB16(0,14,14));
             ship(160,148);
             enemy(100,160); enemy(160,160); enemy(220,160);
             bullet(160,133,1); bullet(160,124,1);
-            if ((t/15)%2==0) draw_str(70,175,"PRESS START",RGB16(28,56,28));
+            if ((t/15)%2==0) draw_str(70,175,"PRESS START",RGB16(14,28,14));
         } else {
             int et = t - 90;
             boss(160, 44 + (et%8) - 4);
@@ -175,7 +176,7 @@ int main(void) {
             bullet(130,110+et%30,0); bullet(185,95+et%30,0);
             fillr(0,222,320,18,RGB16(2,2,8));
             draw_str(4,226,"SCORE",RGB16(0,28,28));
-            draw_str(40,226,"12500",RGB16(24,50,24));
+            draw_str(40,226,"12500",RGB16(24,25,24));
             draw_str(108,226,"STAGE",RGB16(0,28,28));
             draw_str(144,226,"1",RGB16(28,28,0));
             draw_str(172,226,"LIVES",RGB16(0,28,28));

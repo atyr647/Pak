@@ -5,7 +5,8 @@
 #include <string.h>
 #include "pak_math.h"
 
-#define RGB16(r,g,b) ((uint16_t)(((r)<<11)|((g)<<6)|(b)))
+/* N64 RGBA5551: R=[15:11], G=[10:6], B=[5:1], A=[0]=1(opaque). All values 0-31. */
+#define RGB16(r,g,b) ((uint16_t)(((r)<<11)|((g)<<6)|((b)<<1)|1))
 #define W 320
 #define H 240
 
@@ -74,7 +75,7 @@ static void draw_tile(int tx, int ty) {
 static void draw_bg(int scroll) {
     for(int y=0;y<H;y++) {
         int r=(y<120)?(5+y/8):15;
-        int g=(y<120)?(20+y/6):28;
+        int g_raw=(y<120)?(20+y/6):28; int g=g_raw>31?31:g_raw;
         int b=(y<120)?(28-y/15):20;
         for(int x=0;x<W;x++) fb[y*stride_px+x]=RGB16(r,g,b);
     }
@@ -121,15 +122,15 @@ static void draw_hud(int coins, int lives, int score) {
     fillr(0,0,W,14,RGB16(0,0,0));
     ds(2,4,"COINS",RGB16(28,24,0));
     char cb='0'+(char)(coins%10);
-    dc(38,4,cb,RGB16(28,56,0));
+    dc(38,4,cb,RGB16(28,28,0));
     ds(80,4,"LIVES",RGB16(28,0,0));
     char lb='0'+(char)(lives%10);
     dc(116,4,lb,RGB16(31,8,8));
     ds(160,4,"SCORE",RGB16(0,24,28));
     int s=score%1000;
-    dc(196,4,'0'+s/100,RGB16(8,56,31));
-    dc(202,4,'0'+(s/10)%10,RGB16(8,56,31));
-    dc(208,4,'0'+s%10,RGB16(8,56,31));
+    dc(196,4,'0'+s/100,RGB16(8,28,31));
+    dc(202,4,'0'+(s/10)%10,RGB16(8,28,31));
+    dc(208,4,'0'+s%10,RGB16(8,28,31));
     ds(250,4,"STAGE",RGB16(16,16,0));
     dc(286,4,'1',RGB16(28,28,4));
 }
@@ -158,9 +159,9 @@ int main(void) {
         if(t < 90) {
             fillr(50,95,220,50,RGB16(0,0,8));
             ds(60,102,"SKY QUEST",RGB16(10,30,31));
-            ds(64,114,"N64 PLATFORMER",RGB16(20,42,28));
+            ds(64,114,"N64 PLATFORMER",RGB16(20,21,28));
             ds(52,126,"BUILT WITH PAKSTUDIO",RGB16(14,14,8));
-            if((t/15)%2==0) ds(74,138,"PRESS START",RGB16(28,56,28));
+            if((t/15)%2==0) ds(74,138,"PRESS START",RGB16(14,28,14));
         }
 
         display_show(d);
