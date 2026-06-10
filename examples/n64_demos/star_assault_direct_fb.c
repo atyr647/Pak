@@ -24,7 +24,7 @@ static void fillr(int x,int y,int w,int h,uint16_t c) {
     for(int dy=0;dy<h;dy++) for(int dx=0;dx<w;dx++) put(x+dx,y+dy,c);
 }
 
-static const uint8_t font[33][5] = {
+static const uint8_t font[37][5] = {
     {0x00,0x00,0x00,0x00,0x00}, /* ' ' */
     {0x1F,0x11,0x1F,0x11,0x11}, /* A */
     {0x1E,0x11,0x1E,0x11,0x1E}, /* B */
@@ -57,14 +57,17 @@ static const uint8_t font[33][5] = {
     {0x1E,0x01,0x0E,0x10,0x1F}, /* 2 */
     {0x1F,0x02,0x06,0x01,0x1E}, /* 3 */
     {0x12,0x12,0x1F,0x02,0x02}, /* 4 */
-    {0x1E,0x10,0x1E,0x01,0x1E}, /* 5 */
+    {0x0E,0x10,0x1E,0x11,0x0E}, /* 6 */
+    {0x1F,0x01,0x02,0x04,0x08}, /* 7 */
+    {0x0E,0x11,0x0E,0x11,0x0E}, /* 8 */
+    {0x0E,0x11,0x0F,0x01,0x0E}, /* 9 */
 };
 
 static void draw_chr(int x, int y, char c, uint16_t col) {
     int idx = 0;
     if (c >= 'A' && c <= 'Z') idx = 1 + (c - 'A');
     else if (c >= 'a' && c <= 'z') idx = 1 + (c - 'a');
-    else if (c >= '0' && c <= '5') idx = 27 + (c - '0');
+    else if (c >= '0' && c <= '9') idx = 27 + (c - '0');
     else return;
     for (int row = 0; row < 5; row++) {
         uint8_t b = font[idx][row];
