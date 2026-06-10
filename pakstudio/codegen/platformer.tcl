@@ -224,10 +224,14 @@ proc codegen::platformer::_asset_decls {doc} {
     set lines {}
     lappend lines "-- ── Asset bindings ───────────────────────────────────────────────────────────"
     set any 0
-    # Sprites: declare pointer handles loaded at runtime via sprite_load().
-    # (asset spr_x: Sprite only emits a path constant, not a loaded handle.)
+    # Sprites: declare both an asset (so pak bundles the file into the ROM
+    # filesystem) and a *sprite_t handle loaded at startup via sprite_load().
+    # Using distinct names (_asset suffix) avoids a name collision: the asset
+    # declaration generates spr_x_asset_path (a const char*), while our static
+    # spr_x is the sprite_t* handle used by sprite.blit().
     foreach role [_sprite_roles] {
         if {[_has_sprite $doc $role]} {
+            lappend lines "asset spr_${role}_asset: Sprite from \"sprites/${role}.png\""
             lappend lines "static spr_${role}: *sprite_t = none"
             set any 1
         }

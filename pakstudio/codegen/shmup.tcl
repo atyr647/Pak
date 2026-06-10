@@ -170,9 +170,11 @@ proc codegen::shmup::_asset_decls {doc} {
     set lines {}
     lappend lines "-- ── Asset bindings ───────────────────────────────────────────────────────────"
     set any 0
-    # Sprites: declare pointer handles loaded at runtime via sprite_load().
+    # Sprites: asset declaration includes the file in the ROM filesystem;
+    # the static *sprite_t handle is loaded from it at startup.
     foreach role [_sprite_roles] {
         if {[_has_sprite $doc $role]} {
+            lappend lines "asset spr_${role}_asset: Sprite from \"sprites/${role}.png\""
             lappend lines "static spr_${role}: *sprite_t = none"
             set any 1
         }
