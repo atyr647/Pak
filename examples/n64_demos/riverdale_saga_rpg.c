@@ -126,83 +126,118 @@ static void hpbar(int x,int y,int w,int v,int max,int r,int g,int b){
 #define TS 32
 static int hsh(int v){v^=v<<13;v^=v>>7;v^=v<<5;return v;}
 
+/* ── value noise: smooth organic variation for painterly terrain ──────────── */
+static inline int nhash(int x,int y){
+ unsigned h=(unsigned)(x*374761393 + y*668265263); h=(h^(h>>13))*1274126177u; return (h>>16)&0xFF; }
+/* bilinear value noise at lattice scale 1<<sh, returns 0..255 */
+static int vnoise(int x,int y,int sh){
+ int m=(1<<sh)-1, x0=x>>sh, y0=y>>sh, fx=x&m, fy=y&m;
+ int n00=nhash(x0,y0),n10=nhash(x0+1,y0),n01=nhash(x0,y0+1),n11=nhash(x0+1,y0+1);
+ int a=n00+(((n10-n00)*fx)>>sh), b=n01+(((n11-n01)*fx)>>sh);
+ return a+(((b-a)*fy)>>sh); }
+static inline int clampc(int v){return v<0?0:(v>255?255:v);}
+
+/* a soft, top-left-lit foliage/rock blob with noisy leaf detail */
+static void blob(int cx,int cy,int r,int br,int bg,int bb,int rough){
+ for(int dy=-r;dy<=r;dy++){int hf=isqrt(r*r-dy*dy);
+  for(int dx=-hf;dx<=hf;dx++){
+   int lt=-(dx+dy)*44/r;                       /* directional light */
+   int edge=(dx*dx+dy*dy)*36/(r*r);            /* darker rim */
+   int n=((((hsh((cx+dx)*131+(cy+dy)*977))>>5)&127)-64)*rough/100;
+   put_rgb(cx+dx,cy+dy, clampc(br+lt-edge+n), clampc(bg+lt-edge+n), clampc(bb+lt/2-edge+n));}}}
+
 static void t_grass(int sx,int sy,int wx,int wy){
- for(int y=0;y<TS;y++)for(int x=0;x<TS;x++){
-   int n=hsh((wx+x)*131+(wy+y)*977);
-   int g=120+((n>>3)&15); int r=40+((n>>7)&10); int b=46+((n>>5)&8);
-   put_rgb(sx+x,sy+y,r,g,b);}
- /* a few darker blades + light tips */
- for(int i=0;i<6;i++){int n=hsh((wx*7+wy*13+i*101));
-   int bx=(n&31), by=((n>>5)&27);
-   put_rgb(sx+bx,sy+by,28,90,34); put_rgb(sx+bx,sy+by-1,70,150,80);}
-}
+ for(int y=0;y<TS;y++){int gy=wy+y;
+  for(int x=0;x<TS;x++){int gx=wx+x;
+   int patch=vnoise(gx,gy,5);                           /* soft meadow patches */
+   int blade=(hsh(gx*131+gy*977)>>4)&255;               /* fine blades */
+   int r=30 + patch*30/255 + (blade>210?16:0);
+   int g=58 + patch*78/255 + (blade>210?34:0) - (blade<40?20:0);
+   int b=22 + patch*22/255;
+   put_rgb(sx+x,sy+y, r,g,b);}}}
 static void t_path(int sx,int sy,int wx,int wy){
- vgrad(sx,sy,TS,TS, 120,96,60, 96,76,46);
- for(int gy=0;gy<TS;gy+=8)for(int gx=0;gx<TS;gx+=8){
-   int n=hsh((wx+gx)*17+(wy+gy)*43);
-   int ox=(n&3), oy=((n>>2)&3);
-   /* cobblestone: light top, dark bottom */
-   for(int yy=1;yy<7;yy++)for(int xx=1;xx<7;xx++){
-     int r=150,g=120,b=78; if(yy<2){r+=30;g+=24;b+=16;} if(yy>4){r-=40;g-=34;b-=24;}
-     put_rgb(sx+gx+xx+ox,sy+gy+yy+oy, r,g,b);} }
-}
+ for(int y=0;y<TS;y++){int gy=wy+y;
+  for(int x=0;x<TS;x++){int gx=wx+x;
+   int n=vnoise(gx,gy,4);
+   int st=(hsh(gx*71+gy*37)>>3)&255;
+   int r=104+n*46/255, g=80+n*34/255, b=48+n*22/255;
+   if(st>214){r+=34;g+=28;b+=20;}                       /* pale pebble */
+   else if(st<40){r-=34;g-=28;b-=18;}                   /* rut/shadow */
+   put_rgb(sx+x,sy+y, clampc(r),clampc(g),clampc(b));}}}
 static void t_water(int sx,int sy,int wx,int wy,int f){
- for(int y=0;y<TS;y++){int b=150+ (y*40/TS) + ((isqrt((y*7)&15))*4);
-   for(int x=0;x<TS;x++) put_rgb(sx+x,sy+y, 24+((x+y)&7), 70+(y*30/TS), b);}
- /* moving highlight ripples */
- for(int i=0;i<3;i++){int yy=(i*11 + (f/3))%TS;
-   for(int x=0;x<TS;x++){ int hv=( (x+wx+ (f/2)) >>2)&3; if(hv==0) put_rgb(sx+x,sy+yy,150,200,255);} }
- (void)wy;
-}
+ for(int y=0;y<TS;y++){int gy=wy+y;
+  for(int x=0;x<TS;x++){int gx=wx+x;
+   int wv=vnoise(gx, gy*2 - f*2, 3);                    /* drifting body */
+   int sp=(hsh((gx*2+f)*71+(gy*2)*37)>>3)&255;          /* sparkle field */
+   int r=16+wv/12, g=58+wv/4, b=128+wv/5;
+   if(sp>236){r+=120;g+=120;b+=90;}                     /* sun specular */
+   else if(sp>210){r+=40;g+=50;b+=40;}                  /* ripple crest */
+   put_rgb(sx+x,sy+y, clampc(r),clampc(g),clampc(b));}}
+ (void)wy;}
+static void ground_shadow(int cx,int cy,int rw,int rh){
+ for(int dy=-rh;dy<=rh;dy++){int hf=rw-(dy<0?-dy:dy)*rw/rh; int y=cy+dy;
+  for(int dx=-hf;dx<=hf;dx++){int x=cx+dx; if((unsigned)x<W&&(unsigned)y<H){
+   uint16_t*p=&fb[y*stride_px+x]; *p=C(((*p>>11)&31)*3/5,((*p>>6)&31)*3/5,((*p>>1)&31)*3/5);}}}}
 static void t_tree(int sx,int sy,int wx,int wy){
  t_grass(sx,sy,wx,wy);
- /* trunk */ fillr(sx+13,sy+18,6,12,C(11,7,3));
- for(int y=18;y<30;y+=2) put(sx+14,sy+y,C(7,4,1));
- put(sx+18,sy+19,C(15,10,5));
- /* canopy: layered, shaded */
- disc(sx+16,sy+14,14,C(3,11,4));
- disc(sx+16,sy+13,12,C(5,16,6));
- disc(sx+13,sy+11,8,C(7,21,9));   /* highlight clump */
- disc(sx+11,sy+9,4,C(11,27,13));
- /* speckle */
- for(int i=0;i<14;i++){int n=hsh(wx*3+wy*5+i*71);
-   put(sx+8+(n&15),sy+6+((n>>4)&15),((n>>8)&1)?C(4,13,5):C(9,24,11));}
+ ground_shadow(sx+18,sy+28,12,5);
+ /* trunk with bark shading */
+ for(int y=18;y<31;y++)for(int x=13;x<19;x++){
+   int sh=(x-13)*8-12; int n=(vnoise((sx+x)*2,(sy+y),1)-128)/8;
+   put_rgb(sx+x,sy+y, clampc(78+sh+n),clampc(48+sh+n),clampc(24+sh/2+n));}
+ /* layered volumetric canopy (dark base → lit clumps) */
+ blob(sx+16,sy+15,15, 26,72,30, 60);
+ blob(sx+14,sy+12,11, 40,104,44, 70);
+ blob(sx+12,sy+10,7,  64,140,66, 80);
+ blob(sx+11,sy+9,4,   96,176,90, 80);
 }
 static void t_wall(int sx,int sy){
- vgrad(sx,sy,TS,TS, 150,128,92, 120,100,70);
- for(int y=0;y<TS;y+=8) hbar(sx,sx+TS-1,sy+y,C(12,10,7));
- for(int x=0;x<TS;x+=16)for(int y=0;y<TS;y++) put(sx+x,sy+y,C(13,11,8));
- /* studs */ for(int y=4;y<TS;y+=8)for(int x=4;x<TS;x+=16) put_rgb(sx+x,sy+y,90,76,52);
-}
+ /* plastered stone with beveled blocks */
+ for(int y=0;y<TS;y++)for(int x=0;x<TS;x++){
+  int n=vnoise(sx+x,sy+y,3);
+  int r=150+n*30/255-15, g=128+n*26/255-13, b=92+n*20/255-10;
+  int by=y&15, bx=(x + (y/16)*8)&15;                   /* offset courses */
+  if(by==0||by==15){r-=46;g-=40;b-=30;}                /* mortar */
+  else if(by==1){r+=26;g+=22;b+=16;}                   /* top bevel light */
+  else if(by==14){r-=26;g-=22;b-=16;}                  /* bottom bevel dark */
+  if(bx==0){r-=40;g-=34;b-=26;} else if(bx==1){r+=22;g+=18;b+=12;}
+  put_rgb(sx+x,sy+y, clampc(r),clampc(g),clampc(b));}}
 static void t_roof(int sx,int sy){
- for(int row=0;row<TS;row+=8){
-  vgrad(sx,sy+row,TS,8, 170,46,40, 120,28,26);
-  hbar(sx,sx+TS-1,sy+row,C(28,12,11));            /* shingle highlight */
-  hbar(sx,sx+TS-1,sy+row+7,C(11,3,3));            /* shadow gap */
-  for(int x=(row?0:8);x<TS;x+=16) for(int y=1;y<7;y++) put(sx+x,sy+row+y,C(13,4,4));}
-}
+ for(int y=0;y<TS;y++)for(int x=0;x<TS;x++){
+  int row=y/8, ph=y%8;
+  int ofx=(x + row*8)%16;                              /* staggered tiles */
+  int n=vnoise(sx+x,sy+y,2);
+  int r=150+n*40/255, g=44+n*20/255, b=38+n*16/255;
+  if(ph==0){r+=44;g+=24;b+=20;}                        /* tile lip highlight */
+  else if(ph>=6){r-=50;g-=22;b-=18;}                   /* shadow under lip */
+  if(ofx==0||ofx==15){r-=30;g-=14;b-=12;}              /* tile seam */
+  put_rgb(sx+x,sy+y, clampc(r),clampc(g),clampc(b));}}
 static void t_door(int sx,int sy){
  t_wall(sx,sy);
- fillr(sx+7,sy+6,18,26,C(9,6,3));
- rect_outline(sx+7,sy+6,18,26,C(16,11,6));
- for(int x=11;x<25;x+=6) for(int y=8;y<32;y++) put(sx+x,sy+y,C(6,4,2));
- /* arch */ for(int i=0;i<9;i++) put(sx+7+i+ (i>4?0:0),sy+6, C(16,11,6));
- disc(sx+21,sy+19,1,C(28,24,8)); put(sx+21,sy+19,C(31,28,10)); /* knob */
-}
+ /* stone arch frame */ for(int i=0;i<7;i++){put(sx+6+i,sy+4,C(20,16,11));put(sx+25-i,sy+4,C(20,16,11));}
+ for(int y=5;y<32;y++){int x0=sx+6,x1=sx+25; put(x0,y,C(8,6,4));put(x1,y,C(8,6,4));}
+ /* planked wood door with grain + iron bands */
+ for(int y=6;y<32;y++)for(int x=8;x<24;x++){
+   int n=(vnoise((sx+x)*3,(sy+y),1)-128)/6;
+   int pl=((x-8)/5); int sh=(pl&1)?-10:6;
+   put_rgb(sx+x,sy+y, clampc(86+sh+n),clampc(54+sh+n),clampc(26+sh/2+n));
+   if((x-8)%5==4) put(sx+x,sy+y,C(5,3,2)); }
+ hbar(sx+8,sx+23,sy+12,C(7,5,3)); hbar(sx+8,sx+23,sy+25,C(7,5,3)); /* iron bands */
+ disc(sx+21,sy+19,1,C(28,24,8)); put(sx+21,sy+19,C(31,28,12)); }
 static void t_flower(int sx,int sy,int wx,int wy){
  t_grass(sx,sy,wx,wy);
  int n=hsh(wx*5+wy*9);
- for(int i=0;i<3;i++){int cx=sx+8+((n>>(i*3))&15), cy=sy+8+((n>>(i*3+2))&15);
-   uint16_t pc=(i==0)?C(31,28,10):(i==1)?C(31,12,18):C(20,14,31);
+ for(int i=0;i<4;i++){int cx=sx+6+((n>>(i*3))&18), cy=sy+6+((n>>(i*3+2))&18);
+   uint16_t pc=(i&1)?C(31,26,10):((i&2)?C(31,12,18):C(22,14,31));
    put(cx,cy-2,pc);put(cx,cy+2,pc);put(cx-2,cy,pc);put(cx+2,cy,pc);
-   put(cx,cy,C(31,28,16));}
-}
+   put(cx-1,cy-1,pc);put(cx+1,cy+1,pc); put(cx,cy,C(31,29,18));}}
 static void t_fence(int sx,int sy,int wx,int wy){
  t_grass(sx,sy,wx,wy);
- fillr(sx,sy+12,TS,5,C(20,14,8)); hbar(sx,sx+TS-1,sy+12,C(26,19,11));
- hbar(sx,sx+TS-1,sy+16,C(11,7,4));
- for(int x=6;x<TS;x+=16){fillr(sx+x,sy+6,4,18,C(17,12,7)); put(sx+x,sy+6,C(24,18,10));}
-}
+ for(int y=12;y<17;y++)for(int x=0;x<TS;x++){int n=(vnoise((sx+x)*2,sy+y,1)-128)/8;
+   int sh=(y==12)?20:(y>=16?-18:0); put_rgb(sx+x,sy+y,clampc(110+sh+n),clampc(78+sh+n),clampc(42+sh+n));}
+ for(int x=6;x<TS;x+=16)for(int y=6;y<26;y++){int n=(vnoise(sx+x,sy+y,1)-128)/8;
+   int sh=(y<8)?18:0; put_rgb(sx+x,sy+y,clampc(98+sh+n),clampc(66+sh+n),clampc(34+n));
+   put_rgb(sx+x+3,sy+y,clampc(60+n),clampc(40+n),clampc(20+n));}}
 static const uint8_t MAP[15][20]={
  {3,3,3,0,0,7,0,0,0,0,0,0,7,0,0,0,3,3,3,3},
  {3,0,0,0,5,5,5,5,0,0,0,0,5,5,5,5,0,0,0,3},
@@ -323,12 +358,11 @@ static void warden(int cx,int cy,int f){
  for(int i=-30;i<31;i+=5) fillr(cx+i,cy-18,3,56,C(4,9,3));
  rect_outline(cx-30,cy-18,61,56,OL);
  /* roots/arms */ fillr(cx-46,cy-6,16,7,C(6,11,4)); fillr(cx+30,cy-6,16,7,C(6,11,4));
- /* canopy crown */
- disc(cx,cy-30,30,OL); disc(cx,cy-30,28,C(4,14,5));
- disc(cx-18,cy-22,16,C(5,17,6)); disc(cx+18,cy-22,16,C(5,17,6));
- disc(cx-10,cy-34,12,C(7,21,9));
- for(int i=0;i<40;i++){int n=hsh(i*131+ (f/8));
-   put(cx-26+(n&52),cy-44+((n>>3)&36),((n>>9)&1)?C(3,11,4):C(8,22,10));}
+ /* canopy crown — volumetric lit foliage */
+ disc(cx,cy-30,31,OL);
+ blob(cx,cy-30,29, 22,60,28, 55);
+ blob(cx-18,cy-24,17, 34,92,40, 70); blob(cx+16,cy-26,15, 30,84,36, 70);
+ blob(cx-8,cy-38,13, 56,128,60, 80); blob(cx+12,cy-34,10, 48,116,52, 80);
  /* glowing eyes + maw */
  int gl=18+isqrt((f*3)&63); if(gl>31)gl=31;
  disc(cx-12,cy-2,5,C(31,gl,2)); disc(cx-12,cy-2,2,C(31,31,20));
@@ -463,9 +497,7 @@ static void scene_quests(int f){
 static const char*SH[]={"POTION","ETHER","HERB","BRONZE SWORD","LEATHER ARMOR"};
 static const int SP[]={25,60,5,80,70};
 static void scene_shop(int f){
- scene_overworld(0);
- for(int y=0;y<H;y++)for(int x=0;x<W;x++) if(((x+y)&1)==0){uint16_t*p=&fb[y*stride_px+x];
-   *p=C(((*p>>11)&31)/3,((*p>>6)&31)/3,((*p>>1)&31)/3);}
+ vgrad(0,0,W,H, 5,7,18, 11,13,32);            /* the windows cover the rest */
  window(16,16,608,280);
  banner(28,10,200,26,"GENERAL STORE");
  gtext(440,22,"GOLD",2,C(31,26,8)); gnum(530,22,150,4,2,C(31,31,31));
@@ -516,12 +548,23 @@ static void scene_craft(int f){
 }
 
 static void woods(int f){
- vgrad(0,0,W,H, 8,28,12, 4,16,7);
- for(int i=0;i<14;i++){int n=hsh(i*151); int tx=(n&1023)%W, ty=20+((n>>10)&420);
-   disc(tx,ty,20,C(2,9,3)); disc(tx,ty-8,14,C(4,13,5)); disc(tx-6,ty-12,7,C(7,19,9));
-   fillr(tx-2,ty+14,5,14,C(10,6,2));}
- for(int y=0;y<H;y++){int rx=150+ (isqrt((y*4+f/4)&255)) - y/12; rx+= (y/30%5);
-   for(int k=0;k<18;k++) put_rgb(rx+k,y, 40+((y+f/3)&20),90,200+((y+k+f/2)&30));}
+ /* dappled forest floor */
+ for(int y=0;y<H;y++)for(int x=0;x<W;x++){
+   int p=vnoise(x,y,5);
+   int r=16+p*22/255, g=40+p*52/255, b=18+p*16/255;
+   put_rgb(x,y, r,g,b);}
+ /* winding river with banks + specular */
+ for(int y=0;y<H;y++){int rx=150 + (vnoise(0,y,5)-128)*40/128 - y/14;
+  for(int k=0;k<22;k++){int x=rx+k; int sp=(hsh((x*2+f)*71+(y*2)*37)>>3)&255;
+   int r=16,g=58,b=132; if(sp>232){r+=120;g+=120;b+=90;} else if(sp>204){r+=36;g+=46;b+=36;}
+   put_rgb(x,y,clampc(r),clampc(g),clampc(b));}
+  put_rgb(rx-1,y,30,52,28); put_rgb(rx+22,y,30,52,28);}
+ /* shaded canopy trees */
+ for(int i=0;i<15;i++){int n=hsh(i*151); int tx=(n&1023)%W, ty=40+((n>>10)&400);
+   ground_shadow(tx+6,ty+24,20,7);
+   for(int y=22;y<34;y++)for(int x=-3;x<3;x++){int sh=x*7; put_rgb(tx+x+1,ty+y,clampc(70+sh),clampc(44+sh),clampc(22+sh/2));}
+   blob(tx,ty,21, 22,64,28, 60); blob(tx-3,ty-6,15, 36,98,42, 70); blob(tx-7,ty-11,8, 60,136,64, 80);}
+ (void)f;
 }
 static void scene_action(int f){
  woods(f);
