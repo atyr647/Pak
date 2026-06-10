@@ -130,10 +130,23 @@ const SHIP_H: i32 = 12
 const INVULN_F: i32 = 90
 const CTRL_DEADZONE: i32 = 40
 
-const MAX_BULLETS:  i32 = 16
-const MAX_ENEMIES:  i32 = 24
-const MAX_EBULLETS: i32 = 32
-const MAX_SPAWNS:   i32 = 64
+const MAX_BULLETS:    i32 = 32
+const MAX_ENEMIES:    i32 = 24
+const MAX_EBULLETS:   i32 = 48
+const MAX_SPAWNS:     i32 = 64
+const MAX_EXPLOSIONS: i32 = 24
+const MAX_POWERUPS:   i32 = 8
+
+const WEAPON_MAX:      i32 = 3
+const BOMB_START:      i32 = 3
+const EXTRA_LIFE_SCORE: i32 = 5000
+const BOSS_ZONE:       i32 = 120
+const BOSS_HP:         i32 = 40
+
+-- power-up kinds
+const PU_WEAPON: i32 = 0
+const PU_BOMB:   i32 = 1
+const PU_LIFE:   i32 = 2
 
 const NUM_LEVELS: i32 = $nlevels
 
@@ -261,13 +274,15 @@ fn music_stop()  { music_on = false }
 
 proc codegen::shmup::_gamestate_block {} {
     return {-- ── Entities ─────────────────────────────────────────────────────────────────
-enum Phase { title, playing, gameover, win }
+enum Phase { title, playing, paused, gameover, win }
 
-struct Ship { x: f32, y: f32, health: i32, invuln: i32, cool: i32 }
-struct Bullet { x: f32, y: f32, active: bool }
+struct Ship { x: f32, y: f32, health: i32, invuln: i32, cool: i32, weapon: i32, bombs: i32 }
+struct Bullet { x: f32, y: f32, vx: f32, vy: f32, active: bool }
 struct Enemy { x: f32, y: f32, vx: f32, vy: f32, hp: i32, kind: i32, alive: bool, fire: i32, ph: f32, color: u32 }
 struct EBullet { x: f32, y: f32, vx: f32, vy: f32, active: bool }
 struct Spawn { at: i32, lane: i32, kind: i32 }
+struct Explosion { x: f32, y: f32, life: i32, active: bool }
+struct PowerUp { x: f32, y: f32, kind: i32, ph: f32, active: bool }
 
 struct GameState {
     phase: Phase
@@ -279,13 +294,27 @@ struct GameState {
     frame: i32
     hi_score: i32
     best_stage: i32
+    menu_sel: i32
+    next_life: i32
+    boss_active: bool
+    boss_spawned: bool
+    boss_hp: i32
+    boss_max: i32
+    boss_x: f32
+    boss_y: f32
+    boss_vx: f32
+    boss_vy: f32
+    boss_fire: i32
+    boss_ph: f32
 }
 
 static gs: GameState = undefined
-static bullets:  [16]Bullet = undefined
-static enemies:  [24]Enemy = undefined
-static ebullets: [32]EBullet = undefined
-static spawns:   [64]Spawn = undefined
+static bullets:    [32]Bullet = undefined
+static enemies:    [24]Enemy = undefined
+static ebullets:   [48]EBullet = undefined
+static spawns:     [64]Spawn = undefined
+static explosions: [24]Explosion = undefined
+static powerups:   [8]PowerUp = undefined
 static num_spawns: i32 = 0
 static next_spawn: i32 = 0
 static level_len:  i32 = 1800
@@ -307,6 +336,16 @@ proc codegen::shmup::_fire_held_expr {doc} {
 
 proc codegen::shmup::_gameplay_block {doc} {
     set tmpl {-- ── Gameplay ─────────────────────────────────────────────────────────────────
+static kill_count: i32 = 0
+
+fn aabb(ax: f32, ay: f32, aw: i32, ah: i32, bx: f32, by: f32, bw: i32, bh: i32) -> bool {
+    if ax + aw as f32 < bx { return false }
+    if bx + bw as f32 < ax { return false }
+    if ay + ah as f32 < by { return false }
+    if by + bh as f32 < ay { return false }
+    return true
+}
+
 fn spawn_enemy(kind: i32, lane: i32) {
     let i: i32 = 0
     while i < MAX_ENEMIES {
@@ -337,24 +376,153 @@ fn spawn_enemy(kind: i32, lane: i32) {
     }
 }
 
-fn fire_bullet() {
-    if gs.ship.cool > 0 { return }
+fn emit_bullet(bx: f32, by: f32, vx: f32, vy: f32) {
     let i: i32 = 0
     while i < MAX_BULLETS {
         if not bullets[i].active {
             bullets[i].active = true
-            if ORIENT == 0 {
-                bullets[i].x = gs.ship.x + SHIP_W as f32
-                bullets[i].y = gs.ship.y + (SHIP_H / 2) as f32
-            } else {
-                bullets[i].x = gs.ship.x + (SHIP_W / 2) as f32
-                bullets[i].y = gs.ship.y
-            }
-            gs.ship.cool = FIRE_COOLDOWN
-            sfx_shoot()
+            bullets[i].x = bx
+            bullets[i].y = by
+            bullets[i].vx = vx
+            bullets[i].vy = vy
             return
         }
         i += 1
+    }
+}
+
+fn fire_bullet() {
+    if gs.ship.cool > 0 { return }
+    let bx: f32 = 0.0
+    let by: f32 = 0.0
+    if ORIENT == 0 {
+        bx = gs.ship.x + SHIP_W as f32
+        by = gs.ship.y + (SHIP_H / 2) as f32
+        emit_bullet(bx, by, BULLET_SPEED, 0.0)
+        if gs.ship.weapon >= 2 {
+            emit_bullet(bx, by - 5.0, BULLET_SPEED, 0.0)
+            emit_bullet(bx, by + 5.0, BULLET_SPEED, 0.0)
+        }
+        if gs.ship.weapon >= 3 {
+            emit_bullet(bx, by, BULLET_SPEED, -1.6)
+            emit_bullet(bx, by, BULLET_SPEED, 1.6)
+        }
+    } else {
+        bx = gs.ship.x + (SHIP_W / 2) as f32
+        by = gs.ship.y
+        emit_bullet(bx, by, 0.0, -BULLET_SPEED)
+        if gs.ship.weapon >= 2 {
+            emit_bullet(bx - 5.0, by, 0.0, -BULLET_SPEED)
+            emit_bullet(bx + 5.0, by, 0.0, -BULLET_SPEED)
+        }
+        if gs.ship.weapon >= 3 {
+            emit_bullet(bx, by, -1.6, -BULLET_SPEED)
+            emit_bullet(bx, by, 1.6, -BULLET_SPEED)
+        }
+    }
+    gs.ship.cool = FIRE_COOLDOWN
+    sfx_shoot()
+}
+
+fn spawn_explosion(ex: f32, ey: f32) {
+    let i: i32 = 0
+    while i < MAX_EXPLOSIONS {
+        if not explosions[i].active {
+            explosions[i].active = true
+            explosions[i].x = ex
+            explosions[i].y = ey
+            explosions[i].life = 18
+            return
+        }
+        i += 1
+    }
+}
+
+fn explosions_update() {
+    let i: i32 = 0
+    while i < MAX_EXPLOSIONS {
+        if explosions[i].active {
+            explosions[i].life -= 1
+            if explosions[i].life <= 0 { explosions[i].active = false }
+        }
+        i += 1
+    }
+}
+
+fn spawn_powerup(px: f32, py: f32, kind: i32) {
+    let i: i32 = 0
+    while i < MAX_POWERUPS {
+        if not powerups[i].active {
+            powerups[i].active = true
+            powerups[i].x = px
+            powerups[i].y = py
+            powerups[i].kind = kind
+            powerups[i].ph = 0.0
+            return
+        }
+        i += 1
+    }
+}
+
+fn collect_powerup(kind: i32) {
+    sfx_powerup()
+    if kind == PU_WEAPON {
+        if gs.ship.weapon < WEAPON_MAX { gs.ship.weapon += 1 }
+        gs.score += 50
+    } elif kind == PU_BOMB {
+        gs.ship.bombs += 1
+        gs.score += 50
+    } else {
+        gs.lives += 1
+        gs.score += 50
+    }
+}
+
+fn powerups_update() {
+    let i: i32 = 0
+    while i < MAX_POWERUPS {
+        if powerups[i].active {
+            powerups[i].ph += 0.1
+            -- powerups drift with the scroll toward the player side
+            if ORIENT == 0 {
+                powerups[i].x -= 1.0
+                powerups[i].y += math.sin_f(powerups[i].ph) * 0.8
+                if powerups[i].x < -16.0 { powerups[i].active = false }
+            } else {
+                powerups[i].y += 1.0
+                powerups[i].x += math.sin_f(powerups[i].ph) * 0.8
+                if powerups[i].y > (SCREEN_H + 16) as f32 { powerups[i].active = false }
+            }
+            if aabb(gs.ship.x, gs.ship.y, SHIP_W, SHIP_H, powerups[i].x, powerups[i].y, 12, 12) {
+                collect_powerup(powerups[i].kind)
+                powerups[i].active = false
+            }
+        }
+        i += 1
+    }
+}
+
+fn do_bomb() {
+    if gs.ship.bombs <= 0 { return }
+    gs.ship.bombs -= 1
+    sfx_explode()
+    -- clear all enemy bullets
+    let i: i32 = 0
+    while i < MAX_EBULLETS { ebullets[i].active = false; i += 1 }
+    -- damage every enemy on screen
+    i = 0
+    while i < MAX_ENEMIES {
+        if enemies[i].alive {
+            spawn_explosion(enemies[i].x, enemies[i].y)
+            enemies[i].alive = false
+            gs.score += 50
+        }
+        i += 1
+    }
+    -- chip the boss
+    if gs.boss_active {
+        gs.boss_hp -= 8
+        spawn_explosion(gs.boss_x, gs.boss_y)
     }
 }
 
@@ -440,9 +608,10 @@ fn bullets_update() {
     let i: i32 = 0
     while i < MAX_BULLETS {
         if bullets[i].active {
-            if ORIENT == 0 { bullets[i].x += BULLET_SPEED } else { bullets[i].y -= BULLET_SPEED }
-            if bullets[i].x > (SCREEN_W + 8) as f32 { bullets[i].active = false }
-            if bullets[i].y < -8.0 { bullets[i].active = false }
+            bullets[i].x += bullets[i].vx
+            bullets[i].y += bullets[i].vy
+            if bullets[i].x < -8.0 or bullets[i].x > (SCREEN_W + 8) as f32 { bullets[i].active = false }
+            if bullets[i].y < -8.0 or bullets[i].y > (SCREEN_H + 8) as f32 { bullets[i].active = false }
         }
         i += 1
     }
@@ -461,12 +630,61 @@ fn ebullets_update() {
     }
 }
 
-fn aabb(ax: f32, ay: f32, aw: i32, ah: i32, bx: f32, by: f32, bw: i32, bh: i32) -> bool {
-    if ax + aw as f32 < bx { return false }
-    if bx + bw as f32 < ax { return false }
-    if ay + ah as f32 < by { return false }
-    if by + bh as f32 < ay { return false }
-    return true
+fn enemy_killed(idx: i32) {
+    enemies[idx].alive = false
+    spawn_explosion(enemies[idx].x, enemies[idx].y)
+    sfx_explode()
+    kill_count += 1
+    -- turrets always drop a power-up; every 6th kill drops one too
+    if enemies[idx].kind == 2 {
+        spawn_powerup(enemies[idx].x, enemies[idx].y, PU_WEAPON)
+    } elif kill_count % 6 == 0 {
+        let k: i32 = (kill_count / 6) % 3
+        spawn_powerup(enemies[idx].x, enemies[idx].y, k)
+    }
+}
+
+fn boss_spawn() {
+    gs.boss_active = true
+    gs.boss_spawned = true
+    gs.boss_hp = BOSS_HP
+    gs.boss_max = BOSS_HP
+    gs.boss_fire = 60
+    gs.boss_ph = 0.0
+    if ORIENT == 0 {
+        gs.boss_x = (SCREEN_W - 48) as f32
+        gs.boss_y = (SCREEN_H / 2 - 20) as f32
+        gs.boss_vx = 0.0
+        gs.boss_vy = 1.2
+    } else {
+        gs.boss_x = (SCREEN_W / 2 - 20) as f32
+        gs.boss_y = 30.0
+        gs.boss_vx = 1.2
+        gs.boss_vy = 0.0
+    }
+}
+
+fn boss_update() {
+    if not gs.boss_active { return }
+    gs.boss_ph += 0.05
+    gs.boss_x += gs.boss_vx
+    gs.boss_y += gs.boss_vy
+    if ORIENT == 0 {
+        if gs.boss_y < 20.0 { gs.boss_vy = 1.2 }
+        if gs.boss_y > (SCREEN_H - 60) as f32 { gs.boss_vy = -1.2 }
+    } else {
+        if gs.boss_x < 20.0 { gs.boss_vx = 1.2 }
+        if gs.boss_x > (SCREEN_W - 60) as f32 { gs.boss_vx = -1.2 }
+    }
+    gs.boss_fire -= 1
+    if gs.boss_fire <= 0 {
+        gs.boss_fire = 45
+        let cx: f32 = gs.boss_x + 20.0
+        let cy: f32 = gs.boss_y + 20.0
+        spawn_ebullet(cx, cy)
+        spawn_ebullet(cx - 10.0, cy)
+        spawn_ebullet(cx + 10.0, cy)
+    }
 }
 
 fn collisions() {
@@ -479,12 +697,25 @@ fn collisions() {
                     bullets[bi].active = false
                     enemies[ei].hp -= 1
                     if enemies[ei].hp <= 0 {
-                        enemies[ei].alive = false
                         gs.score += 100
-                        sfx_explode()
+                        enemy_killed(ei)
                     }
                 }
                 ei += 1
+            }
+            -- bullet vs boss
+            if gs.boss_active and bullets[bi].active and aabb(bullets[bi].x, bullets[bi].y, 6, 2, gs.boss_x, gs.boss_y, 40, 40) {
+                bullets[bi].active = false
+                gs.boss_hp -= 1
+                if (gs.frame % 4) == 0 { spawn_explosion(gs.boss_x + 20.0, gs.boss_y + 20.0) }
+                if gs.boss_hp <= 0 {
+                    gs.boss_active = false
+                    gs.score += 2000
+                    spawn_explosion(gs.boss_x, gs.boss_y)
+                    spawn_explosion(gs.boss_x + 24.0, gs.boss_y + 10.0)
+                    spawn_explosion(gs.boss_x + 10.0, gs.boss_y + 24.0)
+                    sfx_explode()
+                }
             }
         }
         bi += 1
@@ -495,6 +726,9 @@ fn collisions() {
             hurt_ship()
         }
         ej += 1
+    }
+    if gs.boss_active and gs.ship.invuln == 0 and aabb(gs.ship.x, gs.ship.y, SHIP_W, SHIP_H, gs.boss_x, gs.boss_y, 40, 40) {
+        hurt_ship()
     }
     let xi: i32 = 0
     while xi < MAX_EBULLETS {
@@ -540,6 +774,12 @@ proc codegen::shmup::_load_level {doc} {
     lappend lines "    while i < MAX_BULLETS \{ bullets\[i\].active = false; i += 1 \}"
     lappend lines "    i = 0"
     lappend lines "    while i < MAX_EBULLETS \{ ebullets\[i\].active = false; i += 1 \}"
+    lappend lines "    i = 0"
+    lappend lines "    while i < MAX_EXPLOSIONS \{ explosions\[i\].active = false; i += 1 \}"
+    lappend lines "    i = 0"
+    lappend lines "    while i < MAX_POWERUPS \{ powerups\[i\].active = false; i += 1 \}"
+    lappend lines "    gs.boss_active = false"
+    lappend lines "    gs.boss_spawned = false"
     # Default ship position by orientation
     if {$orient == 0} {
         lappend lines "    gs.ship.x = 30.0"
@@ -678,6 +918,57 @@ fn render_play() \{
         i += 1
     \}
     rdpq.sync_pipe()
+    -- power-ups (green = weapon, orange = bomb, pink = extra life)
+    rdpq.set_mode_fill(0x44FF44FF)
+    i = 0
+    while i < MAX_POWERUPS \{
+        if powerups\[i\].active \{
+            let px: i32 = powerups\[i\].x as i32
+            let py: i32 = powerups\[i\].y as i32
+            let pc: u32 = 0x44FF44FF
+            if powerups\[i\].kind == PU_BOMB \{ pc = 0xFFAA22FF \}
+            if powerups\[i\].kind == PU_LIFE \{ pc = 0xFF66AAFF \}
+            rdpq.set_fill_color(pc)
+            rdpq.fill_rectangle(px, py, px + 12, py + 12)
+            rdpq.set_fill_color(0xFFFFFFFF)
+            rdpq.fill_rectangle(px + 5, py + 2, px + 7, py + 10)
+            rdpq.fill_rectangle(px + 2, py + 5, px + 10, py + 7)
+        \}
+        i += 1
+    \}
+    rdpq.sync_pipe()
+    -- boss
+    if gs.boss_active \{
+        let bx: i32 = gs.boss_x as i32
+        let by: i32 = gs.boss_y as i32
+        rdpq.set_mode_fill(0xCC3344FF)
+        rdpq.fill_rectangle(bx, by, bx + 40, by + 40)
+        rdpq.set_fill_color(0x661122FF)
+        rdpq.fill_rectangle(bx + 8, by + 14, bx + 18, by + 24)
+        rdpq.fill_rectangle(bx + 22, by + 14, bx + 32, by + 24)
+        rdpq.set_fill_color(0xFFCC00FF)
+        rdpq.fill_rectangle(bx + 10, by + 16, bx + 14, by + 20)
+        rdpq.fill_rectangle(bx + 26, by + 16, bx + 30, by + 20)
+        rdpq.sync_pipe()
+    \}
+    -- explosions (expanding flash)
+    rdpq.set_mode_fill(0xFFEEAAFF)
+    i = 0
+    while i < MAX_EXPLOSIONS \{
+        if explosions\[i\].active \{
+            let r: i32 = (20 - explosions\[i\].life) / 2
+            let ex: i32 = explosions\[i\].x as i32
+            let ey: i32 = explosions\[i\].y as i32
+            let x1: i32 = ex - r
+            let y1: i32 = ey - r
+            if x1 < 0 \{ x1 = 0 \}
+            if y1 < 0 \{ y1 = 0 \}
+            if explosions\[i\].life > 9 \{ rdpq.set_fill_color(0xFFEEAAFF) \} else \{ rdpq.set_fill_color(0xFF6622FF) \}
+            rdpq.fill_rectangle(x1, y1, ex + r, ey + r)
+        \}
+        i += 1
+    \}
+    rdpq.sync_pipe()
     if gs.ship.invuln > 0 and (gs.frame / 3) % 2 == 0 \{
     \} else \{
         let sx: i32 = gs.ship.x as i32
@@ -692,22 +983,50 @@ fn render_play() \{
         \}
     \}
     rdpq.sync_pipe()
+    -- boss HP bar
+    if gs.boss_active \{
+        rdpq.set_mode_fill(0x440000FF)
+        rdpq.fill_rectangle(10, 16, SCREEN_W - 10, 20)
+        rdpq.set_fill_color(0x00DD33FF)
+        let bw: i32 = gs.boss_hp * (SCREEN_W - 20) / gs.boss_max
+        rdpq.fill_rectangle(10, 16, 10 + bw, 20)
+        rdpq.sync_pipe()
+    \}
     rdpq.set_mode_fill(0x000000AA)
     rdpq.fill_rectangle(0, 0, SCREEN_W, 14)
     rdpq.sync_pipe()
-    draw_text(\"SCORE\", 4, 3, 1, 0xFFFFFFFF)
-    draw_number(gs.score, 32, 3, 1, 0xFFEE44FF)
-    draw_text(\"LIVES\", 150, 3, 1, 0xFFFFFFFF)
-    draw_number(gs.lives, 178, 3, 1, 0xFF5555FF)
-    draw_text(\"WAVE\", 230, 3, 1, 0xFFFFFFFF)
-    draw_number(gs.wave + 1, 256, 3, 1, 0x88FF88FF)
+    draw_text(\"SC\", 4, 3, 1, 0xFFFFFFFF)
+    draw_number(gs.score, 20, 3, 1, 0xFFEE44FF)
+    draw_text(\"LV\", 96, 3, 1, 0xFFFFFFFF)
+    draw_number(gs.lives, 112, 3, 1, 0xFF5555FF)
+    draw_text(\"WP\", 140, 3, 1, 0xFFFFFFFF)
+    draw_number(gs.ship.weapon, 156, 3, 1, 0x44FF44FF)
+    draw_text(\"BM\", 184, 3, 1, 0xFFFFFFFF)
+    draw_number(gs.ship.bombs, 200, 3, 1, 0xFFAA22FF)
+    draw_text(\"W\", 228, 3, 1, 0xFFFFFFFF)
+    draw_number(gs.wave + 1, 238, 3, 1, 0x88FF88FF)
     rdpq.sync_pipe()
     rdpq.set_mode_fill(0xFF2222FF)
     let hi: i32 = 0
     while hi < gs.ship.health \{
-        rdpq.fill_rectangle(290 + hi * 8, 3, 296 + hi * 8, 11)
+        rdpq.fill_rectangle(268 + hi * 8, 3, 274 + hi * 8, 11)
         hi += 1
     \}
+\}
+
+fn render_pause() \{
+    render_play()
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(0x000000CC)
+    rdpq.fill_rectangle(80, 70, 240, 170)
+    rdpq.sync_pipe()
+    draw_text_centered(\"PAUSED\", SCREEN_W / 2, 84, 2, 0xFFFFFFFF)
+    let c0: u32 = 0x888888FF
+    let c1: u32 = 0x888888FF
+    if gs.menu_sel == 0 \{ c0 = 0xFFEE44FF \}
+    if gs.menu_sel == 1 \{ c1 = 0xFFEE44FF \}
+    draw_text_centered(\"RESUME\", SCREEN_W / 2, 116, 1, c0)
+    draw_text_centered(\"QUIT\", SCREEN_W / 2, 136, 1, c1)
 \}
 
 fn render_title() \{
@@ -754,6 +1073,7 @@ fn render() \{
     match gs.phase \{
         .title    => \{ render_title() \}
         .playing  => \{ render_play() \}
+        .paused   => \{ render_pause() \}
         .gameover => \{ render_gameover() \}
         .win      => \{ render_win() \}
     \}
@@ -771,6 +1091,9 @@ fn start_game() {
     gs.lives = 3
     gs.wave = 0
     gs.ship.health = 3
+    gs.ship.weapon = 1
+    gs.ship.bombs = BOMB_START
+    gs.next_life = EXTRA_LIFE_SCORE
     if gs.best_stage < 1 { gs.best_stage = 1 }
     load_level(0)
     gs.phase = Phase.playing
@@ -783,24 +1106,59 @@ fn update(pad: joypad_status_t) {
             if pad.pressed.start or pad.pressed.a { start_game() }
         }
         .playing => {
-            ship_update(pad)
-            gs.scroll += SCROLL_STEP
-            while next_spawn < num_spawns and spawns[next_spawn].at <= gs.scroll {
-                spawn_enemy(spawns[next_spawn].kind, spawns[next_spawn].lane)
-                next_spawn += 1
+            if pad.pressed.start {
+                gs.phase = Phase.paused
+                gs.menu_sel = 0
+            } else {
+                ship_update(pad)
+                if pad.pressed.r or pad.pressed.l { do_bomb() }
+                gs.scroll += SCROLL_STEP
+                if gs.scroll < level_len {
+                    while next_spawn < num_spawns and spawns[next_spawn].at <= gs.scroll {
+                        spawn_enemy(spawns[next_spawn].kind, spawns[next_spawn].lane)
+                        next_spawn += 1
+                    }
+                }
+                enemies_update()
+                bullets_update()
+                ebullets_update()
+                explosions_update()
+                powerups_update()
+                boss_update()
+                collisions()
+                -- award an extra life at each score threshold
+                if gs.score >= gs.next_life {
+                    gs.lives += 1
+                    gs.next_life += EXTRA_LIFE_SCORE
+                    sfx_powerup()
+                }
+                -- once the field is scrolled out, summon the stage boss
+                if gs.scroll >= level_len and not any_enemy_alive() and not gs.boss_spawned {
+                    boss_spawn()
+                }
+                -- stage clears only after the boss is downed
+                if gs.boss_spawned and not gs.boss_active {
+                    gs.wave += 1
+                    if gs.wave + 1 > gs.best_stage { gs.best_stage = gs.wave + 1 }
+                    if gs.wave >= NUM_LEVELS {
+                        gs.phase = Phase.win
+                        music_stop()
+                    } else {
+                        load_level(gs.wave)
+                    }
+                }
             }
-            enemies_update()
-            bullets_update()
-            ebullets_update()
-            collisions()
-            if gs.scroll >= level_len and not any_enemy_alive() {
-                gs.wave += 1
-                if gs.wave + 1 > gs.best_stage { gs.best_stage = gs.wave + 1 }
-                if gs.wave >= NUM_LEVELS {
-                    gs.phase = Phase.win
-                    music_stop()
+        }
+        .paused => {
+            if pad.pressed.up or pad.pressed.down {
+                gs.menu_sel = 1 - gs.menu_sel
+            }
+            if pad.pressed.a or pad.pressed.start {
+                if gs.menu_sel == 0 {
+                    gs.phase = Phase.playing
                 } else {
-                    load_level(gs.wave)
+                    gs.phase = Phase.title
+                    music_stop()
                 }
             }
         }

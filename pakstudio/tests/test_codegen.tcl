@@ -238,6 +238,20 @@ foreach orient {horizontal vertical} {
     assert "shmup/$orient: reuses font"   {[string match "*fn draw_number(*" $pak]}
     set want [expr {$orient eq "vertical" ? 1 : 0}]
     assert "shmup/$orient: ORIENT = $want" {[string match "*const ORIENT: i32 = $want*" $pak]}
+    # gold-standard features
+    assert "shmup/$orient: boss spawn"    {[string match "*fn boss_spawn()*" $pak]}
+    assert "shmup/$orient: boss update"   {[string match "*fn boss_update()*" $pak]}
+    assert "shmup/$orient: explosions"    {[string match "*fn spawn_explosion(*" $pak]}
+    assert "shmup/$orient: power-ups"     {[string match "*fn spawn_powerup(*" $pak]}
+    assert "shmup/$orient: weapon levels" {[string match "*if gs.ship.weapon >= 2*" $pak]}
+    assert "shmup/$orient: smart bomb"    {[string match "*fn do_bomb()*" $pak]}
+    assert "shmup/$orient: pause phase"   {[string match "*enum Phase \{ title, playing, paused*" $pak]}
+    assert "shmup/$orient: pause render"  {[string match "*fn render_pause()*" $pak]}
+    assert "shmup/$orient: extra life"    {[string match "*gs.next_life += EXTRA_LIFE_SCORE*" $pak]}
+    # aabb must be defined before its first caller (C has no forward decls)
+    set ia [string first "fn aabb(" $pak]
+    set ip [string first "powerups_update" $pak]
+    assert "shmup/$orient: aabb before use" {$ia >= 0 && $ia < $ip}
     check_doc_passes "shmup $orient default" $d
 }
 
