@@ -8,6 +8,10 @@ proc wizard::show {parent} {
     variable result
     set result {}
 
+    # Destroy any stale dialog left from a previous (cancelled or interrupted)
+    # invocation so re-opening the wizard never collides on the window name.
+    if {[winfo exists $parent.wiz]} { destroy $parent.wiz }
+
     set dlg [toplevel $parent.wiz]
     wm title     $dlg "New Project"
     wm resizable $dlg 0 0
