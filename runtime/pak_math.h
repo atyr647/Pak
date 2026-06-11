@@ -10,6 +10,9 @@
 #pragma once
 #include <stdint.h>
 #include <math.h>
+#ifdef __mips__
+#include <t3d/t3d.h>
+#endif
 
 /* ── Vec3 ─────────────────────────────────────────────────────────────────── */
 
