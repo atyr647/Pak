@@ -244,6 +244,57 @@ proc rpg_ev::_on_map {} {
     _refresh_events
 }
 
+# Programmatically switch to map $idx — called by the left panel list.
+proc rpg_ev::goto_map {idx} {
+    variable maps; variable mi; variable W
+    if {$idx < 0 || $idx >= [llength $maps]} return
+    set mi $idx
+    set rpg_ev::ei -1
+    set rpg_ev::pi 0
+    if {[info exists W(mapcmb)] && [winfo exists $W(mapcmb)]} {
+        $W(mapcmb) current $idx
+    }
+    _refresh_events
+}
+
+# Add a blank map and reload — called by left panel "+ Add Map".
+proc rpg_ev::add_map {} {
+    variable maps
+    set ref [expr {[llength $maps] > 0 ? [lindex $maps 0] : {}}]
+    set w [expr {[dict exists $ref width]  ? [dict get $ref width]  : 20}]
+    set h [expr {[dict exists $ref height] ? [dict get $ref height] : 15}]
+    set id [llength $maps]
+    set tiles [lrepeat [expr {$w * $h}] 1]
+    set newmap [dict create \
+        id $id name "Map [expr {$id + 1}]" \
+        width $w height $h tileset 0 \
+        bg_color "0x1B3A24FF" music "" \
+        combat_mode none encounter_rate 0 troops {} \
+        layer_ground $tiles layer_deco [lrepeat [expr {$w*$h}] 0] \
+        layer_coll   [lrepeat [expr {$w*$h}] 0] \
+        tiles $tiles objects {} events {}]
+    lappend maps $newmap
+    save_to_doc
+    load_doc [project::current_doc]
+    goto_map $id
+    catch { app::_refresh_level_list }
+}
+
+# Delete map at $idx — called by left panel "− Remove".
+proc rpg_ev::del_map {idx} {
+    variable maps
+    if {[llength $maps] <= 1} {
+        tk_messageBox -title "Cannot Delete" \
+            -message "An RPG project must have at least one map." -icon warning
+        return
+    }
+    set maps [lreplace $maps $idx $idx]
+    save_to_doc
+    load_doc [project::current_doc]
+    goto_map [expr {min($idx, [llength $maps]-1)}]
+    catch { app::_refresh_level_list }
+}
+
 proc rpg_ev::_refresh_events {} {
     variable W; variable maps; variable mi; variable ei
     set lb $W(evlb)

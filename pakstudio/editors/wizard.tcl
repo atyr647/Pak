@@ -131,12 +131,17 @@ proc wizard::show {parent} {
         -foreground #3d4a5e -font {TkDefaultFont 8}
     pack $p2.lmt -anchor w -padx 24
 
-    ttk::separator $p2.sep -orient horizontal
-    pack $p2.sep -fill x -padx 14 -pady 10
+    # ── Physics block (platformer / shmup) ────────────────────────────────────
+    set pblock [ttk::frame $p2.physblock]
+    set ::wiz_phys_frame $pblock
+    pack $pblock -fill x
 
-    ttk::label $p2.ph -text "Feel & Physics:" \
+    ttk::separator $pblock.sep -orient horizontal
+    pack $pblock.sep -fill x -padx 14 -pady 10
+
+    ttk::label $pblock.ph -text "Feel & Physics:" \
         -font {TkDefaultFont 9 bold} -foreground #dde4f0
-    pack $p2.ph -anchor w -padx 14
+    pack $pblock.ph -anchor w -padx 14
 
     set presets {
         "Default"   {0.35 -7.5 2.5}
@@ -145,31 +150,57 @@ proc wizard::show {parent} {
         "Slippery"  {0.35 -7.5 4.0}
         "Custom"    {}
     }
-    ttk::frame $p2.pf
-    ttk::label $p2.pf.lbl -text "Preset:" -width 14
+    ttk::frame $pblock.pf
+    ttk::label $pblock.pf.lbl -text "Preset:" -width 14
     set pnames [list]
     foreach {n _} $presets { lappend pnames $n }
-    ttk::combobox $p2.pf.cmb -values $pnames -state readonly -width 16 \
+    ttk::combobox $pblock.pf.cmb -values $pnames -state readonly -width 16 \
         -textvariable ::wiz_preset
     set ::wiz_preset "Default"
-    bind $p2.pf.cmb <<ComboboxSelected>> \
+    bind $pblock.pf.cmb <<ComboboxSelected>> \
         [list wizard::_apply_preset $presets]
-    pack $p2.pf.lbl $p2.pf.cmb -side left -padx 4
-    pack $p2.pf -anchor w -padx 24 -pady 6
+    pack $pblock.pf.lbl $pblock.pf.cmb -side left -padx 4
+    pack $pblock.pf -anchor w -padx 24 -pady 6
 
     foreach {lbl var from to} {
         "Gravity:"    ::wiz_gravity  0.1  2.0
         "Jump Force:" ::wiz_jump    -15.0 -2.0
         "Move Speed:" ::wiz_speed    0.5   8.0
     } {
-        ttk::frame $p2.ff_$var
-        ttk::label $p2.ff_$var.l -text $lbl -width 14
-        ttk::scale $p2.ff_$var.s -variable $var -from $from -to $to \
+        set slug [string map {: "" " " "" : ""} $lbl]
+        ttk::frame $pblock.ff_$slug
+        ttk::label $pblock.ff_$slug.l -text $lbl -width 14
+        ttk::scale $pblock.ff_$slug.s -variable $var -from $from -to $to \
             -orient horizontal -length 190
-        ttk::label $p2.ff_$var.v -textvariable $var -width 7
-        pack $p2.ff_$var.l $p2.ff_$var.s $p2.ff_$var.v -side left -padx 4
-        pack $p2.ff_$var -anchor w -padx 24 -pady 2
+        ttk::label $pblock.ff_$slug.v -textvariable $var -width 7
+        pack $pblock.ff_$slug.l $pblock.ff_$slug.s $pblock.ff_$slug.v -side left -padx 4
+        pack $pblock.ff_$slug -anchor w -padx 24 -pady 2
     }
+
+    # ── RPG settings block (topdown only) ─────────────────────────────────────
+    set rblock [ttk::frame $p2.rpgblock]
+    set ::wiz_rpg_frame $rblock
+    # hidden until topdown is selected
+
+    ttk::separator $rblock.sep -orient horizontal
+    pack $rblock.sep -fill x -padx 14 -pady 10
+
+    ttk::label $rblock.ph -text "RPG Settings:" \
+        -font {TkDefaultFont 9 bold} -foreground #dde4f0
+    pack $rblock.ph -anchor w -padx 14
+
+    ttk::label $rblock.note \
+        -text "Your project starts with two sample maps, a full party and\nenemy database, quests, dialogue trees, a shop, and crafting\nrecipes — a complete playable RPG loop out of the box." \
+        -foreground #7a8a9f -wraplength 440 -justify left
+    pack $rblock.note -anchor w -padx 24 -pady {8 4}
+
+    ttk::frame $rblock.mf
+    ttk::label $rblock.mf.l -text "Walk Speed:" -width 14
+    ttk::scale $rblock.mf.s -variable ::wiz_speed -from 0.5 -to 8.0 \
+        -orient horizontal -length 190
+    ttk::label $rblock.mf.v -textvariable ::wiz_speed -width 7
+    pack $rblock.mf.l $rblock.mf.s $rblock.mf.v -side left -padx 4
+    pack $rblock.mf -anchor w -padx 24 -pady 2
 
     # ── Page 3: Summary ───────────────────────────────────────────────────────
     set p3 [ttk::frame $nb.p3]
@@ -275,6 +306,8 @@ proc wizard::_create {dlg} {
     set doc [project::new $::wiz_genre $name]
     if {$::wiz_genre eq "shmup"} {
         project::set_field settings orientation $::wiz_orient
+    } elseif {$::wiz_genre eq "topdown"} {
+        project::set_field physics move_speed $::wiz_speed
     } else {
         project::set_field physics gravity    $::wiz_gravity
         project::set_field physics jump_force $::wiz_jump
@@ -298,5 +331,18 @@ proc wizard::_on_genre {} {
     set st [expr {$::wiz_genre eq "shmup" ? "normal" : "disabled"}]
     foreach child [winfo children $::wiz_orient_frame] {
         catch { $child configure -state $st }
+    }
+    if {[info exists ::wiz_phys_frame] && [winfo exists $::wiz_phys_frame]} {
+        if {$::wiz_genre eq "topdown"} {
+            pack forget $::wiz_phys_frame
+            if {[info exists ::wiz_rpg_frame] && [winfo exists $::wiz_rpg_frame]} {
+                pack $::wiz_rpg_frame -fill x
+            }
+        } else {
+            if {[info exists ::wiz_rpg_frame] && [winfo exists $::wiz_rpg_frame]} {
+                pack forget $::wiz_rpg_frame
+            }
+            pack $::wiz_phys_frame -fill x
+        }
     }
 }

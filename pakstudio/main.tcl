@@ -12,6 +12,7 @@ foreach f {
     app/project.tcl
     codegen/platformer.tcl
     codegen/shmup.tcl
+    codegen/topdown.tcl
     app/codegen.tcl
     app/validate.tcl
     app/build.tcl
@@ -250,8 +251,8 @@ proc app::_create_toolbar {} {
 # ── Left panel ────────────────────────────────────────────────────────────────
 
 proc app::_create_left_panel {f} {
-    # ── Levels section ────────────────────────────────────────────────────────
-    ttk::label $f.lhdr -text "LEVELS" -style Section.TLabel
+    # ── Level/Map list ────────────────────────────────────────────────────────
+    set ::app_level_hdr [ttk::label $f.lhdr -text "LEVELS" -style Section.TLabel]
     pack $f.lhdr -anchor w -padx 10 -pady {10 4}
 
     set lb [listbox $f.lb -selectmode single \
@@ -261,59 +262,109 @@ proc app::_create_left_panel {f} {
         -height 8 -font {TkDefaultFont 9} \
         -activestyle none]
     pack $lb -fill x -padx 8
-
     bind $lb <<ListboxSelect>> [list app::_on_level_select $lb]
     set ::app_level_lb $lb
 
     set btnf [ttk::frame $f.btnf]
-    ttk::button $btnf.add -text "+ Add Level" -command app::_add_level \
-        -style Toolbutton
-    ttk::button $btnf.del -text "− Remove"   -command app::_del_level \
-        -style Toolbutton
+    set ::app_level_add_btn [ttk::button $btnf.add -text "+ Add Level" \
+        -command app::_add_level -style Toolbutton]
+    set ::app_level_del_btn [ttk::button $btnf.del -text "− Remove" \
+        -command app::_del_level -style Toolbutton]
     pack $btnf.add $btnf.del -side left -padx 2
     pack $btnf -anchor w -padx 8 -pady 4
 
-    # ── Tile legend ───────────────────────────────────────────────────────────
-    ttk::separator $f.sep1 -orient horizontal
-    pack $f.sep1 -fill x -padx 8 -pady {8 4}
+    # ── Platformer info (tile legend + shortcuts) ─────────────────────────────
+    set pif [ttk::frame $f.plat_info]
+    set ::app_plat_info $pif
+    pack $pif -fill x
 
-    ttk::label $f.thdr -text "TILE TYPES" -style Section.TLabel
-    pack $f.thdr -anchor w -padx 10 -pady {0 4}
+    ttk::separator $pif.sep1 -orient horizontal
+    pack $pif.sep1 -fill x -padx 8 -pady {8 4}
+    ttk::label $pif.thdr -text "TILE TYPES" -style Section.TLabel
+    pack $pif.thdr -anchor w -padx 10 -pady {0 4}
 
-    foreach {col sym lbl} {
-        #4a6080  ■  "Solid (key: 1)"
-        #55aa44  ═  "One-Way (key: 2)"
-        #cc2222  ▲  "Hazard (key: 3)"
+    set ti 0
+    foreach {col lbl} {
+        #4a6080  "Solid (key: 1)"
+        #55aa44  "One-Way (key: 2)"
+        #cc2222  "Hazard (key: 3)"
     } {
-        set rf [ttk::frame $f.tile_[string index $lbl 0]]
-        canvas $rf.dot -width 14 -height 14 -highlightthickness 0 \
-            -bg #1a1f2e
+        set rf [ttk::frame $pif.pt$ti]; incr ti
+        canvas $rf.dot -width 14 -height 14 -highlightthickness 0 -bg #1a1f2e
         $rf.dot create rectangle 2 2 12 12 -fill $col -outline {}
         ttk::label $rf.lbl -text $lbl -style Subtitle.TLabel -anchor w
         pack $rf.dot $rf.lbl -side left -padx {0 4}
         pack $rf -anchor w -padx {24 8} -pady 1
     }
 
-    # ── Shortcuts ─────────────────────────────────────────────────────────────
-    ttk::separator $f.sep2 -orient horizontal
-    pack $f.sep2 -fill x -padx 8 -pady {8 4}
+    ttk::separator $pif.sep2 -orient horizontal
+    pack $pif.sep2 -fill x -padx 8 -pady {8 4}
+    ttk::label $pif.shdr -text "SHORTCUTS" -style Section.TLabel
+    pack $pif.shdr -anchor w -padx 10 -pady {0 4}
 
-    ttk::label $f.shdr -text "SHORTCUTS" -style Section.TLabel
-    pack $f.shdr -anchor w -padx 10 -pady {0 4}
-
-    set shortcuts {
-        "Q" "Paint tile"
-        "E" "Erase"
-        "R" "Place object"
-        "S" "Select object"
+    set si 0
+    foreach {key lbl} {
+        "Q"     "Paint tile"
+        "E"     "Erase"
+        "R"     "Place object"
+        "S"     "Select object"
         "1/2/3" "Tile type"
-        "+/−" "Zoom"
-        "Drag" "Pan"
-    }
-    foreach {key lbl} $shortcuts {
-        set sf [ttk::frame $f.sc_$key]
+        "+/−"   "Zoom"
+        "Drag"  "Pan"
+    } {
+        set sf [ttk::frame $pif.ps$si]; incr si
         ttk::label $sf.k -text $key -foreground #6aadff \
             -font {TkDefaultFont 8 bold} -width 6 -anchor e
+        ttk::label $sf.l -text $lbl -style Subtitle.TLabel
+        pack $sf.k $sf.l -side left -padx {0 6}
+        pack $sf -anchor w -padx {12 8} -pady 1
+    }
+
+    # ── RPG info (map tile palette + editor guide) ────────────────────────────
+    set rif [ttk::frame $f.rpg_info]
+    set ::app_rpg_info $rif
+    # hidden until an RPG project loads
+
+    ttk::separator $rif.sep1 -orient horizontal
+    pack $rif.sep1 -fill x -padx 8 -pady {8 4}
+    ttk::label $rif.thdr -text "MAP TILES" -style Section.TLabel
+    pack $rif.thdr -anchor w -padx 10 -pady {0 4}
+
+    set ri 0
+    foreach {col lbl} {
+        #3C7A3C "Grass  (1)"
+        #9A7B4F "Dirt   (2)"
+        #5A5A66 "Wall   (3)"
+        #C8BCA0 "Floor  (4)"
+        #2E6FA8 "Water  (5)"
+        #1E5A2A "Tree   (7)"
+        #A07845 "Bridge (8)"
+    } {
+        set rf [ttk::frame $rif.rt$ri]; incr ri
+        canvas $rf.dot -width 14 -height 14 -highlightthickness 0 -bg #1a1f2e
+        $rf.dot create rectangle 2 2 12 12 -fill $col -outline {}
+        ttk::label $rf.lbl -text $lbl -style Subtitle.TLabel -anchor w
+        pack $rf.dot $rf.lbl -side left -padx {0 4}
+        pack $rf -anchor w -padx {24 8} -pady 1
+    }
+
+    ttk::separator $rif.sep2 -orient horizontal
+    pack $rif.sep2 -fill x -padx 8 -pady {8 4}
+    ttk::label $rif.shdr -text "RPG EDITORS" -style Section.TLabel
+    pack $rif.shdr -anchor w -padx 10 -pady {0 4}
+
+    set hi 0
+    foreach {key lbl} {
+        "Events"   "Map events & scripts"
+        "Database" "Actors, enemies, skills"
+        "Quests"   "Quest objectives"
+        "Crafting" "Recipes & stations"
+        "Dialogue" "NPC conversation trees"
+        "World"    "Switches, shops, start"
+    } {
+        set sf [ttk::frame $rif.rh$hi]; incr hi
+        ttk::label $sf.k -text $key -foreground #6aadff \
+            -font {TkDefaultFont 8 bold} -width 10 -anchor e
         ttk::label $sf.l -text $lbl -style Subtitle.TLabel
         pack $sf.k $sf.l -side left -padx {0 6}
         pack $sf -anchor w -padx {12 8} -pady 1
@@ -321,10 +372,13 @@ proc app::_create_left_panel {f} {
 }
 
 proc app::_on_level_select {lb} {
-    if {$::app_genre eq "topdown"} return
     set sel [$lb curselection]
     if {$sel eq {}} return
     set idx [lindex $sel 0]
+    if {$::app_genre eq "topdown"} {
+        catch { rpg_ev::goto_map $idx }
+        return
+    }
     level_ed::load_doc [project::current_doc] $idx
     preview_ed::load_doc [project::current_doc] $idx
 }
@@ -355,6 +409,30 @@ proc app::_del_level {} {
     $::app_level_lb selection set 0
     level_ed::load_doc [project::current_doc] 0
     preview_ed::load_doc [project::current_doc] 0
+}
+
+proc app::_update_left_panel_for_genre {genre} {
+    if {$genre eq "topdown"} {
+        $::app_level_hdr configure -text "MAPS"
+        $::app_level_add_btn configure -text "+ Add Map" -command app::_add_rpg_map
+        $::app_level_del_btn configure -text "− Remove"  -command app::_del_rpg_map
+        catch { pack forget $::app_plat_info }
+        catch { pack $::app_rpg_info -fill x }
+    } else {
+        $::app_level_hdr configure -text "LEVELS"
+        $::app_level_add_btn configure -text "+ Add Level" -command app::_add_level
+        $::app_level_del_btn configure -text "− Remove"   -command app::_del_level
+        catch { pack forget $::app_rpg_info }
+        catch { pack $::app_plat_info -fill x }
+    }
+}
+
+proc app::_add_rpg_map {} { catch { rpg_ev::add_map } }
+
+proc app::_del_rpg_map {} {
+    set sel [$::app_level_lb curselection]
+    if {$sel eq {}} return
+    catch { rpg_ev::del_map [lindex $sel 0] }
 }
 
 proc app::_refresh_level_list {} {
@@ -389,6 +467,12 @@ proc app::_populate_centre {genre} {
     set ::app_genre $genre
     if {$genre eq "topdown"} {
         rpg_ed::create_tabs $nb
+        set ast [ttk::frame $nb.rpg_ast]
+        $nb add $ast -text "  Assets  "
+        assets_ed::create $ast
+        set rom [ttk::frame $nb.rpg_rom]
+        $nb add $rom -text "  ROM Settings  "
+        save_ed::create $rom
     } else {
         set led [ttk::frame $nb.led]
         $nb add $led -text "  Level Editor  "
@@ -430,7 +514,15 @@ proc app::_on_tab_changed {} {
         if {[string match "*Preview*" $tab]} { catch { preview_ed::refresh } }
         return
     }
-    if {$::app_genre eq "topdown"} return
+    if {$::app_genre eq "topdown"} {
+        catch {
+            switch -glob $tab {
+                "*Assets*"       { assets_ed::save_to_doc }
+                "*ROM Settings*" { save_ed::save_to_doc   }
+            }
+        }
+        return
+    }
     catch {
         switch -glob $tab {
             "*Audio*"    { audio_ed::save_to_doc    }
@@ -691,7 +783,9 @@ proc app::cmd_run {} {
 # Flush in-memory editor panel state into the doc before save/build/validate.
 proc app::_flush_editors {} {
     if {$::app_genre eq "topdown"} {
-        catch { rpg_ed::save_to_doc }
+        catch { rpg_ed::save_to_doc    }
+        catch { assets_ed::save_to_doc }
+        catch { save_ed::save_to_doc   }
     } else {
         catch { audio_ed::save_to_doc }
         catch { save_ed::save_to_doc }
@@ -705,12 +799,16 @@ proc app::_load_doc {doc} {
     _populate_centre $genre
     _refresh_level_list
     if {$genre eq "topdown"} {
-        rpg_ed::load_doc $doc
+        rpg_ed::load_doc    $doc
+        assets_ed::load_doc $doc
+        save_ed::load_doc   $doc
         catch { $::app_level_lb selection clear 0 end }
+        _update_left_panel_for_genre $genre
         _update_title
         status "RPG project loaded"
         return
     }
+    _update_left_panel_for_genre $genre
     physics_ed::load_doc  $doc
     controls_ed::load_doc $doc
     audio_ed::load_doc    $doc

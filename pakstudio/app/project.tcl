@@ -80,6 +80,25 @@ proc project::sprite_roles {genre} {
                 background     "Background"
             }
         }
+        topdown {
+            return {
+                player_walk     "Player (walk)"
+                npc_villager    "NPC: Villager"
+                npc_elder       "NPC: Elder"
+                npc_shop        "NPC: Shopkeeper"
+                enemy_field     "Enemy: Field"
+                enemy_battle    "Enemy: Battle"
+                enemy_slime     "Enemy: Slime"
+                enemy_goblin    "Enemy: Goblin"
+                enemy_warden    "Boss: Forest Warden"
+                tileset_world   "Tileset: Overworld"
+                tileset_dungeon "Tileset: Dungeon"
+                battle_bg       "Battle Background"
+                prop_chest      "Prop: Chest"
+                prop_bench      "Prop: Crafting Bench"
+                prop_sparkle    "Prop: Sparkle"
+            }
+        }
         default {
             return {
                 player       "Player"
@@ -315,6 +334,20 @@ proc project::_default_audio_events {genre} {
                 powerup   "" \
                 bg_music  "" \
             ]
+        }
+        topdown {
+            return {
+                town_music   "Town BGM"
+                field_music  "Field BGM"
+                battle_music "Battle BGM"
+                boss_music   "Boss BGM"
+                sfx_confirm  "SFX: Confirm"
+                sfx_cancel   "SFX: Cancel"
+                sfx_chest    "SFX: Chest Open"
+                sfx_step     "SFX: Footstep"
+                sfx_hit      "SFX: Hit"
+                sfx_level_up "SFX: Level Up"
+            }
         }
         default { return [dict create bg_music ""] }
     }
