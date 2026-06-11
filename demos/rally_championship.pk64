@@ -1,0 +1,745 @@
+-- demos/rally_championship.pk64
+-- N64 Rally Championship
+--
+-- Showcases the full T3D 3D pipeline:
+--   t3d.look_at     — smooth look-at chase camera
+--   t3d.fog_set_*   — atmospheric mountain fog
+--   t3d.light_set_* — warm sun + cool sky fill lighting
+--   n64.math        — sin/cos/clamp/lerp for physics and camera
+--   T3DVec3         — 3D vector math for camera positioning
+--   Rally drift     — lateral velocity + handbrake model
+--
+-- Controls:  Analog stick — steer
+--            A            — throttle
+--            B            — brake
+--            Z (hold)     — handbrake  (initiates/sustains drift)
+--            C-Up         — turbo boost (burns boost meter)
+--
+-- Models:    Supply .glb in assets/models/, set tiny3d=true in pak.toml.
+--            Build system converts them via $(T3D_GLTF) → .t3dm automatically.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+use n64.audio
+use n64.mixer
+use n64.math
+use t3d
+
+extern "C" {
+    fn rdpq_mode_push()
+    fn rdpq_mode_pop()
+    fn rdpq_text_printf(x: i32, y: i32, font: i32, fmt: *c_char, ...) -> i32
+    fn wav64_open(wav: *wav64_t, path: *c_char)
+    fn wav64_play(wav: *wav64_t, channel: i32)
+    fn xm64player_open(xm: *xm64player_t, path: *c_char)
+    fn xm64player_play(xm: *xm64player_t, first_ch: i32)
+}
+
+-- ============================================================
+-- Constants
+-- ============================================================
+const MAX_CARS:     i32 = 4
+const NUM_WP:       i32 = 12
+const MAX_LAPS:     i32 = 3
+
+-- Rally physics
+const ACCEL:        f32 = 24.0
+const BRAKE_RATE:   f32 = 38.0
+const MAX_SPEED:    f32 = 52.0
+const STEER_RATE:   f32 = 2.6
+const FRICTION:     f32 = 0.964
+const LAT_GRIP:     f32 = 0.87    -- lateral grip (lower = more drift)
+const LAT_GRIP_HB:  f32 = 0.52    -- lateral grip under handbrake
+const LAT_MAX_FRAC: f32 = 0.65    -- max lateral vel as fraction of speed
+const LAT_HB_FRAC:  f32 = 1.5     -- max lateral vel under handbrake
+
+-- Chase camera
+const CAM_DIST:     f32 = 14.0
+const CAM_HEIGHT:   f32 = 5.5
+const CAM_AHEAD:    f32 = 6.0
+const CAM_SMOOTH:   f32 = 5.5
+
+-- Boost
+const BOOST_SPEED:  f32 = 20.0
+const BOOST_COST:   f32 = 0.32
+const BOOST_RECHARGE: f32 = 0.14
+
+-- ============================================================
+-- Types
+-- ============================================================
+enum RaceState { countdown, racing, finished, results }
+enum CarState  { normal_driving, spinning }
+
+struct Waypoint {
+    x: f32
+    z: f32
+    w: f32
+}
+
+struct LapTime {
+    total_ms: i32
+    lap_ms:   i32
+    best_ms:  i32
+}
+
+struct Car {
+    -- position / velocity
+    x:       f32
+    y:       f32
+    z:       f32
+    vx:      f32
+    vz:      f32
+    -- orientation
+    heading: f32
+    -- driving state
+    speed:   f32
+    lat_v:   f32    -- lateral drift velocity
+    -- status
+    active:   bool
+    is_player: bool
+    grounded: bool
+    car_state: CarState
+    spin_timer: f32
+    -- race progress
+    lap:      i32
+    next_wp:  i32
+    progress: i32
+    -- display
+    place:    i32
+    -- timing
+    times:    LapTime
+    -- boost
+    boost:    f32
+    boost_cd: f32
+}
+
+-- ============================================================
+-- Globals
+-- ============================================================
+static race_state:     RaceState = RaceState.countdown
+static countdown:      f32 = 3.0
+static race_ms:        i32 = 0
+
+static cars:      [Car;      4]  = undefined
+static waypoints: [Waypoint; 12] = undefined
+static wp_count:  i32 = 0
+
+-- Smooth-follow camera state (world space)
+static cam_ex: f32 = 0.0
+static cam_ey: f32 = 6.0
+static cam_ez: f32 = -90.0
+
+-- T3D
+static vp:          T3DViewport = undefined
+static track_model: *T3DModel   = none
+static car_model:   [*T3DModel; 4] = undefined
+
+-- Audio
+static bgm:        xm64player_t = undefined
+static sfx_engine: wav64_t = undefined
+static sfx_crash:  wav64_t = undefined
+static sfx_lap:    wav64_t = undefined
+
+-- ============================================================
+-- Mountain Rally Circuit — 12 waypoints
+-- A single-lap stage through a mountain pass:
+--   long main straight → tight hairpin → high plateau → descent chicane
+-- ============================================================
+fn init_waypoints() {
+    -- main straight (start/finish)
+    waypoints[0].x  =   0.0   waypoints[0].z  = -78.0  waypoints[0].w  = 14.0
+    -- first right-hander onto the mountain road
+    waypoints[1].x  =  40.0   waypoints[1].z  = -55.0  waypoints[1].w  = 11.0
+    -- sweeping right, gaining altitude
+    waypoints[2].x  =  68.0   waypoints[2].z  = -18.0  waypoints[2].w  = 10.0
+    -- top of rise, hairpin right ahead
+    waypoints[3].x  =  72.0   waypoints[3].z  =  22.0  waypoints[3].w  =  9.0
+    -- hairpin right at mountain peak
+    waypoints[4].x  =  52.0   waypoints[4].z  =  60.0  waypoints[4].w  =  8.0
+    -- exit hairpin — now heading back left
+    waypoints[5].x  =  15.0   waypoints[5].z  =  72.0  waypoints[5].w  = 10.0
+    -- long left sweep across the plateau
+    waypoints[6].x  = -28.0   waypoints[6].z  =  62.0  waypoints[6].w  = 11.0
+    -- chicane entry: sharp left
+    waypoints[7].x  = -65.0   waypoints[7].z  =  28.0  waypoints[7].w  = 10.0
+    -- chicane: sharp right (narrow canyon)
+    waypoints[8].x  = -72.0   waypoints[8].z  = -12.0  waypoints[8].w  =  9.0
+    -- hairpin left — beginning the descent
+    waypoints[9].x  = -58.0   waypoints[9].z  = -50.0  waypoints[9].w  = 10.0
+    -- fast descent left sweep
+    waypoints[10].x = -25.0   waypoints[10].z = -72.0  waypoints[10].w = 12.0
+    -- return to main straight
+    waypoints[11].x =  -2.0   waypoints[11].z = -80.0  waypoints[11].w = 13.0
+    wp_count = 12
+}
+
+-- ============================================================
+-- Car initialisation
+-- ============================================================
+fn init_cars() {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_CARS { break }
+        cars[i].active    = true
+        cars[i].is_player = (i == 0)
+        -- 2x2 starting grid (front row: 0,2 ; back row: 1,3)
+        cars[i].x  = (i as f32) * 5.5 - 8.0
+        cars[i].y  = 0.5
+        cars[i].z  = -78.0 - (i % 2) as f32 * 5.0
+        cars[i].vx = 0.0
+        cars[i].vz = 0.0
+        cars[i].speed    = 0.0
+        cars[i].heading  = 0.0
+        cars[i].lat_v    = 0.0
+        cars[i].grounded = true
+        cars[i].car_state  = CarState.normal_driving
+        cars[i].spin_timer = 0.0
+        cars[i].lap     = 0
+        cars[i].next_wp = 0
+        cars[i].progress = 0
+        cars[i].place   = i + 1
+        cars[i].times.total_ms = 0
+        cars[i].times.lap_ms   = 0
+        cars[i].times.best_ms  = 999999
+        cars[i].boost    = 1.0
+        cars[i].boost_cd = 0.0
+        i = i + 1
+    }
+}
+
+-- ============================================================
+-- Chase camera: smooth look-at using t3d.look_at
+-- ============================================================
+fn update_camera(dt: f32) {
+    let p: *Car = &cars[0]
+
+    let sh: f32 = math.sin_f(p.heading)
+    let ch: f32 = math.cos_f(p.heading)
+
+    -- desired eye: behind + above the player car
+    let wx: f32 = p.x - sh * CAM_DIST
+    let wy: f32 = p.y + CAM_HEIGHT
+    let wz: f32 = p.z - ch * CAM_DIST
+
+    -- exponential smooth follow
+    let t: f32 = math.clamp_f(CAM_SMOOTH * dt, 0.0, 1.0)
+    cam_ex = math.lerp_f(cam_ex, wx, t)
+    cam_ey = math.lerp_f(cam_ey, wy, t)
+    cam_ez = math.lerp_f(cam_ez, wz, t)
+
+    -- eye, target, up as T3DVec3
+    let eye: T3DVec3 = undefined
+    eye.x = cam_ex
+    eye.y = cam_ey
+    eye.z = cam_ez
+
+    let tgt: T3DVec3 = undefined
+    tgt.x = p.x + sh * CAM_AHEAD
+    tgt.y = p.y + 1.8
+    tgt.z = p.z + ch * CAM_AHEAD
+
+    let up: T3DVec3 = undefined
+    up.x = 0.0
+    up.y = 1.0
+    up.z = 0.0
+
+    -- set view matrix via look-at
+    t3d.look_at(&vp, &eye, &tgt, &up)
+}
+
+-- ============================================================
+-- Rally drift physics
+-- ============================================================
+fn car_physics(car: *Car, throttle: f32, brk: f32, steer: f32,
+               handbrake: bool, dt: f32) {
+    if car.car_state == CarState.spinning {
+        car.spin_timer = car.spin_timer - dt
+        if car.spin_timer <= 0.0 {
+            car.car_state = CarState.normal_driving
+        }
+        return
+    }
+
+    -- steering (speed-scaled for stability at high speeds)
+    let sf: f32 = math.clamp_f(car.speed / MAX_SPEED, 0.25, 1.0)
+    car.heading = car.heading + steer * STEER_RATE * sf * dt
+
+    -- longitudinal speed
+    car.speed = car.speed + throttle * ACCEL * dt
+    car.speed = car.speed - brk * BRAKE_RATE * dt
+    car.speed = math.clamp_f(car.speed, 0.0, MAX_SPEED)
+
+    -- rolling friction
+    let ff: f32 = 1.0 - (1.0 - FRICTION) * dt * 60.0
+    car.speed = car.speed * ff
+
+    -- forward velocity in world space
+    let sh: f32 = math.sin_f(car.heading)
+    let ch: f32 = math.cos_f(car.heading)
+
+    -- lateral drift build-up from steering + handbrake
+    if math.abs_f(steer) > 0.04 {
+        let base: f32 = steer * car.speed * 8.0
+        if handbrake { base = steer * car.speed * 22.0 }
+        car.lat_v = car.lat_v + base * dt
+    }
+
+    -- clamp lateral velocity
+    let max_lat: f32 = car.speed * LAT_MAX_FRAC
+    if handbrake { max_lat = car.speed * LAT_HB_FRAC }
+    car.lat_v = math.clamp_f(car.lat_v, -max_lat, max_lat)
+
+    -- lateral velocity decay (grip)
+    let grip: f32 = LAT_GRIP
+    if handbrake { grip = LAT_GRIP_HB }
+    let lf: f32 = 1.0 - (1.0 - grip) * dt * 60.0
+    car.lat_v = car.lat_v * lf
+
+    -- right-vector (perpendicular to heading in XZ plane)
+    let rx: f32 = ch
+    let rz: f32 = -sh
+
+    -- combine forward + lateral → world velocity
+    car.vx = sh * car.speed * dt + rx * car.lat_v * dt
+    car.vz = ch * car.speed * dt + rz * car.lat_v * dt
+    car.x  = car.x + car.vx
+    car.z  = car.z + car.vz
+
+    -- boost cooldown / recharge
+    car.boost_cd = math.max_f(0.0, car.boost_cd - dt)
+    if car.boost < 1.0 and car.boost_cd <= 0.0 {
+        car.boost = math.clamp_f(car.boost + BOOST_RECHARGE * dt, 0.0, 1.0)
+    }
+}
+
+-- ============================================================
+-- Player input
+-- ============================================================
+fn player_input(dt: f32, pad: *controller_data) {
+    let car: *Car = &cars[0]
+
+    -- analog steer with deadzone
+    let sx: i32 = pad.stick_x as i32
+    let steer: f32 = 0.0
+    if sx > 8  { steer = (sx as f32 - 8.0)  / 72.0 }
+    elif sx < -8 { steer = (sx as f32 + 8.0) / 72.0 }
+
+    let throttle: f32 = 0.0
+    let brk: f32 = 0.0
+    if pad.held.a { throttle = 1.0 }
+    if pad.held.b { brk = 1.0 }
+
+    -- Z = handbrake (hold to drift)
+    let hb: bool = pad.held.z
+
+    -- C-Up = turbo boost
+    if pad.pressed.c_up and car.boost >= BOOST_COST and car.boost_cd <= 0.0 {
+        car.speed   = car.speed + BOOST_SPEED
+        car.boost   = car.boost - BOOST_COST
+        car.boost_cd = 3.0
+    }
+
+    car_physics(car, throttle, brk, steer, hb, dt)
+}
+
+-- ============================================================
+-- AI: cross-product steering toward next waypoint
+-- ============================================================
+fn ai_steer_to_wp(car: *Car) -> f32 {
+    let wp: *Waypoint = &waypoints[car.next_wp]
+    let dx: f32 = wp.x - car.x
+    let dz: f32 = wp.z - car.z
+    let dist: f32 = math.sqrt_f(dx * dx + dz * dz)
+    if dist < 0.5 { return 0.0 }
+    -- 2D cross product of (car forward) × (direction to wp)
+    -- negative → wp is to the right → steer right (positive)
+    let sh: f32 = math.sin_f(car.heading)
+    let ch: f32 = math.cos_f(car.heading)
+    let cross: f32 = sh * dz - ch * dx
+    return math.clamp_f(-cross / dist, -1.0, 1.0)
+}
+
+fn ai_update(car: *Car, dt: f32, throttle: f32) {
+    let steer: f32 = ai_steer_to_wp(car)
+    car_physics(car, throttle, 0.0, steer, false, dt)
+}
+
+-- ============================================================
+-- Waypoint tracking (player + all AI)
+-- ============================================================
+fn advance_waypoints(car: *Car) {
+    let wp: *Waypoint = &waypoints[car.next_wp]
+    let dx: f32 = wp.x - car.x
+    let dz: f32 = wp.z - car.z
+    if dx * dx + dz * dz < 225.0 {   -- within 15 units
+        car.next_wp = car.next_wp + 1
+        if car.next_wp >= wp_count {
+            car.next_wp = 0
+            car.lap = car.lap + 1
+            -- update best lap for player
+            if car.is_player {
+                if car.times.lap_ms < car.times.best_ms {
+                    car.times.best_ms = car.times.lap_ms
+                }
+                car.times.lap_ms = 0
+            }
+        }
+    }
+    car.progress = car.lap * wp_count + car.next_wp
+}
+
+-- ============================================================
+-- Race positions (descending progress = better place)
+-- ============================================================
+fn update_positions() {
+    let i: i32 = 0
+    loop {
+        if i >= MAX_CARS { break }
+        cars[i].place = 1
+        let j: i32 = 0
+        loop {
+            if j >= MAX_CARS { break }
+            if cars[j].progress > cars[i].progress {
+                cars[i].place = cars[i].place + 1
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+}
+
+-- ============================================================
+-- Race timing
+-- ============================================================
+fn update_timing(dt: f32) {
+    let dt_ms: i32 = (dt * 1000.0) as i32
+    race_ms = race_ms + dt_ms
+    let i: i32 = 0
+    loop {
+        if i >= MAX_CARS { break }
+        if cars[i].active {
+            cars[i].times.total_ms = cars[i].times.total_ms + dt_ms
+            cars[i].times.lap_ms   = cars[i].times.lap_ms   + dt_ms
+        }
+        i = i + 1
+    }
+}
+
+-- ============================================================
+-- Minimap (bottom-right)
+-- ============================================================
+fn render_minimap() {
+    let MX: i32 = 244
+    let MY: i32 = 162
+    let MS: i32 = 72
+
+    -- frame
+    rdpq.set_mode_fill(0x0A1018FF)
+    rdpq.fill_rectangle(MX - 1, MY - 1, MX + MS + 1, MY + MS + 1)
+
+    -- track waypoints as small squares
+    let i: i32 = 0
+    loop {
+        if i >= wp_count { break }
+        let wx: i32 = MX + ((waypoints[i].x / 90.0 + 0.5) * (MS as f32)) as i32
+        let wy: i32 = MY + ((waypoints[i].z / 90.0 + 0.5) * (MS as f32)) as i32
+        rdpq.set_mode_fill(0x3A6040FF)
+        rdpq.fill_rectangle(wx - 2, wy - 2, wx + 2, wy + 2)
+        i = i + 1
+    }
+
+    -- car blips (player = white, AI = grey)
+    let c: i32 = 0
+    loop {
+        if c >= MAX_CARS { break }
+        if cars[c].active {
+            let cx: i32 = MX + ((cars[c].x / 90.0 + 0.5) * (MS as f32)) as i32
+            let cy: i32 = MY + ((cars[c].z / 90.0 + 0.5) * (MS as f32)) as i32
+            if c == 0 {
+                rdpq.set_mode_fill(0xFFFFFFFF)
+                rdpq.fill_rectangle(cx - 3, cy - 3, cx + 3, cy + 3)
+            } else {
+                rdpq.set_mode_fill(0x888888FF)
+                rdpq.fill_rectangle(cx - 2, cy - 2, cx + 2, cy + 2)
+            }
+        }
+        c = c + 1
+    }
+}
+
+-- ============================================================
+-- HUD
+-- ============================================================
+fn render_hud() {
+    rdpq_mode_push()
+    rdpq.set_mode_standard()
+
+    let p: *Car = &cars[0]
+
+    -- speed bar
+    rdpq.set_mode_fill(0x0A180AFF)
+    rdpq.fill_rectangle(8, 207, 122, 217)
+    let spct: i32 = (p.speed * 114.0 / MAX_SPEED) as i32
+    rdpq.set_mode_fill(0x44FF66FF)
+    rdpq.fill_rectangle(8, 207, 8 + spct, 217)
+
+    -- drift bar (lights up when sliding)
+    let la: f32 = math.abs_f(p.lat_v)
+    let dpct: i32 = (la * 114.0 / (MAX_SPEED * LAT_HB_FRAC)) as i32
+    if dpct > 114 { dpct = 114 }
+    if dpct > 4 {
+        rdpq.set_mode_fill(0xFF6600FF)
+        rdpq.fill_rectangle(8, 219, 8 + dpct, 227)
+    }
+
+    -- boost bar
+    rdpq.set_mode_fill(0x1A0A00FF)
+    rdpq.fill_rectangle(8, 229, 122, 237)
+    let bpct: i32 = (p.boost * 114.0) as i32
+    rdpq.set_mode_fill(0xFF8800FF)
+    rdpq.fill_rectangle(8, 229, 8 + bpct, 237)
+
+    -- speed in km/h
+    let kmh: i32 = (p.speed * 4.8) as i32
+    rdpq_text_printf(8, 196, 1, "%d km/h", kmh)
+
+    -- lap counter
+    rdpq_text_printf(136, 6, 1, "LAP %d/%d", p.lap + 1, MAX_LAPS)
+
+    -- race position
+    rdpq_text_printf(276, 6, 1, "P%d", p.place)
+
+    -- current lap time
+    let ls: i32 = p.times.lap_ms / 1000
+    let lf: i32 = (p.times.lap_ms % 1000) / 10
+    rdpq_text_printf(8, 6, 1, "%d.%02d", ls, lf)
+
+    -- best lap
+    if p.times.best_ms < 999999 {
+        let bs: i32 = p.times.best_ms / 1000
+        let bf: i32 = (p.times.best_ms % 1000) / 10
+        rdpq_text_printf(8, 18, 1, "BEST %d.%02d", bs, bf)
+    }
+
+    render_minimap()
+
+    -- countdown overlay
+    if race_state == RaceState.countdown {
+        rdpq.set_mode_fill(0x000000A0)
+        rdpq.fill_rectangle(124, 88, 196, 132)
+        let cd: i32 = countdown as i32 + 1
+        rdpq_text_printf(150, 98, 1, "%d", cd)
+        rdpq_text_printf(112, 72, 1, "GET READY!")
+    }
+
+    rdpq_mode_pop()
+}
+
+-- ============================================================
+-- 3D render: fog + 2-point lighting + look_at camera
+-- ============================================================
+fn render_race(dt: f32) {
+    -- Update camera (computes and applies look_at each frame)
+    update_camera(dt)
+
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    t3d.frame_start()
+    t3d.viewport_attach(&vp)
+
+    -- Atmospheric mountain fog: misty blue-white
+    t3d.fog_set_enabled(true)
+    t3d.fog_set_range(35.0, 200.0)
+    t3d.fog_set_color(0x8CBCD4FF)
+
+    -- Two-point lighting
+    --   Light 0: warm noon sun from upper-left
+    --   Light 1: cool sky fill from lower-right (bounce)
+    t3d.light_set_ambient(52, 58, 72)
+    t3d.light_set_directional(0, 255, 248, 208, -0.4, -1.0, 0.3)
+    t3d.light_set_directional(1, 68, 82, 128, 0.3, 0.35, -0.65)
+    t3d.light_set_count(2)
+
+    -- Draw scene
+    if track_model != none { t3d.model_draw(track_model) }
+
+    let i: i32 = 0
+    loop {
+        if i >= MAX_CARS { break }
+        if cars[i].active and car_model[i] != none {
+            t3d.model_draw(car_model[i])
+        }
+        i = i + 1
+    }
+
+    t3d.frame_end()
+
+    render_hud()
+    rdpq.detach_show()
+}
+
+-- ============================================================
+-- Results screen
+-- ============================================================
+fn render_results() {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    -- background: deep night blue
+    rdpq.set_mode_fill(0x040C18FF)
+    rdpq.fill_rectangle(0, 0, 320, 240)
+
+    -- gold title bar
+    rdpq.set_mode_fill(0xC8960AFF)
+    rdpq.fill_rectangle(56, 24, 264, 44)
+    rdpq_text_printf(78, 28, 1, "RALLY CHAMPIONSHIP")
+
+    rdpq_text_printf(108, 54, 1, "FINAL RESULTS")
+
+    -- result rows
+    let i: i32 = 0
+    loop {
+        if i >= MAX_CARS { break }
+        let y: i32 = 78 + i * 34
+        rdpq.set_mode_fill(0x0E2040FF)
+        rdpq.fill_rectangle(52, y, 268, y + 28)
+
+        rdpq_text_printf(62, y + 6, 1, "P%d", cars[i].place)
+
+        let ts: i32 = cars[i].times.total_ms / 1000
+        let tf: i32 = (cars[i].times.total_ms % 1000) / 10
+        rdpq_text_printf(110, y + 6, 1, "%d.%02ds total", ts, tf)
+
+        if cars[i].times.best_ms < 999999 {
+            let bs: i32 = cars[i].times.best_ms / 1000
+            let bf: i32 = (cars[i].times.best_ms % 1000) / 10
+            rdpq_text_printf(110, y + 16, 1, "best %d.%02d", bs, bf)
+        }
+
+        if cars[i].is_player {
+            rdpq_text_printf(238, y + 6, 1, "<YOU")
+        }
+        i = i + 1
+    }
+
+    rdpq_text_printf(82, 224, 1, "Press A or START to race again")
+
+    rdpq.detach_show()
+}
+
+-- ============================================================
+-- Entry point
+-- ============================================================
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+    audio.init(44100, 3)
+    mixer.init(8)
+    t3d.init()
+
+    -- Viewport: 72-degree FOV, near=0.5, far=250
+    vp = t3d.viewport_create()
+    t3d.viewport_set_projection(&vp, 72.0, 0.5, 250.0)
+
+    -- Load 3D models
+    -- Supply .glb source files in assets/models/ and set tiny3d=true in pak.toml.
+    -- The build system converts them automatically via $(T3D_GLTF).
+    track_model   = t3d.model_load("rom:/models/track.t3dm")
+    car_model[0]  = t3d.model_load("rom:/models/car_red.t3dm")
+    car_model[1]  = t3d.model_load("rom:/models/car_blue.t3dm")
+    car_model[2]  = t3d.model_load("rom:/models/car_yellow.t3dm")
+    car_model[3]  = t3d.model_load("rom:/models/car_white.t3dm")
+
+    -- Music + SFX
+    xm64player_open(&bgm, "rom:/music/rally.xm64")
+    xm64player_play(&bgm, 0)
+    wav64_open(&sfx_engine, "rom:/sfx/engine.wav64")
+    wav64_open(&sfx_crash,  "rom:/sfx/crash.wav64")
+    wav64_open(&sfx_lap,    "rom:/sfx/lap.wav64")
+
+    init_waypoints()
+    init_cars()
+
+    -- Start camera directly behind car 0
+    cam_ex = 0.0
+    cam_ey = 6.0
+    cam_ez = -94.0
+
+    race_state = RaceState.countdown
+    countdown  = 3.0
+
+    loop {
+        let dt: f32 = timer.delta()
+        if dt > 0.033 { dt = 0.033 }
+
+        let abuf = audio.get_buffer()
+        if abuf != none { mixer.poll(*abuf) }
+
+        controller.poll()
+        let pad = controller.read(0)
+
+        match race_state {
+            RaceState.countdown => {
+                countdown = countdown - dt
+                if countdown <= 0.0 {
+                    countdown = 0.0
+                    race_state = RaceState.racing
+                }
+                render_race(dt)
+            }
+
+            RaceState.racing => {
+                update_timing(dt)
+
+                -- player
+                player_input(dt, &pad)
+                advance_waypoints(&cars[0])
+
+                -- AI: staggered throttle for natural spread (0.78 – 0.88)
+                let i: i32 = 1
+                loop {
+                    if i >= MAX_CARS { break }
+                    let th: f32 = 0.76 + (i as f32) * 0.05
+                    ai_update(&cars[i], dt, th)
+                    advance_waypoints(&cars[i])
+                    i = i + 1
+                }
+
+                update_positions()
+
+                if cars[0].lap >= MAX_LAPS {
+                    race_state = RaceState.finished
+                    countdown  = 0.0
+                }
+
+                render_race(dt)
+            }
+
+            RaceState.finished => {
+                countdown = countdown + dt
+                if countdown >= 3.0 {
+                    race_state = RaceState.results
+                }
+                render_race(dt)
+            }
+
+            RaceState.results => {
+                if pad.pressed.start or pad.pressed.a {
+                    init_cars()
+                    race_ms    = 0
+                    countdown  = 3.0
+                    race_state = RaceState.countdown
+                    cam_ex = 0.0
+                    cam_ey = 6.0
+                    cam_ez = -94.0
+                }
+                render_results()
+            }
+        }
+    }
+}
