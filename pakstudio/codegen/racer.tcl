@@ -164,14 +164,12 @@ proc codegen::racer::_main_pk64 {doc} {
     set audio_block [join $audio_open "\n"]
 
     # ── Model load block ──────────────────────────────────────────────────────
-    set model_block ""
+    set model_lines {}
     if {$has_track_m} {
-        set model_block "    track_model = t3d.model_load(\"rom:/models/model_track.t3dm\")\n"
+        lappend model_lines "    track_model = t3d.model_load(\"rom:/models/model_track.t3dm\")"
     }
-    if {[llength $car_model_loads] > 0} {
-        append model_block [join $car_model_loads "\n"]
-        append model_block "\n"
-    }
+    foreach ml $car_model_loads { lappend model_lines $ml }
+    set model_block [join $model_lines "\n"]
 
     # ── Static declarations for optional audio ────────────────────────────────
     set audio_statics {}

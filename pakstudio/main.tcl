@@ -426,6 +426,10 @@ proc app::_on_level_select {lb} {
         catch { rpg_ev::goto_map $idx }
         return
     }
+    if {$::app_genre eq "racer"} {
+        catch { track_ed::load_doc [project::current_doc] }
+        return
+    }
     level_ed::load_doc [project::current_doc] $idx
     preview_ed::load_doc [project::current_doc] $idx
 }
@@ -435,8 +439,12 @@ proc app::_add_level {} {
     _refresh_level_list
     $::app_level_lb selection clear 0 end
     $::app_level_lb selection set $idx
-    level_ed::load_doc [project::current_doc] $idx
-    preview_ed::load_doc [project::current_doc] $idx
+    if {$::app_genre eq "racer"} {
+        catch { track_ed::load_doc [project::current_doc] }
+    } else {
+        level_ed::load_doc [project::current_doc] $idx
+        preview_ed::load_doc [project::current_doc] $idx
+    }
 }
 
 proc app::_del_level {} {
@@ -446,16 +454,21 @@ proc app::_del_level {} {
     set doc [project::current_doc]
     set lvls [dict get $doc levels]
     if {[llength $lvls] <= 1} {
+        set label [expr {$::app_genre eq "racer" ? "track" : "level"}]
         tk_messageBox -title "Cannot Delete" \
-            -message "A project must have at least one level." -icon warning
+            -message "A project must have at least one $label." -icon warning
         return
     }
     set lvls [lreplace $lvls $idx $idx]
     project::set_field levels $lvls
     _refresh_level_list
     $::app_level_lb selection set 0
-    level_ed::load_doc [project::current_doc] 0
-    preview_ed::load_doc [project::current_doc] 0
+    if {$::app_genre eq "racer"} {
+        catch { track_ed::load_doc [project::current_doc] }
+    } else {
+        level_ed::load_doc [project::current_doc] 0
+        preview_ed::load_doc [project::current_doc] 0
+    }
 }
 
 proc app::_update_left_panel_for_genre {genre} {

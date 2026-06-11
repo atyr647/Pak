@@ -71,10 +71,10 @@ proc track_ed::create {parent} {
 
     set ::track_canvas $c
 
-    bind $c <Button-1>        track_ed::_on_click
-    bind $c <B1-Motion>       track_ed::_on_drag
-    bind $c <ButtonRelease-1> track_ed::_on_release
-    bind $c <Button-3>        track_ed::_on_right_click
+    bind $c <Button-1>        {track_ed::_on_click_at %x %y}
+    bind $c <B1-Motion>       {track_ed::_on_drag_at  %x %y}
+    bind $c <ButtonRelease-1> {track_ed::_on_release}
+    bind $c <Button-3>        {track_ed::_on_right_click_at %x %y}
 
     # ── Info panel ───────────────────────────────────────────────────────────
     set ip [ttk::frame $cf.ip -width 180]
@@ -242,15 +242,6 @@ proc track_ed::_redraw {} {
 
 # ── Mouse handlers ────────────────────────────────────────────────────────────
 
-proc track_ed::_on_click {} {
-    set cx [winfo pointerx $::track_canvas]
-    set cy [winfo pointery $::track_canvas]
-    # Convert screen coords to canvas coords
-    set cx [expr {$cx - [winfo rootx $::track_canvas]}]
-    set cy [expr {$cy - [winfo rooty $::track_canvas]}]
-    _on_click_at $cx $cy
-}
-
 proc track_ed::_on_click_at {cx cy} {
     variable dragging
     set tool [expr {[info exists ::track_tool] ? $::track_tool : "add"}]
@@ -276,11 +267,9 @@ proc track_ed::_on_click_at {cx cy} {
     catch { app::_update_save_indicator }
 }
 
-proc track_ed::_on_drag {} {
+proc track_ed::_on_drag_at {cx cy} {
     variable dragging
     if {$dragging < 0} return
-    set cx [expr {[winfo pointerx $::track_canvas] - [winfo rootx $::track_canvas]}]
-    set cy [expr {[winfo pointery $::track_canvas] - [winfo rooty $::track_canvas]}]
     lassign [_c2w $cx $cy] wx wz
     set wps [_get_wps]
     if {$dragging >= [llength $wps]} { set dragging -1; return }
@@ -300,9 +289,7 @@ proc track_ed::_on_release {} {
     set dragging -1
 }
 
-proc track_ed::_on_right_click {} {
-    set cx [expr {[winfo pointerx $::track_canvas] - [winfo rootx $::track_canvas]}]
-    set cy [expr {[winfo pointery $::track_canvas] - [winfo rooty $::track_canvas]}]
+proc track_ed::_on_right_click_at {cx cy} {
     set hit [_hit_wp $cx $cy]
     if {$hit >= 0} { _delete_wp $hit }
 }

@@ -138,6 +138,20 @@ proc project::audio_roles {genre} {
                 music   "Background Music"
             }
         }
+        topdown {
+            return {
+                town_music   "Town BGM"
+                field_music  "Field BGM"
+                battle_music "Battle BGM"
+                boss_music   "Boss BGM"
+                sfx_confirm  "SFX: Confirm"
+                sfx_cancel   "SFX: Cancel"
+                sfx_chest    "SFX: Chest Open"
+                sfx_step     "SFX: Footstep"
+                sfx_hit      "SFX: Hit"
+                sfx_level_up "SFX: Level Up"
+            }
+        }
         racer {
             return {
                 bgm          "Race Music (.xm)"
