@@ -233,6 +233,12 @@ extern \"C\" {
 ${extern_audio_block}
 }
 
+extern \"C\" {
+    fn t3d_matrix_push(mat: *T3DMat4FP)
+    fn t3d_matrix_pop(count: i32)
+    fn t3d_mat4fp_from_srt_euler(mat: *T3DMat4FP, scale: *f32, rot: *f32, translate: *f32)
+}
+
 -- ============================================================
 -- Constants
 -- ============================================================
@@ -321,6 +327,7 @@ static cam_ez: f32 = -94.0
 static vp:          T3DViewport = undefined
 static track_model: *T3DModel   = none
 static car_model:   \[*T3DModel; $MAX_CARS\] = undefined
+static car_fp:      \[*T3DMat4FP; $MAX_CARS\] = undefined
 
 ${audio_static_block}
 
@@ -688,8 +695,17 @@ fn render_race(dt: f32) {
     let i: i32 = 0
     loop {
         if i >= MAX_CARS { break }
-        if cars\[i\].active and car_model\[i\] != none {
+        if cars\[i\].active and car_model\[i\] != none and car_fp\[i\] != none {
+            let sc: \[f32; 3\] = undefined
+            sc\[0\] = 1.0  sc\[1\] = 1.0  sc\[2\] = 1.0
+            let eu: \[f32; 3\] = undefined
+            eu\[0\] = 0.0  eu\[1\] = cars\[i\].heading  eu\[2\] = 0.0
+            let tr: \[f32; 3\] = undefined
+            tr\[0\] = cars\[i\].x  tr\[1\] = cars\[i\].y  tr\[2\] = cars\[i\].z
+            t3d_mat4fp_from_srt_euler(car_fp\[i\], &sc\[0\], &eu\[0\], &tr\[0\])
+            t3d_matrix_push(car_fp\[i\])
             t3d.model_draw(car_model\[i\])
+            t3d_matrix_pop(1)
         }
         i = i + 1
     }
@@ -756,6 +772,13 @@ ${audio_block}
 
     init_waypoints()
     init_cars()
+
+    let mi: i32 = 0
+    loop {
+        if mi >= MAX_CARS { break }
+        car_fp\[mi\] = Mat4Fp.create()
+        mi = mi + 1
+    }
 
     cam_ex = 0.0
     cam_ey = 6.0
