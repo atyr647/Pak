@@ -8,7 +8,7 @@ proc codegen::generate {doc} {
     switch $genre {
         platformer { return [codegen::platformer::generate $doc] }
         shmup      { return [codegen::shmup::generate $doc] }
-        topdown    { error "Genre 'topdown' not yet implemented" }
+        topdown    { return [codegen::topdown::generate $doc] }
         default    { error "Unknown genre: $genre" }
     }
 }

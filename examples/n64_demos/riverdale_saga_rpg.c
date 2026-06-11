@@ -1519,8 +1519,8 @@ static void scene_battle(int f) {
     else          sun_rays (SUN_CX,  SUN_CY,  320, f);
 
     /* ── Enemies: back row, standing on the ground (feet y ≈ 222..236) ── */
-    /* Bat hovers above the back row */
-    int bat_y = 165 + (isin(f*3) * 10 >> 5);
+    /* Bat hovers mid-field, well clear of the treeline (base ~178) */
+    int bat_y = 205 + (isin(f*3) * 12 >> 5);
     draw_bat(360, bat_y, f);
 
     /* Goblin A */
