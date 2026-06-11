@@ -9,6 +9,7 @@ proc codegen::generate {doc} {
         platformer { return [codegen::platformer::generate $doc] }
         shmup      { return [codegen::shmup::generate $doc] }
         topdown    { return [codegen::topdown::generate $doc] }
+        racer      { return [codegen::racer::generate $doc] }
         default    { error "Unknown genre: $genre" }
     }
 }
@@ -47,10 +48,18 @@ proc codegen::copy_assets {doc outdir} {
             if {![file exists $src]} {
                 error "Sprite asset for '$role' not found: $src"
             }
-            set dst [file join $outdir sprites ${role}.png]
+            if {[string match "model_*" $role]} {
+                set ext [file extension $src]
+                if {$ext eq ""} { set ext ".t3dm" }
+                set dst [file join $outdir models ${role}${ext}]
+                set rel "models/${role}${ext}"
+            } else {
+                set dst [file join $outdir sprites ${role}.png]
+                set rel "sprites/${role}.png"
+            }
             file mkdir [file dirname $dst]
             file copy -force $src $dst
-            lappend copied "sprites/${role}.png <- $src"
+            lappend copied "$rel <- $src"
         }
     }
     if {[dict exists $doc assets audio]} {

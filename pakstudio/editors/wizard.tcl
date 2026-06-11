@@ -33,12 +33,15 @@ proc wizard::show {parent} {
     wm geometry $dlg ${w}x${h}+${cx}+${cy}
 
     # State
-    set ::wiz_genre   "platformer"
-    set ::wiz_orient  "horizontal"
-    set ::wiz_name    "My Game"
-    set ::wiz_gravity  0.35
-    set ::wiz_jump    -7.5
-    set ::wiz_speed    2.5
+    set ::wiz_genre    "platformer"
+    set ::wiz_orient   "horizontal"
+    set ::wiz_name     "My Game"
+    set ::wiz_gravity   0.35
+    set ::wiz_jump     -7.5
+    set ::wiz_speed     2.5
+    set ::wiz_nlaps     3
+    set ::wiz_nai       3
+    set ::wiz_maxspeed 45.0
 
     # ── Header ────────────────────────────────────────────────────────────────
     ttk::frame $dlg.hdr
@@ -87,8 +90,8 @@ proc wizard::show {parent} {
         platformer  "2D Platformer"       "Run, jump, collect coins, defeat enemies"
         shmup       "Shoot-em-Up"         "Horizontal or vertical scrolling shooter"
         topdown     "Top-Down RPG"        "Birds-eye RPG: events, quests, crafting, battles"
+        racer       "3D Racer"            "N64 racing game: car physics, AI, lap timing, 3D track"
         fps         "FPS (soon)"          "First-person shooter  [coming soon]"
-        racer       "Racer (soon)"        "3D racing game  [coming soon]"
     }
     foreach {id lbl desc} $genres {
         set state [expr {[string match "*soon*" $lbl] ? "disabled" : "normal"}]
@@ -202,6 +205,44 @@ proc wizard::show {parent} {
     pack $rblock.mf.l $rblock.mf.s $rblock.mf.v -side left -padx 4
     pack $rblock.mf -anchor w -padx 24 -pady 2
 
+    # ── Racer settings block ──────────────────────────────────────────────────
+    set racblock [ttk::frame $p2.racblock]
+    set ::wiz_racer_frame $racblock
+    # hidden until racer is selected
+
+    ttk::separator $racblock.sep -orient horizontal
+    pack $racblock.sep -fill x -padx 14 -pady 10
+
+    ttk::label $racblock.ph -text "Race Settings:" \
+        -font {TkDefaultFont 9 bold} -foreground #dde4f0
+    pack $racblock.ph -anchor w -padx 14
+
+    ttk::label $racblock.note \
+        -text "Your project starts with a 10-waypoint oval track and\n3 AI opponents. Physics and the track can be tuned\nin the Track Editor after the project is created." \
+        -foreground #7a8a9f -wraplength 440 -justify left
+    pack $racblock.note -anchor w -padx 24 -pady {8 4}
+
+    foreach {lbl var from to} {
+        "Laps:"      ::wiz_nlaps     1    9
+        "AI Cars:"   ::wiz_nai       0    3
+    } {
+        set slug [string map {: "" " " ""} $lbl]
+        ttk::frame $racblock.rf_$slug
+        ttk::label $racblock.rf_$slug.l -text $lbl -width 14
+        ttk::spinbox $racblock.rf_$slug.s -textvariable $var \
+            -from $from -to $to -width 6
+        pack $racblock.rf_$slug.l $racblock.rf_$slug.s -side left -padx 4
+        pack $racblock.rf_$slug -anchor w -padx 24 -pady 2
+    }
+
+    ttk::frame $racblock.rf_ms
+    ttk::label $racblock.rf_ms.l -text "Max Speed:" -width 14
+    ttk::scale $racblock.rf_ms.s -variable ::wiz_maxspeed -from 20.0 -to 80.0 \
+        -orient horizontal -length 190
+    ttk::label $racblock.rf_ms.v -textvariable ::wiz_maxspeed -width 7
+    pack $racblock.rf_ms.l $racblock.rf_ms.s $racblock.rf_ms.v -side left -padx 4
+    pack $racblock.rf_ms -anchor w -padx 24 -pady 2
+
     # ── Page 3: Summary ───────────────────────────────────────────────────────
     set p3 [ttk::frame $nb.p3]
     $nb add $p3 -text " 3. Create "
@@ -308,6 +349,10 @@ proc wizard::_create {dlg} {
         project::set_field settings orientation $::wiz_orient
     } elseif {$::wiz_genre eq "topdown"} {
         project::set_field physics move_speed $::wiz_speed
+    } elseif {$::wiz_genre eq "racer"} {
+        project::set_field physics num_laps  $::wiz_nlaps
+        project::set_field physics ai_count  $::wiz_nai
+        project::set_field physics max_speed $::wiz_maxspeed
     } else {
         project::set_field physics gravity    $::wiz_gravity
         project::set_field physics jump_force $::wiz_jump
@@ -332,17 +377,15 @@ proc wizard::_on_genre {} {
     foreach child [winfo children $::wiz_orient_frame] {
         catch { $child configure -state $st }
     }
-    if {[info exists ::wiz_phys_frame] && [winfo exists $::wiz_phys_frame]} {
-        if {$::wiz_genre eq "topdown"} {
-            pack forget $::wiz_phys_frame
-            if {[info exists ::wiz_rpg_frame] && [winfo exists $::wiz_rpg_frame]} {
-                pack $::wiz_rpg_frame -fill x
-            }
-        } else {
-            if {[info exists ::wiz_rpg_frame] && [winfo exists $::wiz_rpg_frame]} {
-                pack forget $::wiz_rpg_frame
-            }
-            pack $::wiz_phys_frame -fill x
-        }
+    if {![info exists ::wiz_phys_frame] || ![winfo exists $::wiz_phys_frame]} return
+    # Hide all config blocks first
+    catch { pack forget $::wiz_phys_frame }
+    if {[info exists ::wiz_rpg_frame]   && [winfo exists $::wiz_rpg_frame]}   { pack forget $::wiz_rpg_frame }
+    if {[info exists ::wiz_racer_frame] && [winfo exists $::wiz_racer_frame]} { pack forget $::wiz_racer_frame }
+    # Show the appropriate block
+    switch $::wiz_genre {
+        topdown { pack $::wiz_rpg_frame   -fill x }
+        racer   { pack $::wiz_racer_frame -fill x }
+        default { pack $::wiz_phys_frame  -fill x }
     }
 }

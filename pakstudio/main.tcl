@@ -13,6 +13,7 @@ foreach f {
     codegen/platformer.tcl
     codegen/shmup.tcl
     codegen/topdown.tcl
+    codegen/racer.tcl
     app/codegen.tcl
     app/validate.tcl
     app/build.tcl
@@ -36,6 +37,7 @@ foreach f {
     editors/rpg_dialogue.tcl
     editors/rpg_world.tcl
     editors/rpg.tcl
+    editors/track.tcl
 } {
     source [file join $here $f]
 }
@@ -320,6 +322,51 @@ proc app::_create_left_panel {f} {
         pack $sf -anchor w -padx {12 8} -pady 1
     }
 
+    # ── Racer info ────────────────────────────────────────────────────────────
+    set racif [ttk::frame $f.racer_info]
+    set ::app_racer_info $racif
+    # hidden until a racer project loads
+
+    ttk::separator $racif.sep1 -orient horizontal
+    pack $racif.sep1 -fill x -padx 8 -pady {8 4}
+    ttk::label $racif.thdr -text "TRACK EDITOR" -style Section.TLabel
+    pack $racif.thdr -anchor w -padx 10 -pady {0 4}
+
+    set rai 0
+    foreach {key lbl} {
+        "Add"    "Click empty space"
+        "Move"   "Drag waypoint dot"
+        "Delete" "Right-click dot"
+        "Reset"  "Restore oval"
+    } {
+        set sf [ttk::frame $racif.ra$rai]; incr rai
+        ttk::label $sf.k -text $key -foreground #6aadff \
+            -font {TkDefaultFont 8 bold} -width 8 -anchor e
+        ttk::label $sf.l -text $lbl -style Subtitle.TLabel
+        pack $sf.k $sf.l -side left -padx {0 6}
+        pack $sf -anchor w -padx {12 8} -pady 1
+    }
+
+    ttk::separator $racif.sep2 -orient horizontal
+    pack $racif.sep2 -fill x -padx 8 -pady {8 4}
+    ttk::label $racif.shdr -text "N64 CONTROLS" -style Section.TLabel
+    pack $racif.shdr -anchor w -padx 10 -pady {0 4}
+
+    set rbi 0
+    foreach {key lbl} {
+        "Stick"  "Steer"
+        "A"      "Accelerate"
+        "B"      "Brake"
+        "Z"      "Turbo boost"
+    } {
+        set sf [ttk::frame $racif.rb$rbi]; incr rbi
+        ttk::label $sf.k -text $key -foreground #6aadff \
+            -font {TkDefaultFont 8 bold} -width 8 -anchor e
+        ttk::label $sf.l -text $lbl -style Subtitle.TLabel
+        pack $sf.k $sf.l -side left -padx {0 6}
+        pack $sf -anchor w -padx {12 8} -pady 1
+    }
+
     # ── RPG info (map tile palette + editor guide) ────────────────────────────
     set rif [ttk::frame $f.rpg_info]
     set ::app_rpg_info $rif
@@ -417,12 +464,21 @@ proc app::_update_left_panel_for_genre {genre} {
         $::app_level_add_btn configure -text "+ Add Map" -command app::_add_rpg_map
         $::app_level_del_btn configure -text "− Remove"  -command app::_del_rpg_map
         catch { pack forget $::app_plat_info }
+        catch { pack forget $::app_racer_info }
         catch { pack $::app_rpg_info -fill x }
+    } elseif {$genre eq "racer"} {
+        $::app_level_hdr configure -text "TRACKS"
+        $::app_level_add_btn configure -text "+ Add Track" -command app::_add_level
+        $::app_level_del_btn configure -text "− Remove"    -command app::_del_level
+        catch { pack forget $::app_rpg_info }
+        catch { pack forget $::app_plat_info }
+        catch { pack $::app_racer_info -fill x }
     } else {
         $::app_level_hdr configure -text "LEVELS"
         $::app_level_add_btn configure -text "+ Add Level" -command app::_add_level
         $::app_level_del_btn configure -text "− Remove"   -command app::_del_level
         catch { pack forget $::app_rpg_info }
+        catch { pack forget $::app_racer_info }
         catch { pack $::app_plat_info -fill x }
     }
 }
@@ -473,6 +529,22 @@ proc app::_populate_centre {genre} {
         set rom [ttk::frame $nb.rpg_rom]
         $nb add $rom -text "  ROM Settings  "
         save_ed::create $rom
+    } elseif {$genre eq "racer"} {
+        set trk [ttk::frame $nb.trk]
+        $nb add $trk -text "  Track Editor  "
+        track_ed::create $trk
+
+        set aud [ttk::frame $nb.aud]
+        $nb add $aud -text "  Audio  "
+        audio_ed::create $aud
+
+        set ast [ttk::frame $nb.ast]
+        $nb add $ast -text "  Assets  "
+        assets_ed::create $ast
+
+        set rom [ttk::frame $nb.rom]
+        $nb add $rom -text "  ROM Settings  "
+        save_ed::create $rom
     } else {
         set led [ttk::frame $nb.led]
         $nb add $led -text "  Level Editor  "
@@ -519,6 +591,17 @@ proc app::_on_tab_changed {} {
             switch -glob $tab {
                 "*Assets*"       { assets_ed::save_to_doc }
                 "*ROM Settings*" { save_ed::save_to_doc   }
+            }
+        }
+        return
+    }
+    if {$::app_genre eq "racer"} {
+        catch {
+            switch -glob $tab {
+                "*Audio*"        { audio_ed::save_to_doc  }
+                "*Assets*"       { assets_ed::save_to_doc }
+                "*ROM Settings*" { save_ed::save_to_doc   }
+                "*Track*"        { track_ed::save_to_doc  }
             }
         }
         return
@@ -786,6 +869,11 @@ proc app::_flush_editors {} {
         catch { rpg_ed::save_to_doc    }
         catch { assets_ed::save_to_doc }
         catch { save_ed::save_to_doc   }
+    } elseif {$::app_genre eq "racer"} {
+        catch { track_ed::save_to_doc  }
+        catch { audio_ed::save_to_doc  }
+        catch { assets_ed::save_to_doc }
+        catch { save_ed::save_to_doc   }
     } else {
         catch { audio_ed::save_to_doc }
         catch { save_ed::save_to_doc }
@@ -806,6 +894,17 @@ proc app::_load_doc {doc} {
         _update_left_panel_for_genre $genre
         _update_title
         status "RPG project loaded"
+        return
+    }
+    if {$genre eq "racer"} {
+        track_ed::load_doc  $doc
+        audio_ed::load_doc  $doc
+        assets_ed::load_doc $doc
+        save_ed::load_doc   $doc
+        catch { $::app_level_lb selection clear 0 end }
+        _update_left_panel_for_genre $genre
+        _update_title
+        status "Racer project loaded"
         return
     }
     _update_left_panel_for_genre $genre
@@ -899,7 +998,7 @@ proc app::_show_about {} {
         -style Subtitle.TLabel
     ttk::separator $w.f.sep -orient horizontal
     ttk::label $w.f.body -text \
-        "Built on the Pak language and libdragon.\n\n2D Platformers: fully functional\nTop-Down / FPS / Racer: coming soon" \
+        "Built on the Pak language and libdragon.\n\n2D Platformers: fully functional\nTop-Down RPG: fully functional\n3D Racer: fully functional\nFPS: coming soon" \
         -justify center -style Subtitle.TLabel
     ttk::button $w.f.ok -text "Close" -command [list destroy $w] -style Accent.TButton
 

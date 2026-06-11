@@ -99,6 +99,15 @@ proc project::sprite_roles {genre} {
                 prop_sparkle    "Prop: Sparkle"
             }
         }
+        racer {
+            return {
+                model_track   "Track Model (.t3dm)"
+                model_car_1   "Car 1: Player (.t3dm)"
+                model_car_2   "Car 2: AI Blue (.t3dm)"
+                model_car_3   "Car 3: AI Green (.t3dm)"
+                model_car_4   "Car 4: AI Yellow (.t3dm)"
+            }
+        }
         default {
             return {
                 player       "Player"
@@ -127,6 +136,14 @@ proc project::audio_roles {genre} {
                 hit     "Player Hit"
                 powerup "Power-Up"
                 music   "Background Music"
+            }
+        }
+        racer {
+            return {
+                bgm          "Race Music (.xm)"
+                sfx_engine   "Engine SFX"
+                sfx_crash    "Crash SFX"
+                lap_complete "Lap Complete SFX"
             }
         }
         default {
@@ -183,12 +200,24 @@ proc project::_default_physics {genre} {
         topdown    { return [dict create \
             move_speed    3.0  \
         ]}
+        racer      { return [dict create \
+            accel_rate   18.0 \
+            brake_rate   30.0 \
+            max_speed    45.0 \
+            steer_rate    2.2 \
+            friction      0.97 \
+            gravity     -20.0 \
+            track_width  12.0 \
+            num_laps      3   \
+            ai_count      3   \
+        ]}
         default    { return [dict create move_speed 2.5] }
     }
 }
 
 proc project::_default_level {genre id name} {
-    if {$genre eq "shmup"} { return [_default_shmup_level $id $name] }
+    if {$genre eq "shmup"}  { return [_default_shmup_level  $id $name] }
+    if {$genre eq "racer"}  { return [_default_racer_track  $id $name] }
     # 32×15 blank level: row 14 = solid ground, rest = empty
     set W 32
     set H 15
@@ -256,6 +285,32 @@ proc project::_default_shmup_level {id name} {
     ]
 }
 
+proc project::_default_racer_track {id name} {
+    return [dict create \
+        id        $id \
+        name      $name \
+        width     0 \
+        height    0 \
+        tileset   0 \
+        bg_color  "0x0D1520FF" \
+        music     "" \
+        tiles     {} \
+        objects   {} \
+        waypoints [list \
+            [dict create x  0.0  z -60.0 width 12.0] \
+            [dict create x 40.0  z -50.0 width 12.0] \
+            [dict create x 60.0  z -20.0 width 12.0] \
+            [dict create x 60.0  z  20.0 width 12.0] \
+            [dict create x 40.0  z  50.0 width 12.0] \
+            [dict create x  0.0  z  60.0 width 12.0] \
+            [dict create x -40.0 z  50.0 width 12.0] \
+            [dict create x -60.0 z  20.0 width 12.0] \
+            [dict create x -60.0 z -20.0 width 12.0] \
+            [dict create x -40.0 z -50.0 width 12.0] \
+        ] \
+    ]
+}
+
 proc project::_default_tileset {} {
     return [dict create \
         id    0 \
@@ -308,6 +363,11 @@ proc project::_default_entity_types {genre} {
                 [dict create id chest  label "Chest"  ai static  health 0 speed 0.0 loot "" color "#AAAA44"] \
             ]
         }
+        racer {
+            return [list \
+                [dict create id checkpoint label "Checkpoint" ai static health 0 speed 0.0 loot "" color "#FFDD00"] \
+            ]
+        }
         default { return [list] }
     }
 }
@@ -348,6 +408,14 @@ proc project::_default_audio_events {genre} {
                 sfx_hit      "SFX: Hit"
                 sfx_level_up "SFX: Level Up"
             }
+        }
+        racer {
+            return [dict create \
+                bgm          "" \
+                sfx_engine   "" \
+                sfx_crash    "" \
+                lap_complete "" \
+            ]
         }
         default { return [dict create bg_music ""] }
     }
