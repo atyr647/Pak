@@ -94,13 +94,16 @@ const RANGED_RANGE:  i32 = 6
 const RANGED_MOVE:   i32 = 4
 const RANGED_CD:     i32 = 3
 
--- enemy tuning
-const SKEL_HP:  i32 = 10
-const SKEL_ATK: i32 = 3
-const SLIME_HP:  i32 = 6
-const SLIME_ATK: i32 = 2
-const BOSS_HP:  i32 = 40
-const BOSS_ATK: i32 = 5
+-- enemy tuning: hp / attack / tiles moved per enemy phase
+const SLIME_HP:  i32 = 6    const SLIME_ATK:  i32 = 2   const SLIME_MOVE:  i32 = 1
+const GOB_HP:    i32 = 8    const GOB_ATK:    i32 = 3   const GOB_MOVE:    i32 = 2
+const SKEL_HP:   i32 = 10   const SKEL_ATK:   i32 = 3   const SKEL_MOVE:   i32 = 1
+const BAT_HP:    i32 = 5    const BAT_ATK:    i32 = 2   const BAT_MOVE:    i32 = 3
+const SPIDER_HP: i32 = 7    const SPIDER_ATK: i32 = 4   const SPIDER_MOVE: i32 = 2
+const ZOMB_HP:   i32 = 14   const ZOMB_ATK:   i32 = 3   const ZOMB_MOVE:   i32 = 1
+const ORC_HP:    i32 = 18   const ORC_ATK:    i32 = 5   const ORC_MOVE:    i32 = 1
+const WRAITH_HP: i32 = 12   const WRAITH_ATK: i32 = 4   const WRAITH_MOVE: i32 = 2
+const BOSS_HP:   i32 = 40   const BOSS_ATK:   i32 = 5   const BOSS_MOVE:   i32 = 1
 
 const ENEMY_PHASE_TIME: f32 = 0.7
 
@@ -125,13 +128,13 @@ const CAM_CLAMP_Z: f32 = 8.0
 -- Units are drawn oversized relative to a 1-unit tile so they stay readable
 -- at N64 resolution -- the usual trick in grid tactics games.
 const UNIT_SCALE: f32 = 1.5
-const BOSS_SCALE: f32 = 1.8
+const BOSS_SCALE: f32 = 1.45
 
 -- ============================================================
 -- Types
 -- ============================================================
 enum Role: u8 { tank, healer, melee, ranged }
-enum EnemyKind: u8 { skeleton, slime, boss }
+enum EnemyKind: u8 { slime, goblin, skeleton, bat, spider, zombie, orc, wraith, boss }
 enum Phase: u8 { title, hero_turn, enemy_turn, victory, defeat }
 
 struct Hero {
@@ -301,9 +304,10 @@ fn init_hero(h: *Hero, gx: i32, gy: i32, role: Role, hp: i32) {
     h.facing = FACE_SOUTH
 }
 
-fn init_enemy(e: *Enemy, gx: i32, gy: i32, kind: EnemyKind, hp: i32) {
+fn init_enemy(e: *Enemy, gx: i32, gy: i32, kind: EnemyKind) {
     e.gx = gx
     e.gy = gy
+    let hp: i32 = enemy_hp_for(kind)
     e.hp = hp
     e.hp_max = hp
     e.kind = kind
@@ -311,42 +315,46 @@ fn init_enemy(e: *Enemy, gx: i32, gy: i32, kind: EnemyKind, hp: i32) {
     e.facing = FACE_NORTH
 }
 
+-- Encounters are themed per room and escalate as the party pushes east and
+-- south toward the boss wing: vermin near the entrance, brutes and undead deep in.
 fn spawn_enemies() {
     for i in 0..MAX_ENEMIES {
         enemies[i].alive = false
     }
-    -- Room B (north-centre)
-    init_enemy(&enemies[0],  14, 3,  EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[1],  17, 4,  EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[2],  15, 5,  EnemyKind.slime,    SLIME_HP)
-    -- Room C (north-east)
-    init_enemy(&enemies[3],  25, 3,  EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[4],  27, 5,  EnemyKind.slime,    SLIME_HP)
-    -- Room D (west)
-    init_enemy(&enemies[5],  3,  12, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[6],  6,  14, EnemyKind.slime,    SLIME_HP)
-    -- Room E (central hub) -- the big midpoint fight
-    init_enemy(&enemies[7],  14, 11, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[8],  17, 12, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[9],  15, 14, EnemyKind.slime,    SLIME_HP)
-    init_enemy(&enemies[10], 18, 14, EnemyKind.slime,    SLIME_HP)
-    -- Room F (east)
-    init_enemy(&enemies[11], 25, 11, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[12], 28, 13, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[13], 26, 15, EnemyKind.slime,    SLIME_HP)
-    -- Room G (south-west)
-    init_enemy(&enemies[14], 4,  20, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[15], 7,  21, EnemyKind.slime,    SLIME_HP)
-    -- Room H (south-centre)
-    init_enemy(&enemies[16], 14, 20, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[17], 17, 21, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[18], 16, 19, EnemyKind.slime,    SLIME_HP)
-    -- Room I (boss room) -- escort plus the boss itself
-    init_enemy(&enemies[19], 24, 19, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[20], 28, 21, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[21], 25, 22, EnemyKind.slime,    SLIME_HP)
-    init_enemy(&enemies[22], 26, 20, EnemyKind.boss,     BOSS_HP)
-    enemies_alive = 23
+
+    -- Room B (north-centre): vermin
+    init_enemy(&enemies[0],  14, 3,  EnemyKind.bat)
+    init_enemy(&enemies[1],  17, 4,  EnemyKind.goblin)
+    init_enemy(&enemies[2],  15, 5,  EnemyKind.slime)
+    -- Room C (north-east): goblin camp
+    init_enemy(&enemies[3],  25, 3,  EnemyKind.goblin)
+    init_enemy(&enemies[4],  27, 5,  EnemyKind.goblin)
+    init_enemy(&enemies[5],  24, 5,  EnemyKind.spider)
+    -- Room D (west): nest
+    init_enemy(&enemies[6],  3,  12, EnemyKind.spider)
+    init_enemy(&enemies[7],  6,  14, EnemyKind.slime)
+    init_enemy(&enemies[8],  4,  15, EnemyKind.bat)
+    -- Room E (central hub): the midpoint fight, mixed
+    init_enemy(&enemies[9],  14, 11, EnemyKind.skeleton)
+    init_enemy(&enemies[10], 17, 12, EnemyKind.skeleton)
+    init_enemy(&enemies[11], 15, 14, EnemyKind.goblin)
+    init_enemy(&enemies[12], 18, 14, EnemyKind.orc)
+    -- Room F (east): crypt
+    init_enemy(&enemies[13], 25, 11, EnemyKind.skeleton)
+    init_enemy(&enemies[14], 28, 13, EnemyKind.zombie)
+    init_enemy(&enemies[15], 26, 15, EnemyKind.zombie)
+    -- Room G (south-west): brute den
+    init_enemy(&enemies[16], 4,  20, EnemyKind.orc)
+    init_enemy(&enemies[17], 7,  21, EnemyKind.goblin)
+    -- Room H (south-centre): haunt
+    init_enemy(&enemies[18], 14, 20, EnemyKind.wraith)
+    init_enemy(&enemies[19], 17, 21, EnemyKind.zombie)
+    init_enemy(&enemies[20], 16, 19, EnemyKind.skeleton)
+    -- Room I (boss room): the demon lord and his guard
+    init_enemy(&enemies[21], 24, 19, EnemyKind.wraith)
+    init_enemy(&enemies[22], 28, 21, EnemyKind.orc)
+    init_enemy(&enemies[23], 26, 20, EnemyKind.boss)
+    enemies_alive = 24
 }
 
 fn start_level() {
@@ -624,9 +632,47 @@ fn nearest_hero(gx: i32, gy: i32) -> i32 {
 
 fn enemy_atk_for(kind: EnemyKind) -> i32 {
     match kind {
-        .skeleton => { return SKEL_ATK }
         .slime    => { return SLIME_ATK }
+        .goblin   => { return GOB_ATK }
+        .skeleton => { return SKEL_ATK }
+        .bat      => { return BAT_ATK }
+        .spider   => { return SPIDER_ATK }
+        .zombie   => { return ZOMB_ATK }
+        .orc      => { return ORC_ATK }
+        .wraith   => { return WRAITH_ATK }
         .boss     => { return BOSS_ATK }
+    }
+    return 1
+}
+
+fn enemy_hp_for(kind: EnemyKind) -> i32 {
+    match kind {
+        .slime    => { return SLIME_HP }
+        .goblin   => { return GOB_HP }
+        .skeleton => { return SKEL_HP }
+        .bat      => { return BAT_HP }
+        .spider   => { return SPIDER_HP }
+        .zombie   => { return ZOMB_HP }
+        .orc      => { return ORC_HP }
+        .wraith   => { return WRAITH_HP }
+        .boss     => { return BOSS_HP }
+    }
+    return 1
+}
+
+-- How many tiles this kind covers in one enemy phase. Bats close fast,
+-- brutes and slimes lumber.
+fn enemy_move_for(kind: EnemyKind) -> i32 {
+    match kind {
+        .slime    => { return SLIME_MOVE }
+        .goblin   => { return GOB_MOVE }
+        .skeleton => { return SKEL_MOVE }
+        .bat      => { return BAT_MOVE }
+        .spider   => { return SPIDER_MOVE }
+        .zombie   => { return ZOMB_MOVE }
+        .orc      => { return ORC_MOVE }
+        .wraith   => { return WRAITH_MOVE }
+        .boss     => { return BOSS_MOVE }
     }
     return 1
 }
@@ -641,10 +687,12 @@ fn damage_hero(idx: i32, amt: i32) {
     }
 }
 
-fn enemy_step(e: *Enemy) {
+-- One step of an enemy's turn. Returns true when its turn is over -- it
+-- either attacked, or has nowhere left to go.
+fn enemy_step(e: *Enemy) -> bool {
     let target: i32 = taunting_hero()
     if target < 0 { target = nearest_hero(e.gx, e.gy) }
-    if target < 0 { return }
+    if target < 0 { return true }
 
     let tx: i32 = heroes[target].gx
     let ty: i32 = heroes[target].gy
@@ -654,7 +702,7 @@ fn enemy_step(e: *Enemy) {
 
     if manhattan(e.gx, e.gy, tx, ty) == 1 {
         damage_hero(target, enemy_atk_for(e.kind))
-        return
+        return true
     }
 
     let dx: i32 = 0
@@ -668,28 +716,40 @@ fn enemy_step(e: *Enemy) {
     if adx >= ady {
         if dx != 0 and tile_at(e.gx + dx, e.gy) == TILE_FLOOR and hero_at(e.gx + dx, e.gy) < 0 and enemy_at(e.gx + dx, e.gy) < 0 {
             e.gx += dx
-            return
+            return false
         }
         if dy != 0 and tile_at(e.gx, e.gy + dy) == TILE_FLOOR and hero_at(e.gx, e.gy + dy) < 0 and enemy_at(e.gx, e.gy + dy) < 0 {
             e.gy += dy
-            return
+            return false
         }
     } else {
         if dy != 0 and tile_at(e.gx, e.gy + dy) == TILE_FLOOR and hero_at(e.gx, e.gy + dy) < 0 and enemy_at(e.gx, e.gy + dy) < 0 {
             e.gy += dy
-            return
+            return false
         }
         if dx != 0 and tile_at(e.gx + dx, e.gy) == TILE_FLOOR and hero_at(e.gx + dx, e.gy) < 0 and enemy_at(e.gx + dx, e.gy) < 0 {
             e.gx += dx
-            return
+            return false
         }
+    }
+    return true
+}
+
+-- Each kind covers a different number of tiles per phase.
+fn enemy_take_turn(e: *Enemy) {
+    let steps: i32 = enemy_move_for(e.kind)
+    let i: i32 = 0
+    loop {
+        if i >= steps { break }
+        if enemy_step(e) { break }
+        i += 1
     }
 }
 
 fn run_enemy_ai() {
     for i in 0..MAX_ENEMIES {
         if not enemies[i].alive { continue }
-        enemy_step(&enemies[i])
+        enemy_take_turn(&enemies[i])
     }
 }
 
@@ -920,7 +980,7 @@ static vp: T3DViewport = undefined
 static mdl_chunk: [*T3DModel; 9] = undefined   -- level, 3x3 chunks
 static depth_buf: surface_t = undefined
 static mdl_hero:  [*T3DModel; 4] = undefined   -- indexed by role_index()
-static mdl_enemy: [*T3DModel; 3] = undefined   -- indexed by enemy_index()
+static mdl_enemy: [*T3DModel; 9] = undefined   -- indexed by enemy_index()
 
 -- One matrix per potentially-visible unit (4 heroes + 24 enemies).
 static unit_fp: [*T3DMat4FP; 28] = undefined
@@ -941,9 +1001,15 @@ fn role_index(r: Role) -> i32 {
 
 fn enemy_index(k: EnemyKind) -> i32 {
     match k {
-        .skeleton => { return 0 }
-        .slime    => { return 1 }
-        .boss     => { return 2 }
+        .slime    => { return 0 }
+        .goblin   => { return 1 }
+        .skeleton => { return 2 }
+        .bat      => { return 3 }
+        .spider   => { return 4 }
+        .zombie   => { return 5 }
+        .orc      => { return 6 }
+        .wraith   => { return 7 }
+        .boss     => { return 8 }
     }
     return 0
 }
@@ -1381,9 +1447,15 @@ entry {
     mdl_hero[1]   = t3d.model_load("rom:/models/hero_healer.t3dm")
     mdl_hero[2]   = t3d.model_load("rom:/models/hero_melee.t3dm")
     mdl_hero[3]   = t3d.model_load("rom:/models/hero_ranged.t3dm")
-    mdl_enemy[0]  = t3d.model_load("rom:/models/enemy_skeleton.t3dm")
-    mdl_enemy[1]  = t3d.model_load("rom:/models/enemy_slime.t3dm")
-    mdl_enemy[2]  = t3d.model_load("rom:/models/enemy_boss.t3dm")
+    mdl_enemy[0]  = t3d.model_load("rom:/models/enemy_slime.t3dm")
+    mdl_enemy[1]  = t3d.model_load("rom:/models/enemy_goblin.t3dm")
+    mdl_enemy[2]  = t3d.model_load("rom:/models/enemy_skeleton.t3dm")
+    mdl_enemy[3]  = t3d.model_load("rom:/models/enemy_bat.t3dm")
+    mdl_enemy[4]  = t3d.model_load("rom:/models/enemy_spider.t3dm")
+    mdl_enemy[5]  = t3d.model_load("rom:/models/enemy_zombie.t3dm")
+    mdl_enemy[6]  = t3d.model_load("rom:/models/enemy_orc.t3dm")
+    mdl_enemy[7]  = t3d.model_load("rom:/models/enemy_wraith.t3dm")
+    mdl_enemy[8]  = t3d.model_load("rom:/models/enemy_boss.t3dm")
 
     -- per-instance matrices (16-byte aligned, uncached for RSP DMA)
     let mi: i32 = 0
