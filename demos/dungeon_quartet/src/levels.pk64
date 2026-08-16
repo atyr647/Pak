@@ -2,6 +2,13 @@
 --
 -- Tile masks, spawn tables and biome tags for every baked level. Regenerate
 -- with:  python3 tools/gen_dungeon_models.py
+--
+-- Every value is reached through an accessor function, not the bare consts
+-- and statics below. Pak's multi-file support is [PARTIAL] (see
+-- LANGUAGE.md / examples/canonical/20_multifile.pk64): functions cross a
+-- `use module.path` boundary, but top-level `const`/`static` do not --
+-- confirmed by hand with a 2-file repro before writing this generator to
+-- rely on it. Accessor functions are the working path.
 module dungeon.levels
 
 const LEVEL_COUNT:      i32 = 6
@@ -95,3 +102,39 @@ static level_enemy_xyz: [414]u8 = [
     25, 12, 1, 26, 12, 3, 7, 21, 1, 6, 21, 2, 8, 20, 4, 13,
     20, 1, 20, 19, 1, 0, 0, 255, 0, 0, 255, 0, 0, 255
 ]
+
+-- ── Accessors (the actual cross-module API) ─────────────────────────────────
+fn level_count() -> i32 { return LEVEL_COUNT }
+fn level_tile_bytes() -> i32 { return LEVEL_TILE_BYTES }
+fn level_max_spawns() -> i32 { return LEVEL_MAX_SPAWNS }
+fn spawn_empty_id() -> u8 { return SPAWN_EMPTY }
+fn biome_dungeon_id() -> u8 { return BIOME_DUNGEON }
+fn biome_forest_id() -> u8 { return BIOME_FOREST }
+
+fn level_floor_byte(lvl: i32, byte_i: i32) -> u8 {
+    return level_bits[lvl * LEVEL_TILE_BYTES + byte_i]
+}
+
+fn level_biome_of(lvl: i32) -> u8 {
+    return level_biome[lvl]
+}
+
+fn level_hero_x(lvl: i32, slot: i32) -> u8 {
+    return level_hero_xy[lvl * 8 + slot * 2]
+}
+
+fn level_hero_y(lvl: i32, slot: i32) -> u8 {
+    return level_hero_xy[lvl * 8 + slot * 2 + 1]
+}
+
+fn level_spawn_x(lvl: i32, slot: i32) -> u8 {
+    return level_enemy_xyz[(lvl * LEVEL_MAX_SPAWNS + slot) * 3]
+}
+
+fn level_spawn_y(lvl: i32, slot: i32) -> u8 {
+    return level_enemy_xyz[(lvl * LEVEL_MAX_SPAWNS + slot) * 3 + 1]
+}
+
+fn level_spawn_kind(lvl: i32, slot: i32) -> u8 {
+    return level_enemy_xyz[(lvl * LEVEL_MAX_SPAWNS + slot) * 3 + 2]
+}

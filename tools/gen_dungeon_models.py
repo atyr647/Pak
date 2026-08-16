@@ -715,6 +715,9 @@ CLOTH_DK    = rgba(0x3A3346FF)
 HOOD_G      = rgba(0x2E8A54FF)   # healer hood, darker than the robe
 EYE_RED     = rgba(0xFF4030FF)
 EYE_GREEN   = rgba(0x9CFF6AFF)
+EYE_DARK    = rgba(0x201A24FF)   # human iris on skin
+VISOR_GLOW  = rgba(0x3CE0FFFF)   # eyes glinting through a closed helm -- saturated so it can't be mistaken for the steel visor itself
+HOOD_GLOW   = rgba(0xEDE6D2FF)   # eyes catching light inside a hood's shadow
 
 
 def part(m, x, y0, y1, z, hw, hd, top, side, faces="ts"):
@@ -783,8 +786,9 @@ def build_hero_mesh(role):
         # breastplate + belt
         part(m, 0.0, 0.42, 0.60, -0.14, 0.15, 0.02, STEEL, STEEL)
         part(m, 0.0, 0.36, 0.42, -0.14, 0.18, 0.02, GOLD, GOLD)
-        # helm: visor band + crest
+        # helm: visor band + crest, with a pair of eye slits glinting through
         part(m, 0.0, 0.70, 0.78, -0.13, 0.115, 0.02, BONE_DARK, BONE_DARK)
+        eyes(m, 0.735, -0.158, 0.046, VISOR_GLOW, w=0.028, h=0.022, d=0.012)
         part(m, 0.0, 0.84, 0.94, 0.0, 0.035, 0.11, GOLD, GOLD)
         part(m, 0.0, 0.80, 0.86, 0.0, hw + 0.02, hw * 0.95, STEEL, STEEL_DK)
         # tower shield on the left arm
@@ -805,6 +809,8 @@ def build_hero_mesh(role):
         part(m, 0.0, 0.38, 0.44, -0.125, 0.16, 0.02, LEATHER, LEATHER)
         # headband
         part(m, 0.0, 0.78, 0.83, -0.12, 0.115, 0.02, body, body)
+        # eyes, below the headband
+        eyes(m, 0.745, -0.107, 0.043, EYE_DARK, w=0.020, h=0.015, d=0.012)
         # greatsword: grip, guard, long blade
         part(m, 0.30, 0.34, 0.52, -0.02, 0.028, 0.028, LEATHER_DK, LEATHER_DK)
         part(m, 0.30, 0.52, 0.57, -0.02, 0.10, 0.035, GOLD, GOLD)
@@ -812,56 +818,99 @@ def build_hero_mesh(role):
         part(m, 0.30, 1.06, 1.14, -0.02, 0.022, 0.014, STEEL, STEEL)
 
     elif role == "healer":
-        # robed, hooded, staff held clear of the body so it reads in silhouette
+        # robed, hooded, staff held clear of the body so it reads in silhouette.
+        # The robe and hood are surfaces of revolution -- a real bell curve
+        # and a peaked cowl, not stacked boxes -- which is what a wizard/
+        # cleric silhouette needs to read as a robe instead of a poncho.
         humanoid(m, dict(leg_top=0.26, torso_top=0.64, head_top=0.84,
                          torso_hw=0.16, torso_hd=0.105, skin=SKIN_HUMAN,
                          cloth=body, cloth_lt=light, boot=CLOTH_DK))
-        # robe skirt: narrower than the arms so the sleeves still show
-        part(m, 0.0, 0.02, 0.20, 0.0, 0.205, 0.145, body, body)
-        part(m, 0.0, 0.20, 0.40, 0.0, 0.180, 0.125, light, body)
+        # robe: flared bell at the hem, narrowing to the shoulders
+        robe_profile = [
+            (0.000, 0.000), (0.235, 0.015), (0.250, 0.075), (0.230, 0.170),
+            (0.200, 0.280), (0.178, 0.390), (0.162, 0.490), (0.150, 0.580),
+        ]
+        m.revolve(0.0, 0.0, 0.0, robe_profile, body, light, segs=9, squash_z=0.88)
         # hem trim breaks up the flat robe
-        part(m, 0.0, 0.02, 0.06, 0.0, 0.215, 0.152, TRIM_W, TRIM_W)
-        # hood, darker than the robe so the head separates
-        part(m, 0.0, 0.62, 0.90, 0.01, 0.145, 0.125, HOOD_G, HOOD_G)
-        part(m, 0.0, 0.66, 0.80, -0.125, 0.105, 0.02, BONE_DARK, BONE_DARK)
-        # large chest sigil
-        part(m, 0.0, 0.44, 0.60, -0.11, 0.032, 0.02, TRIM_W, TRIM_W)
-        part(m, 0.0, 0.50, 0.555, -0.11, 0.095, 0.02, TRIM_W, TRIM_W)
+        m.revolve(0.0, 0.0, 0.0, [(0.0, 0.0), (0.238, 0.014), (0.248, 0.05)],
+                  TRIM_W, TRIM_W, segs=9, squash_z=0.88)
+        # peaked hood: a real cone tapering above the head, not a flat box
+        hood_profile = [
+            (0.150, 0.615), (0.148, 0.680), (0.132, 0.760), (0.098, 0.860),
+            (0.052, 0.945), (0.000, 1.010),
+        ]
+        m.revolve(0.0, 0.0, 0.005, hood_profile, HOOD_G, HOOD_G, segs=9,
+                  squash_z=0.86)
+        # Dark hollow where the hood shadows the face, with eyes glinting in
+        # it. Flat boxes at a conservative fixed depth, not an ellipsoid
+        # matched to the hood's curve -- a curve-matched ellipsoid here
+        # earlier ended up mismatched with the actual revolve surface and
+        # floated in front of the face as a disconnected blob instead of
+        # sitting recessed in the hood opening.
+        part(m, 0.0, 0.66, 0.80, -0.128, 0.105, 0.02, BONE_DARK, BONE_DARK)
+        eyes(m, 0.735, -0.160, 0.045, HOOD_GLOW, w=0.020, h=0.015, d=0.010)
+        # large chest sigil (the revolved robe bulges out to z=-0.15 here --
+        # further than the old flat-box robe did -- so this has to sit
+        # further forward too, or it is buried inside the robe and invisible)
+        part(m, 0.0, 0.44, 0.60, -0.155, 0.032, 0.02, TRIM_W, TRIM_W)
+        part(m, 0.0, 0.50, 0.555, -0.155, 0.095, 0.02, TRIM_W, TRIM_W)
         # staff held well clear of the robe, orb above head height
         part(m, -0.30, 0.0, 0.92, -0.04, 0.028, 0.028, LEATHER, LEATHER)
-        part(m, -0.30, 0.92, 1.06, -0.04, 0.070, 0.070, light, light)
-        part(m, -0.30, 1.06, 1.11, -0.04, 0.034, 0.034, TRIM_W, TRIM_W)
-        part(m, -0.30, 0.86, 0.90, -0.04, 0.055, 0.055, GOLD, GOLD)
+        part(m, -0.30, 0.86, 0.90, -0.04, 0.058, 0.058, GOLD, GOLD)
+        m.ellipsoid(-0.30, 1.01, -0.04, 0.075, 0.075, 0.075, light, TRIM_W,
+                    segs=8, rings=5)
 
     elif role == "ranged":
-        # hooded scout, longbow, quiver on the back -- slimmest silhouette
+        # hooded scout, longbow, quiver on the back -- slimmest silhouette.
+        # Cowl is a small revolved cone (tighter than the healer's peak); the
+        # bow is 5 segments instead of 3 for a visibly curved limb, plus a
+        # string and a grip wrap.
         humanoid(m, dict(leg_top=0.33, torso_top=0.65, head_top=0.85,
                          torso_hw=0.15, torso_hd=0.10, skin=SKIN_HUMAN,
                          cloth=body, cloth_lt=light, boot=LEATHER_DK,
                          arm_fwd=-0.04, leg_gap=0.55))
-        # hood + short cape
-        part(m, 0.0, 0.63, 0.88, 0.01, 0.125, 0.11, body, body)
+        # cowl: tight hood tapering to a small point
+        cowl_profile = [
+            (0.118, 0.620), (0.112, 0.690), (0.092, 0.780),
+            (0.058, 0.870), (0.020, 0.930), (0.000, 0.960),
+        ]
+        m.revolve(0.0, 0.0, 0.01, cowl_profile, body, body, segs=8, squash_z=0.88)
+        # dark hollow with eyes catching the light (flat boxes at a fixed
+        # depth -- see the note on the healer's hood above)
         part(m, 0.0, 0.66, 0.79, -0.105, 0.09, 0.02, BONE_DARK, BONE_DARK)
+        eyes(m, 0.722, -0.135, 0.040, HOOD_GLOW, w=0.016, h=0.012, d=0.009)
+        # short cape
         part(m, 0.0, 0.40, 0.66, 0.11, 0.16, 0.025, LEATHER, LEATHER_DK)
         # quiver with arrow fletchings
         part(m, 0.13, 0.44, 0.74, 0.13, 0.05, 0.05, LEATHER_DK, LEATHER_DK)
         for ax in (-0.03, 0.0, 0.03):
             part(m, 0.13 + ax, 0.74, 0.84, 0.13, 0.012, 0.012, TRIM_W, TRIM_W)
-        # longbow: limbs angled, string down the front
-        part(m, -0.26, 0.22, 0.42, -0.02, 0.020, 0.030, LEATHER, LEATHER)
-        part(m, -0.29, 0.42, 0.70, -0.02, 0.020, 0.030, LEATHER, LEATHER)
-        part(m, -0.26, 0.70, 0.90, -0.02, 0.020, 0.030, LEATHER, LEATHER)
-        part(m, -0.24, 0.24, 0.88, -0.02, 0.008, 0.008, TRIM_W, TRIM_W)
+        # longbow: 5 segments tracing a curve, string, grip wrap
+        bow_x = [-0.235, -0.278, -0.295, -0.278, -0.235]
+        bow_y = [0.14, 0.32, 0.53, 0.74, 0.92]
+        for i in range(len(bow_y) - 1):
+            part(m, (bow_x[i] + bow_x[i+1]) * 0.5, bow_y[i], bow_y[i+1], -0.02,
+                 0.018, 0.026, LEATHER, LEATHER_DK)
+        part(m, bow_x[2], 0.48, 0.58, -0.02, 0.024, 0.030, LEATHER_DK, LEATHER_DK)
+        part(m, -0.215, 0.14, 0.92, -0.02, 0.007, 0.007, TRIM_W, TRIM_W)
 
     return m
 
 
 # ── Enemies ─────────────────────────────────────────────────────────────────
 def build_slime_mesh():
-    """Classic slime: a single smooth onion dome, wide-bottomed and rounded."""
+    """Classic slime: a single smooth onion dome with a clear, bold face.
+
+    Previous version had a "highlight" and a "drip" ellipsoid stuck onto the
+    front, off-center and unpaired -- at a glance they read as two stray
+    pale growths rather than as shading. Replaced with one small, centered
+    sheen near the crown (unmistakably part of the surface, not a lump) and
+    put the shine where it belongs: as tiny catchlights inside the eyes.
+    """
     body = rgba(0x46B45AFF)
     lite = rgba(0x9FEFAAFF)
     dark = rgba(0x2E8442FF)
+    glint = rgba(0xEAFFF0FF)
     m = Mesh()
     # bottom-to-top (radius, y): bulges just above the floor, rounds over
     profile = [
@@ -872,12 +921,14 @@ def build_slime_mesh():
     # darker contact ring
     m.revolve(0.0, 0.0, 0.0, [(0.00, 0.0), (0.305, 0.026)],
               dark, dark, segs=8, squash_z=0.95)
-    # highlight and a drip on the front
-    m.ellipsoid(-0.115, 0.315, -0.205, 0.055, 0.038, 0.030, TRIM_W, TRIM_W,
-                segs=5, rings=3)
-    m.ellipsoid(0.150, 0.075, -0.250, 0.048, 0.062, 0.038, lite, lite,
-                segs=5, rings=3)
-    eyes(m, 0.265, -0.290, 0.098, BONE_DARK, w=0.048, h=0.040, d=0.022)
+    # small, centered sheen near the crown
+    m.ellipsoid(0.0, 0.455, -0.03, 0.030, 0.022, 0.030, lite, glint,
+                segs=6, rings=3)
+    # bold eyes, a catchlight in each, and a small closed-mouth line
+    eyes(m, 0.27, -0.300, 0.100, BONE_DARK, w=0.056, h=0.048, d=0.024)
+    for sx in (-1, 1):
+        part(m, sx * 0.075, 0.292, 0.306, -0.322, 0.014, 0.010, glint, glint)
+    part(m, 0.0, 0.175, 0.185, -0.320, 0.030, 0.014, dark, dark)
     return m
 
 
@@ -952,29 +1003,40 @@ def build_bat_mesh():
 
 
 def build_spider_mesh():
-    """Rounded abdomen and head carried on eight arched legs."""
-    body = rgba(0x3B3547FF)
-    lite = rgba(0x5C5270FF)
+    """Rounded abdomen and head carried on eight arched legs.
+
+    Each rounded part previously blended a dark bottom pole to a much
+    lighter top pole. Stacked on top of real-time directional lighting,
+    that pre-baked gradient made the torso look glossy/see-through, like a
+    glass marble, instead of hard chitin. Each part is one flat color now
+    (still round -- the ellipsoid's own real-time shading is what should
+    vary, not a baked-in gradient on top of it); the abdomen and
+    cephalothorax use two different flat tones so the segments still read
+    as distinct without a smooth blend between them.
+    """
+    abdomen_col = rgba(0x342E3EFF)
+    cephalo_col = rgba(0x241F2CFF)
+    leg_col = rgba(0x2C2734FF)
     m = Mesh()
     base = 0.22
     # abdomen: ellipsoid, longer in Z than it is wide
-    m.ellipsoid(0.0, base + 0.09, 0.15, 0.185, 0.135, 0.215, body, lite,
-                segs=8, rings=4)
+    m.ellipsoid(0.0, base + 0.09, 0.15, 0.185, 0.135, 0.215,
+                abdomen_col, abdomen_col, segs=8, rings=4)
     # cephalothorax
-    m.ellipsoid(0.0, base + 0.05, -0.11, 0.135, 0.105, 0.135, body, lite,
-                segs=8, rings=4)
+    m.ellipsoid(0.0, base + 0.05, -0.11, 0.135, 0.105, 0.135,
+                cephalo_col, cephalo_col, segs=8, rings=4)
     # head / mouthparts
-    m.ellipsoid(0.0, base + 0.02, -0.245, 0.085, 0.070, 0.075, body, body,
-                segs=6, rings=3)
+    m.ellipsoid(0.0, base + 0.02, -0.245, 0.085, 0.070, 0.075,
+                cephalo_col, cephalo_col, segs=6, rings=3)
     # 8 legs: up to a knee, then down to the floor
     for sx in (-1, 1):
         for lz in (-0.16, -0.03, 0.11, 0.24):
             part(m, sx * 0.17, base + 0.02, base + 0.16, lz,
-                 0.072, 0.024, lite, body)
+                 0.072, 0.024, leg_col, leg_col)
             part(m, sx * 0.28, base + 0.11, base + 0.21, lz,
-                 0.052, 0.022, lite, body)
+                 0.052, 0.022, leg_col, leg_col)
             part(m, sx * 0.335, 0.0, base + 0.15, lz,
-                 0.026, 0.020, body, body)
+                 0.026, 0.020, leg_col, leg_col)
     eyes(m, base + 0.075, -0.310, 0.048, EYE_RED, w=0.026, h=0.020, d=0.014)
     eyes(m, base + 0.030, -0.305, 0.084, EYE_RED, w=0.020, h=0.016, d=0.012)
     for sx in (-1, 1):
@@ -997,8 +1059,8 @@ def build_zombie_mesh():
     part(m, 0.0, 0.30, 0.36, -0.115, 0.15, 0.02, rgba(0x3A4030FF),
          rgba(0x3A4030FF))
     part(m, -0.06, 0.44, 0.50, -0.115, 0.05, 0.02, SKIN_ZOMBIE, SKIN_ZOMBIE)
-    eyes(m, 0.72, -0.11, 0.052, EYE_GREEN, w=0.028, h=0.022, d=0.014)
-    part(m, 0.0, 0.64, 0.68, -0.10, 0.06, 0.02, BONE_DARK, BONE_DARK)  # mouth
+    eyes(m, 0.72, -0.145, 0.052, EYE_GREEN, w=0.028, h=0.022, d=0.014)
+    part(m, 0.0, 0.64, 0.68, -0.14, 0.06, 0.02, BONE_DARK, BONE_DARK)  # mouth
     return m
 
 
@@ -1021,7 +1083,7 @@ def build_orc_mesh():
         part(m, sx * 0.06, 0.72, 0.79, -0.16, 0.022, 0.02, BONE, BONE)
     part(m, 0.0, 0.82, 0.86, -0.15, 0.14, 0.02, rgba(0x3E6230FF),
          rgba(0x3E6230FF))
-    eyes(m, 0.79, -0.155, 0.07, EYE_RED, w=0.030, h=0.022, d=0.014)
+    eyes(m, 0.79, -0.205, 0.07, EYE_RED, w=0.030, h=0.022, d=0.014)
     # spiked club
     part(m, 0.38, 0.18, 0.62, -0.02, 0.036, 0.036, LEATHER_DK, LEATHER_DK)
     part(m, 0.38, 0.62, 0.84, -0.02, 0.085, 0.085, LEATHER, LEATHER_DK)
@@ -1077,7 +1139,7 @@ def build_boss_mesh():
     part(m, 0.0, 1.06, 1.11, -0.17, 0.15, 0.02, rgba(0x561F66FF),
          rgba(0x561F66FF))
     part(m, 0.0, 0.94, 1.00, -0.15, 0.10, 0.03, BONE_DARK, BONE_DARK)
-    eyes(m, 1.03, -0.175, 0.085, EYE_RED, w=0.045, h=0.032, d=0.018)
+    eyes(m, 1.03, -0.185, 0.085, EYE_RED, w=0.045, h=0.032, d=0.018)
     # swept horns
     for sx in (-1, 1):
         part(m, sx * 0.17, 1.20, 1.34, -0.02, 0.055, 0.055, horn, horn)
