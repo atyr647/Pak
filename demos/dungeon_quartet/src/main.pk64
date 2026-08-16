@@ -1,7 +1,7 @@
--- demos/dungeon_quartet.pk64
+-- demos/dungeon_quartet/src/main.pk64
 -- Dungeon Quartet
 --
--- A 4-player local co-op, turn-based, top-down isometric dungeon crawler.
+-- A 4-player local co-op, turn-based dungeon crawler rendered in 3D.
 -- Each player controls one fixed role -- Tank, Healer, Melee DPS, Ranged DPS
 -- -- sharing a single screen. Turn order is P1 -> P2 -> P3 -> P4 -> Enemies,
 -- repeating until the party wipes or every enemy in the dungeon is dead.
@@ -12,15 +12,26 @@
 --   B          -- role ability (limited by a per-round cooldown)
 --   Start      -- end turn early / advance title & end screens
 --
--- Rendering uses only solid-color RDP fill primitives, including an
--- in-code 3x5 bitmap font, so this builds standalone with zero external
--- art, font, or audio assets.
+-- Rendering: the world is real 3D geometry drawn through Tiny3D with a
+-- chase camera that frames the living party; the HUD is a 2D RDP overlay
+-- using an in-code 3x5 bitmap font (no font asset needed).
+--
+-- Models come from tools/gen_dungeon_models.py, which writes .glb files into
+-- assets/models/. The build converts them to .t3dm via $(T3D_GLTF), so
+-- pak.toml must set  [dependencies] tiny3d = true.
 
 use n64.display
 use n64.controller
 use n64.rdpq
 use n64.timer
 use n64.math
+use t3d
+
+extern "C" {
+    fn t3d_matrix_push(mat: *T3DMat4FP)
+    fn t3d_matrix_pop(count: i32)
+    fn t3d_mat4fp_from_srt_euler(mat: *T3DMat4FP, scale: *f32, rot: *f32, translate: *f32)
+}
 
 -- ============================================================
 -- Constants
@@ -33,14 +44,6 @@ const TILE_FLOOR: u8 = 1
 
 const MAX_HEROES:  i32 = 4
 const MAX_ENEMIES: i32 = 12
-
--- isometric projection
-const ISO_HW:   i32 = 11    -- half-width of one grid step, in pixels
-const ISO_HH:   i32 = 6     -- half-height of one grid step, in pixels
-const ORIGIN_X: i32 = 145
-const ORIGIN_Y: i32 = 40
-const TILE_HW:  i32 = 10    -- drawn diamond half-width (slightly < ISO_HW for a grid gap)
-const TILE_HH:  i32 = 5     -- drawn diamond half-height / row count
 
 const HUD_Y: i32 = 200
 
@@ -81,6 +84,29 @@ const BOSS_ATK: i32 = 5
 
 const ENEMY_PHASE_TIME: f32 = 0.7
 
+-- 3D world layout: one grid tile = one world unit, grid centered on origin.
+--   world x = gx - (GRID_W-1)/2      world z = gy - (GRID_H-1)/2
+const WORLD_OX: f32 = 7.5
+const WORLD_OZ: f32 = 5.5
+
+-- Models are authored facing -Z, so a Y rotation of 0 looks "north" (gy-1).
+const FACE_NORTH: f32 =  0.0
+const FACE_SOUTH: f32 =  3.14159265
+const FACE_EAST:  f32 = -1.57079633
+const FACE_WEST:  f32 =  1.57079633
+
+-- Camera framing
+const CAM_H:      f32 = 7.0     -- height above the focus point
+const CAM_BACK:   f32 = 8.5     -- distance behind (+Z of) the focus point
+const CAM_SMOOTH: f32 = 4.0     -- exponential follow rate
+const CAM_CLAMP_X: f32 = 5.0
+const CAM_CLAMP_Z: f32 = 3.5
+
+-- Units are drawn oversized relative to a 1-unit tile so they stay readable
+-- at 320x240 -- the usual trick in grid tactics games.
+const UNIT_SCALE: f32 = 1.5
+const BOSS_SCALE: f32 = 1.8
+
 -- ============================================================
 -- Types
 -- ============================================================
@@ -98,6 +124,7 @@ struct Hero {
     alive:       bool
     ability_cd:  i32
     taunt_turns: i32
+    facing:      f32   -- Y rotation of the model, radians
 }
 
 struct Enemy {
@@ -107,6 +134,7 @@ struct Enemy {
     hp_max: i32
     kind:  EnemyKind
     alive: bool
+    facing: f32
 }
 
 -- ============================================================
@@ -253,6 +281,7 @@ fn init_hero(h: *Hero, gx: i32, gy: i32, role: Role, hp: i32) {
     h.alive = true
     h.ability_cd = 0
     h.taunt_turns = 0
+    h.facing = FACE_SOUTH
 }
 
 fn init_enemy(e: *Enemy, gx: i32, gy: i32, kind: EnemyKind, hp: i32) {
@@ -262,6 +291,7 @@ fn init_enemy(e: *Enemy, gx: i32, gy: i32, kind: EnemyKind, hp: i32) {
     e.hp_max = hp
     e.kind = kind
     e.alive = true
+    e.facing = FACE_NORTH
 }
 
 fn spawn_enemies() {
@@ -363,8 +393,25 @@ fn check_outcomes() {
 -- ============================================================
 -- Hero actions
 -- ============================================================
+-- Y rotation that makes a model authored facing -Z look along (dx, dy).
+fn facing_from_delta(dx: i32, dy: i32) -> f32 {
+    if dx > 0 { return FACE_EAST }
+    if dx < 0 { return FACE_WEST }
+    if dy > 0 { return FACE_SOUTH }
+    return FACE_NORTH
+}
+
+fn face_toward(from_x: i32, from_y: i32, to_x: i32, to_y: i32) -> f32 {
+    let dx: i32 = to_x - from_x
+    let dy: i32 = to_y - from_y
+    if math.abs_i32(dx) >= math.abs_i32(dy) { return facing_from_delta(dx, 0) }
+    return facing_from_delta(0, dy)
+}
+
 fn try_move_hero(h: *Hero, dx: i32, dy: i32) {
     if h.move_left <= 0 { return }
+    -- turning to look where you are headed is free, even into a wall
+    h.facing = facing_from_delta(dx, dy)
     let nx: i32 = h.gx + dx
     let ny: i32 = h.gy + dy
     if not tile_walkable(nx, ny) { return }
@@ -442,24 +489,28 @@ fn hero_primary_action(h_idx: i32) -> bool {
         .tank => {
             let e: i32 = adjacent_enemy(h.gx, h.gy)
             if e < 0 { return false }
+            h.facing = face_toward(h.gx, h.gy, enemies[e].gx, enemies[e].gy)
             damage_enemy(e, TANK_ATK)
             return true
         }
         .melee => {
             let e: i32 = adjacent_enemy(h.gx, h.gy)
             if e < 0 { return false }
+            h.facing = face_toward(h.gx, h.gy, enemies[e].gx, enemies[e].gy)
             damage_enemy(e, MELEE_ATK)
             return true
         }
         .ranged => {
             let e: i32 = nearest_enemy_in_line(h.gx, h.gy, RANGED_RANGE)
             if e < 0 { return false }
+            h.facing = face_toward(h.gx, h.gy, enemies[e].gx, enemies[e].gy)
             damage_enemy(e, RANGED_ATK)
             return true
         }
         .healer => {
             let a: i32 = lowest_hp_ally(h.gx, h.gy, HEAL_RADIUS)
             if a < 0 { return false }
+            h.facing = face_toward(h.gx, h.gy, heroes[a].gx, heroes[a].gy)
             heal_hero(a, HEAL_AMT)
             return true
         }
@@ -560,6 +611,9 @@ fn enemy_step(e: *Enemy) {
 
     let tx: i32 = heroes[target].gx
     let ty: i32 = heroes[target].gy
+
+    -- always turn to face whoever this enemy is hunting
+    e.facing = face_toward(e.gx, e.gy, tx, ty)
 
     if manhattan(e.gx, e.gy, tx, ty) == 1 {
         damage_hero(target, enemy_atk_for(e.kind))
@@ -770,27 +824,8 @@ fn number_width(n: i32, scale: i32) -> i32 {
 }
 
 -- ============================================================
--- Isometric projection + primitive drawing
+-- 2D primitive shared by the HUD overlay
 -- ============================================================
-fn iso_x(gx: i32, gy: i32) -> i32 {
-    return ORIGIN_X + (gx - gy) * ISO_HW
-}
-
-fn iso_y(gx: i32, gy: i32) -> i32 {
-    return ORIGIN_Y + (gx + gy) * ISO_HH
-}
-
--- Filled diamond centered at (cx, cy): widest at the middle row,
--- tapering to a point at the top and bottom tips.
-fn draw_diamond(cx: i32, cy: i32, hw: i32, hh: i32, color: u32) {
-    rdpq.set_mode_fill(color)
-    for row in 0..hh {
-        let w: i32 = (hw * (hh - row)) / hh
-        rdpq.fill_rectangle(cx - w, cy - row - 1, cx + w, cy - row)
-        rdpq.fill_rectangle(cx - w, cy + row, cx + w, cy + row + 1)
-    }
-}
-
 fn draw_bar(x: i32, y: i32, w: i32, h: i32, pct: f32, fg: u32, bg: u32) {
     rdpq.set_mode_fill(bg)
     rdpq.fill_rectangle(x, y, x + w, y + h)
@@ -802,65 +837,7 @@ fn draw_bar(x: i32, y: i32, w: i32, h: i32, pct: f32, fg: u32, bg: u32) {
 }
 
 -- ============================================================
--- Terrain
--- ============================================================
-fn is_boss_room(gx: i32, gy: i32) -> bool {
-    return gx >= 10 and gx <= 14 and gy >= 9 and gy <= 11
-}
-
--- Only walls that sit BEHIND a floor tile (up-screen of it) are drawn, so
--- rooms stay open to the camera instead of being boxed in by a solid lattice.
-fn wall_visible(gx: i32, gy: i32) -> bool {
-    if tile_at(gx + 1, gy) == TILE_FLOOR { return true }
-    if tile_at(gx, gy + 1) == TILE_FLOOR { return true }
-    return false
-}
-
-fn draw_floor_tile(gx: i32, gy: i32) {
-    let col: u32 = 0x504734FF
-    if (gx + gy) % 2 == 0 { col = 0x60563FFF }
-    if is_boss_room(gx, gy) {
-        col = 0x4A3550FF
-        if (gx + gy) % 2 == 0 { col = 0x5A4260FF }
-    }
-    draw_diamond(iso_x(gx, gy), iso_y(gx, gy), TILE_HW, TILE_HH, col)
-}
-
-fn draw_wall_tile(gx: i32, gy: i32) {
-    let cx: i32 = iso_x(gx, gy)
-    let cy: i32 = iso_y(gx, gy)
-    let wall_h: i32 = 10
-    rdpq.set_mode_fill(0x2A2833FF)
-    rdpq.fill_rectangle(cx - TILE_HW, cy - wall_h, cx + TILE_HW, cy)
-    draw_diamond(cx, cy - wall_h, TILE_HW, TILE_HH, 0x46424FFF)
-}
-
--- Painter's order: iterate depth bands (gx + gy ascending) so back walls
--- are laid down before the floors and units that stand in front of them.
-fn draw_dungeon() {
-    let max_d: i32 = GRID_W + GRID_H - 2
-    let d: i32 = 0
-    loop {
-        if d > max_d { break }
-        let gx: i32 = 0
-        loop {
-            if gx >= GRID_W { break }
-            let gy: i32 = d - gx
-            if gy >= 0 and gy < GRID_H {
-                if level[gy * GRID_W + gx] == TILE_FLOOR {
-                    draw_floor_tile(gx, gy)
-                } elif wall_visible(gx, gy) {
-                    draw_wall_tile(gx, gy)
-                }
-            }
-            gx += 1
-        }
-        d += 1
-    }
-}
-
--- ============================================================
--- Unit tokens -- drawn as standing figures, not flat markers
+-- Role palette (shared by the HUD and the title screen)
 -- ============================================================
 fn role_color(r: Role) -> u32 {
     match r {
@@ -882,152 +859,192 @@ fn role_light(r: Role) -> u32 {
     return 0xFFFFFFFF
 }
 
-fn enemy_color(k: EnemyKind) -> u32 {
+-- ============================================================
+-- 3D state
+--
+-- The level is one baked mesh; units are separate models drawn with a
+-- per-instance matrix. All models are generated by tools/gen_dungeon_models.py
+-- and converted .glb -> .t3dm by the build.
+-- ============================================================
+static vp: T3DViewport = undefined
+
+static mdl_dungeon: *T3DModel = none
+static mdl_hero:  [*T3DModel; 4] = undefined   -- indexed by role_index()
+static mdl_enemy: [*T3DModel; 3] = undefined   -- indexed by enemy_index()
+
+-- One matrix per potentially-visible unit (4 heroes + 12 enemies).
+static unit_fp: [*T3DMat4FP; 16] = undefined
+
+-- Smoothed camera focus point, in world space.
+static cam_tx: f32 = 0.0
+static cam_tz: f32 = 0.0
+
+fn role_index(r: Role) -> i32 {
+    match r {
+        .tank   => { return 0 }
+        .healer => { return 1 }
+        .melee  => { return 2 }
+        .ranged => { return 3 }
+    }
+    return 0
+}
+
+fn enemy_index(k: EnemyKind) -> i32 {
     match k {
-        .skeleton => { return 0xD8D8CCFF }
-        .slime    => { return 0x54B268FF }
-        .boss     => { return 0x8A3AA0FF }
+        .skeleton => { return 0 }
+        .slime    => { return 1 }
+        .boss     => { return 2 }
     }
-    return 0xFF00FFFF
+    return 0
 }
 
-fn draw_shadow(cx: i32, cy: i32, hw: i32) {
-    draw_diamond(cx, cy + 1, hw, 3, 0x0A0812FF)
+-- ============================================================
+-- Grid <-> world
+-- ============================================================
+fn world_x(gx: i32) -> f32 {
+    return gx as f32 - WORLD_OX
 }
 
--- Small floating HP pip bar, only shown when the unit is hurt.
-fn draw_unit_hp(cx: i32, top_y: i32, hp: i32, hp_max: i32, fg: u32) {
-    if hp >= hp_max { return }
-    let pct: f32 = hp as f32 / hp_max as f32
-    draw_bar(cx - 7, top_y, 14, 2, pct, fg, 0x1A1218FF)
+fn world_z(gy: i32) -> f32 {
+    return gy as f32 - WORLD_OZ
 }
 
-fn draw_hero_token(h: *Hero, is_active: bool) {
-    if not h.alive { return }
-    let cx: i32 = iso_x(h.gx, h.gy)
-    let cy: i32 = iso_y(h.gx, h.gy)
-    let body: u32 = role_color(h.role)
-    let light: u32 = role_light(h.role)
-    let trim: u32 = 0xF2ECDCFF
-
-    draw_shadow(cx, cy, 7)
-
-    -- torso: tank is broader, ranged is slimmer
-    let bw: i32 = 4
-    if h.role == Role.tank { bw = 5 }
-    if h.role == Role.ranged { bw = 3 }
-
-    rdpq.set_mode_fill(body)
-    rdpq.fill_rectangle(cx - bw, cy - 13, cx + bw, cy - 3)
-    -- lit top edge of the torso
-    rdpq.set_mode_fill(light)
-    rdpq.fill_rectangle(cx - bw, cy - 13, cx + bw, cy - 11)
-    -- head
-    rdpq.set_mode_fill(light)
-    rdpq.fill_rectangle(cx - 3, cy - 18, cx + 3, cy - 13)
-
-    -- per-role silhouette detail
-    match h.role {
-        .tank => {
-            -- shield slab on the near side
-            rdpq.set_mode_fill(trim)
-            rdpq.fill_rectangle(cx + bw, cy - 12, cx + bw + 3, cy - 4)
-        }
-        .melee => {
-            -- raised blade
-            rdpq.set_mode_fill(trim)
-            rdpq.fill_rectangle(cx + bw + 1, cy - 21, cx + bw + 3, cy - 8)
-        }
-        .healer => {
-            -- chest cross
-            rdpq.set_mode_fill(trim)
-            rdpq.fill_rectangle(cx - 1, cy - 11, cx + 1, cy - 5)
-            rdpq.fill_rectangle(cx - 3, cy - 9, cx + 3, cy - 7)
-        }
-        .ranged => {
-            -- bow stave
-            rdpq.set_mode_fill(trim)
-            rdpq.fill_rectangle(cx - bw - 3, cy - 19, cx - bw - 1, cy - 5)
+-- ============================================================
+-- Camera: frames the living party, eased so it glides between turns
+-- ============================================================
+fn update_camera(dt: f32) {
+    let sx: f32 = 0.0
+    let sz: f32 = 0.0
+    let n: i32 = 0
+    for i in 0..MAX_HEROES {
+        if heroes[i].alive {
+            sx = sx + world_x(heroes[i].gx)
+            sz = sz + world_z(heroes[i].gy)
+            n += 1
         }
     }
-
-    draw_unit_hp(cx, cy - 23, h.hp, h.hp_max, 0x50E060FF)
-
-    if is_active {
-        let bob: i32 = 0
-        if (frame_counter / 8) % 2 == 0 { bob = 1 }
-        -- downward-pointing turn caret above the active hero
-        rdpq.set_mode_fill(0xFFF0A0FF)
-        rdpq.fill_rectangle(cx - 4, cy - 31 - bob, cx + 4, cy - 29 - bob)
-        rdpq.fill_rectangle(cx - 2, cy - 29 - bob, cx + 2, cy - 27 - bob)
+    if n > 0 {
+        sx = sx / n as f32
+        sz = sz / n as f32
     }
+
+    -- keep the focus inside the map so the view never drifts off the level
+    sx = math.clamp_f(sx, -CAM_CLAMP_X, CAM_CLAMP_X)
+    sz = math.clamp_f(sz, -CAM_CLAMP_Z, CAM_CLAMP_Z)
+
+    let t: f32 = math.clamp_f(CAM_SMOOTH * dt, 0.0, 1.0)
+    cam_tx = math.lerp_f(cam_tx, sx, t)
+    cam_tz = math.lerp_f(cam_tz, sz, t)
+
+    let eye: T3DVec3 = undefined
+    eye.x = cam_tx
+    eye.y = CAM_H
+    eye.z = cam_tz + CAM_BACK
+
+    let tgt: T3DVec3 = undefined
+    tgt.x = cam_tx
+    tgt.y = 0.0
+    tgt.z = cam_tz
+
+    let up: T3DVec3 = undefined
+    up.x = 0.0
+    up.y = 1.0
+    up.z = 0.0
+
+    t3d.look_at(&vp, &eye, &tgt, &up)
 }
 
-fn draw_enemy_token(e: *Enemy) {
-    if not e.alive { return }
-    let cx: i32 = iso_x(e.gx, e.gy)
-    let cy: i32 = iso_y(e.gx, e.gy)
-    let col: u32 = enemy_color(e.kind)
-
-    match e.kind {
-        .skeleton => {
-            draw_shadow(cx, cy, 6)
-            rdpq.set_mode_fill(col)
-            rdpq.fill_rectangle(cx - 3, cy - 12, cx + 3, cy - 3)
-            rdpq.fill_rectangle(cx - 4, cy - 17, cx + 4, cy - 12)
-            -- eye sockets
-            rdpq.set_mode_fill(0x241E24FF)
-            rdpq.fill_rectangle(cx - 3, cy - 16, cx - 1, cy - 14)
-            rdpq.fill_rectangle(cx + 1, cy - 16, cx + 3, cy - 14)
-            draw_unit_hp(cx, cy - 22, e.hp, e.hp_max, 0xE05038FF)
+fn snap_camera() {
+    let sx: f32 = 0.0
+    let sz: f32 = 0.0
+    let n: i32 = 0
+    for i in 0..MAX_HEROES {
+        if heroes[i].alive {
+            sx = sx + world_x(heroes[i].gx)
+            sz = sz + world_z(heroes[i].gy)
+            n += 1
         }
-        .slime => {
-            draw_shadow(cx, cy, 7)
-            -- squat dome, no head
-            rdpq.set_mode_fill(col)
-            rdpq.fill_rectangle(cx - 6, cy - 7, cx + 6, cy - 2)
-            draw_diamond(cx, cy - 8, 6, 3, col)
-            rdpq.set_mode_fill(0x9AE8A8FF)
-            rdpq.fill_rectangle(cx - 4, cy - 8, cx - 2, cy - 6)
-            draw_unit_hp(cx, cy - 14, e.hp, e.hp_max, 0xE05038FF)
-        }
-        .boss => {
-            draw_shadow(cx, cy, 10)
-            rdpq.set_mode_fill(col)
-            rdpq.fill_rectangle(cx - 8, cy - 20, cx + 8, cy - 3)
-            rdpq.set_mode_fill(0xB864CCFF)
-            rdpq.fill_rectangle(cx - 8, cy - 20, cx + 8, cy - 17)
-            rdpq.fill_rectangle(cx - 5, cy - 27, cx + 5, cy - 20)
-            -- horns
-            rdpq.set_mode_fill(0xE8D8F0FF)
-            rdpq.fill_rectangle(cx - 8, cy - 32, cx - 5, cy - 25)
-            rdpq.fill_rectangle(cx + 5, cy - 32, cx + 8, cy - 25)
-            -- glowing eyes
-            rdpq.set_mode_fill(0xFF4030FF)
-            rdpq.fill_rectangle(cx - 4, cy - 25, cx - 1, cy - 23)
-            rdpq.fill_rectangle(cx + 1, cy - 25, cx + 4, cy - 23)
-            draw_unit_hp(cx, cy - 37, e.hp, e.hp_max, 0xE05038FF)
-        }
+    }
+    if n > 0 {
+        cam_tx = math.clamp_f(sx / n as f32, -CAM_CLAMP_X, CAM_CLAMP_X)
+        cam_tz = math.clamp_f(sz / n as f32, -CAM_CLAMP_Z, CAM_CLAMP_Z)
     }
 }
 
--- Units also draw front-to-back so nearer figures overlap farther ones.
-fn draw_units() {
-    let max_d: i32 = GRID_W + GRID_H - 2
-    let d: i32 = 0
-    loop {
-        if d > max_d { break }
-        for i in 0..MAX_ENEMIES {
-            if enemies[i].alive and enemies[i].gx + enemies[i].gy == d {
-                draw_enemy_token(&enemies[i])
+-- ============================================================
+-- 3D draw
+-- ============================================================
+fn draw_model_at(model: *T3DModel, fp: *T3DMat4FP, wx: f32, wz: f32,
+                 rot: f32, scale: f32) {
+    let sc: [3]f32 = undefined
+    sc[0] = scale
+    sc[1] = scale
+    sc[2] = scale
+
+    let eu: [3]f32 = undefined
+    eu[0] = 0.0
+    eu[1] = rot
+    eu[2] = 0.0
+
+    let tr: [3]f32 = undefined
+    tr[0] = wx
+    tr[1] = 0.0
+    tr[2] = wz
+
+    t3d_mat4fp_from_srt_euler(fp, &sc[0], &eu[0], &tr[0])
+    t3d_matrix_push(fp)
+    t3d.model_draw(model)
+    t3d_matrix_pop(1)
+}
+
+fn render_world(dt: f32) {
+    update_camera(dt)
+
+    t3d.frame_start()
+    t3d.viewport_attach(&vp)
+
+    -- torchlit gloom: everything past the next room fades to the void color
+    t3d.fog_set_enabled(true)
+    t3d.fog_set_range(17.0, 46.0)
+    t3d.fog_set_color(0x0C0A10FF)
+
+    -- key light warm from above-left, cool bounce from the opposite side
+    t3d.light_set_ambient(90, 86, 108)
+    t3d.light_set_directional(0, 255, 236, 200, -0.45, -0.78, -0.44)
+    t3d.light_set_directional(1, 110, 120, 165, 0.50, 0.25, -0.75)
+    t3d.light_set_count(2)
+
+    if mdl_dungeon != none {
+        t3d.model_draw(mdl_dungeon)
+    }
+
+    -- Units share one matrix pool, handed out in draw order each frame.
+    let slot: i32 = 0
+
+    for i in 0..MAX_ENEMIES {
+        if enemies[i].alive and slot < 16 {
+            let mi: i32 = enemy_index(enemies[i].kind)
+            if mdl_enemy[mi] != none and unit_fp[slot] != none {
+                let esc: f32 = UNIT_SCALE
+                if enemies[i].kind == EnemyKind.boss { esc = BOSS_SCALE }
+                draw_model_at(mdl_enemy[mi], unit_fp[slot],
+                              world_x(enemies[i].gx), world_z(enemies[i].gy),
+                              enemies[i].facing, esc)
+                slot += 1
             }
         }
-        for i in 0..MAX_HEROES {
-            if heroes[i].alive and heroes[i].gx + heroes[i].gy == d {
-                draw_hero_token(&heroes[i], phase == Phase.hero_turn and active_hero == i)
+    }
+
+    for i in 0..MAX_HEROES {
+        if heroes[i].alive and slot < 16 {
+            let mi: i32 = role_index(heroes[i].role)
+            if mdl_hero[mi] != none and unit_fp[slot] != none {
+                draw_model_at(mdl_hero[mi], unit_fp[slot],
+                              world_x(heroes[i].gx), world_z(heroes[i].gy),
+                              heroes[i].facing, UNIT_SCALE)
+                slot += 1
             }
         }
-        d += 1
     }
 }
 
@@ -1132,15 +1149,15 @@ fn draw_hud() {
     }
 }
 
-fn draw_scene() {
+fn draw_scene(dt: f32) {
     let fb = display.get()
     rdpq.attach_clear(fb)
 
-    rdpq.set_mode_fill(0x0C0A10FF)
-    rdpq.fill_rectangle(0, 0, 320, 240)
+    -- 3D pass
+    render_world(dt)
 
-    draw_dungeon()
-    draw_units()
+    -- 2D HUD overlay on top of the rendered scene
+    rdpq.sync_pipe()
     draw_hud()
 
     rdpq.detach_show()
@@ -1277,6 +1294,28 @@ entry {
     rdpq.init()
     controller.init()
     timer.init()
+    t3d.init()
+
+    -- 60-degree vertical FOV; far plane past the longest sightline in the map
+    vp = t3d.viewport_create()
+    t3d.viewport_set_projection(&vp, 60.0, 1.0, 60.0)
+
+    mdl_dungeon   = t3d.model_load("rom:/models/dungeon.t3dm")
+    mdl_hero[0]   = t3d.model_load("rom:/models/hero_tank.t3dm")
+    mdl_hero[1]   = t3d.model_load("rom:/models/hero_healer.t3dm")
+    mdl_hero[2]   = t3d.model_load("rom:/models/hero_melee.t3dm")
+    mdl_hero[3]   = t3d.model_load("rom:/models/hero_ranged.t3dm")
+    mdl_enemy[0]  = t3d.model_load("rom:/models/enemy_skeleton.t3dm")
+    mdl_enemy[1]  = t3d.model_load("rom:/models/enemy_slime.t3dm")
+    mdl_enemy[2]  = t3d.model_load("rom:/models/enemy_boss.t3dm")
+
+    -- per-instance matrices (16-byte aligned, uncached for RSP DMA)
+    let mi: i32 = 0
+    loop {
+        if mi >= 16 { break }
+        unit_fp[mi] = Mat4Fp.create()
+        mi += 1
+    }
 
     init_font()
     phase = Phase.title
@@ -1290,12 +1329,13 @@ entry {
             .title => {
                 if any_start_pressed() {
                     start_level()
+                    snap_camera()
                 }
                 draw_title()
             }
             .hero_turn => {
                 handle_hero_input(dt)
-                draw_scene()
+                draw_scene(dt)
             }
             .enemy_turn => {
                 enemy_phase_timer -= dt
@@ -1303,7 +1343,7 @@ entry {
                     check_outcomes()
                     if phase == Phase.enemy_turn { begin_hero_phase() }
                 }
-                draw_scene()
+                draw_scene(dt)
             }
             .victory => {
                 if any_start_pressed() { phase = Phase.title }

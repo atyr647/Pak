@@ -79,6 +79,10 @@ proc pak::_mf_asset_rules {use_tiny3d} {
     if {$use_tiny3d} {
         lappend rules "\$(BUILD_DIR)/%.t3dm: %.gltf
 \t@mkdir -p \$(dir \$@)
+\t\$(T3D_GLTF) \$< \$@
+
+\$(BUILD_DIR)/%.t3dm: %.glb
+\t@mkdir -p \$(dir \$@)
 \t\$(T3D_GLTF) \$< \$@"
     }
     return [join $rules "\n\n"]
