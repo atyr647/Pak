@@ -51,53 +51,250 @@ OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                        "..", "demos", "dungeon_quartet", "assets", "models")
 
 
-# 3x3 grid of rooms, every neighbour joined by a 2-tile-wide corridor so two
-# units can pass each other anywhere in the dungeon.
-ROOMS = [
-    (2, 2, 8, 6),    (12, 2, 19, 6),    (23, 2, 29, 6),
-    (2, 10, 8, 15),  (12, 10, 19, 15),  (23, 10, 29, 15),
-    (2, 18, 8, 22),  (12, 18, 19, 22),  (23, 18, 29, 22),
-]
-BOSS_ROOM = (23, 18, 29, 22)
+# ── Procedural level generation ─────────────────────────────────────────────
+# Levels are generated here, at build time, rather than in the game. Tiny3D
+# draws models, and Pak exposes no documented way to build a mesh at runtime,
+# so the geometry has to be baked. What ships is several independently
+# generated levels; the game picks one at random and loads its chunks, and
+# places the party and enemies procedurally on top of that.
+#
+# The generator lays a room in each cell of a 3x3 grid, then connects the
+# cells with a random spanning tree (which guarantees the level is always
+# fully traversable) plus a few extra links so the map has loops rather than
+# being a pure tree.
 
-CORRIDORS = [
-    # horizontal links (x0, x1, y0, y1) -- 2 tiles tall
-    (8, 12, 3, 4),   (19, 23, 3, 4),
-    (8, 12, 12, 13), (19, 23, 12, 13),
-    (8, 12, 19, 20), (19, 23, 19, 20),
-    # vertical links -- 2 tiles wide
-    (4, 5, 6, 10),   (15, 16, 6, 10),   (26, 27, 6, 10),
-    (4, 5, 15, 18),  (15, 16, 15, 18),  (26, 27, 15, 18),
-]
+BIOME_DUNGEON = 0
+BIOME_FOREST = 1
+BIOME_NAMES = {BIOME_DUNGEON: "dungeon", BIOME_FOREST: "forest"}
+
+CELL_W, CELL_H = CHUNK_W, CHUNK_H          # one room cell per chunk
 
 
-def build_level():
-    lv = [TILE_WALL] * (GRID_W * GRID_H)
+class Level:
+    def __init__(self, index, biome, seed):
+        self.index = index
+        self.biome = biome
+        self.seed = seed
+        self.tiles = [TILE_WALL] * (GRID_W * GRID_H)
+        self.rooms = []            # (x0, y0, x1, y1) per cell, or None
+        self.boss_room = None
+        self.start_room = None
+        self.hero_start = []       # 4x (gx, gy)
+        self.enemy_spawns = []     # (gx, gy, kind_id)
 
-    def fill(x0, y0, x1, y1):
-        for gy in range(y0, y1 + 1):
-            for gx in range(x0, x1 + 1):
-                lv[gy * GRID_W + gx] = TILE_FLOOR
+    def at(self, gx, gy):
+        if gx < 0 or gx >= GRID_W or gy < 0 or gy >= GRID_H:
+            return TILE_WALL
+        return self.tiles[gy * GRID_W + gx]
 
-    for (x0, y0, x1, y1) in ROOMS:
-        fill(x0, y0, x1, y1)
-    for (x0, x1, y0, y1) in CORRIDORS:
-        fill(x0, y0, x1, y1)
+    def fill(self, x0, y0, x1, y1):
+        for gy in range(max(0, y0), min(GRID_H, y1 + 1)):
+            for gx in range(max(0, x0), min(GRID_W, x1 + 1)):
+                self.tiles[gy * GRID_W + gx] = TILE_FLOOR
+
+    def in_room(self, ri, gx, gy):
+        r = self.rooms[ri]
+        return r is not None and r[0] <= gx <= r[2] and r[1] <= gy <= r[3]
+
+
+def _cell_bounds(cx, cy):
+    """Usable tile range inside a cell, leaving a 1-tile wall margin."""
+    x0 = cx * CELL_W + 1
+    y0 = cy * CELL_H + 1
+    x1 = min(GRID_W - 2, (cx + 1) * CELL_W - 2)
+    y1 = min(GRID_H - 2, (cy + 1) * CELL_H - 2)
+    return x0, y0, x1, y1
+
+
+def generate_level(index, biome, seed):
+    import random as _r
+    rng = _r.Random(seed)
+    lv = Level(index, biome, seed)
+
+    # --- carve one room per cell, with varied size and shape -----------------
+    for cy in range(CHUNK_ROWS):
+        for cx in range(CHUNK_COLS):
+            bx0, by0, bx1, by1 = _cell_bounds(cx, cy)
+            maxw, maxh = bx1 - bx0 + 1, by1 - by0 + 1
+            w = rng.randint(max(4, maxw - 3), maxw)
+            h = rng.randint(max(4, maxh - 2), maxh)
+            x0 = bx0 + rng.randint(0, maxw - w)
+            y0 = by0 + rng.randint(0, maxh - h)
+            x1, y1 = x0 + w - 1, y0 + h - 1
+            lv.fill(x0, y0, x1, y1)
+            lv.rooms.append((x0, y0, x1, y1))
+
+            shape = rng.random()
+            if shape < 0.22 and w >= 6 and h >= 5:
+                # bite a corner out, so the room is not a plain rectangle
+                cwid, chgt = rng.randint(2, 3), rng.randint(2, 2)
+                corner = rng.randint(0, 3)
+                for dy in range(chgt):
+                    for dx in range(cwid):
+                        gx = x0 + dx if corner in (0, 2) else x1 - dx
+                        gy = y0 + dy if corner in (0, 1) else y1 - dy
+                        lv.tiles[gy * GRID_W + gx] = TILE_WALL
+            elif shape < 0.42 and w >= 7 and h >= 5:
+                # interior pillars
+                for py in range(y0 + 1, y1, 2):
+                    for px in range(x0 + 2, x1 - 1, 3):
+                        lv.tiles[py * GRID_W + px] = TILE_WALL
+
+    # --- connect the cells: spanning tree first, then a few extra loops ------
+    cells = [(cx, cy) for cy in range(CHUNK_ROWS) for cx in range(CHUNK_COLS)]
+    reached = {cells[rng.randrange(len(cells))]}
+    edges = []
+    while len(reached) < len(cells):
+        frontier = []
+        for (cx, cy) in reached:
+            for (dx, dy) in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nb = (cx + dx, cy + dy)
+                if nb in cells and nb not in reached:
+                    frontier.append(((cx, cy), nb))
+        a_, b_ = frontier[rng.randrange(len(frontier))]
+        edges.append((a_, b_))
+        reached.add(b_)
+
+    extra = [((cx, cy), (cx + dx, cy + dy))
+             for (cx, cy) in cells for (dx, dy) in ((1, 0), (0, 1))
+             if (cx + dx, cy + dy) in cells]
+    rng.shuffle(extra)
+    for e in extra[:rng.randint(2, 4)]:
+        if e not in edges and (e[1], e[0]) not in edges:
+            edges.append(e)
+
+    # --- carve 2-wide corridors along each edge -----------------------------
+    for (ca, cb) in edges:
+        ra = lv.rooms[ca[1] * CHUNK_COLS + ca[0]]
+        rb = lv.rooms[cb[1] * CHUNK_COLS + cb[0]]
+        if ca[1] == cb[1]:                       # horizontal neighbours
+            lo, hi = (ra, rb) if ra[0] < rb[0] else (rb, ra)
+            ylo = max(lo[1], hi[1])
+            yhi = min(lo[3], hi[3])
+            if yhi - ylo < 1:
+                y = max(0, min(GRID_H - 2, (ylo + yhi) // 2))
+            else:
+                y = rng.randint(ylo, yhi - 1)
+            lv.fill(lo[2], y, hi[0], y + 1)
+        else:                                    # vertical neighbours
+            lo, hi = (ra, rb) if ra[1] < rb[1] else (rb, ra)
+            xlo = max(lo[0], hi[0])
+            xhi = min(lo[2], hi[2])
+            if xhi - xlo < 1:
+                x = max(0, min(GRID_W - 2, (xlo + xhi) // 2))
+            else:
+                x = rng.randint(xlo, xhi - 1)
+            lv.fill(x, lo[3], x + 1, hi[1])
+
+    # Start and boss go in diagonally opposite corners of the cell grid.
+    # (Comparing *linear* cell indices here picks an adjacent corner in some
+    # cases, not the true diagonal opposite -- e.g. from top-right (index 2
+    # in a 3x3 grid) the largest |index difference| is bottom-right (8), not
+    # the actually-opposite bottom-left (6). Compare 2D coordinates instead.)
+    corner_xy = [(0, 0), (CHUNK_COLS - 1, 0),
+                 (0, CHUNK_ROWS - 1), (CHUNK_COLS - 1, CHUNK_ROWS - 1)]
+    start_xy = rng.choice(corner_xy)
+    boss_xy = max(corner_xy, key=lambda c: (c[0] - start_xy[0]) ** 2 +
+                                            (c[1] - start_xy[1]) ** 2)
+    lv.start_room = start_xy[1] * CHUNK_COLS + start_xy[0]
+    lv.boss_room = boss_xy[1] * CHUNK_COLS + boss_xy[0]
+
+    _place_spawns(lv, rng)
     return lv
 
 
-LEVEL = build_level()
+# Enemy kind ids, matching enemy_index() in src/main.pk64 exactly.
+KIND_ID = {"slime": 0, "goblin": 1, "skeleton": 2, "bat": 3, "spider": 4,
+           "zombie": 5, "orc": 6, "wraith": 7, "boss": 8}
+
+TIER_WEAK = ["slime", "goblin", "bat"]
+TIER_MID = ["skeleton", "spider", "goblin"]
+TIER_STRONG = ["zombie", "orc", "wraith"]
+
+
+def _room_floor_tiles(lv, ri):
+    x0, y0, x1, y1 = lv.rooms[ri]
+    return [(gx, gy) for gy in range(y0, y1 + 1) for gx in range(x0, x1 + 1)
+            if lv.tiles[gy * GRID_W + gx] == TILE_FLOOR]
+
+
+def _cell_xy(ci):
+    return ci % CHUNK_COLS, ci // CHUNK_COLS
+
+
+def _cell_dist(a, b):
+    ax, ay = _cell_xy(a)
+    bx, by = _cell_xy(b)
+    return abs(ax - bx) + abs(ay - by)
+
+
+def _place_spawns(lv, rng):
+    """Bake hero start positions and enemy spawns for this level.
+
+    Doing this here, once, at generation time -- rather than searching for
+    valid floor tiles at runtime -- guarantees every spawn lands on a real
+    floor tile that matches the exact baked geometry. It also means the
+    encounter layout is reviewable the same way the geometry is: read the
+    generator, not the compiled ROM.
+
+    Encounters escalate with cell-grid distance from the start room: weak
+    vermin nearby, mid-tier deeper in, brutes and undead approaching the
+    boss wing, which itself gets the boss plus a small guard.
+    """
+    start_tiles = _room_floor_tiles(lv, lv.start_room)
+    scx = sum(t[0] for t in start_tiles) / len(start_tiles)
+    scy = sum(t[1] for t in start_tiles) / len(start_tiles)
+    start_tiles.sort(key=lambda t: (t[0] - scx) ** 2 + (t[1] - scy) ** 2)
+    lv.hero_start = start_tiles[:4]
+    while len(lv.hero_start) < 4:          # pathological tiny room fallback
+        lv.hero_start.append(lv.hero_start[-1])
+
+    max_d = max(1, _cell_dist(lv.start_room, lv.boss_room))
+    reserved = set(lv.hero_start)
+
+    for ci in range(CHUNK_COLS * CHUNK_ROWS):
+        if ci == lv.start_room:
+            continue
+        tiles = [t for t in _room_floor_tiles(lv, ci) if t not in reserved]
+        if not tiles:
+            continue
+        rng.shuffle(tiles)
+
+        if ci == lv.boss_room:
+            bx, by = tiles.pop(0)
+            lv.enemy_spawns.append((bx, by, KIND_ID["boss"]))
+            reserved.add((bx, by))
+            count = rng.randint(1, 2)
+            pool = TIER_STRONG
+        else:
+            d = _cell_dist(lv.start_room, ci)
+            frac = d / max_d
+            pool = TIER_WEAK if frac < 0.4 else (
+                TIER_MID if frac < 0.75 else TIER_STRONG)
+            count = rng.randint(2, 3)
+
+        placed = 0
+        for t in tiles:
+            if placed >= count or len(lv.enemy_spawns) >= 24:
+                break
+            if t in reserved:
+                continue
+            reserved.add(t)
+            kind = pool[rng.randrange(len(pool))]
+            lv.enemy_spawns.append((t[0], t[1], KIND_ID[kind]))
+            placed += 1
 
 
 def tile_at(gx, gy):
-    if gx < 0 or gx >= GRID_W or gy < 0 or gy >= GRID_H:
-        return TILE_WALL
-    return LEVEL[gy * GRID_W + gx]
+
+    return CURRENT.at(gx, gy)
 
 
 def is_boss_room(gx, gy):
-    x0, y0, x1, y1 = BOSS_ROOM
-    return x0 <= gx <= x1 and y0 <= gy <= y1
+    return CURRENT.in_room(CURRENT.boss_room, gx, gy)
+
+
+CURRENT = None
 
 
 # ── Mesh builder ────────────────────────────────────────────────────────────
@@ -182,6 +379,48 @@ class Mesh:
                 else:
                     self.quad(p00, p01, p11, p10, c1)
         return self
+
+    def revolve(self, cx, cy, cz, profile, col_lo, col_hi=None,
+                segs=10, squash_z=1.0):
+        """Surface of revolution from a bottom-to-top (radius, y) profile.
+
+        Boxes cannot make a curved silhouette; this is what lets blobs and
+        canopies read as round instead of as stacked slabs.
+        """
+        import math as _m
+        if col_hi is None:
+            col_hi = col_lo
+        n = len(profile)
+        for i in range(n - 1):
+            r0, y0 = profile[i]
+            r1, y1 = profile[i + 1]
+            f1 = (i + 1) / (n - 1)
+            c1 = tuple(col_lo[k] * (1 - f1) + col_hi[k] * f1 for k in range(4))
+            for sgi in range(segs):
+                a0 = 2 * _m.pi * sgi / segs
+                a1 = 2 * _m.pi * (sgi + 1) / segs
+                p00 = (cx + r0 * _m.cos(a0), cy + y0, cz + r0 * _m.sin(a0) * squash_z)
+                p01 = (cx + r0 * _m.cos(a1), cy + y0, cz + r0 * _m.sin(a1) * squash_z)
+                p10 = (cx + r1 * _m.cos(a0), cy + y1, cz + r1 * _m.sin(a0) * squash_z)
+                p11 = (cx + r1 * _m.cos(a1), cy + y1, cz + r1 * _m.sin(a1) * squash_z)
+                if r1 < 1e-6:
+                    self.tri(p00, p01, (cx, cy + y1, cz), c1)
+                elif r0 < 1e-6:
+                    self.tri((cx, cy + y0, cz), p11, p10, c1)
+                else:
+                    self.quad(p00, p01, p11, p10, c1)
+        return self
+
+    def ellipsoid(self, cx, cy, cz, rx, ry, rz, col_lo, col_hi=None,
+                  segs=10, rings=6):
+        """Full ellipsoid centred on (cx, cy, cz)."""
+        import math as _m
+        prof = []
+        for i in range(rings + 1):
+            a = -_m.pi * 0.5 + _m.pi * i / rings
+            prof.append((rx * _m.cos(a), ry * _m.sin(a)))
+        return self.revolve(cx, cy, cz, prof, col_lo, col_hi,
+                            segs=segs, squash_z=rz / rx if rx > 1e-9 else 1.0)
 
     def vert_count(self):
         return len(self.pos)
@@ -282,20 +521,93 @@ ROLE = {
 
 
 # ── Level mesh ──────────────────────────────────────────────────────────────
-def build_dungeon_mesh(cx=None, cy=None):
-    """Level geometry. With (cx, cy) given, emits only that chunk.
+# ── Biome palettes ──────────────────────────────────────────────────────────
+BIOME_PAL = {
+    BIOME_DUNGEON: dict(
+        floor_a=rgba(0x8A7A5CFF), floor_b=rgba(0x766A50FF),
+        boss_a=rgba(0x805F8AFF), boss_b=rgba(0x6E5176FF),
+        wall_top=rgba(0x6E6982FF), wall_side=rgba(0x54506AFF),
+        rock_top=rgba(0x413E52FF), wall_h=1.05,
+    ),
+    BIOME_FOREST: dict(
+        floor_a=rgba(0x4E7A3AFF), floor_b=rgba(0x446E33FF),
+        boss_a=rgba(0x6A5E3AFF), boss_b=rgba(0x5C5232FF),
+        wall_top=rgba(0x2E5C2AFF), wall_side=rgba(0x3E3020FF),
+        rock_top=rgba(0x27401FFF), wall_h=1.05,
+    ),
+}
 
-    Interior wall faces (those touching another wall) are dropped, and walls
-    with no floor neighbour at all are skipped outright -- that removes most
-    of the solid rock and keeps each chunk small.
+TRUNK      = rgba(0x4A3620FF)
+TRUNK_LT   = rgba(0x5E4529FF)
+LEAF_LO    = rgba(0x2C5E28FF)
+LEAF_HI    = rgba(0x63A84AFF)
+BUSH       = rgba(0x3C7A34FF)
+ROCK       = rgba(0x6E6A72FF)
+DIRT       = rgba(0x6E5A3EFF)
+
+
+def tile_hash(gx, gy, salt=0):
+    """Deterministic per-tile pseudo-random, so geometry and gameplay agree."""
+    h = (gx * 73856093) ^ (gy * 19349663) ^ (salt * 83492791)
+    h &= 0x7FFFFFFF
+    h = (h ^ (h >> 13)) * 1274126177
+    return (h ^ (h >> 16)) & 0x7FFFFFFF
+
+
+def _forest_tree(m, wx, wz, gx, gy):
+    """A tree standing in place of a wall block. Height and canopy vary so a
+    treeline never looks like a row of identical stamps.
+
+    Budget: trunk (8 tris, sides only) + one low-poly canopy (20 tris) =
+    28 tris/tree. Trees line every perimeter wall tile, so this has to stay
+    cheap -- a 7x4-segment canopy (56 tris) made forest chunks 10x the
+    triangle cost of dungeon ones.
     """
+    r = tile_hash(gx, gy, 1)
+    th = 0.52 + ((r >> 3) % 5) * 0.055          # trunk height
+    cr = 0.38 + ((r >> 7) % 4) * 0.030          # canopy radius
+    lean_x = (((r >> 11) % 5) - 2) * 0.012
+    lean_z = (((r >> 15) % 5) - 2) * 0.012
+    part(m, wx, 0.0, th, wz, 0.085, 0.085, TRUNK_LT, TRUNK, faces="s")
+    cy = th + cr * 0.55
+    m.ellipsoid(wx + lean_x, cy, wz + lean_z, cr, cr * 0.82, cr * 0.95,
+                LEAF_LO, LEAF_HI, segs=5, rings=2)
+
+
+def _floor_prop(m, wx, wz, gx, gy, biome):
+    """Scatter: rubble underground, bushes and rocks outdoors. Cheap boxes,
+    not ellipsoids -- these appear on a double-digit percentage of floor
+    tiles, so per-prop cost matters more than per-tree cost."""
+    r = tile_hash(gx, gy, 2)
+    roll = r % 100
+    if biome == BIOME_FOREST:
+        if roll < 5:
+            cr = 0.16 + ((r >> 5) % 3) * 0.03
+            part(m, wx, 0.0, cr * 1.1, wz, cr, cr * 0.9, BUSH, LEAF_LO)
+        elif roll < 8:
+            rr = 0.11 + ((r >> 5) % 3) * 0.025
+            part(m, wx, 0.0, rr * 0.9, wz, rr, rr * 0.85, ROCK, ROCK)
+        elif roll < 13:
+            part(m, wx, 0.0, 0.012, wz, 0.30, 0.30, DIRT, DIRT, faces="t")
+    else:
+        if roll < 4:
+            rr = 0.10 + ((r >> 5) % 3) * 0.022
+            part(m, wx, 0.0, rr * 0.9, wz, rr, rr * 0.8, ROCK, ROCK)
+        elif roll < 8:
+            part(m, wx + 0.12, 0.0, 0.05, wz - 0.1, 0.07, 0.07,
+                 ROCK, ROCK)
+        elif roll < 14:
+            part(m, wx, 0.0, 0.012, wz, 0.28, 0.28, DIRT, DIRT, faces="t")
+
+
+def build_level_mesh(lv, cx, cy):
+    """Geometry for one chunk of one level, in that level's biome."""
+    pal = BIOME_PAL[lv.biome]
+    wall_h = pal["wall_h"]
     m = Mesh()
 
-    if cx is None:
-        xr, yr = range(GRID_W), range(GRID_H)
-    else:
-        xr = range(cx * CHUNK_W, min(GRID_W, (cx + 1) * CHUNK_W))
-        yr = range(cy * CHUNK_H, min(GRID_H, (cy + 1) * CHUNK_H))
+    xr = range(cx * CHUNK_W, min(GRID_W, (cx + 1) * CHUNK_W))
+    yr = range(cy * CHUNK_H, min(GRID_H, (cy + 1) * CHUNK_H))
 
     for gy in yr:
         for gx in xr:
@@ -303,45 +615,78 @@ def build_dungeon_mesh(cx=None, cy=None):
             wz = (gy - (GRID_H - 1) / 2.0) * TILE
             h = TILE / 2.0
 
-            if tile_at(gx, gy) == TILE_FLOOR:
+            if lv.at(gx, gy) == TILE_FLOOR:
                 if is_boss_room(gx, gy):
-                    col = BOSS_A if (gx + gy) % 2 == 0 else BOSS_B
+                    col = pal["boss_a"] if (gx + gy) % 2 == 0 else pal["boss_b"]
                 else:
-                    col = FLOOR_A if (gx + gy) % 2 == 0 else FLOOR_B
+                    col = pal["floor_a"] if (gx + gy) % 2 == 0 else pal["floor_b"]
                 m.quad((wx - h, FLOOR_Y, wz + h), (wx + h, FLOOR_Y, wz + h),
                        (wx + h, FLOOR_Y, wz - h), (wx - h, FLOOR_Y, wz - h),
                        col, (0, 1, 0))
+                _floor_prop(m, wx, wz, gx, gy, lv.biome)
                 continue
 
             nb = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-            if not any(tile_at(gx + dx, gy + dy) == TILE_FLOOR for dx, dy in nb):
-                # Interior rock: no exposed side faces, but it still needs a cap
-                # or the camera sees straight through the level into the void.
-                m.quad((wx - h, WALL_H, wz + h), (wx + h, WALL_H, wz + h),
-                       (wx + h, WALL_H, wz - h), (wx - h, WALL_H, wz - h),
-                       ROCK_TOP, (0, 1, 0))
+            exposed = [d for d in nb if lv.at(gx + d[0], gy + d[1]) == TILE_FLOOR]
+            if not exposed:
+                # interior rock still needs a cap or the camera sees the void
+                m.quad((wx - h, wall_h, wz + h), (wx + h, wall_h, wz + h),
+                       (wx + h, wall_h, wz - h), (wx - h, wall_h, wz - h),
+                       pal["rock_top"], (0, 1, 0))
                 continue
 
-            m.quad((wx - h, WALL_H, wz + h), (wx + h, WALL_H, wz + h),
-                   (wx + h, WALL_H, wz - h), (wx - h, WALL_H, wz - h),
-                   WALL_TOP, (0, 1, 0))
+            if lv.biome == BIOME_FOREST:
+                # forest "walls" are trees over a low mound of undergrowth
+                m.quad((wx - h, 0.14, wz + h), (wx + h, 0.14, wz + h),
+                       (wx + h, 0.14, wz - h), (wx - h, 0.14, wz - h),
+                       pal["wall_top"], (0, 1, 0))
+                side = pal["wall_side"]
+                if lv.at(gx, gy + 1) == TILE_FLOOR:
+                    m.quad((wx - h, 0, wz + h), (wx + h, 0, wz + h),
+                           (wx + h, 0.14, wz + h), (wx - h, 0.14, wz + h),
+                           side, (0, 0, 1))
+                if lv.at(gx, gy - 1) == TILE_FLOOR:
+                    m.quad((wx + h, 0, wz - h), (wx - h, 0, wz - h),
+                           (wx - h, 0.14, wz - h), (wx + h, 0.14, wz - h),
+                           side, (0, 0, -1))
+                if lv.at(gx + 1, gy) == TILE_FLOOR:
+                    m.quad((wx + h, 0, wz + h), (wx + h, 0, wz - h),
+                           (wx + h, 0.14, wz - h), (wx + h, 0.14, wz + h),
+                           side, (1, 0, 0))
+                if lv.at(gx - 1, gy) == TILE_FLOOR:
+                    m.quad((wx - h, 0, wz - h), (wx - h, 0, wz + h),
+                           (wx - h, 0.14, wz + h), (wx - h, 0.14, wz - h),
+                           side, (-1, 0, 0))
+                # Skip the tree itself (not the undergrowth mound, which
+                # stays as the impassable barrier) on ~1 in 4 tiles. A solid
+                # tree on every perimeter tile is also the single biggest
+                # triangle cost in the level -- gaps are both cheaper and
+                # read as a more natural treeline than an unbroken wall.
+                if tile_hash(gx, gy, 3) % 4 != 0:
+                    _forest_tree(m, wx, wz, gx, gy)
+                continue
 
-            side_dark = tuple(c * 0.80 for c in WALL_SIDE[:3]) + (1.0,)
-            if tile_at(gx, gy + 1) == TILE_FLOOR:
+            # dungeon: stone block
+            m.quad((wx - h, wall_h, wz + h), (wx + h, wall_h, wz + h),
+                   (wx + h, wall_h, wz - h), (wx - h, wall_h, wz - h),
+                   pal["wall_top"], (0, 1, 0))
+            side = pal["wall_side"]
+            side_dark = tuple(c * 0.80 for c in side[:3]) + (1.0,)
+            if lv.at(gx, gy + 1) == TILE_FLOOR:
                 m.quad((wx - h, 0, wz + h), (wx + h, 0, wz + h),
-                       (wx + h, WALL_H, wz + h), (wx - h, WALL_H, wz + h),
-                       WALL_SIDE, (0, 0, 1))
-            if tile_at(gx, gy - 1) == TILE_FLOOR:
+                       (wx + h, wall_h, wz + h), (wx - h, wall_h, wz + h),
+                       side, (0, 0, 1))
+            if lv.at(gx, gy - 1) == TILE_FLOOR:
                 m.quad((wx + h, 0, wz - h), (wx - h, 0, wz - h),
-                       (wx - h, WALL_H, wz - h), (wx + h, WALL_H, wz - h),
-                       WALL_SIDE, (0, 0, -1))
-            if tile_at(gx + 1, gy) == TILE_FLOOR:
+                       (wx - h, wall_h, wz - h), (wx + h, wall_h, wz - h),
+                       side, (0, 0, -1))
+            if lv.at(gx + 1, gy) == TILE_FLOOR:
                 m.quad((wx + h, 0, wz + h), (wx + h, 0, wz - h),
-                       (wx + h, WALL_H, wz - h), (wx + h, WALL_H, wz + h),
+                       (wx + h, wall_h, wz - h), (wx + h, wall_h, wz + h),
                        side_dark, (1, 0, 0))
-            if tile_at(gx - 1, gy) == TILE_FLOOR:
+            if lv.at(gx - 1, gy) == TILE_FLOOR:
                 m.quad((wx - h, 0, wz - h), (wx - h, 0, wz + h),
-                       (wx - h, WALL_H, wz + h), (wx - h, WALL_H, wz - h),
+                       (wx - h, wall_h, wz + h), (wx - h, wall_h, wz - h),
                        side_dark, (-1, 0, 0))
     return m
 
@@ -513,24 +858,26 @@ def build_hero_mesh(role):
 
 # ── Enemies ─────────────────────────────────────────────────────────────────
 def build_slime_mesh():
-    """Gelatinous blob: a real curved dome, not a stack of boxes."""
+    """Classic slime: a single smooth onion dome, wide-bottomed and rounded."""
     body = rgba(0x46B45AFF)
-    lite = rgba(0x93EC9EFF)
+    lite = rgba(0x9FEFAAFF)
     dark = rgba(0x2E8442FF)
     m = Mesh()
-    # main body -- squashed dome, slightly deeper than wide
-    m.dome(0.0, 0.0, 0.0, 0.33, 0.50, body, lite, segs=10, rings=5,
-           squash_z=0.92)
-    # a smaller dome offset forward reads as the blob bulging as it moves
-    m.dome(0.0, 0.0, -0.10, 0.20, 0.30, body, lite, segs=8, rings=3,
-           squash_z=0.9)
-    # darker contact ring where it meets the floor
-    m.dome(0.0, 0.0, 0.0, 0.345, 0.055, dark, dark, segs=10, rings=1,
-           squash_z=0.92)
+    # bottom-to-top (radius, y): bulges just above the floor, rounds over
+    profile = [
+        (0.00, 0.000), (0.300, 0.030), (0.352, 0.100), (0.336, 0.215),
+        (0.268, 0.330), (0.170, 0.425), (0.062, 0.487), (0.000, 0.505),
+    ]
+    m.revolve(0.0, 0.0, 0.0, profile, body, lite, segs=8, squash_z=0.95)
+    # darker contact ring
+    m.revolve(0.0, 0.0, 0.0, [(0.00, 0.0), (0.305, 0.026)],
+              dark, dark, segs=8, squash_z=0.95)
     # highlight and a drip on the front
-    part(m, -0.12, 0.30, 0.40, -0.20, 0.05, 0.03, TRIM_W, TRIM_W)
-    part(m, 0.16, 0.04, 0.14, -0.24, 0.042, 0.032, lite, lite)
-    eyes(m, 0.27, -0.28, 0.10, BONE_DARK, w=0.05, h=0.042, d=0.02)
+    m.ellipsoid(-0.115, 0.315, -0.205, 0.055, 0.038, 0.030, TRIM_W, TRIM_W,
+                segs=5, rings=3)
+    m.ellipsoid(0.150, 0.075, -0.250, 0.048, 0.062, 0.038, lite, lite,
+                segs=5, rings=3)
+    eyes(m, 0.265, -0.290, 0.098, BONE_DARK, w=0.048, h=0.040, d=0.022)
     return m
 
 
@@ -605,28 +952,34 @@ def build_bat_mesh():
 
 
 def build_spider_mesh():
-    """Raised body carried on eight arched legs, with a cluster of eyes."""
+    """Rounded abdomen and head carried on eight arched legs."""
     body = rgba(0x3B3547FF)
     lite = rgba(0x5C5270FF)
     m = Mesh()
-    base = 0.20                      # body rides above the leg joints
-    part(m, 0.0, base, base + 0.20, 0.13, 0.19, 0.17, lite, body)   # abdomen
-    part(m, 0.0, base - 0.02, base + 0.14, -0.12, 0.135, 0.115, body, body)
-    part(m, 0.0, base + 0.02, base + 0.10, -0.25, 0.085, 0.055, body, body)
-    # 8 legs, each rising to a knee then dropping to the floor
+    base = 0.22
+    # abdomen: ellipsoid, longer in Z than it is wide
+    m.ellipsoid(0.0, base + 0.09, 0.15, 0.185, 0.135, 0.215, body, lite,
+                segs=8, rings=4)
+    # cephalothorax
+    m.ellipsoid(0.0, base + 0.05, -0.11, 0.135, 0.105, 0.135, body, lite,
+                segs=8, rings=4)
+    # head / mouthparts
+    m.ellipsoid(0.0, base + 0.02, -0.245, 0.085, 0.070, 0.075, body, body,
+                segs=6, rings=3)
+    # 8 legs: up to a knee, then down to the floor
     for sx in (-1, 1):
-        for lz in (-0.18, -0.05, 0.09, 0.22):
+        for lz in (-0.16, -0.03, 0.11, 0.24):
             part(m, sx * 0.17, base + 0.02, base + 0.16, lz,
-                 0.075, 0.026, lite, body)          # upper, angled up
-            part(m, sx * 0.28, base + 0.10, base + 0.20, lz,
-                 0.055, 0.024, lite, body)          # knee
-            part(m, sx * 0.34, 0.0, base + 0.14, lz,
-                 0.028, 0.022, body, body)          # lower, down to floor
-    eyes(m, base + 0.09, -0.31, 0.05, EYE_RED, w=0.026, h=0.020, d=0.014)
-    eyes(m, base + 0.045, -0.31, 0.088, EYE_RED, w=0.020, h=0.016, d=0.012)
+                 0.072, 0.024, lite, body)
+            part(m, sx * 0.28, base + 0.11, base + 0.21, lz,
+                 0.052, 0.022, lite, body)
+            part(m, sx * 0.335, 0.0, base + 0.15, lz,
+                 0.026, 0.020, body, body)
+    eyes(m, base + 0.075, -0.310, 0.048, EYE_RED, w=0.026, h=0.020, d=0.014)
+    eyes(m, base + 0.030, -0.305, 0.084, EYE_RED, w=0.020, h=0.016, d=0.012)
     for sx in (-1, 1):
-        part(m, sx * 0.045, base - 0.04, base + 0.02, -0.30, 0.020, 0.020,
-             BONE, BONE)                            # fangs
+        part(m, sx * 0.042, base - 0.055, base + 0.005, -0.290,
+             0.020, 0.020, BONE, BONE)
     return m
 
 
@@ -738,18 +1091,179 @@ def build_boss_mesh():
     return m
 
 
+# ── Level set ───────────────────────────────────────────────────────────────
+# Three levels per biome. The game picks one at random each run.
+LEVEL_SPECS = [
+    (BIOME_DUNGEON, 1101), (BIOME_DUNGEON, 2027), (BIOME_DUNGEON, 3313),
+    (BIOME_FOREST,  4409), (BIOME_FOREST,  5501), (BIOME_FOREST,  6607),
+]
+
+
+def emit_level_data(levels, path):
+    """Write the tile masks as a Pak module so gameplay matches the geometry.
+
+    Tiles are packed one bit each (set = floor), which keeps the whole level
+    set to well under a kilobyte of ROM.
+    """
+    per_level = (GRID_W * GRID_H + 7) // 8
+    words = []
+    for lv in levels:
+        for byte_i in range(per_level):
+            v = 0
+            for bit in range(8):
+                t = byte_i * 8 + bit
+                if t < GRID_W * GRID_H and lv.tiles[t] == TILE_FLOOR:
+                    v |= (1 << bit)
+            words.append(v)
+
+    def fmt(vals, per_row=16):
+        out = []
+        for i in range(0, len(vals), per_row):
+            out.append("    " + ", ".join(str(v) for v in vals[i:i + per_row]))
+        return ",\n".join(out)
+
+    biomes = [lv.biome for lv in levels]
+    starts = [lv.start_room for lv in levels]
+    bosses = [lv.boss_room for lv in levels]
+
+    # Hero start positions: 4x (gx, gy) per level, flattened.
+    hero_xy = []
+    for lv in levels:
+        for (gx, gy) in lv.hero_start:
+            hero_xy += [gx, gy]
+
+    # Enemy spawns: fixed-width MAX_ENEMIES_PER_LEVEL slots of (gx, gy, kind),
+    # padded with (0, 0, 255) so the game can tell a slot is unused by
+    # checking kind == 255 rather than needing a separate count table.
+    max_spawns = max((len(lv.enemy_spawns) for lv in levels), default=0)
+    enemy_xyz = []
+    for lv in levels:
+        for i in range(max_spawns):
+            if i < len(lv.enemy_spawns):
+                gx, gy, k = lv.enemy_spawns[i]
+            else:
+                gx, gy, k = 0, 0, 255
+            enemy_xyz += [gx, gy, k]
+
+    src = f"""-- src/levels.pk64 -- GENERATED by tools/gen_dungeon_models.py. DO NOT EDIT.
+--
+-- Tile masks, spawn tables and biome tags for every baked level. Regenerate
+-- with:  python3 tools/gen_dungeon_models.py
+--
+-- Every value is reached through an accessor function, not the bare consts
+-- and statics below. Pak's multi-file support is [PARTIAL] (see
+-- LANGUAGE.md / examples/canonical/20_multifile.pk64): functions cross a
+-- `use module.path` boundary, but top-level `const`/`static` do not --
+-- confirmed by hand with a 2-file repro before writing this generator to
+-- rely on it. Accessor functions are the working path.
+module dungeon.levels
+
+const LEVEL_COUNT:      i32 = {len(levels)}
+const LEVEL_TILE_BYTES: i32 = {per_level}
+const LEVEL_MAX_SPAWNS: i32 = {max_spawns}
+const SPAWN_EMPTY:      u8  = 255
+
+const BIOME_DUNGEON: u8 = 0
+const BIOME_FOREST:  u8 = 1
+
+-- packed floor bitmap, LEVEL_COUNT * LEVEL_TILE_BYTES bytes (1 = floor)
+static level_bits: [{len(words)}]u8 = [
+{fmt(words)}
+]
+
+static level_biome: [{len(biomes)}]u8 = [{", ".join(str(b) for b in biomes)}]
+
+-- cell index (0..8) of the room the party starts in / the boss occupies
+static level_start_cell: [{len(starts)}]u8 = [{", ".join(str(v) for v in starts)}]
+static level_boss_cell:  [{len(bosses)}]u8 = [{", ".join(str(v) for v in bosses)}]
+
+-- hero start tiles: LEVEL_COUNT * 4 * (gx, gy)
+static level_hero_xy: [{len(hero_xy)}]u8 = [
+{fmt(hero_xy)}
+]
+
+-- enemy spawns: LEVEL_COUNT * LEVEL_MAX_SPAWNS * (gx, gy, kind_id).
+-- kind_id == SPAWN_EMPTY marks an unused slot.
+static level_enemy_xyz: [{len(enemy_xyz)}]u8 = [
+{fmt(enemy_xyz)}
+]
+
+-- ── Accessors (the actual cross-module API) ─────────────────────────────────
+fn level_count() -> i32 {{ return LEVEL_COUNT }}
+fn level_tile_bytes() -> i32 {{ return LEVEL_TILE_BYTES }}
+fn level_max_spawns() -> i32 {{ return LEVEL_MAX_SPAWNS }}
+fn spawn_empty_id() -> u8 {{ return SPAWN_EMPTY }}
+fn biome_dungeon_id() -> u8 {{ return BIOME_DUNGEON }}
+fn biome_forest_id() -> u8 {{ return BIOME_FOREST }}
+
+fn level_floor_byte(lvl: i32, byte_i: i32) -> u8 {{
+    return level_bits[lvl * LEVEL_TILE_BYTES + byte_i]
+}}
+
+fn level_biome_of(lvl: i32) -> u8 {{
+    return level_biome[lvl]
+}}
+
+fn level_hero_x(lvl: i32, slot: i32) -> u8 {{
+    return level_hero_xy[lvl * 8 + slot * 2]
+}}
+
+fn level_hero_y(lvl: i32, slot: i32) -> u8 {{
+    return level_hero_xy[lvl * 8 + slot * 2 + 1]
+}}
+
+fn level_spawn_x(lvl: i32, slot: i32) -> u8 {{
+    return level_enemy_xyz[(lvl * LEVEL_MAX_SPAWNS + slot) * 3]
+}}
+
+fn level_spawn_y(lvl: i32, slot: i32) -> u8 {{
+    return level_enemy_xyz[(lvl * LEVEL_MAX_SPAWNS + slot) * 3 + 1]
+}}
+
+fn level_spawn_kind(lvl: i32, slot: i32) -> u8 {{
+    return level_enemy_xyz[(lvl * LEVEL_MAX_SPAWNS + slot) * 3 + 2]
+}}
+"""
+    with open(path, "w") as f:
+        f.write(src)
+    total_spawns = sum(len(lv.enemy_spawns) for lv in levels)
+    print(f"  {os.path.basename(path):22s} {len(words)}B tiles, "
+          f"{len(hero_xy)}B hero starts, {len(enemy_xyz)}B spawns "
+          f"({total_spawns} enemies across {len(levels)} levels)")
+
+
 def main():
+    global CURRENT
     out = os.path.normpath(OUT_DIR)
     os.makedirs(out, exist_ok=True)
     print(f"Writing dungeon models -> {out}")
     print(f"  level {GRID_W}x{GRID_H}, {CHUNK_COLS}x{CHUNK_ROWS} chunks "
           f"of {CHUNK_W}x{CHUNK_H} tiles")
 
+    # clear stale chunk models from previous runs
+    for old in os.listdir(out):
+        if old.startswith(("dungeon_c", "lv")) and old.endswith(".glb"):
+            os.remove(os.path.join(out, old))
+
+    levels = []
+    total_tris = 0
+    for idx, (biome, seed) in enumerate(LEVEL_SPECS):
+        lv = generate_level(idx, biome, seed)
+        CURRENT = lv
+        levels.append(lv)
+        lt = 0
+        for cy in range(CHUNK_ROWS):
+            for cx in range(CHUNK_COLS):
+                ci = cy * CHUNK_COLS + cx
+                mesh = build_level_mesh(lv, cx, cy)
+                write_glb(mesh, os.path.join(out, f"lv{idx}_c{ci}.glb"))
+                lt += len(mesh.idx) // 3
+        floors = sum(1 for t in lv.tiles if t == TILE_FLOOR)
+        print(f"  -- level {idx} ({BIOME_NAMES[biome]}, seed {seed}): "
+              f"{floors} floor tiles, {lt} tris")
+        total_tris += lt
+
     models = []
-    for cy in range(CHUNK_ROWS):
-        for cx in range(CHUNK_COLS):
-            idx = cy * CHUNK_COLS + cx
-            models.append((f"dungeon_c{idx}.glb", build_dungeon_mesh(cx, cy)))
     for role in ("tank", "melee", "healer", "ranged"):
         models.append((f"hero_{role}.glb", build_hero_mesh(role)))
     for name, fn in (("slime", build_slime_mesh),
@@ -763,12 +1277,15 @@ def main():
                      ("boss", build_boss_mesh)):
         models.append((f"enemy_{name}.glb", fn()))
 
-    total_tris = 0
     for name, mesh in models:
         write_glb(mesh, os.path.join(out, name))
         total_tris += len(mesh.idx) // 3
 
-    print(f"Done -- {len(models)} models, {total_tris} triangles total")
+    emit_level_data(levels, os.path.join(
+        os.path.dirname(out), "..", "src", "levels.pk64"))
+
+    print(f"Done -- {len(levels)} levels + {len(models)} character models, "
+          f"{total_tris} triangles total")
     return 0
 
 

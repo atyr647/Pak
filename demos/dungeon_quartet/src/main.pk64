@@ -27,6 +27,7 @@ use n64.timer
 use n64.math
 use n64.surface
 use t3d
+use dungeon.levels
 
 -- libdragon tex_format_t value used for the depth buffer.
 extern const FMT_RGBA16: i32
@@ -57,7 +58,12 @@ const CHUNK_ROWS: i32 = 3
 const CHUNK_W:    i32 = 11
 const CHUNK_H:    i32 = 8
 const NUM_CHUNKS: i32 = 9
-const CHUNK_DRAW_DIST: f32 = 21.0
+-- Matches FOG_FAR below so a chunk is never culled before fog has already
+-- faded it to the background color -- no visible pop-in. On this map size
+-- that only excludes the single farthest chunk, and only when the camera
+-- is pinned toward one corner; the real triangle-budget lever is geometry
+-- density (see tools/gen_dungeon_models.py), not distance culling.
+const CHUNK_DRAW_DIST: f32 = 24.0
 
 const TILE_WALL:  u8 = 0
 const TILE_FLOOR: u8 = 1
@@ -175,8 +181,16 @@ static enemy_phase_timer: f32   = 0.0
 static frame_counter:     i32   = 0
 static round_num:         i32   = 0
 
+static current_level: i32 = 0
+static current_biome:  u8 = 0   -- 0 == BIOME_DUNGEON; see biome_dungeon_id()
+
 -- ============================================================
 -- Dungeon layout
+--
+-- Levels are generated and baked at build time by tools/gen_dungeon_models.py
+-- (see src/levels.pk64) -- Tiny3D draws models, and Pak has no documented way
+-- to build mesh geometry at runtime. What ships is several independently
+-- generated levels; build_level() just unpacks whichever one was rolled.
 -- ============================================================
 fn tile_index(gx: i32, gy: i32) -> i32 {
     return gy * GRID_W + gx
@@ -189,48 +203,19 @@ fn tile_at(gx: i32, gy: i32) -> u8 {
     return level[tile_index(gx, gy)]
 }
 
-fn carve(x0: i32, y0: i32, x1: i32, y1: i32) {
-    for gy in y0..(y1 + 1) {
-        for gx in x0..(x1 + 1) {
-            level[tile_index(gx, gy)] = TILE_FLOOR
+-- Unpacks the baked bitmap for level `idx` (1 bit/tile, set = floor) into
+-- the working `level` array, via levels.pk64's accessor functions.
+fn build_level(idx: i32) {
+    for i in 0..GRID_CELLS {
+        let byte_i: i32 = i / 8
+        let bit: i32 = i % 8
+        let b: u8 = level_floor_byte(idx, byte_i)
+        if (b >> bit) & 1 == 1 {
+            level[i] = TILE_FLOOR
+        } else {
+            level[i] = TILE_WALL
         }
     }
-}
-
--- 3x3 grid of rooms, every neighbour joined by a 2-tile-wide corridor so two
--- units can pass each other anywhere in the dungeon.
--- Layout must stay in sync with tools/gen_dungeon_models.py.
-fn build_level() {
-    for i in 0..GRID_CELLS {
-        level[i] = TILE_WALL
-    }
-
-    -- rooms, north row / middle row / south row
-    carve(2,  2,  8,  6)     -- A  start
-    carve(12, 2,  19, 6)     -- B
-    carve(23, 2,  29, 6)     -- C
-    carve(2,  10, 8,  15)    -- D
-    carve(12, 10, 19, 15)    -- E  central hub
-    carve(23, 10, 29, 15)    -- F
-    carve(2,  18, 8,  22)    -- G
-    carve(12, 18, 19, 22)    -- H
-    carve(23, 18, 29, 22)    -- I  boss
-
-    -- horizontal corridors (2 tiles tall)
-    carve(8,  3,  12, 4)
-    carve(19, 3,  23, 4)
-    carve(8,  12, 12, 13)
-    carve(19, 12, 23, 13)
-    carve(8,  19, 12, 20)
-    carve(19, 19, 23, 20)
-
-    -- vertical corridors (2 tiles wide)
-    carve(4,  6,  5,  10)
-    carve(15, 6,  16, 10)
-    carve(26, 6,  27, 10)
-    carve(4,  15, 5,  18)
-    carve(15, 15, 16, 18)
-    carve(26, 15, 27, 18)
 }
 
 -- ============================================================
@@ -315,57 +300,46 @@ fn init_enemy(e: *Enemy, gx: i32, gy: i32, kind: EnemyKind) {
     e.facing = FACE_NORTH
 }
 
--- Encounters are themed per room and escalate as the party pushes east and
--- south toward the boss wing: vermin near the entrance, brutes and undead deep in.
-fn spawn_enemies() {
+-- Reads the baked spawn table for level `idx` (see src/levels.pk64).
+-- Encounters are themed per room and escalate toward the boss wing: vermin
+-- near the entrance, brutes and undead deep in -- baked in by
+-- tools/gen_dungeon_models.py, not decided here.
+fn spawn_enemies(idx: i32) {
     for i in 0..MAX_ENEMIES {
         enemies[i].alive = false
     }
 
-    -- Room B (north-centre): vermin
-    init_enemy(&enemies[0],  14, 3,  EnemyKind.bat)
-    init_enemy(&enemies[1],  17, 4,  EnemyKind.goblin)
-    init_enemy(&enemies[2],  15, 5,  EnemyKind.slime)
-    -- Room C (north-east): goblin camp
-    init_enemy(&enemies[3],  25, 3,  EnemyKind.goblin)
-    init_enemy(&enemies[4],  27, 5,  EnemyKind.goblin)
-    init_enemy(&enemies[5],  24, 5,  EnemyKind.spider)
-    -- Room D (west): nest
-    init_enemy(&enemies[6],  3,  12, EnemyKind.spider)
-    init_enemy(&enemies[7],  6,  14, EnemyKind.slime)
-    init_enemy(&enemies[8],  4,  15, EnemyKind.bat)
-    -- Room E (central hub): the midpoint fight, mixed
-    init_enemy(&enemies[9],  14, 11, EnemyKind.skeleton)
-    init_enemy(&enemies[10], 17, 12, EnemyKind.skeleton)
-    init_enemy(&enemies[11], 15, 14, EnemyKind.goblin)
-    init_enemy(&enemies[12], 18, 14, EnemyKind.orc)
-    -- Room F (east): crypt
-    init_enemy(&enemies[13], 25, 11, EnemyKind.skeleton)
-    init_enemy(&enemies[14], 28, 13, EnemyKind.zombie)
-    init_enemy(&enemies[15], 26, 15, EnemyKind.zombie)
-    -- Room G (south-west): brute den
-    init_enemy(&enemies[16], 4,  20, EnemyKind.orc)
-    init_enemy(&enemies[17], 7,  21, EnemyKind.goblin)
-    -- Room H (south-centre): haunt
-    init_enemy(&enemies[18], 14, 20, EnemyKind.wraith)
-    init_enemy(&enemies[19], 17, 21, EnemyKind.zombie)
-    init_enemy(&enemies[20], 16, 19, EnemyKind.skeleton)
-    -- Room I (boss room): the demon lord and his guard
-    init_enemy(&enemies[21], 24, 19, EnemyKind.wraith)
-    init_enemy(&enemies[22], 28, 21, EnemyKind.orc)
-    init_enemy(&enemies[23], 26, 20, EnemyKind.boss)
-    enemies_alive = 24
+    let empty: u8 = spawn_empty_id()
+    let n: i32 = 0
+    for i in 0..level_max_spawns() {
+        let kind_id: u8 = level_spawn_kind(idx, i)
+        if kind_id == empty { continue }
+        if n >= MAX_ENEMIES { break }
+        let gx: i32 = level_spawn_x(idx, i) as i32
+        let gy: i32 = level_spawn_y(idx, i) as i32
+        init_enemy(&enemies[n], gx, gy, kind_id as EnemyKind)
+        n += 1
+    }
+    enemies_alive = n
 }
 
 fn start_level() {
-    build_level()
+    current_level = math.rand_range(0, level_count())
+    current_biome = level_biome_of(current_level)
 
-    init_hero(&heroes[0], 4, 4, Role.tank,   TANK_HP)
-    init_hero(&heroes[1], 5, 4, Role.melee,  MELEE_HP)
-    init_hero(&heroes[2], 4, 5, Role.healer, HEAL_HP)
-    init_hero(&heroes[3], 5, 5, Role.ranged, RANGED_HP)
+    build_level(current_level)
+    load_level_chunks(current_level)
 
-    spawn_enemies()
+    init_hero(&heroes[0], level_hero_x(current_level, 0) as i32,
+              level_hero_y(current_level, 0) as i32, Role.tank, TANK_HP)
+    init_hero(&heroes[1], level_hero_x(current_level, 1) as i32,
+              level_hero_y(current_level, 1) as i32, Role.melee, MELEE_HP)
+    init_hero(&heroes[2], level_hero_x(current_level, 2) as i32,
+              level_hero_y(current_level, 2) as i32, Role.healer, HEAL_HP)
+    init_hero(&heroes[3], level_hero_x(current_level, 3) as i32,
+              level_hero_y(current_level, 3) as i32, Role.ranged, RANGED_HP)
+
+    spawn_enemies(current_level)
 
     round_num = 0
     phase = Phase.hero_turn
@@ -989,6 +963,23 @@ static unit_fp: [*T3DMat4FP; 28] = undefined
 static cam_tx: f32 = 0.0
 static cam_tz: f32 = 0.0
 
+-- Loads the level's 9 chunk models, freeing whichever level's chunks were
+-- loaded before (there is none to free the very first time -- chunks_loaded
+-- tracks that rather than relying on an `undefined` static reading as none).
+static chunks_loaded: bool = false
+
+fn load_level_chunks(idx: i32) {
+    if chunks_loaded {
+        for ci in 0..NUM_CHUNKS {
+            if mdl_chunk[ci] != none { t3d.model_free(mdl_chunk[ci]) }
+        }
+    }
+    for ci in 0..NUM_CHUNKS {
+        mdl_chunk[ci] = t3d.model_load("rom:/models/lv{idx}_c{ci}.t3dm")
+    }
+    chunks_loaded = true
+}
+
 fn role_index(r: Role) -> i32 {
     match r {
         .tank   => { return 0 }
@@ -1130,15 +1121,22 @@ fn render_world(dt: f32) {
     t3d.frame_start()
     t3d.viewport_attach(&vp)
 
-    -- torchlit gloom: everything past the next room fades to the void color
+    -- Atmosphere varies by biome: torchlit gloom underground, hazy daylight
+    -- outdoors. Both fade to their fog color at the same range so the chunk
+    -- draw-distance cull (which reuses that range) never pops visibly.
     t3d.fog_set_enabled(true)
-    t3d.fog_set_range(17.0, 46.0)
-    t3d.fog_set_color(0x0C0A10FF)
-
-    -- key light warm from above-left, cool bounce from the opposite side
-    t3d.light_set_ambient(90, 86, 108)
-    t3d.light_set_directional(0, 255, 236, 200, -0.45, -0.78, -0.44)
-    t3d.light_set_directional(1, 110, 120, 165, 0.50, 0.25, -0.75)
+    t3d.fog_set_range(14.0, 24.0)
+    if current_biome == biome_forest_id() {
+        t3d.fog_set_color(0x30402AFF)
+        t3d.light_set_ambient(112, 122, 96)
+        t3d.light_set_directional(0, 255, 246, 214, -0.40, -0.82, -0.38)
+        t3d.light_set_directional(1, 140, 162, 196, 0.45, 0.30, 0.70)
+    } else {
+        t3d.fog_set_color(0x0C0A10FF)
+        t3d.light_set_ambient(90, 86, 108)
+        t3d.light_set_directional(0, 255, 236, 200, -0.45, -0.78, -0.44)
+        t3d.light_set_directional(1, 110, 120, 165, 0.50, 0.25, -0.75)
+    }
     t3d.light_set_count(2)
 
     -- Draw only the level chunks near the camera. The rest is beyond the fog
@@ -1434,15 +1432,9 @@ entry {
     vp = t3d.viewport_create()
     t3d.viewport_set_projection(&vp, 60.0, 1.0, 60.0)
 
-    mdl_chunk[0]  = t3d.model_load("rom:/models/dungeon_c0.t3dm")
-    mdl_chunk[1]  = t3d.model_load("rom:/models/dungeon_c1.t3dm")
-    mdl_chunk[2]  = t3d.model_load("rom:/models/dungeon_c2.t3dm")
-    mdl_chunk[3]  = t3d.model_load("rom:/models/dungeon_c3.t3dm")
-    mdl_chunk[4]  = t3d.model_load("rom:/models/dungeon_c4.t3dm")
-    mdl_chunk[5]  = t3d.model_load("rom:/models/dungeon_c5.t3dm")
-    mdl_chunk[6]  = t3d.model_load("rom:/models/dungeon_c6.t3dm")
-    mdl_chunk[7]  = t3d.model_load("rom:/models/dungeon_c7.t3dm")
-    mdl_chunk[8]  = t3d.model_load("rom:/models/dungeon_c8.t3dm")
+    -- Level chunk models are NOT loaded here: which level plays is rolled
+    -- at runtime (see start_level() / load_level_chunks()), so its chunks
+    -- can only be loaded once that roll has happened.
     mdl_hero[0]   = t3d.model_load("rom:/models/hero_tank.t3dm")
     mdl_hero[1]   = t3d.model_load("rom:/models/hero_healer.t3dm")
     mdl_hero[2]   = t3d.model_load("rom:/models/hero_melee.t3dm")
@@ -1476,6 +1468,12 @@ entry {
         match phase {
             .title => {
                 if any_start_pressed() {
+                    -- The PRNG has a fixed default seed (must, for a
+                    -- xorshift generator) -- without reseeding, every boot
+                    -- would roll the identical "random" level forever.
+                    -- Ticks at the moment a human actually presses Start
+                    -- is real entropy; a fixed point right after boot is not.
+                    math.rand_seed(timer.get_ticks() as u32)
                     start_level()
                     snap_camera()
                 }
