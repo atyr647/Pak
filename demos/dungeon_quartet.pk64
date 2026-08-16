@@ -1,0 +1,965 @@
+-- demos/dungeon_quartet.pk64
+-- Dungeon Quartet
+--
+-- A 4-player local co-op, turn-based, top-down isometric dungeon crawler.
+-- Each player controls one fixed role -- Tank, Healer, Melee DPS, Ranged DPS
+-- -- sharing a single screen. Turn order is P1 -> P2 -> P3 -> P4 -> Enemies,
+-- repeating until the party wipes or every enemy in the dungeon is dead.
+--
+-- Controls (each hero acts on their own turn, using their own controller port):
+--   D-pad      -- move one tile (movement points vary by role)
+--   A          -- primary action (melee attack / ranged shot / heal)
+--   B          -- role ability (limited by a per-round cooldown)
+--   Start      -- end turn early / advance title & end screens
+--
+-- Rendering uses only solid-color RDP fill primitives -- no sprite or font
+-- assets required, so this builds standalone with zero external art/audio.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+use n64.math
+
+-- ============================================================
+-- Constants
+-- ============================================================
+const GRID_W: i32 = 16
+const GRID_H: i32 = 12
+
+const TILE_WALL:  u8 = 0
+const TILE_FLOOR: u8 = 1
+
+const MAX_HEROES:  i32 = 4
+const MAX_ENEMIES: i32 = 12
+
+-- isometric projection
+const ISO_HW:   i32 = 11    -- half-width of one grid step, in pixels
+const ISO_HH:   i32 = 6     -- half-height of one grid step, in pixels
+const ORIGIN_X: i32 = 145
+const ORIGIN_Y: i32 = 40
+const TILE_HW:  i32 = 10    -- drawn diamond half-width (slightly < ISO_HW for a grid gap)
+const TILE_HH:  i32 = 5     -- drawn diamond half-height / row count
+
+const HUD_Y: i32 = 200
+
+-- role tuning
+const TANK_HP:     i32 = 30
+const TANK_ATK:    i32 = 3
+const TANK_MOVE:   i32 = 1
+const TANK_CD:     i32 = 3
+const TAUNT_TURNS: i32 = 2
+
+const HEAL_HP:      i32 = 14
+const HEAL_AMT:     i32 = 6
+const HEAL_GROUP:   i32 = 4
+const HEAL_RADIUS:  i32 = 4
+const HEAL_MOVE:    i32 = 2
+const HEAL_CD:      i32 = 4
+
+const MELEE_HP:    i32 = 20
+const MELEE_ATK:   i32 = 6
+const MELEE_WHIRL: i32 = 4
+const MELEE_MOVE:  i32 = 3
+const MELEE_CD:    i32 = 3
+
+const RANGED_HP:     i32 = 16
+const RANGED_ATK:    i32 = 4
+const RANGED_VOLLEY: i32 = 3
+const RANGED_RANGE:  i32 = 4
+const RANGED_MOVE:   i32 = 2
+const RANGED_CD:     i32 = 3
+
+-- enemy tuning
+const SKEL_HP:  i32 = 10
+const SKEL_ATK: i32 = 3
+const SLIME_HP:  i32 = 6
+const SLIME_ATK: i32 = 2
+const BOSS_HP:  i32 = 40
+const BOSS_ATK: i32 = 5
+
+const ENEMY_PHASE_TIME: f32 = 0.7
+
+-- ============================================================
+-- Types
+-- ============================================================
+enum Role: u8 { tank, healer, melee, ranged }
+enum EnemyKind: u8 { skeleton, slime, boss }
+enum Phase: u8 { title, hero_turn, enemy_turn, victory, defeat }
+
+struct Hero {
+    gx:          i32
+    gy:          i32
+    hp:          i32
+    hp_max:      i32
+    role:        Role
+    move_left:   i32
+    alive:       bool
+    ability_cd:  i32
+    taunt_turns: i32
+}
+
+struct Enemy {
+    gx:    i32
+    gy:    i32
+    hp:    i32
+    hp_max: i32
+    kind:  EnemyKind
+    alive: bool
+}
+
+-- ============================================================
+-- Globals
+-- ============================================================
+static level: [192]u8 = undefined   -- GRID_W * GRID_H, row-major (gy * GRID_W + gx)
+
+static heroes:  [4]Hero    = undefined
+static enemies: [12]Enemy  = undefined
+static enemies_alive: i32  = 0
+
+static phase:             Phase = Phase.title
+static active_hero:       i32   = 0
+static enemy_phase_timer: f32   = 0.0
+static frame_counter:     i32   = 0
+static round_num:         i32   = 0
+
+-- ============================================================
+-- Dungeon layout
+-- ============================================================
+fn tile_index(gx: i32, gy: i32) -> i32 {
+    return gy * GRID_W + gx
+}
+
+fn tile_at(gx: i32, gy: i32) -> u8 {
+    if gx < 0 or gx >= GRID_W or gy < 0 or gy >= GRID_H {
+        return TILE_WALL
+    }
+    return level[tile_index(gx, gy)]
+}
+
+fn carve_room(x0: i32, y0: i32, x1: i32, y1: i32) {
+    for gy in y0..(y1 + 1) {
+        for gx in x0..(x1 + 1) {
+            level[tile_index(gx, gy)] = TILE_FLOOR
+        }
+    }
+}
+
+fn carve_h_corridor(x0: i32, x1: i32, gy: i32) {
+    for gx in x0..(x1 + 1) {
+        level[tile_index(gx, gy)] = TILE_FLOOR
+    }
+}
+
+fn carve_v_corridor(y0: i32, y1: i32, gx: i32) {
+    for gy in y0..(y1 + 1) {
+        level[tile_index(gx, gy)] = TILE_FLOOR
+    }
+}
+
+fn build_level() {
+    for i in 0..192 {
+        level[i] = TILE_WALL
+    }
+
+    -- Room A: start room (top-left)
+    carve_room(1, 1, 4, 4)
+    -- Room B: top-right
+    carve_room(7, 1, 10, 3)
+    -- Room C: center hub
+    carve_room(6, 5, 9, 8)
+    -- Room D: bottom-left
+    carve_room(1, 6, 4, 9)
+    -- Room E: right
+    carve_room(11, 5, 14, 8)
+    -- Room F: boss room (bottom-right)
+    carve_room(10, 9, 14, 11)
+
+    -- Corridors
+    carve_h_corridor(4, 7, 2)     -- A -> B
+    carve_v_corridor(4, 6, 2)     -- A -> D
+    carve_v_corridor(3, 5, 8)     -- B -> C
+    carve_h_corridor(4, 6, 7)     -- D -> C
+    carve_h_corridor(9, 11, 6)    -- C -> E
+    carve_v_corridor(8, 9, 12)    -- E -> F (boss)
+}
+
+-- ============================================================
+-- Occupancy queries
+-- ============================================================
+fn hero_at(gx: i32, gy: i32) -> i32 {
+    for i in 0..MAX_HEROES {
+        if heroes[i].alive and heroes[i].gx == gx and heroes[i].gy == gy {
+            return i
+        }
+    }
+    return -1
+}
+
+fn enemy_at(gx: i32, gy: i32) -> i32 {
+    for i in 0..MAX_ENEMIES {
+        if enemies[i].alive and enemies[i].gx == gx and enemies[i].gy == gy {
+            return i
+        }
+    }
+    return -1
+}
+
+fn tile_walkable(gx: i32, gy: i32) -> bool {
+    if tile_at(gx, gy) != TILE_FLOOR { return false }
+    if hero_at(gx, gy) >= 0 { return false }
+    if enemy_at(gx, gy) >= 0 { return false }
+    return true
+}
+
+fn manhattan(ax: i32, ay: i32, bx: i32, by: i32) -> i32 {
+    return math.abs_i32(ax - bx) + math.abs_i32(ay - by)
+}
+
+-- ============================================================
+-- Role tuning lookups
+-- ============================================================
+fn role_move_points(r: Role) -> i32 {
+    match r {
+        .tank   => { return TANK_MOVE }
+        .healer => { return HEAL_MOVE }
+        .melee  => { return MELEE_MOVE }
+        .ranged => { return RANGED_MOVE }
+    }
+    return 1
+}
+
+fn role_ability_cd(r: Role) -> i32 {
+    match r {
+        .tank   => { return TANK_CD }
+        .healer => { return HEAL_CD }
+        .melee  => { return MELEE_CD }
+        .ranged => { return RANGED_CD }
+    }
+    return 1
+}
+
+-- ============================================================
+-- Setup
+-- ============================================================
+fn init_hero(h: *Hero, gx: i32, gy: i32, role: Role, hp: i32) {
+    h.gx = gx
+    h.gy = gy
+    h.hp = hp
+    h.hp_max = hp
+    h.role = role
+    h.move_left = 0
+    h.alive = true
+    h.ability_cd = 0
+    h.taunt_turns = 0
+}
+
+fn init_enemy(e: *Enemy, gx: i32, gy: i32, kind: EnemyKind, hp: i32) {
+    e.gx = gx
+    e.gy = gy
+    e.hp = hp
+    e.hp_max = hp
+    e.kind = kind
+    e.alive = true
+}
+
+fn spawn_enemies() {
+    for i in 0..MAX_ENEMIES {
+        enemies[i].alive = false
+    }
+    init_enemy(&enemies[0],  8,  2, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[1],  9,  1, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[2],  7,  6, EnemyKind.slime,    SLIME_HP)
+    init_enemy(&enemies[3],  8,  7, EnemyKind.slime,    SLIME_HP)
+    init_enemy(&enemies[4],  6,  7, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[5],  2,  7, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[6],  3,  8, EnemyKind.slime,    SLIME_HP)
+    init_enemy(&enemies[7], 12,  6, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[8], 13,  7, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[9], 12,  7, EnemyKind.slime,    SLIME_HP)
+    init_enemy(&enemies[10], 12, 10, EnemyKind.boss,    BOSS_HP)
+    enemies_alive = 11
+}
+
+fn start_level() {
+    build_level()
+
+    init_hero(&heroes[0], 1, 1, Role.tank,   TANK_HP)
+    init_hero(&heroes[1], 2, 1, Role.melee,  MELEE_HP)
+    init_hero(&heroes[2], 1, 2, Role.healer, HEAL_HP)
+    init_hero(&heroes[3], 2, 2, Role.ranged, RANGED_HP)
+
+    spawn_enemies()
+
+    round_num = 0
+    phase = Phase.hero_turn
+    active_hero = next_alive_hero(0)
+    if active_hero < MAX_HEROES {
+        heroes[active_hero].move_left = role_move_points(heroes[active_hero].role)
+    }
+}
+
+-- ============================================================
+-- Turn sequencing
+-- ============================================================
+fn next_alive_hero(start: i32) -> i32 {
+    let i: i32 = start
+    loop {
+        if i >= MAX_HEROES { break }
+        if heroes[i].alive { break }
+        i = i + 1
+    }
+    return i
+}
+
+fn any_hero_alive() -> bool {
+    for i in 0..MAX_HEROES {
+        if heroes[i].alive { return true }
+    }
+    return false
+}
+
+fn begin_hero_phase() {
+    round_num = round_num + 1
+    -- tick cooldowns / taunt once per round
+    for i in 0..MAX_HEROES {
+        if heroes[i].ability_cd > 0 { heroes[i].ability_cd -= 1 }
+        if heroes[i].taunt_turns > 0 { heroes[i].taunt_turns -= 1 }
+    }
+    phase = Phase.hero_turn
+    active_hero = next_alive_hero(0)
+    if active_hero < MAX_HEROES {
+        heroes[active_hero].move_left = role_move_points(heroes[active_hero].role)
+    }
+}
+
+fn begin_enemy_phase() {
+    phase = Phase.enemy_turn
+    enemy_phase_timer = ENEMY_PHASE_TIME
+    run_enemy_ai()
+}
+
+fn end_hero_turn() {
+    active_hero = next_alive_hero(active_hero + 1)
+    if active_hero >= MAX_HEROES {
+        begin_enemy_phase()
+    } else {
+        heroes[active_hero].move_left = role_move_points(heroes[active_hero].role)
+    }
+}
+
+fn check_outcomes() {
+    if enemies_alive <= 0 {
+        phase = Phase.victory
+        return
+    }
+    if not any_hero_alive() {
+        phase = Phase.defeat
+        return
+    }
+}
+
+-- ============================================================
+-- Hero actions
+-- ============================================================
+fn try_move_hero(h: *Hero, dx: i32, dy: i32) {
+    if h.move_left <= 0 { return }
+    let nx: i32 = h.gx + dx
+    let ny: i32 = h.gy + dy
+    if not tile_walkable(nx, ny) { return }
+    h.gx = nx
+    h.gy = ny
+    h.move_left -= 1
+}
+
+-- returns index of first living enemy adjacent to (gx,gy), or -1
+fn adjacent_enemy(gx: i32, gy: i32) -> i32 {
+    let e: i32 = enemy_at(gx, gy - 1)
+    if e >= 0 { return e }
+    e = enemy_at(gx, gy + 1)
+    if e >= 0 { return e }
+    e = enemy_at(gx - 1, gy)
+    if e >= 0 { return e }
+    e = enemy_at(gx + 1, gy)
+    if e >= 0 { return e }
+    return -1
+}
+
+fn damage_enemy(idx: i32, amt: i32) {
+    if idx < 0 or idx >= MAX_ENEMIES { return }
+    if not enemies[idx].alive { return }
+    enemies[idx].hp -= amt
+    if enemies[idx].hp <= 0 {
+        enemies[idx].hp = 0
+        enemies[idx].alive = false
+        enemies_alive -= 1
+    }
+}
+
+fn nearest_enemy_in_line(gx: i32, gy: i32, range: i32) -> i32 {
+    let best: i32 = -1
+    let best_d: i32 = range + 1
+    for i in 0..MAX_ENEMIES {
+        if not enemies[i].alive { continue }
+        let same_row: bool = enemies[i].gy == gy
+        let same_col: bool = enemies[i].gx == gx
+        if not (same_row or same_col) { continue }
+        let d: i32 = manhattan(gx, gy, enemies[i].gx, enemies[i].gy)
+        if d <= range and d < best_d {
+            best = i
+            best_d = d
+        }
+    }
+    return best
+}
+
+fn lowest_hp_ally(gx: i32, gy: i32, radius: i32) -> i32 {
+    let best: i32 = -1
+    let best_hp: i32 = 999999
+    for i in 0..MAX_HEROES {
+        if not heroes[i].alive { continue }
+        if heroes[i].hp >= heroes[i].hp_max { continue }
+        let d: i32 = manhattan(gx, gy, heroes[i].gx, heroes[i].gy)
+        if d <= radius and heroes[i].hp < best_hp {
+            best = i
+            best_hp = heroes[i].hp
+        }
+    }
+    return best
+}
+
+fn heal_hero(idx: i32, amt: i32) {
+    if idx < 0 or idx >= MAX_HEROES { return }
+    heroes[idx].hp += amt
+    if heroes[idx].hp > heroes[idx].hp_max { heroes[idx].hp = heroes[idx].hp_max }
+}
+
+-- Primary action (A). Returns true if the turn should end.
+fn hero_primary_action(h_idx: i32) -> bool {
+    let h: *Hero = &heroes[h_idx]
+    match h.role {
+        .tank => {
+            let e: i32 = adjacent_enemy(h.gx, h.gy)
+            if e < 0 { return false }
+            damage_enemy(e, TANK_ATK)
+            return true
+        }
+        .melee => {
+            let e: i32 = adjacent_enemy(h.gx, h.gy)
+            if e < 0 { return false }
+            damage_enemy(e, MELEE_ATK)
+            return true
+        }
+        .ranged => {
+            let e: i32 = nearest_enemy_in_line(h.gx, h.gy, RANGED_RANGE)
+            if e < 0 { return false }
+            damage_enemy(e, RANGED_ATK)
+            return true
+        }
+        .healer => {
+            let a: i32 = lowest_hp_ally(h.gx, h.gy, HEAL_RADIUS)
+            if a < 0 { return false }
+            heal_hero(a, HEAL_AMT)
+            return true
+        }
+    }
+    return false
+}
+
+-- Role ability (B). Returns true if the turn should end.
+fn hero_ability(h_idx: i32) -> bool {
+    let h: *Hero = &heroes[h_idx]
+    if h.ability_cd > 0 { return false }
+
+    match h.role {
+        .tank => {
+            h.taunt_turns = TAUNT_TURNS
+            h.ability_cd = role_ability_cd(h.role)
+            return true
+        }
+        .melee => {
+            damage_enemy(enemy_at(h.gx, h.gy - 1), MELEE_WHIRL)
+            damage_enemy(enemy_at(h.gx, h.gy + 1), MELEE_WHIRL)
+            damage_enemy(enemy_at(h.gx - 1, h.gy), MELEE_WHIRL)
+            damage_enemy(enemy_at(h.gx + 1, h.gy), MELEE_WHIRL)
+            h.ability_cd = role_ability_cd(h.role)
+            return true
+        }
+        .ranged => {
+            for i in 0..MAX_ENEMIES {
+                if not enemies[i].alive { continue }
+                if enemies[i].gy == h.gy and manhattan(h.gx, h.gy, enemies[i].gx, enemies[i].gy) <= RANGED_RANGE {
+                    damage_enemy(i, RANGED_VOLLEY)
+                }
+            }
+            h.ability_cd = role_ability_cd(h.role)
+            return true
+        }
+        .healer => {
+            for i in 0..MAX_HEROES {
+                if not heroes[i].alive { continue }
+                if manhattan(h.gx, h.gy, heroes[i].gx, heroes[i].gy) <= HEAL_RADIUS {
+                    heal_hero(i, HEAL_GROUP)
+                }
+            }
+            h.ability_cd = role_ability_cd(h.role)
+            return true
+        }
+    }
+    return false
+}
+
+-- ============================================================
+-- Enemy AI
+-- ============================================================
+fn taunting_hero() -> i32 {
+    for i in 0..MAX_HEROES {
+        if heroes[i].alive and heroes[i].taunt_turns > 0 { return i }
+    }
+    return -1
+}
+
+fn nearest_hero(gx: i32, gy: i32) -> i32 {
+    let best: i32 = -1
+    let best_d: i32 = 999999
+    for i in 0..MAX_HEROES {
+        if not heroes[i].alive { continue }
+        let d: i32 = manhattan(gx, gy, heroes[i].gx, heroes[i].gy)
+        if d < best_d {
+            best = i
+            best_d = d
+        }
+    }
+    return best
+}
+
+fn enemy_atk_for(kind: EnemyKind) -> i32 {
+    match kind {
+        .skeleton => { return SKEL_ATK }
+        .slime    => { return SLIME_ATK }
+        .boss     => { return BOSS_ATK }
+    }
+    return 1
+}
+
+fn damage_hero(idx: i32, amt: i32) {
+    if idx < 0 or idx >= MAX_HEROES { return }
+    if not heroes[idx].alive { return }
+    heroes[idx].hp -= amt
+    if heroes[idx].hp <= 0 {
+        heroes[idx].hp = 0
+        heroes[idx].alive = false
+    }
+}
+
+fn enemy_step(e: *Enemy) {
+    let target: i32 = taunting_hero()
+    if target < 0 { target = nearest_hero(e.gx, e.gy) }
+    if target < 0 { return }
+
+    let tx: i32 = heroes[target].gx
+    let ty: i32 = heroes[target].gy
+
+    if manhattan(e.gx, e.gy, tx, ty) == 1 {
+        damage_hero(target, enemy_atk_for(e.kind))
+        return
+    }
+
+    let dx: i32 = 0
+    let dy: i32 = 0
+    if tx > e.gx { dx = 1 } elif tx < e.gx { dx = -1 }
+    if ty > e.gy { dy = 1 } elif ty < e.gy { dy = -1 }
+
+    let adx: i32 = math.abs_i32(tx - e.gx)
+    let ady: i32 = math.abs_i32(ty - e.gy)
+
+    if adx >= ady {
+        if dx != 0 and tile_at(e.gx + dx, e.gy) == TILE_FLOOR and hero_at(e.gx + dx, e.gy) < 0 and enemy_at(e.gx + dx, e.gy) < 0 {
+            e.gx += dx
+            return
+        }
+        if dy != 0 and tile_at(e.gx, e.gy + dy) == TILE_FLOOR and hero_at(e.gx, e.gy + dy) < 0 and enemy_at(e.gx, e.gy + dy) < 0 {
+            e.gy += dy
+            return
+        }
+    } else {
+        if dy != 0 and tile_at(e.gx, e.gy + dy) == TILE_FLOOR and hero_at(e.gx, e.gy + dy) < 0 and enemy_at(e.gx, e.gy + dy) < 0 {
+            e.gy += dy
+            return
+        }
+        if dx != 0 and tile_at(e.gx + dx, e.gy) == TILE_FLOOR and hero_at(e.gx + dx, e.gy) < 0 and enemy_at(e.gx + dx, e.gy) < 0 {
+            e.gx += dx
+            return
+        }
+    }
+}
+
+fn run_enemy_ai() {
+    for i in 0..MAX_ENEMIES {
+        if not enemies[i].alive { continue }
+        enemy_step(&enemies[i])
+    }
+}
+
+-- ============================================================
+-- Input handling
+-- ============================================================
+fn handle_hero_input(dt: f32) {
+    let h_idx: i32 = active_hero
+    let h: *Hero = &heroes[h_idx]
+
+    controller.poll()
+    let pad = controller.read(h_idx)
+
+    let ended: bool = false
+
+    if pad.pressed.up    { try_move_hero(h, 0, -1) }
+    elif pad.pressed.down  { try_move_hero(h, 0, 1) }
+    elif pad.pressed.left  { try_move_hero(h, -1, 0) }
+    elif pad.pressed.right { try_move_hero(h, 1, 0) }
+    elif pad.pressed.a { ended = hero_primary_action(h_idx) }
+    elif pad.pressed.b { ended = hero_ability(h_idx) }
+    elif pad.pressed.start { ended = true }
+
+    if ended {
+        end_hero_turn()
+        check_outcomes()
+    }
+}
+
+-- ============================================================
+-- Isometric projection + primitive drawing
+-- ============================================================
+fn iso_x(gx: i32, gy: i32) -> i32 {
+    return ORIGIN_X + (gx - gy) * ISO_HW
+}
+
+fn iso_y(gx: i32, gy: i32) -> i32 {
+    return ORIGIN_Y + (gx + gy) * ISO_HH
+}
+
+-- Draws a filled diamond centered at (cx, cy) using stacked horizontal slivers.
+fn draw_diamond(cx: i32, cy: i32, hw: i32, hh: i32, color: u32) {
+    rdpq.set_mode_fill(color)
+    for row in 0..hh {
+        let w1: i32 = (hw * (row + 1)) / hh
+        -- upper half
+        rdpq.fill_rectangle(cx - w1, cy - row - 1, cx + w1, cy - row)
+        -- lower half (mirrored)
+        rdpq.fill_rectangle(cx - w1, cy + row, cx + w1, cy + row + 1)
+    }
+}
+
+fn draw_floor_tile(gx: i32, gy: i32, color: u32) {
+    draw_diamond(iso_x(gx, gy), iso_y(gx, gy), TILE_HW, TILE_HH, color)
+}
+
+fn draw_wall_tile(gx: i32, gy: i32) {
+    let cx: i32 = iso_x(gx, gy)
+    let cy: i32 = iso_y(gx, gy)
+    let wall_h: i32 = 14
+    rdpq.set_mode_fill(0x38363EFF)
+    rdpq.fill_rectangle(cx - TILE_HW, cy - wall_h, cx + TILE_HW, cy)
+    draw_diamond(cx, cy - wall_h, TILE_HW, TILE_HH, 0x5A5866FF)
+}
+
+fn draw_bar(x: i32, y: i32, w: i32, h: i32, pct: f32, fg: u32, bg: u32) {
+    rdpq.set_mode_fill(bg)
+    rdpq.fill_rectangle(x, y, x + w, y + h)
+    let fw: i32 = (w as f32 * math.clamp_f(pct, 0.0, 1.0)) as i32
+    if fw > 0 {
+        rdpq.set_mode_fill(fg)
+        rdpq.fill_rectangle(x, y, x + fw, y + h)
+    }
+}
+
+-- ============================================================
+-- Role / unit colors
+-- ============================================================
+fn role_color(r: Role) -> u32 {
+    match r {
+        .tank   => { return 0x3A64C8FF }
+        .healer => { return 0x3AC864FF }
+        .melee  => { return 0xC83A3AFF }
+        .ranged => { return 0xC8AA2AFF }
+    }
+    return 0xFFFFFFFF
+}
+
+fn enemy_color(k: EnemyKind) -> u32 {
+    match k {
+        .skeleton => { return 0xD8D8CCFF }
+        .slime    => { return 0x40A050FF }
+        .boss     => { return 0x6A2A78FF }
+    }
+    return 0xFF00FFFF
+}
+
+-- ============================================================
+-- Scene render
+-- ============================================================
+fn draw_dungeon() {
+    for gy in 0..GRID_H {
+        for gx in 0..GRID_W {
+            let t: u8 = level[gy * GRID_W + gx]
+            if t == TILE_FLOOR {
+                let shade: u32 = 0x403C34FF
+                if (gx + gy) % 2 == 0 { shade = 0x484438FF }
+                draw_floor_tile(gx, gy, shade)
+            }
+        }
+    }
+    for gy in 0..GRID_H {
+        for gx in 0..GRID_W {
+            if level[gy * GRID_W + gx] == TILE_WALL {
+                -- only draw walls adjacent to a floor tile (skip void interior)
+                let near_floor: bool = tile_at(gx - 1, gy) == TILE_FLOOR
+                if not near_floor { near_floor = tile_at(gx + 1, gy) == TILE_FLOOR }
+                if not near_floor { near_floor = tile_at(gx, gy - 1) == TILE_FLOOR }
+                if not near_floor { near_floor = tile_at(gx, gy + 1) == TILE_FLOOR }
+                if near_floor { draw_wall_tile(gx, gy) }
+            }
+        }
+    }
+}
+
+fn draw_hero_token(h: *Hero, is_active: bool) {
+    if not h.alive { return }
+    let cx: i32 = iso_x(h.gx, h.gy)
+    let cy: i32 = iso_y(h.gx, h.gy)
+    let col: u32 = role_color(h.role)
+
+    draw_diamond(cx, cy - 4, TILE_HW - 2, TILE_HH - 1, col)
+
+    -- role glyph
+    match h.role {
+        .healer => {
+            rdpq.set_mode_fill(0xF0F0F0FF)
+            rdpq.fill_rectangle(cx - 1, cy - 8, cx + 1, cy - 1)
+            rdpq.fill_rectangle(cx - 4, cy - 5, cx + 4, cy - 3)
+        }
+        .melee => {
+            rdpq.set_mode_fill(0xF0F0F0FF)
+            rdpq.fill_rectangle(cx - 5, cy - 5, cx + 5, cy - 3)
+        }
+        .ranged => {
+            rdpq.set_mode_fill(0xF0F0F0FF)
+            rdpq.fill_rectangle(cx - 1, cy - 6, cx + 1, cy - 2)
+        }
+        .tank => {
+            rdpq.set_mode_fill(0xF0F0F0FF)
+            rdpq.fill_rectangle(cx - 5, cy - 8, cx + 5, cy - 7)
+        }
+    }
+
+    -- HP bar above head
+    let pct: f32 = h.hp as f32 / h.hp_max as f32
+    draw_bar(cx - 9, cy - 16, 18, 3, pct, 0x40D850FF, 0x201818FF)
+
+    if is_active {
+        let bob: i32 = 0
+        if (frame_counter / 8) % 2 == 0 { bob = 1 }
+        rdpq.set_mode_fill(0xF8F0A0FF)
+        rdpq.fill_rectangle(cx - 3, cy - 22 - bob, cx + 3, cy - 19 - bob)
+    }
+}
+
+fn draw_enemy_token(e: *Enemy) {
+    if not e.alive { return }
+    let cx: i32 = iso_x(e.gx, e.gy)
+    let cy: i32 = iso_y(e.gx, e.gy)
+    let sz: i32 = TILE_HW - 3
+    if e.kind == EnemyKind.boss { sz = TILE_HW }
+
+    draw_diamond(cx, cy - 4, sz, TILE_HH - 1, enemy_color(e.kind))
+
+    let pct: f32 = e.hp as f32 / e.hp_max as f32
+    draw_bar(cx - 9, cy - 14, 18, 3, pct, 0xD84030FF, 0x201818FF)
+}
+
+fn draw_enemy_count() {
+    let x: i32 = 8
+    for i in 0..enemies_alive {
+        rdpq.set_mode_fill(0xC83030FF)
+        rdpq.fill_rectangle(x, 4, x + 5, 10)
+        x += 8
+    }
+}
+
+fn draw_hero_panel(slot: i32) {
+    let px: i32 = 4 + slot * 78
+    let py: i32 = HUD_Y
+    let h: *Hero = &heroes[slot]
+
+    let bg: u32 = 0x14141AFF
+    if phase == Phase.hero_turn and active_hero == slot { bg = 0x2C2C3AFF }
+    rdpq.set_mode_fill(bg)
+    rdpq.fill_rectangle(px, py, px + 74, py + 36)
+
+    let panel_col: u32 = role_color(h.role)
+    if not h.alive { panel_col = 0x303030FF }
+    rdpq.set_mode_fill(panel_col)
+    rdpq.fill_rectangle(px + 2, py + 2, px + 16, py + 16)
+
+    let pct: f32 = 0.0
+    if h.alive { pct = h.hp as f32 / h.hp_max as f32 }
+    draw_bar(px + 20, py + 4, 50, 8, pct, 0x40D850FF, 0x201818FF)
+
+    -- cooldown pips
+    let cd_max: i32 = role_ability_cd(h.role)
+    let px2: i32 = px + 20
+    for i in 0..cd_max {
+        let ready: bool = i >= h.ability_cd
+        let pip_col: u32 = 0x383838FF
+        if ready { pip_col = 0xE8C848FF }
+        rdpq.set_mode_fill(pip_col)
+        rdpq.fill_rectangle(px2, py + 16, px2 + 8, py + 22)
+        px2 += 10
+    }
+
+    if phase == Phase.hero_turn and active_hero == slot {
+        rdpq.set_mode_fill(0xF8F0A0FF)
+        rdpq.fill_rectangle(px, py - 3, px + 74, py)
+    }
+}
+
+fn draw_hud() {
+    for i in 0..MAX_HEROES {
+        draw_hero_panel(i)
+    }
+    draw_enemy_count()
+}
+
+fn draw_scene() {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    rdpq.set_mode_fill(0x100E14FF)
+    rdpq.fill_rectangle(0, 0, 320, 240)
+
+    draw_dungeon()
+
+    for i in 0..MAX_ENEMIES {
+        draw_enemy_token(&enemies[i])
+    }
+    for i in 0..MAX_HEROES {
+        draw_hero_token(&heroes[i], phase == Phase.hero_turn and active_hero == i)
+    }
+
+    draw_hud()
+
+    rdpq.detach_show()
+}
+
+-- ============================================================
+-- Title / victory / defeat screens
+-- ============================================================
+fn any_start_pressed() -> bool {
+    controller.poll()
+    for i in 0..MAX_HEROES {
+        let pad = controller.read(i)
+        if pad.pressed.start { return true }
+    }
+    return false
+}
+
+fn draw_title() {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    rdpq.set_mode_fill(0x100E14FF)
+    rdpq.fill_rectangle(0, 0, 320, 240)
+
+    -- four role-colored quadrant banners
+    rdpq.set_mode_fill(role_color(Role.tank))
+    rdpq.fill_rectangle(40, 40, 155, 110)
+    rdpq.set_mode_fill(role_color(Role.healer))
+    rdpq.fill_rectangle(165, 40, 280, 110)
+    rdpq.set_mode_fill(role_color(Role.melee))
+    rdpq.fill_rectangle(40, 118, 155, 188)
+    rdpq.set_mode_fill(role_color(Role.ranged))
+    rdpq.fill_rectangle(165, 118, 280, 188)
+
+    let bob: i32 = 0
+    if (frame_counter / 15) % 2 == 0 { bob = 1 }
+    rdpq.set_mode_fill(0xF8F0A0FF)
+    rdpq.fill_rectangle(110, 205 + bob, 210, 213 + bob)
+
+    rdpq.detach_show()
+}
+
+fn draw_end_screen(win: bool) {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    let bg: u32 = 0x1A1010FF
+    if win { bg = 0x14180CFF }
+    rdpq.set_mode_fill(bg)
+    rdpq.fill_rectangle(0, 0, 320, 240)
+
+    let accent: u32 = 0xD84030FF
+    if win { accent = 0xE8C848FF }
+    rdpq.set_mode_fill(accent)
+    rdpq.fill_rectangle(60, 60, 260, 100)
+
+    for i in 0..24 {
+        let sx: i32 = math.rand_range(20, 300)
+        let sy: i32 = math.rand_range(120, 210)
+        rdpq.set_mode_fill(accent)
+        rdpq.fill_rectangle(sx, sy, sx + 4, sy + 4)
+    }
+
+    let bob: i32 = 0
+    if (frame_counter / 15) % 2 == 0 { bob = 1 }
+    rdpq.set_mode_fill(0xF0F0F0FF)
+    rdpq.fill_rectangle(110, 220 + bob, 210, 226 + bob)
+
+    rdpq.detach_show()
+}
+
+-- ============================================================
+-- Entry point
+-- ============================================================
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+
+    phase = Phase.title
+
+    loop {
+        let dt: f32 = timer.delta()
+        if dt > 0.05 { dt = 0.05 }
+        frame_counter += 1
+
+        match phase {
+            .title => {
+                if any_start_pressed() {
+                    start_level()
+                }
+                draw_title()
+            }
+            .hero_turn => {
+                handle_hero_input(dt)
+                draw_scene()
+            }
+            .enemy_turn => {
+                enemy_phase_timer -= dt
+                if enemy_phase_timer <= 0.0 {
+                    check_outcomes()
+                    if phase == Phase.enemy_turn { begin_hero_phase() }
+                }
+                draw_scene()
+            }
+            .victory => {
+                if any_start_pressed() { phase = Phase.title }
+                draw_end_screen(true)
+            }
+            .defeat => {
+                if any_start_pressed() { phase = Phase.title }
+                draw_end_screen(false)
+            }
+        }
+    }
+}
