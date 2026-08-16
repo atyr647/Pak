@@ -25,7 +25,11 @@ use n64.controller
 use n64.rdpq
 use n64.timer
 use n64.math
+use n64.surface
 use t3d
+
+-- libdragon tex_format_t value used for the depth buffer.
+extern const FMT_RGBA16: i32
 
 extern "C" {
     fn t3d_matrix_push(mat: *T3DMat4FP)
@@ -36,42 +40,58 @@ extern "C" {
 -- ============================================================
 -- Constants
 -- ============================================================
-const GRID_W: i32 = 16
-const GRID_H: i32 = 12
+-- 640x480 is the N64's maximum resolution. It is interlaced and expensive to
+-- fill, so we run double-buffered (a third 614 KB framebuffer plus the depth
+-- buffer would not leave enough of the 4 MB for game data).
+const SCREEN_W: i32 = 640
+const SCREEN_H: i32 = 480
+
+const GRID_W: i32 = 32
+const GRID_H: i32 = 24
+const GRID_CELLS: i32 = 768        -- GRID_W * GRID_H
+
+-- The level ships as a 3x3 grid of chunk models; only chunks near the camera
+-- are drawn, which keeps the per-frame triangle count down at 640x480.
+const CHUNK_COLS: i32 = 3
+const CHUNK_ROWS: i32 = 3
+const CHUNK_W:    i32 = 11
+const CHUNK_H:    i32 = 8
+const NUM_CHUNKS: i32 = 9
+const CHUNK_DRAW_DIST: f32 = 21.0
 
 const TILE_WALL:  u8 = 0
 const TILE_FLOOR: u8 = 1
 
 const MAX_HEROES:  i32 = 4
-const MAX_ENEMIES: i32 = 12
+const MAX_ENEMIES: i32 = 24
 
-const HUD_Y: i32 = 200
+const HUD_Y: i32 = 400
 
 -- role tuning
 const TANK_HP:     i32 = 30
 const TANK_ATK:    i32 = 3
-const TANK_MOVE:   i32 = 1
+const TANK_MOVE:   i32 = 3
 const TANK_CD:     i32 = 3
 const TAUNT_TURNS: i32 = 2
 
 const HEAL_HP:      i32 = 14
 const HEAL_AMT:     i32 = 6
 const HEAL_GROUP:   i32 = 4
-const HEAL_RADIUS:  i32 = 4
-const HEAL_MOVE:    i32 = 2
+const HEAL_RADIUS:  i32 = 6
+const HEAL_MOVE:    i32 = 4
 const HEAL_CD:      i32 = 4
 
 const MELEE_HP:    i32 = 20
 const MELEE_ATK:   i32 = 6
 const MELEE_WHIRL: i32 = 4
-const MELEE_MOVE:  i32 = 3
+const MELEE_MOVE:  i32 = 5
 const MELEE_CD:    i32 = 3
 
 const RANGED_HP:     i32 = 16
 const RANGED_ATK:    i32 = 4
 const RANGED_VOLLEY: i32 = 3
-const RANGED_RANGE:  i32 = 4
-const RANGED_MOVE:   i32 = 2
+const RANGED_RANGE:  i32 = 6
+const RANGED_MOVE:   i32 = 4
 const RANGED_CD:     i32 = 3
 
 -- enemy tuning
@@ -86,8 +106,8 @@ const ENEMY_PHASE_TIME: f32 = 0.7
 
 -- 3D world layout: one grid tile = one world unit, grid centered on origin.
 --   world x = gx - (GRID_W-1)/2      world z = gy - (GRID_H-1)/2
-const WORLD_OX: f32 = 7.5
-const WORLD_OZ: f32 = 5.5
+const WORLD_OX: f32 = 15.5
+const WORLD_OZ: f32 = 11.5
 
 -- Models are authored facing -Z, so a Y rotation of 0 looks "north" (gy-1).
 const FACE_NORTH: f32 =  0.0
@@ -99,11 +119,11 @@ const FACE_WEST:  f32 =  1.57079633
 const CAM_H:      f32 = 7.0     -- height above the focus point
 const CAM_BACK:   f32 = 8.5     -- distance behind (+Z of) the focus point
 const CAM_SMOOTH: f32 = 4.0     -- exponential follow rate
-const CAM_CLAMP_X: f32 = 5.0
-const CAM_CLAMP_Z: f32 = 3.5
+const CAM_CLAMP_X: f32 = 12.0
+const CAM_CLAMP_Z: f32 = 8.0
 
 -- Units are drawn oversized relative to a 1-unit tile so they stay readable
--- at 320x240 -- the usual trick in grid tactics games.
+-- at N64 resolution -- the usual trick in grid tactics games.
 const UNIT_SCALE: f32 = 1.5
 const BOSS_SCALE: f32 = 1.8
 
@@ -140,10 +160,10 @@ struct Enemy {
 -- ============================================================
 -- Globals
 -- ============================================================
-static level: [192]u8 = undefined   -- GRID_W * GRID_H, row-major (gy * GRID_W + gx)
+static level: [768]u8 = undefined   -- GRID_W * GRID_H, row-major (gy * GRID_W + gx)
 
 static heroes:  [4]Hero    = undefined
-static enemies: [12]Enemy  = undefined
+static enemies: [24]Enemy  = undefined
 static enemies_alive: i32  = 0
 
 static phase:             Phase = Phase.title
@@ -166,7 +186,7 @@ fn tile_at(gx: i32, gy: i32) -> u8 {
     return level[tile_index(gx, gy)]
 }
 
-fn carve_room(x0: i32, y0: i32, x1: i32, y1: i32) {
+fn carve(x0: i32, y0: i32, x1: i32, y1: i32) {
     for gy in y0..(y1 + 1) {
         for gx in x0..(x1 + 1) {
             level[tile_index(gx, gy)] = TILE_FLOOR
@@ -174,43 +194,40 @@ fn carve_room(x0: i32, y0: i32, x1: i32, y1: i32) {
     }
 }
 
-fn carve_h_corridor(x0: i32, x1: i32, gy: i32) {
-    for gx in x0..(x1 + 1) {
-        level[tile_index(gx, gy)] = TILE_FLOOR
-    }
-}
-
-fn carve_v_corridor(y0: i32, y1: i32, gx: i32) {
-    for gy in y0..(y1 + 1) {
-        level[tile_index(gx, gy)] = TILE_FLOOR
-    }
-}
-
+-- 3x3 grid of rooms, every neighbour joined by a 2-tile-wide corridor so two
+-- units can pass each other anywhere in the dungeon.
+-- Layout must stay in sync with tools/gen_dungeon_models.py.
 fn build_level() {
-    for i in 0..192 {
+    for i in 0..GRID_CELLS {
         level[i] = TILE_WALL
     }
 
-    -- Room A: start room (top-left)
-    carve_room(1, 1, 4, 4)
-    -- Room B: top-right
-    carve_room(7, 1, 10, 3)
-    -- Room C: center hub
-    carve_room(6, 5, 9, 8)
-    -- Room D: bottom-left
-    carve_room(1, 6, 4, 9)
-    -- Room E: right
-    carve_room(11, 5, 14, 8)
-    -- Room F: boss room (bottom-right)
-    carve_room(10, 9, 14, 11)
+    -- rooms, north row / middle row / south row
+    carve(2,  2,  8,  6)     -- A  start
+    carve(12, 2,  19, 6)     -- B
+    carve(23, 2,  29, 6)     -- C
+    carve(2,  10, 8,  15)    -- D
+    carve(12, 10, 19, 15)    -- E  central hub
+    carve(23, 10, 29, 15)    -- F
+    carve(2,  18, 8,  22)    -- G
+    carve(12, 18, 19, 22)    -- H
+    carve(23, 18, 29, 22)    -- I  boss
 
-    -- Corridors
-    carve_h_corridor(4, 7, 2)     -- A -> B
-    carve_v_corridor(4, 6, 2)     -- A -> D
-    carve_v_corridor(3, 5, 8)     -- B -> C
-    carve_h_corridor(4, 6, 7)     -- D -> C
-    carve_h_corridor(9, 11, 6)    -- C -> E
-    carve_v_corridor(8, 9, 12)    -- E -> F (boss)
+    -- horizontal corridors (2 tiles tall)
+    carve(8,  3,  12, 4)
+    carve(19, 3,  23, 4)
+    carve(8,  12, 12, 13)
+    carve(19, 12, 23, 13)
+    carve(8,  19, 12, 20)
+    carve(19, 19, 23, 20)
+
+    -- vertical corridors (2 tiles wide)
+    carve(4,  6,  5,  10)
+    carve(15, 6,  16, 10)
+    carve(26, 6,  27, 10)
+    carve(4,  15, 5,  18)
+    carve(15, 15, 16, 18)
+    carve(26, 15, 27, 18)
 }
 
 -- ============================================================
@@ -298,27 +315,47 @@ fn spawn_enemies() {
     for i in 0..MAX_ENEMIES {
         enemies[i].alive = false
     }
-    init_enemy(&enemies[0],  8,  2, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[1],  9,  1, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[2],  7,  6, EnemyKind.slime,    SLIME_HP)
-    init_enemy(&enemies[3],  8,  7, EnemyKind.slime,    SLIME_HP)
-    init_enemy(&enemies[4],  6,  7, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[5],  2,  7, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[6],  3,  8, EnemyKind.slime,    SLIME_HP)
-    init_enemy(&enemies[7], 12,  6, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[8], 13,  7, EnemyKind.skeleton, SKEL_HP)
-    init_enemy(&enemies[9], 12,  7, EnemyKind.slime,    SLIME_HP)
-    init_enemy(&enemies[10], 12, 10, EnemyKind.boss,    BOSS_HP)
-    enemies_alive = 11
+    -- Room B (north-centre)
+    init_enemy(&enemies[0],  14, 3,  EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[1],  17, 4,  EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[2],  15, 5,  EnemyKind.slime,    SLIME_HP)
+    -- Room C (north-east)
+    init_enemy(&enemies[3],  25, 3,  EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[4],  27, 5,  EnemyKind.slime,    SLIME_HP)
+    -- Room D (west)
+    init_enemy(&enemies[5],  3,  12, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[6],  6,  14, EnemyKind.slime,    SLIME_HP)
+    -- Room E (central hub) -- the big midpoint fight
+    init_enemy(&enemies[7],  14, 11, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[8],  17, 12, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[9],  15, 14, EnemyKind.slime,    SLIME_HP)
+    init_enemy(&enemies[10], 18, 14, EnemyKind.slime,    SLIME_HP)
+    -- Room F (east)
+    init_enemy(&enemies[11], 25, 11, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[12], 28, 13, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[13], 26, 15, EnemyKind.slime,    SLIME_HP)
+    -- Room G (south-west)
+    init_enemy(&enemies[14], 4,  20, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[15], 7,  21, EnemyKind.slime,    SLIME_HP)
+    -- Room H (south-centre)
+    init_enemy(&enemies[16], 14, 20, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[17], 17, 21, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[18], 16, 19, EnemyKind.slime,    SLIME_HP)
+    -- Room I (boss room) -- escort plus the boss itself
+    init_enemy(&enemies[19], 24, 19, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[20], 28, 21, EnemyKind.skeleton, SKEL_HP)
+    init_enemy(&enemies[21], 25, 22, EnemyKind.slime,    SLIME_HP)
+    init_enemy(&enemies[22], 26, 20, EnemyKind.boss,     BOSS_HP)
+    enemies_alive = 23
 }
 
 fn start_level() {
     build_level()
 
-    init_hero(&heroes[0], 1, 1, Role.tank,   TANK_HP)
-    init_hero(&heroes[1], 2, 1, Role.melee,  MELEE_HP)
-    init_hero(&heroes[2], 1, 2, Role.healer, HEAL_HP)
-    init_hero(&heroes[3], 2, 2, Role.ranged, RANGED_HP)
+    init_hero(&heroes[0], 4, 4, Role.tank,   TANK_HP)
+    init_hero(&heroes[1], 5, 4, Role.melee,  MELEE_HP)
+    init_hero(&heroes[2], 4, 5, Role.healer, HEAL_HP)
+    init_hero(&heroes[3], 5, 5, Role.ranged, RANGED_HP)
 
     spawn_enemies()
 
@@ -683,61 +720,74 @@ fn handle_hero_input(dt: f32) {
 }
 
 -- ============================================================
--- Bitmap font (3x5 glyphs, asset-free)
--- Layout: 0-9 = indices 0..9, A-Z = 10..35, space=36, ':'=37,
---         '-'=38, '.'=39, '!'=40, '/'=41
+-- Bitmap font -- 5x7 glyphs, asset-free
+--
+-- A 3x5 font has no detail left to reveal when scaled up, so glyphs are
+-- stored as 7 rows of 5 bits (bit 4 = leftmost column), one byte per row.
+-- Layout: 0-9 = 0..9, A-Z = 10..35, space=36, ':'=37, '-'=38, '.'=39,
+--         '!'=40, '/'=41
 -- ============================================================
 const NUM_GLYPHS: i32 = 42
+const GLYPH_W:    i32 = 5
+const GLYPH_H:    i32 = 7
+const GLYPH_ADV:  i32 = 6    -- glyph width + 1 column of spacing
 
-static font: [42]u16 = undefined
+static font: [294]u8 = undefined    -- NUM_GLYPHS * GLYPH_H
 
-fn pack_glyph(r0: i32, r1: i32, r2: i32, r3: i32, r4: i32) -> u16 {
-    return (r0 | (r1 << 3) | (r2 << 6) | (r3 << 9) | (r4 << 12)) as u16
+fn set_glyph(gi: i32, r0: i32, r1: i32, r2: i32, r3: i32,
+             r4: i32, r5: i32, r6: i32) {
+    font[gi * 7 + 0] = r0 as u8
+    font[gi * 7 + 1] = r1 as u8
+    font[gi * 7 + 2] = r2 as u8
+    font[gi * 7 + 3] = r3 as u8
+    font[gi * 7 + 4] = r4 as u8
+    font[gi * 7 + 5] = r5 as u8
+    font[gi * 7 + 6] = r6 as u8
 }
 
 fn init_font() {
-    font[0]  = pack_glyph(7, 5, 5, 5, 7)
-    font[1]  = pack_glyph(2, 6, 2, 2, 7)
-    font[2]  = pack_glyph(7, 1, 7, 4, 7)
-    font[3]  = pack_glyph(7, 1, 7, 1, 7)
-    font[4]  = pack_glyph(5, 5, 7, 1, 1)
-    font[5]  = pack_glyph(7, 4, 7, 1, 7)
-    font[6]  = pack_glyph(7, 4, 7, 5, 7)
-    font[7]  = pack_glyph(7, 1, 2, 2, 2)
-    font[8]  = pack_glyph(7, 5, 7, 5, 7)
-    font[9]  = pack_glyph(7, 5, 7, 1, 7)
-    font[10] = pack_glyph(7, 5, 7, 5, 5)
-    font[11] = pack_glyph(6, 5, 6, 5, 6)
-    font[12] = pack_glyph(7, 4, 4, 4, 7)
-    font[13] = pack_glyph(6, 5, 5, 5, 6)
-    font[14] = pack_glyph(7, 4, 6, 4, 7)
-    font[15] = pack_glyph(7, 4, 6, 4, 4)
-    font[16] = pack_glyph(7, 4, 5, 5, 7)
-    font[17] = pack_glyph(5, 5, 7, 5, 5)
-    font[18] = pack_glyph(7, 2, 2, 2, 7)
-    font[19] = pack_glyph(1, 1, 1, 5, 7)
-    font[20] = pack_glyph(5, 5, 6, 5, 5)
-    font[21] = pack_glyph(4, 4, 4, 4, 7)
-    font[22] = pack_glyph(5, 7, 7, 5, 5)
-    font[23] = pack_glyph(5, 7, 7, 7, 5)
-    font[24] = pack_glyph(7, 5, 5, 5, 7)
-    font[25] = pack_glyph(7, 5, 7, 4, 4)
-    font[26] = pack_glyph(7, 5, 5, 7, 3)
-    font[27] = pack_glyph(6, 5, 6, 5, 5)
-    font[28] = pack_glyph(7, 4, 7, 1, 7)
-    font[29] = pack_glyph(7, 2, 2, 2, 2)
-    font[30] = pack_glyph(5, 5, 5, 5, 7)
-    font[31] = pack_glyph(5, 5, 5, 5, 2)
-    font[32] = pack_glyph(5, 5, 7, 7, 5)
-    font[33] = pack_glyph(5, 5, 2, 5, 5)
-    font[34] = pack_glyph(5, 5, 2, 2, 2)
-    font[35] = pack_glyph(7, 1, 2, 4, 7)
-    font[36] = pack_glyph(0, 0, 0, 0, 0)
-    font[37] = pack_glyph(0, 2, 0, 2, 0)
-    font[38] = pack_glyph(0, 0, 7, 0, 0)
-    font[39] = pack_glyph(0, 0, 0, 0, 2)
-    font[40] = pack_glyph(2, 2, 2, 0, 2)
-    font[41] = pack_glyph(1, 1, 2, 4, 4)
+    set_glyph(0,  14, 17, 19, 21, 25, 17, 14)   -- 0
+    set_glyph(1,   4, 12,  4,  4,  4,  4, 14)   -- 1
+    set_glyph(2,  14, 17,  1,  2,  4,  8, 31)   -- 2
+    set_glyph(3,  31,  2,  4,  2,  1, 17, 14)   -- 3
+    set_glyph(4,   2,  6, 10, 18, 31,  2,  2)   -- 4
+    set_glyph(5,  31, 16, 30,  1,  1, 17, 14)   -- 5
+    set_glyph(6,   6,  8, 16, 30, 17, 17, 14)   -- 6
+    set_glyph(7,  31,  1,  2,  4,  8,  8,  8)   -- 7
+    set_glyph(8,  14, 17, 17, 14, 17, 17, 14)   -- 8
+    set_glyph(9,  14, 17, 17, 15,  1,  2, 12)   -- 9
+    set_glyph(10, 14, 17, 17, 31, 17, 17, 17)   -- A
+    set_glyph(11, 30, 17, 17, 30, 17, 17, 30)   -- B
+    set_glyph(12, 14, 17, 16, 16, 16, 17, 14)   -- C
+    set_glyph(13, 28, 18, 17, 17, 17, 18, 28)   -- D
+    set_glyph(14, 31, 16, 16, 30, 16, 16, 31)   -- E
+    set_glyph(15, 31, 16, 16, 30, 16, 16, 16)   -- F
+    set_glyph(16, 14, 17, 16, 23, 17, 17, 15)   -- G
+    set_glyph(17, 17, 17, 17, 31, 17, 17, 17)   -- H
+    set_glyph(18, 14,  4,  4,  4,  4,  4, 14)   -- I
+    set_glyph(19,  7,  2,  2,  2,  2, 18, 12)   -- J
+    set_glyph(20, 17, 18, 20, 24, 20, 18, 17)   -- K
+    set_glyph(21, 16, 16, 16, 16, 16, 16, 31)   -- L
+    set_glyph(22, 17, 27, 21, 21, 17, 17, 17)   -- M
+    set_glyph(23, 17, 17, 25, 21, 19, 17, 17)   -- N
+    set_glyph(24, 14, 17, 17, 17, 17, 17, 14)   -- O
+    set_glyph(25, 30, 17, 17, 30, 16, 16, 16)   -- P
+    set_glyph(26, 14, 17, 17, 17, 21, 18, 13)   -- Q
+    set_glyph(27, 30, 17, 17, 30, 20, 18, 17)   -- R
+    set_glyph(28, 15, 16, 16, 14,  1,  1, 30)   -- S
+    set_glyph(29, 31,  4,  4,  4,  4,  4,  4)   -- T
+    set_glyph(30, 17, 17, 17, 17, 17, 17, 14)   -- U
+    set_glyph(31, 17, 17, 17, 17, 17, 10,  4)   -- V
+    set_glyph(32, 17, 17, 17, 21, 21, 27, 17)   -- W
+    set_glyph(33, 17, 17, 10,  4, 10, 17, 17)   -- X
+    set_glyph(34, 17, 17, 10,  4,  4,  4,  4)   -- Y
+    set_glyph(35, 31,  1,  2,  4,  8, 16, 31)   -- Z
+    set_glyph(36,  0,  0,  0,  0,  0,  0,  0)   -- space
+    set_glyph(37,  0,  4,  4,  0,  4,  4,  0)   -- :
+    set_glyph(38,  0,  0,  0, 14,  0,  0,  0)   -- -
+    set_glyph(39,  0,  0,  0,  0,  0,  0,  4)   -- .
+    set_glyph(40,  4,  4,  4,  4,  4,  0,  4)   -- !
+    set_glyph(41,  1,  1,  2,  4,  8, 16, 16)   -- /
 }
 
 fn char_index(c: i32) -> i32 {
@@ -755,11 +805,10 @@ fn char_index(c: i32) -> i32 {
 -- Assumes fill mode + fill color are already set by the caller.
 fn draw_glyph(gi: i32, x: i32, y: i32, scale: i32) {
     if gi < 0 or gi >= NUM_GLYPHS { return }
-    let packed: i32 = font[gi] as i32
-    for row in 0..5 {
-        let bits: i32 = (packed >> (row * 3)) & 7
-        for col in 0..3 {
-            if (bits >> (2 - col)) & 1 == 1 {
+    for row in 0..GLYPH_H {
+        let bits: i32 = font[gi * 7 + row] as i32
+        for col in 0..GLYPH_W {
+            if (bits >> (GLYPH_W - 1 - col)) & 1 == 1 {
                 let px: i32 = x + col * scale
                 let py: i32 = y + row * scale
                 rdpq.fill_rectangle(px, py, px + scale, py + scale)
@@ -774,13 +823,13 @@ fn text_width(s: *c_char, scale: i32) -> i32 {
         if s[n] as i32 == 0 { break }
         n += 1
     }
-    return n * 4 * scale
+    return n * GLYPH_ADV * scale
 }
 
 fn draw_text(s: *c_char, x: i32, y: i32, scale: i32, col: u32) {
     rdpq.set_mode_fill(col)
     let i: i32 = 0
-    let step: i32 = 4 * scale
+    let step: i32 = GLYPH_ADV * scale
     loop {
         let c: i32 = s[i] as i32
         if c == 0 { break }
@@ -809,7 +858,7 @@ fn draw_number(n: i32, x: i32, y: i32, scale: i32, col: u32) {
     if v < 0 { v = 0 }
     let digits: i32 = digit_count(v)
     rdpq.set_mode_fill(col)
-    let step: i32 = 4 * scale
+    let step: i32 = GLYPH_ADV * scale
     let i: i32 = digits - 1
     loop {
         if i < 0 { break }
@@ -820,7 +869,7 @@ fn draw_number(n: i32, x: i32, y: i32, scale: i32, col: u32) {
 }
 
 fn number_width(n: i32, scale: i32) -> i32 {
-    return digit_count(n) * 4 * scale
+    return digit_count(n) * GLYPH_ADV * scale
 }
 
 -- ============================================================
@@ -868,12 +917,13 @@ fn role_light(r: Role) -> u32 {
 -- ============================================================
 static vp: T3DViewport = undefined
 
-static mdl_dungeon: *T3DModel = none
+static mdl_chunk: [*T3DModel; 9] = undefined   -- level, 3x3 chunks
+static depth_buf: surface_t = undefined
 static mdl_hero:  [*T3DModel; 4] = undefined   -- indexed by role_index()
 static mdl_enemy: [*T3DModel; 3] = undefined   -- indexed by enemy_index()
 
--- One matrix per potentially-visible unit (4 heroes + 12 enemies).
-static unit_fp: [*T3DMat4FP; 16] = undefined
+-- One matrix per potentially-visible unit (4 heroes + 24 enemies).
+static unit_fp: [*T3DMat4FP; 28] = undefined
 
 -- Smoothed camera focus point, in world space.
 static cam_tx: f32 = 0.0
@@ -997,6 +1047,17 @@ fn draw_model_at(model: *T3DModel, fp: *T3DMat4FP, wx: f32, wz: f32,
     t3d_matrix_pop(1)
 }
 
+-- World-space centre of a chunk, used for distance culling.
+fn chunk_center_x(ci: i32) -> f32 {
+    let cx: i32 = ci % CHUNK_COLS
+    return (cx * CHUNK_W) as f32 + (CHUNK_W as f32) * 0.5 - WORLD_OX
+}
+
+fn chunk_center_z(ci: i32) -> f32 {
+    let cy: i32 = ci / CHUNK_COLS
+    return (cy * CHUNK_H) as f32 + (CHUNK_H as f32) * 0.5 - WORLD_OZ
+}
+
 fn render_world(dt: f32) {
     update_camera(dt)
 
@@ -1014,15 +1075,23 @@ fn render_world(dt: f32) {
     t3d.light_set_directional(1, 110, 120, 165, 0.50, 0.25, -0.75)
     t3d.light_set_count(2)
 
-    if mdl_dungeon != none {
-        t3d.model_draw(mdl_dungeon)
+    -- Draw only the level chunks near the camera. The rest is beyond the fog
+    -- anyway, and skipping it keeps the triangle count sane at 640x480.
+    for ci in 0..NUM_CHUNKS {
+        if mdl_chunk[ci] != none {
+            let ddx: f32 = chunk_center_x(ci) - cam_tx
+            let ddz: f32 = chunk_center_z(ci) - cam_tz
+            if math.sqrt_f(ddx * ddx + ddz * ddz) <= CHUNK_DRAW_DIST {
+                t3d.model_draw(mdl_chunk[ci])
+            }
+        }
     }
 
     -- Units share one matrix pool, handed out in draw order each frame.
     let slot: i32 = 0
 
     for i in 0..MAX_ENEMIES {
-        if enemies[i].alive and slot < 16 {
+        if enemies[i].alive and slot < 28 {
             let mi: i32 = enemy_index(enemies[i].kind)
             if mdl_enemy[mi] != none and unit_fp[slot] != none {
                 let esc: f32 = UNIT_SCALE
@@ -1036,7 +1105,7 @@ fn render_world(dt: f32) {
     }
 
     for i in 0..MAX_HEROES {
-        if heroes[i].alive and slot < 16 {
+        if heroes[i].alive and slot < 28 {
             let mi: i32 = role_index(heroes[i].role)
             if mdl_hero[mi] != none and unit_fp[slot] != none {
                 draw_model_at(mdl_hero[mi], unit_fp[slot],
@@ -1062,7 +1131,7 @@ fn role_name(r: Role) -> *c_char {
 }
 
 fn draw_hero_panel(slot: i32) {
-    let px: i32 = 4 + slot * 78
+    let px: i32 = 8 + slot * 156
     let py: i32 = HUD_Y
     let h: *Hero = &heroes[slot]
     let is_turn: bool = phase == Phase.hero_turn and active_hero == slot
@@ -1070,76 +1139,71 @@ fn draw_hero_panel(slot: i32) {
     let bg: u32 = 0x16141CFF
     if is_turn { bg = 0x2E2C3EFF }
     rdpq.set_mode_fill(bg)
-    rdpq.fill_rectangle(px, py, px + 74, py + 38)
+    rdpq.fill_rectangle(px, py, px + 148, py + 72)
 
-    -- role swatch (greyed out when downed)
+    -- role swatch, greyed out when downed
     let swatch: u32 = role_color(h.role)
     if not h.alive { swatch = 0x3A3A3AFF }
     rdpq.set_mode_fill(swatch)
-    rdpq.fill_rectangle(px + 3, py + 4, px + 15, py + 16)
-
-    -- player number on the swatch
-    draw_number(slot + 1, px + 7, py + 8, 1, 0x101018FF)
+    rdpq.fill_rectangle(px + 6, py + 8, px + 32, py + 34)
+    draw_number(slot + 1, px + 14, py + 14, 2, 0x101018FF)
 
     let name_col: u32 = 0xF2ECDCFF
     if not h.alive { name_col = 0x6A6A6AFF }
-    draw_text(role_name(h.role), px + 19, py + 3, 2, name_col)
+    draw_text(role_name(h.role), px + 40, py + 10, 2, name_col)
 
     if h.alive {
         let pct: f32 = h.hp as f32 / h.hp_max as f32
         let hp_col: u32 = 0x50E060FF
         if pct <= 0.5 { hp_col = 0xE0C040FF }
         if pct <= 0.25 { hp_col = 0xE04838FF }
-        draw_bar(px + 19, py + 16, 50, 5, pct, hp_col, 0x201818FF)
+        draw_bar(px + 8, py + 40, 132, 10, pct, hp_col, 0x201818FF)
 
-        draw_number(h.hp, px + 19, py + 24, 1, 0xF2ECDCFF)
-        let hx: i32 = px + 19 + number_width(h.hp, 1)
-        draw_text("/", hx, py + 24, 1, 0x8A8A94FF)
-        draw_number(h.hp_max, hx + 4, py + 24, 1, 0x8A8A94FF)
+        draw_number(h.hp, px + 8, py + 54, 2, 0xF2ECDCFF)
+        let hx: i32 = px + 8 + number_width(h.hp, 2)
+        draw_text("/", hx, py + 54, 2, 0x8A8A94FF)
+        draw_number(h.hp_max, hx + 12, py + 54, 2, 0x8A8A94FF)
     } else {
-        draw_text("DOWN", px + 19, py + 22, 2, 0xE04838FF)
+        draw_text("DOWN", px + 8, py + 50, 2, 0xE04838FF)
     }
 
     -- ability cooldown pips: lit = ready
     let cd_max: i32 = role_ability_cd(h.role)
-    let px2: i32 = px + 42
+    let px2: i32 = px + 148 - 10 - cd_max * 14
     for i in 0..cd_max {
         let pip: u32 = 0x33333CFF
         if i >= h.ability_cd and h.alive { pip = 0xE8C848FF }
         rdpq.set_mode_fill(pip)
-        rdpq.fill_rectangle(px2, py + 24, px2 + 5, py + 30)
-        px2 += 7
+        rdpq.fill_rectangle(px2, py + 54, px2 + 11, py + 66)
+        px2 += 14
     }
 
     if is_turn {
         rdpq.set_mode_fill(0xFFF0A0FF)
-        rdpq.fill_rectangle(px, py - 3, px + 74, py)
+        rdpq.fill_rectangle(px, py - 5, px + 148, py)
     }
 }
 
 fn draw_top_bar() {
-    -- turn banner, centered
     if phase == Phase.hero_turn {
         let h: *Hero = &heroes[active_hero]
         let name: *c_char = role_name(h.role)
-        let w: i32 = text_width(name, 2) + 4 * 2 * 6
-        let sx: i32 = 160 - w / 2
-        draw_text(name, sx, 6, 2, role_light(h.role))
-        draw_text(" TURN", sx + text_width(name, 2), 6, 2, 0xF2ECDCFF)
-        -- remaining movement points
-        draw_text("MOVE", 232, 4, 1, 0x8A8A94FF)
-        draw_number(h.move_left, 254, 4, 1, 0xF2ECDCFF)
+        let w: i32 = text_width(name, 3) + GLYPH_ADV * 3 * 5
+        let sx: i32 = SCREEN_W / 2 - w / 2
+        draw_text(name, sx, 12, 3, role_light(h.role))
+        draw_text(" TURN", sx + text_width(name, 3), 12, 3, 0xF2ECDCFF)
+
+        draw_text("MOVE", SCREEN_W - 150, 14, 2, 0x8A8A94FF)
+        draw_number(h.move_left, SCREEN_W - 90, 14, 2, 0xF2ECDCFF)
     } elif phase == Phase.enemy_turn {
-        draw_text_centered("ENEMY TURN", 160, 6, 2, 0xE07050FF)
+        draw_text_centered("ENEMY TURN", SCREEN_W / 2, 12, 3, 0xE07050FF)
     }
 
-    -- enemy counter, top-left
-    draw_text("FOES", 6, 4, 1, 0x8A8A94FF)
-    draw_number(enemies_alive, 28, 4, 1, 0xE05848FF)
+    draw_text("FOES", 12, 14, 2, 0x8A8A94FF)
+    draw_number(enemies_alive, 72, 14, 2, 0xE05848FF)
 
-    -- round counter, top-right
-    draw_text("RND", 288, 4, 1, 0x8A8A94FF)
-    draw_number(round_num, 306, 4, 1, 0xF2ECDCFF)
+    draw_text("RND", SCREEN_W - 150, 40, 2, 0x8A8A94FF)
+    draw_number(round_num, SCREEN_W - 90, 40, 2, 0xF2ECDCFF)
 }
 
 fn draw_hud() {
@@ -1151,7 +1215,7 @@ fn draw_hud() {
 
 fn draw_scene(dt: f32) {
     let fb = display.get()
-    rdpq.attach_clear(fb)
+    rdpq.attach_clear(fb, &depth_buf)
 
     -- 3D pass
     render_world(dt)
@@ -1177,49 +1241,49 @@ fn any_start_pressed() -> bool {
 
 fn draw_role_card(x: i32, y: i32, r: Role, label: *c_char, sub: *c_char) {
     rdpq.set_mode_fill(0x1A1822FF)
-    rdpq.fill_rectangle(x, y, x + 68, y + 58)
+    rdpq.fill_rectangle(x, y, x + 140, y + 118)
     rdpq.set_mode_fill(role_color(r))
-    rdpq.fill_rectangle(x + 2, y + 2, x + 66, y + 26)
+    rdpq.fill_rectangle(x + 5, y + 5, x + 135, y + 58)
 
-    -- a miniature of the in-world figure, centered on the swatch
-    let cx: i32 = x + 34
+    -- miniature of the in-world figure, centred on the swatch
+    let cx: i32 = x + 70
     rdpq.set_mode_fill(role_light(r))
-    rdpq.fill_rectangle(cx - 4, y + 8, cx + 4, y + 22)
-    rdpq.fill_rectangle(cx - 3, y + 5, cx + 3, y + 9)
+    rdpq.fill_rectangle(cx - 9, y + 18, cx + 9, y + 50)
+    rdpq.fill_rectangle(cx - 7, y + 10, cx + 7, y + 20)
 
-    draw_text_centered(label, x + 34, y + 32, 1, 0xF2ECDCFF)
-    draw_text_centered(sub,   x + 34, y + 44, 1, 0x8A8A94FF)
+    draw_text_centered(label, x + 70, y + 68, 2, 0xF2ECDCFF)
+    draw_text_centered(sub,   x + 70, y + 92, 2, 0x8A8A94FF)
 }
 
 fn draw_title() {
     let fb = display.get()
-    rdpq.attach_clear(fb)
+    rdpq.attach_clear(fb, &depth_buf)
 
     rdpq.set_mode_fill(0x0C0A10FF)
-    rdpq.fill_rectangle(0, 0, 320, 240)
+    rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
 
     -- title plate
     rdpq.set_mode_fill(0x1A1822FF)
-    rdpq.fill_rectangle(28, 14, 292, 62)
+    rdpq.fill_rectangle(60, 28, SCREEN_W - 60, 132)
     rdpq.set_mode_fill(0xE0BC38FF)
-    rdpq.fill_rectangle(28, 14, 292, 17)
-    rdpq.fill_rectangle(28, 59, 292, 62)
+    rdpq.fill_rectangle(60, 28, SCREEN_W - 60, 34)
+    rdpq.fill_rectangle(60, 126, SCREEN_W - 60, 132)
 
-    draw_text_centered("DUNGEON", 160, 22, 3, 0xF2ECDCFF)
-    draw_text_centered("QUARTET", 160, 42, 3, 0xE0BC38FF)
+    draw_text_centered("DUNGEON", SCREEN_W / 2, 46, 5, 0xF2ECDCFF)
+    draw_text_centered("QUARTET", SCREEN_W / 2, 88, 5, 0xE0BC38FF)
 
-    draw_text_centered("4 PLAYER TURN BASED CRAWL", 160, 72, 1, 0x8A8A94FF)
+    draw_text_centered("4 PLAYER TURN BASED CRAWL", SCREEN_W / 2, 148, 2, 0x8A8A94FF)
 
-    draw_role_card(6,   90, Role.tank,   "TANK",   "P1 GUARD")
-    draw_role_card(84,  90, Role.melee,  "MELEE",  "P2 BLADE")
-    draw_role_card(162, 90, Role.healer, "HEAL",   "P3 MEND")
-    draw_role_card(240, 90, Role.ranged, "RANGED", "P4 BOW")
+    draw_role_card(16,  186, Role.tank,   "TANK",   "P1 GUARD")
+    draw_role_card(168, 186, Role.melee,  "MELEE",  "P2 BLADE")
+    draw_role_card(320, 186, Role.healer, "HEAL",   "P3 MEND")
+    draw_role_card(472, 186, Role.ranged, "RANGED", "P4 BOW")
 
-    draw_text_centered("DPAD MOVE   A ACT   B ABILITY", 160, 166, 1, 0x8A8A94FF)
-    draw_text_centered("START ENDS YOUR TURN", 160, 180, 1, 0x8A8A94FF)
+    draw_text_centered("DPAD MOVE    A ACT    B ABILITY", SCREEN_W / 2, 330, 2, 0x8A8A94FF)
+    draw_text_centered("START ENDS YOUR TURN", SCREEN_W / 2, 358, 2, 0x8A8A94FF)
 
     if (frame_counter / 20) % 2 == 0 {
-        draw_text_centered("PRESS START", 160, 208, 2, 0xFFF0A0FF)
+        draw_text_centered("PRESS START", SCREEN_W / 2, 408, 4, 0xFFF0A0FF)
     }
 
     rdpq.detach_show()
@@ -1227,60 +1291,60 @@ fn draw_title() {
 
 fn draw_end_screen(win: bool) {
     let fb = display.get()
-    rdpq.attach_clear(fb)
+    rdpq.attach_clear(fb, &depth_buf)
 
     let bg: u32 = 0x1A1012FF
     if win { bg = 0x121A10FF }
     rdpq.set_mode_fill(bg)
-    rdpq.fill_rectangle(0, 0, 320, 240)
+    rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
 
     let accent: u32 = 0xE04838FF
     if win { accent = 0xE8C848FF }
 
     rdpq.set_mode_fill(0x0E0C12FF)
-    rdpq.fill_rectangle(40, 48, 280, 104)
+    rdpq.fill_rectangle(90, 60, SCREEN_W - 90, 172)
     rdpq.set_mode_fill(accent)
-    rdpq.fill_rectangle(40, 48, 280, 52)
-    rdpq.fill_rectangle(40, 100, 280, 104)
+    rdpq.fill_rectangle(90, 60, SCREEN_W - 90, 68)
+    rdpq.fill_rectangle(90, 164, SCREEN_W - 90, 172)
 
     if win {
-        draw_text_centered("VICTORY", 160, 64, 4, accent)
+        draw_text_centered("VICTORY", SCREEN_W / 2, 90, 6, accent)
     } else {
-        draw_text_centered("DEFEAT", 160, 64, 4, accent)
+        draw_text_centered("DEFEAT", SCREEN_W / 2, 90, 6, accent)
     }
 
     -- party roster with final state
     let i: i32 = 0
     loop {
         if i >= MAX_HEROES { break }
-        let ry: i32 = 122 + i * 22
+        let ry: i32 = 206 + i * 44
         rdpq.set_mode_fill(0x16141CFF)
-        rdpq.fill_rectangle(60, ry, 260, ry + 18)
+        rdpq.fill_rectangle(120, ry, SCREEN_W - 120, ry + 36)
 
         let sw: u32 = role_color(heroes[i].role)
         if not heroes[i].alive { sw = 0x3A3A3AFF }
         rdpq.set_mode_fill(sw)
-        rdpq.fill_rectangle(64, ry + 3, 76, ry + 15)
+        rdpq.fill_rectangle(128, ry + 6, 152, ry + 30)
 
-        draw_text(role_name(heroes[i].role), 84, ry + 6, 1, 0xF2ECDCFF)
+        draw_text(role_name(heroes[i].role), 168, ry + 10, 2, 0xF2ECDCFF)
 
         if heroes[i].alive {
-            draw_text("ALIVE", 178, ry + 6, 1, 0x50E060FF)
-            draw_number(heroes[i].hp, 224, ry + 6, 1, 0xF2ECDCFF)
-            let hx: i32 = 224 + number_width(heroes[i].hp, 1)
-            draw_text("/", hx, ry + 6, 1, 0x8A8A94FF)
-            draw_number(heroes[i].hp_max, hx + 4, ry + 6, 1, 0x8A8A94FF)
+            draw_text("ALIVE", 360, ry + 10, 2, 0x50E060FF)
+            draw_number(heroes[i].hp, 456, ry + 10, 2, 0xF2ECDCFF)
+            let hx: i32 = 456 + number_width(heroes[i].hp, 2)
+            draw_text("/", hx, ry + 10, 2, 0x8A8A94FF)
+            draw_number(heroes[i].hp_max, hx + 12, ry + 10, 2, 0x8A8A94FF)
         } else {
-            draw_text("DOWN", 178, ry + 6, 1, 0xE04838FF)
+            draw_text("DOWN", 360, ry + 10, 2, 0xE04838FF)
         }
         i += 1
     }
 
-    draw_text("ROUNDS", 60, 216, 1, 0x8A8A94FF)
-    draw_number(round_num, 92, 216, 1, 0xF2ECDCFF)
+    draw_text("ROUNDS", 120, 400, 2, 0x8A8A94FF)
+    draw_number(round_num, 216, 400, 2, 0xF2ECDCFF)
 
     if (frame_counter / 20) % 2 == 0 {
-        draw_text("PRESS START", 176, 216, 1, 0xFFF0A0FF)
+        draw_text("PRESS START", 380, 400, 2, 0xFFF0A0FF)
     }
 
     rdpq.detach_show()
@@ -1290,17 +1354,29 @@ fn draw_end_screen(win: bool) {
 -- Entry point
 -- ============================================================
 entry {
-    display.init(0, 2, 3, 0, 1)
+    -- 640x480, 16bpp, double-buffered, no gamma, bilinear resample
+    display.init(1, 2, 2, 0, 1)
     rdpq.init()
     controller.init()
     timer.init()
     t3d.init()
 
+    -- 3D needs a depth buffer; without one, occlusion falls back to draw order
+    depth_buf = surface.alloc(FMT_RGBA16, SCREEN_W, SCREEN_H)
+
     -- 60-degree vertical FOV; far plane past the longest sightline in the map
     vp = t3d.viewport_create()
     t3d.viewport_set_projection(&vp, 60.0, 1.0, 60.0)
 
-    mdl_dungeon   = t3d.model_load("rom:/models/dungeon.t3dm")
+    mdl_chunk[0]  = t3d.model_load("rom:/models/dungeon_c0.t3dm")
+    mdl_chunk[1]  = t3d.model_load("rom:/models/dungeon_c1.t3dm")
+    mdl_chunk[2]  = t3d.model_load("rom:/models/dungeon_c2.t3dm")
+    mdl_chunk[3]  = t3d.model_load("rom:/models/dungeon_c3.t3dm")
+    mdl_chunk[4]  = t3d.model_load("rom:/models/dungeon_c4.t3dm")
+    mdl_chunk[5]  = t3d.model_load("rom:/models/dungeon_c5.t3dm")
+    mdl_chunk[6]  = t3d.model_load("rom:/models/dungeon_c6.t3dm")
+    mdl_chunk[7]  = t3d.model_load("rom:/models/dungeon_c7.t3dm")
+    mdl_chunk[8]  = t3d.model_load("rom:/models/dungeon_c8.t3dm")
     mdl_hero[0]   = t3d.model_load("rom:/models/hero_tank.t3dm")
     mdl_hero[1]   = t3d.model_load("rom:/models/hero_healer.t3dm")
     mdl_hero[2]   = t3d.model_load("rom:/models/hero_melee.t3dm")
@@ -1312,7 +1388,7 @@ entry {
     -- per-instance matrices (16-byte aligned, uncached for RSP DMA)
     let mi: i32 = 0
     loop {
-        if mi >= 16 { break }
+        if mi >= 28 { break }
         unit_fp[mi] = Mat4Fp.create()
         mi += 1
     }

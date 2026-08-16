@@ -28,7 +28,13 @@ import struct
 import sys
 
 # ── Grid + level layout (must stay in sync with src/main.pk64) ──────────────
-GRID_W, GRID_H = 16, 12
+GRID_W, GRID_H = 32, 24
+
+# The level is emitted as a 3x3 grid of chunk models so the game can draw only
+# the chunks near the camera instead of the whole dungeon every frame.
+CHUNK_COLS, CHUNK_ROWS = 3, 3
+CHUNK_W = (GRID_W + CHUNK_COLS - 1) // CHUNK_COLS
+CHUNK_H = (GRID_H + CHUNK_ROWS - 1) // CHUNK_ROWS
 TILE_WALL, TILE_FLOOR = 0, 1
 
 TILE = 1.0          # world units per grid tile
@@ -39,34 +45,38 @@ OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                        "..", "demos", "dungeon_quartet", "assets", "models")
 
 
+# 3x3 grid of rooms, every neighbour joined by a 2-tile-wide corridor so two
+# units can pass each other anywhere in the dungeon.
+ROOMS = [
+    (2, 2, 8, 6),    (12, 2, 19, 6),    (23, 2, 29, 6),
+    (2, 10, 8, 15),  (12, 10, 19, 15),  (23, 10, 29, 15),
+    (2, 18, 8, 22),  (12, 18, 19, 22),  (23, 18, 29, 22),
+]
+BOSS_ROOM = (23, 18, 29, 22)
+
+CORRIDORS = [
+    # horizontal links (x0, x1, y0, y1) -- 2 tiles tall
+    (8, 12, 3, 4),   (19, 23, 3, 4),
+    (8, 12, 12, 13), (19, 23, 12, 13),
+    (8, 12, 19, 20), (19, 23, 19, 20),
+    # vertical links -- 2 tiles wide
+    (4, 5, 6, 10),   (15, 16, 6, 10),   (26, 27, 6, 10),
+    (4, 5, 15, 18),  (15, 16, 15, 18),  (26, 27, 15, 18),
+]
+
+
 def build_level():
     lv = [TILE_WALL] * (GRID_W * GRID_H)
 
-    def room(x0, y0, x1, y1):
+    def fill(x0, y0, x1, y1):
         for gy in range(y0, y1 + 1):
             for gx in range(x0, x1 + 1):
                 lv[gy * GRID_W + gx] = TILE_FLOOR
 
-    def hc(x0, x1, gy):
-        for gx in range(x0, x1 + 1):
-            lv[gy * GRID_W + gx] = TILE_FLOOR
-
-    def vc(y0, y1, gx):
-        for gy in range(y0, y1 + 1):
-            lv[gy * GRID_W + gx] = TILE_FLOOR
-
-    room(1, 1, 4, 4)        # A  start room
-    room(7, 1, 10, 3)       # B
-    room(6, 5, 9, 8)        # C  central hub
-    room(1, 6, 4, 9)        # D
-    room(11, 5, 14, 8)      # E
-    room(10, 9, 14, 11)     # F  boss room
-    hc(4, 7, 2)
-    vc(4, 6, 2)
-    vc(3, 5, 8)
-    hc(4, 6, 7)
-    hc(9, 11, 6)
-    vc(8, 9, 12)
+    for (x0, y0, x1, y1) in ROOMS:
+        fill(x0, y0, x1, y1)
+    for (x0, x1, y0, y1) in CORRIDORS:
+        fill(x0, y0, x1, y1)
     return lv
 
 
@@ -80,7 +90,8 @@ def tile_at(gx, gy):
 
 
 def is_boss_room(gx, gy):
-    return 10 <= gx <= 14 and 9 <= gy <= 11
+    x0, y0, x1, y1 = BOSS_ROOM
+    return x0 <= gx <= x1 and y0 <= gy <= y1
 
 
 # ── Mesh builder ────────────────────────────────────────────────────────────
@@ -221,6 +232,7 @@ BOSS_A = rgba(0x805F8AFF)
 BOSS_B = rgba(0x6E5176FF)
 WALL_TOP = rgba(0x6E6982FF)
 WALL_SIDE = rgba(0x54506AFF)
+ROCK_TOP = rgba(0x413E52FF)   # unexposed interior rock cap
 
 TRIM = rgba(0xF2ECDCFF)
 STEEL = rgba(0xC8CCD8FF)
@@ -234,17 +246,23 @@ ROLE = {
 
 
 # ── Level mesh ──────────────────────────────────────────────────────────────
-def build_dungeon_mesh():
-    """Whole static level as one mesh.
+def build_dungeon_mesh(cx=None, cy=None):
+    """Level geometry. With (cx, cy) given, emits only that chunk.
 
     Interior wall faces (those touching another wall) are dropped, and walls
     with no floor neighbour at all are skipped outright -- that removes most
-    of the solid rock and keeps the model small.
+    of the solid rock and keeps each chunk small.
     """
     m = Mesh()
 
-    for gy in range(GRID_H):
-        for gx in range(GRID_W):
+    if cx is None:
+        xr, yr = range(GRID_W), range(GRID_H)
+    else:
+        xr = range(cx * CHUNK_W, min(GRID_W, (cx + 1) * CHUNK_W))
+        yr = range(cy * CHUNK_H, min(GRID_H, (cy + 1) * CHUNK_H))
+
+    for gy in yr:
+        for gx in xr:
             wx = (gx - (GRID_W - 1) / 2.0) * TILE
             wz = (gy - (GRID_H - 1) / 2.0) * TILE
             h = TILE / 2.0
@@ -259,33 +277,32 @@ def build_dungeon_mesh():
                        col, (0, 1, 0))
                 continue
 
-            # wall tile: only keep it if it borders walkable floor
             nb = [(1, 0), (-1, 0), (0, 1), (0, -1)]
             if not any(tile_at(gx + dx, gy + dy) == TILE_FLOOR for dx, dy in nb):
+                # Interior rock: no exposed side faces, but it still needs a cap
+                # or the camera sees straight through the level into the void.
+                m.quad((wx - h, WALL_H, wz + h), (wx + h, WALL_H, wz + h),
+                       (wx + h, WALL_H, wz - h), (wx - h, WALL_H, wz - h),
+                       ROCK_TOP, (0, 1, 0))
                 continue
 
-            cy = WALL_H / 2.0
             m.quad((wx - h, WALL_H, wz + h), (wx + h, WALL_H, wz + h),
                    (wx + h, WALL_H, wz - h), (wx - h, WALL_H, wz - h),
                    WALL_TOP, (0, 1, 0))
 
             side_dark = tuple(c * 0.80 for c in WALL_SIDE[:3]) + (1.0,)
-            # +Z face
             if tile_at(gx, gy + 1) == TILE_FLOOR:
                 m.quad((wx - h, 0, wz + h), (wx + h, 0, wz + h),
                        (wx + h, WALL_H, wz + h), (wx - h, WALL_H, wz + h),
                        WALL_SIDE, (0, 0, 1))
-            # -Z face
             if tile_at(gx, gy - 1) == TILE_FLOOR:
                 m.quad((wx + h, 0, wz - h), (wx - h, 0, wz - h),
                        (wx - h, WALL_H, wz - h), (wx + h, WALL_H, wz - h),
                        WALL_SIDE, (0, 0, -1))
-            # +X face
             if tile_at(gx + 1, gy) == TILE_FLOOR:
                 m.quad((wx + h, 0, wz + h), (wx + h, 0, wz - h),
                        (wx + h, WALL_H, wz - h), (wx + h, WALL_H, wz + h),
                        side_dark, (1, 0, 0))
-            # -X face
             if tile_at(gx - 1, gy) == TILE_FLOOR:
                 m.quad((wx - h, 0, wz - h), (wx - h, 0, wz + h),
                        (wx - h, WALL_H, wz + h), (wx - h, WALL_H, wz - h),
@@ -382,8 +399,14 @@ def main():
     out = os.path.normpath(OUT_DIR)
     os.makedirs(out, exist_ok=True)
     print(f"Writing dungeon models -> {out}")
+    print(f"  level {GRID_W}x{GRID_H}, {CHUNK_COLS}x{CHUNK_ROWS} chunks "
+          f"of {CHUNK_W}x{CHUNK_H} tiles")
 
-    models = [("dungeon.glb", build_dungeon_mesh())]
+    models = []
+    for cy in range(CHUNK_ROWS):
+        for cx in range(CHUNK_COLS):
+            idx = cy * CHUNK_COLS + cx
+            models.append((f"dungeon_c{idx}.glb", build_dungeon_mesh(cx, cy)))
     for role in ("tank", "melee", "healer", "ranged"):
         models.append((f"hero_{role}.glb", build_hero_mesh(role)))
     models.append(("enemy_skeleton.glb", build_skeleton_mesh()))
