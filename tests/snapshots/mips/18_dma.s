@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -153,6 +154,7 @@ main:
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    li $a1, 4096
     la $t7, rx_buffer
     lw $t7, 0($t7)
     li $t6, 0
@@ -161,10 +163,11 @@ main:
     lw $t8, 0($t7)
     sw $t8, 96($sp)
     addiu $a0, $sp, 96
-    li $a1, 4096
     jal data_cache_hit_writeback
     nop
     move $t9, $v0
+    li $a2, 4096
+    li $a1, 268697600
     la $t7, rx_buffer
     lw $t7, 0($t7)
     li $t6, 0
@@ -173,14 +176,13 @@ main:
     lw $t8, 0($t7)
     sw $t8, 100($sp)
     addiu $a0, $sp, 100
-    li $a1, 268697600
-    li $a2, 4096
     jal dma_read
     nop
     move $t9, $v0
     jal dma_wait
     nop
     move $t9, $v0
+    li $a1, 4096
     la $t7, rx_buffer
     lw $t7, 0($t7)
     li $t6, 0
@@ -189,7 +191,6 @@ main:
     lw $t8, 0($t7)
     sw $t8, 104($sp)
     addiu $a0, $sp, 104
-    li $a1, 4096
     jal data_cache_hit_invalidate
     nop
     move $t9, $v0

@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -149,12 +150,12 @@
 	.globl min_max
 	.type min_max, @function
 min_max:
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    sw $a1, 100($sp)
     lw $t8, 96($sp)
     lw $t7, 100($sp)
     slt $t9, $t8, $t7
@@ -187,12 +188,12 @@ min_max:
 	.globl div_rem
 	.type div_rem, @function
 div_rem:
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    sw $a1, 100($sp)
     lw $t8, 96($sp)
     lw $t7, 100($sp)
     div $t8, $t7
@@ -223,11 +224,11 @@ div_rem:
 	.globl pair_sum
 	.type pair_sum, @function
 pair_sum:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t8, 96($sp)
     lw $t9, 0($t8)
     lw $t7, 96($sp)
@@ -266,7 +267,7 @@ main:
     lw $t7, 96($sp)
     lw $t8, 4($t7)
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     li $t8, 1
     sw $t8, 112($sp)
@@ -279,8 +280,8 @@ main:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    li $a0, 15
     li $a1, 3
+    li $a0, 15
     jal min_max
     nop
     move $t9, $v0
@@ -295,8 +296,8 @@ main:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    li $a0, 100
     li $a1, 200
+    li $a0, 100
     jal min_max
     nop
     move $t9, $v0
@@ -311,8 +312,8 @@ main:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    li $a0, 17
     li $a1, 5
+    li $a0, 17
     jal div_rem
     nop
     move $t9, $v0
@@ -340,8 +341,8 @@ main:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    li $a0, 99
     li $a1, 1
+    li $a0, 99
     jal min_max
     nop
     move $t9, $v0

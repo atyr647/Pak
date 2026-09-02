@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -149,14 +150,14 @@
 	.globl sum_scanline
 	.type sum_scanline, @function
 sum_scanline:
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
-    sw $a2, 104($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
     sw $s7, 244($sp)
+    sw $a0, 96($sp)
+    sw $a1, 100($sp)
+    sw $a2, 104($sp)
     li $t9, 0
     sw $t9, 108($sp)
     li $t9, 0
@@ -164,7 +165,7 @@ sum_scanline:
     lw $t8, 104($sp)
 .Lfor_h_1:
     lw $t7, 112($sp)
-    bge $t7, $t8, .Lfor_x_2
+    bge $t7, $t8, .Lfor_x_3
     nop
     lw $t3, 96($sp)
     lw $t0, 100($sp)
@@ -180,12 +181,13 @@ sum_scanline:
     addu $t5, $t4, $t5
     sw $t5, 108($sp)
     move $t6, $t5
+.Lfor_i_2:
     lw $t7, 112($sp)
     addiu $t7, $t7, 1
     sw $t7, 112($sp)
     j .Lfor_h_1
     nop
-.Lfor_x_2:
+.Lfor_x_3:
     lw $v0, 108($sp)
     j .Lsum_scanline_ret_0
     nop
@@ -206,17 +208,22 @@ main:
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
-    addiu $a0, $sp, 100
+    addiu $a0, $sp, 160
     move $a1, $zero
     li $a2, 64
     jal memset
     nop
-    li $t8, 43981
-    sw $t8, 100($sp)
-    move $t8, $zero
-    sw $t8, 104($sp)
-    addiu $t9, $sp, 100
-    sw $t9, 96($sp)
+    li $t7, 43981
+    sw $t7, 160($sp)
+    move $t7, $zero
+    sw $t7, 164($sp)
+    addiu $t9, $sp, 160
+    addiu $t8, $sp, 96
+    move $a0, $t8
+    move $a1, $t9
+    li $a2, 64
+    jal memcpy
+    nop
     lw $t6, 96($sp)
     lw $t7, 0($t6)
     andi $t8, $t7, 255
@@ -227,17 +234,22 @@ main:
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
-    addiu $a0, $sp, 168
+    addiu $a0, $sp, 480
     move $a1, $zero
     li $a2, 256
     jal memset
     nop
-    move $t8, $zero
-    sw $t8, 168($sp)
-    addiu $t9, $sp, 168
-    sw $t9, 164($sp)
-    lw $t4, 164($sp)
-    lw $t6, 4($t4)
+    move $t7, $zero
+    sw $t7, 480($sp)
+    addiu $t9, $sp, 480
+    addiu $t8, $sp, 224
+    move $a0, $t8
+    move $a1, $t9
+    li $a2, 256
+    jal memcpy
+    nop
+    lw $t4, 224($sp)
+    lw $t6, 0($t4)
     li $t5, 0
     sll $t5, $t5, 2
     addu $t6, $t6, $t5
@@ -246,23 +258,23 @@ main:
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
+    li $a2, 320
+    li $a1, 0
     la $t6, dma_out
     lw $t6, 0($t6)
     li $t5, 0
     sll $t5, $t5, 2
     addu $t6, $t6, $t5
     lw $t7, 0($t6)
-    sw $t7, 424($sp)
-    addiu $a0, $sp, 424
-    li $a1, 0
-    li $a2, 320
+    sw $t7, 736($sp)
+    addiu $a0, $sp, 736
     jal sum_scanline
     nop
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-.Lmain_ret_3:
+.Lmain_ret_4:
     lw $fp, 248($sp)
     lw $ra, 252($sp)
     addiu $sp, $sp, 256

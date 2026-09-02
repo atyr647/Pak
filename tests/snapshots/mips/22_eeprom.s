@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -241,7 +242,6 @@ save_game:
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
-    li $a0, 0
     la $t7, eeprom_buf
     lw $t7, 0($t7)
     li $t6, 0
@@ -250,6 +250,7 @@ save_game:
     lw $t8, 0($t7)
     sw $t8, 96($sp)
     addiu $a1, $sp, 96
+    li $a0, 0
     jal eeprom_write
     nop
     move $t9, $v0
@@ -279,7 +280,6 @@ load_game:
     j .Lload_game_ret_2
     nop
 .Lif_end_3:
-    li $a0, 0
     la $t7, eeprom_buf
     lw $t7, 0($t7)
     li $t6, 0
@@ -288,6 +288,7 @@ load_game:
     lw $t8, 0($t7)
     sw $t8, 96($sp)
     addiu $a1, $sp, 96
+    li $a0, 0
     jal eeprom_read
     nop
     move $t9, $v0
@@ -387,12 +388,12 @@ main:
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
-    li $a0, 0
-    li $a1, 2
-    li $a2, 2
-    li $a3, 0
     li $t8, 0
     sw $t8, 16($sp)
+    li $a3, 0
+    li $a2, 2
+    li $a1, 2
+    li $a0, 0
     jal display_init
     nop
     move $t9, $v0
@@ -446,10 +447,10 @@ main:
     jal rdpq_set_mode_fill
     nop
     move $t9, $v0
-    li $a0, 0
-    li $a1, 0
-    li $a2, 320
     li $a3, 240
+    li $a2, 320
+    li $a1, 0
+    li $a0, 0
     jal rdpq_fill_rectangle
     nop
     move $t9, $v0

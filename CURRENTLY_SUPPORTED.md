@@ -198,7 +198,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 |---------|--------|-------|
 | Integer arithmetic | ✅ Full | |
 | Fixed-point arithmetic | ✅ Full | `mult`/`div` sequences |
-| Float arithmetic (`f32`) | ⚠️ Partial | Float values held in `$f12` accumulator; load/store correct; arithmetic ops use integer path (mul.s/add.s not used) |
+| Float arithmetic (`f32`) | ✅ Full | FPU instructions (`add.s`/`sub.s`/`mul.s`/`div.s`/`neg.s`); comparisons via `c.eq.s`/`c.lt.s`/`c.le.s`+`bc1t`/`bc1f`; o32 ABI (`$f12`/`$f14`); compound-assign supported |
 | Struct field access | ✅ Full | |
 | Array indexing | ✅ Full | Bounds checking available |
 | Function calls (o32 ABI) | ✅ Full | |
@@ -248,6 +248,13 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Tcl C codegen `gen_match` Ident binding pattern emitted invalid C `case /* name */:` | Fixed — now raises `cg_unported`; only the wildcard (`_`) is accepted as a default arm |
 | MIPS named-field variant construction (`Type.case { field: val }`) silently emitted `$zero` | Fixed — `emit_expr` now handles `VariantLit`: stack-allocates a properly-aligned struct, stores the discriminant tag, then stores each named payload field at the correct offset |
 | MIPS compound-assign `/=`, `%=`, `<<=`, `>>=` were silently discarded | Fixed — `/=` uses `div`/`mflo`, `%=` uses `div`/`mfhi`, `<<=` uses `sllv`, `>>=` uses `srav`; unrecognised operators now raise `mips_unported` |
+| MIPS float arithmetic used integer GPR paths (`addu`/`subu`/`mul`/`div`) for `f32` | Fixed — FPU dispatch (`add.s`/`sub.s`/`mul.s`/`div.s`/`neg.s`); comparisons via `c.eq.s`/`c.lt.s`/`bc1t`/`bc1f`; second float param now correctly loaded from `$f14` |
+| MIPS `Option(non-pointer T)` layout raised `MIPSUNPORTED` | Fixed — implemented 1-byte-tag + aligned-payload struct layout |
+| Tcl C codegen `arr.as_slice()` raised `CGUNPORTED` for array types | Fixed — emits `(PakSlice_T){.data = arr, .len = N}` matching Python codegen |
+| MIPS interpolated format strings raised `MIPSUNPORTED` | Fixed — emits `snprintf` call into a static `__pak_fmtbuf_N` buffer; `snprintf` added to extern list |
+| MIPS function parameters stored before stack frame established (pre-prologue `sw`) | Fixed — all param stores now happen after `emit_prologue_placeholder`; 3rd+ float params arriving on stack are loaded from `$fp+(N*4)` (fp = old_sp) |
+| MIPS `marshal_args` used a two-pass save/reload pattern for float args that the VR4300 scheduler misoptimized (moved reload before save due to missing memory alias analysis) | Fixed — replaced with single-pass reverse-order evaluation; each float arg is emitted directly into `$f12`, then `mov.s $f14,$f12` (2nd) or `swc1 $f12,N($sp)` (3rd+) immediately; no save-slot temporaries needed |
+| MIPS `emit_binop` used stale caller-saved temp register after a `jal` in the right operand (e.g. `n * factorial(n-1)` computed garbage because the JAL clobbered `$t9` holding `n`) | Fixed — `expr_has_call` detects which side contains a function call; `emit_binop` evaluates that side first so the other operand's load lands after the JAL, into a fresh temp |
 
 ---
 
@@ -258,3 +265,7 @@ have been tested with the libdragon toolchain and produce `.z64` ROMs that run o
 emulators (ares, cen64) and N64 flashcarts.
 
 The MIPS backend generates MIPS I assembly compatible with the N64's R4300i CPU.
+Pak-generated MIPS functions (`add`, `sub`, `mul_by_two`, `factorial`, `gcd`) were
+executed under `qemu-mips` (32-bit MIPS O32 ABI) and all 12 arithmetic correctness
+tests passed, including the recursive `factorial` case that exposed the JAL-clobber
+bug fixed in this release.

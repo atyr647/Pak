@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -149,19 +150,21 @@
 	.globl Circle_area
 	.type Circle_area, @function
 Circle_area:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     la $t7, .Lf320
     lwc1 $f12, 0($t7)
+    mov.s $f14, $f12
     lw $t6, 96($sp)
     lwc1 $f12, 0($t6)
-    mul $t9, $t8, $t7
+    mul.s $f12, $f14, $f12
+    mov.s $f14, $f12
     lw $t7, 96($sp)
     lwc1 $f12, 0($t7)
-    mul $v0, $t9, $t8
+    mul.s $f12, $f14, $f12
     j .LCircle_area_ret_0
     nop
 .LCircle_area_ret_0:
@@ -176,16 +179,17 @@ Circle_area:
 	.globl Circle_perimeter
 	.type Circle_perimeter, @function
 Circle_perimeter:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     la $t8, .Lf321
     lwc1 $f12, 0($t8)
+    mov.s $f14, $f12
     lw $t7, 96($sp)
     lwc1 $f12, 0($t7)
-    mul $v0, $t9, $t8
+    mul.s $f12, $f14, $f12
     j .LCircle_perimeter_ret_1
     nop
 .LCircle_perimeter_ret_1:
@@ -200,16 +204,17 @@ Circle_perimeter:
 	.globl Rect_area
 	.type Rect_area, @function
 Rect_area:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t8, 96($sp)
     lwc1 $f12, 0($t8)
+    mov.s $f14, $f12
     lw $t7, 96($sp)
     lwc1 $f12, 4($t7)
-    mul $v0, $t9, $t8
+    mul.s $f12, $f14, $f12
     j .LRect_area_ret_2
     nop
 .LRect_area_ret_2:
@@ -224,19 +229,21 @@ Rect_area:
 	.globl Rect_perimeter
 	.type Rect_perimeter, @function
 Rect_perimeter:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     la $t8, .Lf322
     lwc1 $f12, 0($t8)
+    mov.s $f14, $f12
     lw $t6, 96($sp)
     lwc1 $f12, 0($t6)
+    mov.s $f14, $f12
     lw $t5, 96($sp)
     lwc1 $f12, 4($t5)
-    addu $t8, $t7, $t6
-    mul $v0, $t9, $t8
+    add.s $f12, $f14, $f12
+    mul.s $f12, $f14, $f12
     j .LRect_perimeter_ret_3
     nop
 .LRect_perimeter_ret_3:
@@ -251,11 +258,11 @@ Rect_perimeter:
 	.globl get_area
 	.type get_area, @function
 get_area:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     addiu $t9, $sp, 96
     move $a0, $t9
     jal S_area
@@ -274,11 +281,11 @@ get_area:
 	.globl get_perimeter
 	.type get_perimeter, @function
 get_perimeter:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     addiu $t9, $sp, 96
     move $a0, $t9
     jal S_perimeter
@@ -318,7 +325,7 @@ main:
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 104
     move $a0, $t7
@@ -326,77 +333,81 @@ main:
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
-    sw $zero, 112($sp)
     sw $zero, 116($sp)
-    la $t7, .Lf324
-    lwc1 $f12, 0($t7)
-    swc1 $f12, 112($sp)
-    la $t7, .Lf325
-    lwc1 $f12, 0($t7)
+    sw $zero, 120($sp)
+    la $t6, .Lf324
+    lwc1 $f12, 0($t6)
     swc1 $f12, 116($sp)
-    addiu $t9, $sp, 112
-    sw $t9, 108($sp)
+    la $t6, .Lf325
+    lwc1 $f12, 0($t6)
+    swc1 $f12, 120($sp)
+    addiu $t9, $sp, 116
+    addiu $t8, $sp, 108
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
     addiu $a0, $sp, 108
     jal Shape_from_Rect
     nop
     move $t9, $v0
-    sw $t9, 120($sp)
-    addiu $t7, $sp, 120
+    sw $t9, 124($sp)
+    addiu $t7, $sp, 124
     move $a0, $t7
     jal Shape_r_area
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
-    addiu $t7, $sp, 120
+    addiu $t7, $sp, 124
     move $a0, $t7
     jal Shape_r_perimeter
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     lw $a0, 104($sp)
     jal get_area
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
-    lw $a0, 120($sp)
+    lw $a0, 124($sp)
     jal get_area
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
-    lw $a0, 120($sp)
+    lw $a0, 124($sp)
     jal get_perimeter
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 96
     move $a0, $t7
-    jal C_area
+    jal Circle_area
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 108
     move $a0, $t7
-    jal R_area
+    jal Rect_area
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
-    addiu $t6, $sp, 120
+    addiu $t6, $sp, 124
     move $a0, $t6
     jal Shape_r_area
     nop

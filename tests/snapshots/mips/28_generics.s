@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -149,11 +150,11 @@
 	.globl Pair_sum_i32
 	.type Pair_sum_i32, @function
 Pair_sum_i32:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t8, 96($sp)
     lw $t9, 0($t8)
     lw $t7, 96($sp)
@@ -173,11 +174,11 @@ Pair_sum_i32:
 	.globl Pair_get_first
 	.type Pair_get_first, @function
 Pair_get_first:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t9, 96($sp)
     lw $v0, 0($t9)
     j .LPair_get_first_ret_1
@@ -194,11 +195,11 @@ Pair_get_first:
 	.globl Pair_get_second
 	.type Pair_get_second, @function
 Pair_get_second:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t9, 96($sp)
     lw $v0, 0($t9)
     j .LPair_get_second_ret_2
@@ -232,15 +233,15 @@ main:
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     li $a0, 1
     jal identity
     nop
     move $t9, $v0
     sw $t9, 96($sp)
-    li $a0, 3
     li $a1, 7
+    li $a0, 3
     jal max_of
     nop
     move $t8, $v0
@@ -249,24 +250,25 @@ main:
     move $t9, $t8
     la $t7, .Lf321
     lwc1 $f12, 0($t7)
+    mov.s $f14, $f12
     la $t7, .Lf322
     lwc1 $f12, 0($t7)
     jal max_of
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
-    li $a0, 100
     li $a1, 50
+    li $a0, 100
     jal max_of
     nop
     move $t8, $v0
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    li $a0, 1
     li $a1, 2
+    li $a0, 1
     jal swap_first
     nop
     move $t8, $v0
@@ -313,10 +315,10 @@ main:
     move $t9, $t8
     sw $zero, 124($sp)
     sw $zero, 128($sp)
-    la $t6, .Lf321
+    la $t6, .Lf322
     lwc1 $f12, 0($t6)
     swc1 $f12, 124($sp)
-    la $t6, .Lf322
+    la $t6, .Lf321
     lwc1 $f12, 0($t6)
     swc1 $f12, 128($sp)
     addiu $t9, $sp, 124
@@ -328,7 +330,7 @@ main:
     lw $t7, 116($sp)
     lwc1 $f12, 0($t7)
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 116
     move $a0, $t7
@@ -336,7 +338,7 @@ main:
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
     addiu $t7, $sp, 116
     move $a0, $t7
@@ -344,18 +346,18 @@ main:
     nop
     move $t8, $v0
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
 
 	.section .text
 	.globl identity__i32
 	.type identity__i32, @function
 identity__i32:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $v0, 96($sp)
     j .Lidentity__i32_ret_4
     nop
@@ -394,7 +396,7 @@ identity__i32:
     lw $t7, 132($sp)
     lwc1 $f12, 4($t7)
     la $t7, sink_f
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
 .Lmain_ret_3:
     lw $fp, 248($sp)
@@ -410,10 +412,10 @@ identity__i32:
 	.word 1078523331
 	.align 2
 .Lf321:
-	.word 1069547520
+	.word 1075838976
 	.align 2
 .Lf322:
-	.word 1075838976
+	.word 1069547520
 	.align 2
 .Lf323:
 	.word 1092511334

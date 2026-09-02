@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -149,11 +150,11 @@
 	.globl gen_sample
 	.type gen_sample, @function
 gen_sample:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     li $t9, 100
     sw $t9, 100($sp)
     lw $t7, 96($sp)
@@ -271,20 +272,20 @@ main:
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
-    li $a0, 0
-    li $a1, 2
-    li $a2, 3
-    li $a3, 0
     li $t8, 1
     sw $t8, 16($sp)
+    li $a3, 0
+    li $a2, 3
+    li $a1, 2
+    li $a0, 0
     jal display_init
     nop
     move $t9, $v0
     jal rdpq_init
     nop
     move $t9, $v0
-    li $a0, 44100
     li $a1, 4
+    li $a0, 44100
     jal audio_init
     nop
     move $t9, $v0
@@ -304,10 +305,10 @@ main:
     jal rdpq_set_mode_fill
     nop
     move $t9, $v0
-    li $a0, 0
-    li $a1, 0
-    li $a2, 320
     li $a3, 240
+    li $a2, 320
+    li $a1, 0
+    li $a0, 0
     jal rdpq_fill_rectangle
     nop
     move $t9, $v0

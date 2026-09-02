@@ -143,6 +143,14 @@ oo::class create pak::Emitter {
     method sub_s {fd fs ft} { my instr "sub.s" "$fd," "$fs," $ft }
     method mul_s {fd fs ft} { my instr "mul.s" "$fd," "$fs," $ft }
     method div_s {fd fs ft} { my instr "div.s" "$fd," "$fs," $ft }
+    method neg_s {fd fs}    { my instr "neg.s" "$fd," $fs }
+    method mov_s {fd fs}    { my instr "mov.s" "$fd," $fs }
+    method abs_s {fd fs}    { my instr "abs.s" "$fd," $fs }
+    method c_eq_s {fs ft}   { my instr "c.eq.s" "$fs," $ft }
+    method c_lt_s {fs ft}   { my instr "c.lt.s" "$fs," $ft }
+    method c_le_s {fs ft}   { my instr "c.le.s" "$fs," $ft }
+    method bc1t   {label}   { my instr "bc1t" $label }
+    method bc1f   {label}   { my instr "bc1f" $label }
     method sync {} { my instr "sync" }
     method verbatim {asm_text} {
         foreach line [split $asm_text "\n"] {
@@ -400,7 +408,18 @@ proc pak::mips_layout {type_tv} {
         TypeOption {
             set inner [pak::mips_layout [pak::nfield $type_tv inner]]
             if {[dict get $inner is_ptr]} { return [dict create size 4 align 4 is_float 0 is_signed 0 is_ptr 1 fields {}] }
-            pak::mips_unported "layout:option-nonptr"
+            # Non-pointer Option(T): 1-byte tag (_tag=0 for none, 1 for some) + padding + payload
+            set inner_size  [dict get $inner size]
+            set inner_align [expr {max([dict get $inner align], 1)}]
+            set payload_off [expr {(1 + $inner_align - 1) & ~($inner_align - 1)}]
+            set total_size  [expr {$payload_off + $inner_size}]
+            set total_align [expr {max($inner_align, 4)}]
+            set total_size  [expr {($total_size + $total_align - 1) & ~($total_align - 1)}]
+            set fields [dict create \
+                _tag [dict create name _tag offset 0           size 1           align 1           type_node ""] \
+                _val [dict create name _val offset $payload_off size $inner_size align $inner_align type_node ""]]
+            return [dict create size $total_size align $total_align is_float 0 is_signed 1 is_ptr 0 \
+                fields $fields field_order {_tag _val}]
         }
         default { pak::mips_unported "layout:[pak::kindof $type_tv]" }
     }
@@ -435,7 +454,8 @@ proc pak::mips_annlist {node} {
 # ── orchestrator ────────────────────────────────────────────────────────────
 oo::class create pak::MipsCodegen {
     variable em pool ra ret_label scopes defers next_local loop_header loop_exit loop_defer_depth \
-             globals consts label_n \
+             loop_result \
+             globals consts label_n fmtstr_counter \
              tenv_layouts tenv_enum_values tenv_variant_decls \
              generic_fns generic_structs mono_emitted type_nodes
 
@@ -450,9 +470,11 @@ oo::class create pak::MipsCodegen {
         set loop_header {}
         set loop_exit {}
         set loop_defer_depth {}
+        set loop_result {}
         set globals [dict create]
         set consts [dict create]
         set label_n 0
+        set fmtstr_counter 0
         set tenv_layouts [dict create]
         set tenv_enum_values [dict create]
         set tenv_variant_decls [dict create]
@@ -1043,20 +1065,53 @@ oo::class create pak::MipsCodegen {
         set loop_header {}
         set loop_exit {}
         set loop_defer_depth {}
+        set loop_result {}
         set next_local [expr {$spill_base + 8 * 4}]
         my push_scope
-        # params: store $a0-$a3 into stack slots (BEFORE prologue, matching backend)
+        # Declare param stack slots (allocate offsets, no emission yet).
+        # Stores happen AFTER the prologue so that $sp-relative offsets are
+        # consistent between the stores and all later loads.
         set i 0
+        set float_param_n 0
+        set param_info {}
         foreach p [pak::items $params] {
             set p_layout [my mips_layout [pak::nfield $p type]]
-            set off [my declare_local [pak::fval $p name] $p_layout]
-            if {$i < 4} { my store_to_sp $off [lindex $::pak::ARG_GPRS $i] $p_layout }
+            set off [my declare_local [pak::fval $p name] $p_layout [pak::nfield $p type]]
+            lappend param_info [list $off $p_layout $float_param_n $i]
+            if {[dict get $p_layout is_float]} { incr float_param_n }
             incr i
         }
         set frame_size 256
         set prologue_start [$em len]
         my emit_prologue_placeholder $frame_size
         set prologue_end [$em len]
+        # Store params to frame AFTER prologue.
+        # o32 ABI: 1st float in $f12, 2nd float in $f14, 3rd+ at $fp+(N*4)
+        # (fp = old_sp = callee's frame top; caller put extra floats in its
+        # outgoing-arg area at sp+0, sp+4, sp+8 ... = fp+0, fp+4, fp+8 ...).
+        foreach pi $param_info {
+            lassign $pi off p_layout fpn idx
+            if {[dict get $p_layout is_float]} {
+                if {$fpn == 0} {
+                    my store_to_sp $off {} $p_layout
+                } elseif {$fpn == 1} {
+                    $em mov_s {$f12} {$f14}
+                    my store_to_sp $off {} $p_layout
+                } else {
+                    # 3rd+ float: arrived at caller's sp+(fpn*4) = fp+(fpn*4)
+                    $em lwc1 {$f12} [expr {$fpn * 4}] {$fp}
+                    my store_to_sp $off {} $p_layout
+                }
+            } elseif {$idx < 4} {
+                my store_to_sp $off [lindex $::pak::ARG_GPRS $idx] $p_layout
+            } else {
+                # 5th+ integer arg: arrived at caller's sp+($idx*4) = fp+($idx*4)
+                set tmp [$ra alloc_temp]
+                $em lw $tmp [expr {$idx * 4}] {$fp}
+                my store_to_sp $off $tmp $p_layout
+                $ra free_temp $tmp
+            }
+        }
         set ret_label [my fresh_label ".L${name}_ret"]
         my emit_block $body
         # Emit outer-scope (param) defers before patching prologue
@@ -1131,8 +1186,8 @@ oo::class create pak::MipsCodegen {
     # ── typed memory ──────────────────────────────────────────────────────────
     # Float convention: all scalar f32 values reside in $f12 (the float
     # accumulator).  The GPR dst/src argument is ignored for float ops —
-    # swc1/lwc1 always target $f12.  Float arithmetic is not yet fully
-    # supported; only load, store, and argument-passing paths are correct.
+    # swc1/lwc1 always target $f12.  FPU arithmetic (add.s/sub.s/mul.s/div.s)
+    # and comparisons (c.eq.s/c.lt.s/c.le.s + bc1t/bc1f) are fully supported.
     method emit_typed_load {dst off base layout {volatile 0}} {
         if {$volatile} { $em sync }
         if {[dict get $layout is_float]} {
@@ -1208,6 +1263,25 @@ oo::class create pak::MipsCodegen {
                 if {![pak::isnil $typ]} { set layout [my mips_layout $typ] } else { set layout [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}] }
                 set tn [expr {[pak::isnil $typ] ? "" : $typ}]
                 set v [pak::nfield $stmt value]
+                # Infer type node from RHS when no explicit annotation is given.
+                # This enables correct method-call name mangling (TypeName_method)
+                # for variables like: let mut p = Player { ... }
+                if {$tn eq "" && ![pak::isnil $v]} {
+                    if {[pak::kindof $v] eq "StructLit"} {
+                        set sname [pak::fval $v type_name]
+                        if {$sname ne ""} {
+                            set tn [pak::N TypeName name $sname]
+                            if {[dict exists $tenv_layouts $sname]} {
+                                set layout [dict get $tenv_layouts $sname]
+                            }
+                        }
+                    } elseif {[pak::kindof $v] eq "VariantCons"} {
+                        set vname [pak::fval $v name]
+                        if {$vname ne "" && [dict exists $tenv_variant_decls $vname]} {
+                            set tn [pak::N TypeName name $vname]
+                        }
+                    }
+                }
                 if {[pak::fval $stmt name] eq "_"} {
                     if {![pak::isnil $v]} {
                         set tmp [$ra alloc_temp]
@@ -1218,22 +1292,49 @@ oo::class create pak::MipsCodegen {
                 }
                 set off [my declare_local [pak::fval $stmt name] $layout $tn]
                 if {![pak::isnil $v]} {
-                    set lsz [dict get $layout size]
-                    set lfields [expr {[dict exists $layout fields] ? [dict size [dict get $layout fields]] : 0}]
-                    if {$lsz > 4 && $lfields > 0} {
-                        # Large struct: expr returns a pointer; copy to stack slot
-                        set src_ptr [$ra alloc_temp]
-                        set dst_ptr [$ra alloc_temp]
-                        my emit_expr $v $src_ptr
-                        $em addiu $dst_ptr {$sp} $off
-                        my emit_memcpy $dst_ptr $src_ptr $lsz
-                        $ra free_temp $dst_ptr
-                        $ra free_temp $src_ptr
+                    # loop-as-expression: let x = loop { ... break val ... }
+                    if {[pak::kindof $v] in {LoopStmt WhileStmt}} {
+                        # Initialize result slot to 0
+                        set ztmp [$ra alloc_temp]
+                        $em li $ztmp 0
+                        my store_to_sp $off $ztmp $layout
+                        $ra free_temp $ztmp
+                        # Push result info; Break will store into this slot
+                        lappend loop_result [list $off $layout]
+                        if {[pak::kindof $v] eq "LoopStmt"} {
+                            my emit_loop $v
+                        } else {
+                            my emit_while $v
+                        }
+                        set loop_result [lrange $loop_result 0 end-1]
+                        # Result is already in $off from Break's store_to_sp — nothing more to do
                     } else {
-                        set tmp [$ra alloc_temp]
-                        my emit_expr $v $tmp
-                        my store_to_sp $off $tmp $layout
-                        $ra free_temp $tmp
+                        set lsz [dict get $layout size]
+                        # Determine if the RHS expression returns a pointer to a
+                        # multi-word value on the stack (struct lit, variant ctor,
+                        # array lit, tuple lit, etc.).  Conditions:
+                        #   • size > 4 — multi-word value
+                        #   • has fields/tag_size/_container — it's an aggregate type
+                        set is_aggregate [expr {
+                            ([dict exists $layout fields]     && [dict size [dict get $layout fields]] > 0) ||
+                            [dict exists $layout tag_size]    ||
+                            [dict exists $layout _container]
+                        }]
+                        if {$lsz > 4 && $is_aggregate} {
+                            # Large aggregate: expr returns a pointer; copy to stack slot
+                            set src_ptr [$ra alloc_temp]
+                            set dst_ptr [$ra alloc_temp]
+                            my emit_expr $v $src_ptr
+                            $em addiu $dst_ptr {$sp} $off
+                            my emit_memcpy $dst_ptr $src_ptr $lsz
+                            $ra free_temp $dst_ptr
+                            $ra free_temp $src_ptr
+                        } else {
+                            set tmp [$ra alloc_temp]
+                            my emit_expr $v $tmp
+                            my store_to_sp $off $tmp $layout
+                            $ra free_temp $tmp
+                        }
                     }
                 }
             }
@@ -1264,6 +1365,17 @@ oo::class create pak::MipsCodegen {
             ForStmt   { my emit_for $stmt }
             MatchStmt { my emit_match $stmt }
             Break {
+                set bv [pak::nfield $stmt value]
+                if {![pak::isnil $bv] && [llength $loop_result] > 0} {
+                    # loop-as-expression: store break value into the result slot
+                    set res_info [lindex $loop_result end]
+                    set res_off  [lindex $res_info 0]
+                    set res_lay  [lindex $res_info 1]
+                    set tmp [$ra alloc_temp]
+                    my emit_expr $bv $tmp
+                    my store_to_sp $res_off $tmp $res_lay
+                    $ra free_temp $tmp
+                }
                 if {[llength $loop_exit] > 0} {
                     my emit_defers_from [lindex $loop_defer_depth end]
                     $em j [lindex $loop_exit end]; $em nop
@@ -1423,6 +1535,7 @@ oo::class create pak::MipsCodegen {
 
     method emit_for_range {stmt it} {
         set header [my fresh_label ".Lfor_h"]
+        set incr_l [my fresh_label ".Lfor_i"]
         set exit_l [my fresh_label ".Lfor_x"]
         set counter_layout [my mips_layout_name i32]
         set counter_off [my declare_local [pak::fval $stmt binding] $counter_layout]
@@ -1432,7 +1545,9 @@ oo::class create pak::MipsCodegen {
         my store_to_sp $counter_off $start_r $counter_layout
         set end_tv [pak::nfield $it end]
         if {![pak::isnil $end_tv]} { my emit_expr $end_tv $end_r } else { $em li $end_r 2147483647 }
-        lappend loop_header $header; lappend loop_exit $exit_l
+        # continue must jump to the INCREMENT label (not the header) so the
+        # counter advances before the next iteration check.
+        lappend loop_header $incr_l; lappend loop_exit $exit_l
         lappend loop_defer_depth [llength $defers]
         $em label $header
         set ctr [$ra alloc_temp]
@@ -1447,6 +1562,7 @@ oo::class create pak::MipsCodegen {
             my store_to_sp $idx_off $ctr $idx_layout
         }
         my emit_block [pak::nfield $stmt body]
+        $em label $incr_l
         my load_from_sp $counter_off $ctr $counter_layout
         $em addiu $ctr $ctr 1
         my store_to_sp $counter_off $ctr $counter_layout
@@ -1463,6 +1579,7 @@ oo::class create pak::MipsCodegen {
     # for item in slice — treat iterable as a fat pointer {ptr, len@+4}.
     method emit_for_each {stmt iterable} {
         set header [my fresh_label ".Lfeach_h"]
+        set incr_l [my fresh_label ".Lfeach_i"]
         set exit_l [my fresh_label ".Lfeach_x"]
         set ptr_layout [my mips_layout_name i32]
         set ptr_off [my declare_local __for_ptr $ptr_layout]
@@ -1479,7 +1596,8 @@ oo::class create pak::MipsCodegen {
         $ra free_temp $slice_base
         $em sw {$zero} $idx_off {$sp}
 
-        lappend loop_header $header; lappend loop_exit $exit_l
+        # continue jumps to the increment label, not the header
+        lappend loop_header $incr_l; lappend loop_exit $exit_l
         lappend loop_defer_depth [llength $defers]
         $em label $header
 
@@ -1510,6 +1628,7 @@ oo::class create pak::MipsCodegen {
 
         my emit_block [pak::nfield $stmt body]
 
+        $em label $incr_l
         $em lw $idx_r $idx_off {$sp}
         $em addiu $idx_r $idx_r 1
         $em sw $idx_r $idx_off {$sp}
@@ -1995,18 +2114,67 @@ oo::class create pak::MipsCodegen {
 
     method emit_fmtstr {expr dst} {
         set parts [pak::items [pak::nfield $expr parts]]
-        # Check for interpolated (non-literal) parts
+        # Check if all parts are literals (pure string, no interpolation)
+        set has_expr 0
         foreach part $parts {
-            if {[lindex $part 0] ne "lit"} { pak::mips_unported "fmtstr:interpolated" }
+            if {[lindex $part 0] ne "lit"} { set has_expr 1; break }
         }
-        # Pure literal format string: load the string address
+        if {!$has_expr} {
+            # Pure literal: load the interned string label
+            set text ""
+            foreach part $parts { append text [lindex $part 1] }
+            $em la $dst [$pool intern_string $text]
+            return
+        }
+        # Interpolated format string: emit snprintf(buf, 256, fmt, args...)
+        # Build the format string from literal + %spec parts.
+        set fmt_text ""
+        set expr_parts {}
         foreach part $parts {
             if {[lindex $part 0] eq "lit"} {
-                set lbl [$pool intern_string [lindex $part 1]]
-                $em la $dst $lbl
-                return
+                # Escape backslashes and double-quotes in the literal segment
+                set seg [lindex $part 1]
+                set seg [string map {\\ \\\\ \" \\\"} $seg]
+                append fmt_text $seg
+            } else {
+                set sub_expr $part
+                if {[my infer_is_float $sub_expr]} {
+                    append fmt_text "%f"
+                } else {
+                    append fmt_text "%d"
+                }
+                lappend expr_parts $sub_expr
             }
         }
+        set fmt_lbl [$pool intern_string $fmt_text]
+        set buf_name "__pak_fmtbuf_$fmtstr_counter"
+        incr fmtstr_counter
+        $pool add_static $buf_name 256 1 ""
+        # Evaluate all expression arguments into temp registers
+        set arg_regs {}
+        foreach ep $expr_parts {
+            set t [$ra alloc_temp]
+            my emit_expr $ep $t
+            lappend arg_regs $t
+        }
+        # Set up snprintf call: $a0=buf, $a1=256, $a2=fmt, $a3=arg0, sp+16=arg1, ...
+        $em la {$a0} $buf_name
+        $em li {$a1} 256
+        $em la {$a2} $fmt_lbl
+        set i 0
+        foreach t $arg_regs {
+            if {$i == 0} {
+                $em move {$a3} $t
+            } else {
+                set off [expr {16 + ($i - 1) * 4}]
+                $em sw $t $off {$sp}
+            }
+            incr i
+        }
+        foreach t $arg_regs { $ra free_temp $t }
+        $em jal snprintf
+        $em nop
+        $em la $dst $buf_name
     }
 
     method emit_closure {expr} {
@@ -2052,8 +2220,26 @@ oo::class create pak::MipsCodegen {
     }
 
     method emit_field_access {expr dst} {
+        # Handle variant zero-arg constructor: Shape.point → emit_variant_constructor
+        set obj [pak::nfield $expr obj]
+        if {[pak::kindof $obj] eq "Ident"} {
+            set obj_name [pak::fval $obj name]
+            set field_name [pak::fval $expr field]
+            if {[dict exists $tenv_variant_decls $obj_name]} {
+                my emit_variant_constructor $obj_name $field_name [pak::Seq {}] $dst
+                return
+            }
+            # Also handle EnumName.CaseName as a raw integer enum value
+            if {[dict exists $tenv_enum_values $obj_name]} {
+                set cases [dict get $tenv_enum_values $obj_name]
+                if {[dict exists $cases $field_name]} {
+                    $em li $dst [dict get $cases $field_name]
+                    return
+                }
+            }
+        }
         set base [$ra alloc_temp]
-        my emit_expr [pak::nfield $expr obj] $base
+        my emit_expr $obj $base
         set fi [my resolve_field_info $expr]
         if {$fi ne ""} {
             set type_node [dict get $fi type_node]
@@ -2334,6 +2520,125 @@ oo::class create pak::MipsCodegen {
         }
     }
 
+    # Returns 1 if the expression has float type (f32).
+    method infer_is_float {expr} {
+        switch -- [pak::kindof $expr] {
+            FloatLit { return 1 }
+            Ident {
+                set n [pak::fval $expr name]
+                set local [my lookup_local $n]
+                if {$local ne ""} {
+                    set lay [lindex $local 1]
+                    if {[dict exists $lay is_float] && [dict get $lay is_float]} { return 1 }
+                }
+                if {[dict exists $globals $n]} {
+                    set lay [lindex [dict get $globals $n] 1]
+                    if {[dict exists $lay is_float] && [dict get $lay is_float]} { return 1 }
+                }
+                return 0
+            }
+            Cast {
+                set tl [my mips_layout [pak::nfield $expr type]]
+                return [expr {[dict get $tl is_float] ? 1 : 0}]
+            }
+            BinaryOp {
+                if {[my infer_is_float [pak::nfield $expr left]]}  { return 1 }
+                return [my infer_is_float [pak::nfield $expr right]]
+            }
+            UnaryOp { return [my infer_is_float [pak::nfield $expr operand]] }
+            DotAccess {
+                set fi [my resolve_field_info $expr]
+                if {$fi ne ""} {
+                    set tn [dict get $fi type_node]
+                    if {$tn ne "" && ![pak::isnil $tn]} {
+                        set tl [my mips_layout $tn]
+                        return [expr {[dict get $tl is_float] ? 1 : 0}]
+                    }
+                }
+                return 0
+            }
+            default { return 0 }
+        }
+    }
+
+    # Emit a binary operation where at least one operand is f32.
+    # Convention: left operand ends up in $f14, right in $f12, result in $f12.
+    # For comparison ops the result (0 or 1) goes into the GPR $dst.
+    method emit_float_binop {expr dst op} {
+        set tmp_lhs [$ra alloc_temp]
+        my emit_expr [pak::nfield $expr left] $tmp_lhs
+        # $f12 now holds left; save to $f14
+        $em mov_s {$f14} {$f12}
+        set tmp_rhs [$ra alloc_temp]
+        my emit_expr [pak::nfield $expr right] $tmp_rhs
+        # $f12 now holds right; $f14 holds left
+        $ra free_temp $tmp_rhs
+        $ra free_temp $tmp_lhs
+        switch -- $op {
+            + { $em add_s {$f12} {$f14} {$f12} }
+            - { $em sub_s {$f12} {$f14} {$f12} }
+            * { $em mul_s {$f12} {$f14} {$f12} }
+            / { $em div_s {$f12} {$f14} {$f12} }
+            == {
+                set done [my fresh_label .Lfeq]
+                $em c_eq_s {$f14} {$f12}
+                $em li $dst 0
+                $em bc1f $done
+                $em nop
+                $em li $dst 1
+                $em label $done
+            }
+            != {
+                set done [my fresh_label .Lfne]
+                $em c_eq_s {$f14} {$f12}
+                $em li $dst 1
+                $em bc1f $done
+                $em nop
+                $em li $dst 0
+                $em label $done
+            }
+            < {
+                set done [my fresh_label .Lflt]
+                $em c_lt_s {$f14} {$f12}
+                $em li $dst 0
+                $em bc1f $done
+                $em nop
+                $em li $dst 1
+                $em label $done
+            }
+            <= {
+                set done [my fresh_label .Lfle]
+                $em c_le_s {$f14} {$f12}
+                $em li $dst 0
+                $em bc1f $done
+                $em nop
+                $em li $dst 1
+                $em label $done
+            }
+            > {
+                # a > b  ↔  b < a
+                set done [my fresh_label .Lfgt]
+                $em c_lt_s {$f12} {$f14}
+                $em li $dst 0
+                $em bc1f $done
+                $em nop
+                $em li $dst 1
+                $em label $done
+            }
+            >= {
+                # a >= b  ↔  b <= a
+                set done [my fresh_label .Lfge]
+                $em c_le_s {$f12} {$f14}
+                $em li $dst 0
+                $em bc1f $done
+                $em nop
+                $em li $dst 1
+                $em label $done
+            }
+            default { pak::mips_unported "float-binop:$op" }
+        }
+    }
+
     method emit_fixmul {dst lhs rhs frac_bits} {
         $em mult $lhs $rhs
         if {$frac_bits >= 32} {
@@ -2397,14 +2702,53 @@ oo::class create pak::MipsCodegen {
         }
     }
 
+    # Returns 1 if expr contains at least one function Call node.
+    # Used by emit_binop to determine evaluation order so that the JAL
+    # from a function call does not clobber caller-saved temp registers
+    # holding the other operand's value.
+    method expr_has_call {expr} {
+        switch -- [pak::kindof $expr] {
+            Call     { return 1 }
+            BinaryOp {
+                if {[my expr_has_call [pak::nfield $expr left]]}  { return 1 }
+                return [my expr_has_call [pak::nfield $expr right]]
+            }
+            UnaryOp  { return [my expr_has_call [pak::nfield $expr operand]] }
+            default  { return 0 }
+        }
+    }
+
     method emit_binop {expr dst} {
         set op [pak::fval $expr op]
+        # Float path: dispatch to FPU arithmetic / comparisons
+        if {[my infer_is_float [pak::nfield $expr left]] || \
+            [my infer_is_float [pak::nfield $expr right]]} {
+            my emit_float_binop $expr $dst $op
+            return
+        }
         set frac [my infer_frac_bits [pak::nfield $expr left]]
         if {$frac == 0} { set frac [my infer_frac_bits [pak::nfield $expr right]] }
-        set lhs [$ra alloc_temp]
-        my emit_expr [pak::nfield $expr left] $lhs
-        set rhs [$ra alloc_temp]
-        my emit_expr [pak::nfield $expr right] $rhs
+        set left_expr  [pak::nfield $expr left]
+        set right_expr [pak::nfield $expr right]
+        # Evaluate the side containing a function call FIRST so that the
+        # subsequent JAL does not clobber the caller-saved temp register
+        # that holds the other operand (e.g. n * factorial(n-1)).
+        if {[my expr_has_call $right_expr] && ![my expr_has_call $left_expr]} {
+            set rhs [$ra alloc_temp]
+            my emit_expr $right_expr $rhs
+            set lhs [$ra alloc_temp]
+            my emit_expr $left_expr $lhs
+        } elseif {[my expr_has_call $left_expr] && ![my expr_has_call $right_expr]} {
+            set lhs [$ra alloc_temp]
+            my emit_expr $left_expr $lhs
+            set rhs [$ra alloc_temp]
+            my emit_expr $right_expr $rhs
+        } else {
+            set lhs [$ra alloc_temp]
+            my emit_expr $left_expr $lhs
+            set rhs [$ra alloc_temp]
+            my emit_expr $right_expr $rhs
+        }
         if {$frac > 0 && $op eq "*"} {
             my emit_fixmul $dst $lhs $rhs $frac
             $ra free_temp $rhs; $ra free_temp $lhs
@@ -2455,38 +2799,82 @@ oo::class create pak::MipsCodegen {
     method emit_unop {expr dst} {
         set operand [$ra alloc_temp]
         my emit_expr [pak::nfield $expr operand] $operand
-        switch -- [pak::fval $expr op] {
+        set op [pak::fval $expr op]
+        if {$op eq "-" && [my infer_is_float [pak::nfield $expr operand]]} {
+            $em neg_s {$f12} {$f12}
+            $ra free_temp $operand
+            return
+        }
+        switch -- $op {
             -  { $em subu $dst {$zero} $operand }
             !  { $em sltiu $dst $operand 1 }
             ~  { $em not_ $dst $operand }
-            default { pak::mips_unported "unop:[pak::fval $expr op]" }
+            default { pak::mips_unported "unop:$op" }
         }
         $ra free_temp $operand
     }
 
     method emit_assign_target {target val_reg op} {
         if {$op ne "="} {
-            set cur [$ra alloc_temp]
+            # For float compound assigns: $f12 holds the RHS value.
+            # Save RHS to $f14, load target into $f12, apply FPU op, result in $f12.
+            set target_is_float 0
             if {[pak::kindof $target] eq "Ident"} {
-                my emit_ident_load [pak::fval $target name] $cur
+                set tlocal [my lookup_local [pak::fval $target name]]
+                if {$tlocal ne "" && [dict get [lindex $tlocal 1] is_float]} { set target_is_float 1 }
+            } elseif {[pak::kindof $target] eq "DotAccess"} {
+                set fi [my resolve_field_info $target]
+                if {$fi ne ""} {
+                    set ftype [dict get $fi type_node]
+                    if {$ftype ne "" && ![pak::isnil $ftype]} {
+                        set fl [my mips_layout $ftype]
+                        if {[dict get $fl is_float]} { set target_is_float 1 }
+                    }
+                }
+            }
+            if {$target_is_float && $op in {+= -= *= /=}} {
+                $em mov_s {$f14} {$f12}
+                if {[pak::kindof $target] eq "Ident"} {
+                    set cur [$ra alloc_temp]
+                    my emit_ident_load [pak::fval $target name] $cur
+                    $ra free_temp $cur
+                } else {
+                    # DotAccess: load the field value into $f12
+                    set cur [$ra alloc_temp]
+                    my emit_field_access $target $cur
+                    $ra free_temp $cur
+                }
+                switch -- $op {
+                    += { $em add_s {$f12} {$f12} {$f14} }
+                    -= { $em sub_s {$f12} {$f12} {$f14} }
+                    *= { $em mul_s {$f12} {$f12} {$f14} }
+                    /= { $em div_s {$f12} {$f12} {$f14} }
+                }
             } else {
-                $em la $cur __cur
-                $em lw $cur 0 $cur
+                set cur [$ra alloc_temp]
+                if {[pak::kindof $target] eq "Ident"} {
+                    my emit_ident_load [pak::fval $target name] $cur
+                } elseif {[pak::kindof $target] eq "DotAccess"} {
+                    my emit_field_access $target $cur
+                } else {
+                    $em la $cur __cur
+                    $em lw $cur 0 $cur
+                }
+                switch -- $op {
+                    +=  { $em addu $val_reg $cur $val_reg }
+                    -=  { $em subu $val_reg $cur $val_reg }
+                    *=  { $em mul $val_reg $cur $val_reg }
+                    /=  { $em div $cur $val_reg; $em mflo $val_reg }
+                    %=  { $em div $cur $val_reg; $em mfhi $val_reg }
+                    <<= { $em sllv $val_reg $cur $val_reg }
+                    >>= { $em srav $val_reg $cur $val_reg }
+                    &=  { $em and_ $val_reg $cur $val_reg }
+                    |=  { $em or_ $val_reg $cur $val_reg }
+                    ^=  { $em xor $val_reg $cur $val_reg }
+                    default { pak::mips_unported "compound-assign:$op" }
+                }
+                $ra free_temp $cur
             }
-            switch -- $op {
-                +=  { $em addu $val_reg $cur $val_reg }
-                -=  { $em subu $val_reg $cur $val_reg }
-                *=  { $em mul $val_reg $cur $val_reg }
-                /=  { $em div $cur $val_reg; $em mflo $val_reg }
-                %=  { $em div $cur $val_reg; $em mfhi $val_reg }
-                <<= { $em sllv $val_reg $cur $val_reg }
-                >>= { $em srav $val_reg $cur $val_reg }
-                &=  { $em and_ $val_reg $cur $val_reg }
-                |=  { $em or_ $val_reg $cur $val_reg }
-                ^=  { $em xor $val_reg $cur $val_reg }
-                default { pak::mips_unported "compound-assign:$op" }
-            }
-            $ra free_temp $cur
         }
         switch -- [pak::kindof $target] {
             Ident {
@@ -2496,7 +2884,16 @@ oo::class create pak::MipsCodegen {
                 } else {
                     set addr_r [$ra alloc_temp]
                     $em la $addr_r [pak::fval $target name]
-                    $em sw $val_reg 0 $addr_r
+                    # Use float store if the global is declared as float
+                    set glay {}
+                    if {[dict exists $globals [pak::fval $target name]]} {
+                        set glay [lindex [dict get $globals [pak::fval $target name]] 1]
+                    }
+                    if {$glay ne {} && [dict get $glay is_float]} {
+                        $em swc1 {$f12} 0 $addr_r
+                    } else {
+                        $em sw $val_reg 0 $addr_r
+                    }
                     $ra free_temp $addr_r
                 }
             }
@@ -2760,11 +3157,12 @@ oo::class create pak::MipsCodegen {
         set s [dict create ra $ra scopes $scopes defers $defers \
             next_local $next_local ret_label $ret_label \
             loop_header $loop_header loop_exit $loop_exit \
-            loop_defer_depth $loop_defer_depth]
+            loop_defer_depth $loop_defer_depth loop_result $loop_result]
         set ra ""
         set loop_header {}
         set loop_exit {}
         set loop_defer_depth {}
+        set loop_result {}
         return $s
     }
     method restore_fn_state {s} {
@@ -2777,25 +3175,42 @@ oo::class create pak::MipsCodegen {
         set loop_header [dict get $s loop_header]
         set loop_exit [dict get $s loop_exit]
         set loop_defer_depth [dict get $s loop_defer_depth]
+        set loop_result [dict get $s loop_result]
     }
 
     method emit_method_call {access args_seq dst} {
-        # Determine type name from the variable, fallback to capitalize
+        # Determine type name from the variable's declared type node, then
+        # from an embedded _type_name in its layout, then fall back to
+        # capitalizing the variable name (last resort only).
         set type_name ""
         set obj [pak::nfield $access obj]
         if {[pak::kindof $obj] eq "Ident"} {
-            set local [my lookup_local [pak::fval $obj name]]
-            if {$local ne ""} {
-                set layout [lindex $local 1]
-                # Check for embedded type name
-                if {[dict exists $layout _type_name]} {
-                    set type_name [dict get $layout _type_name]
+            set var_name [pak::fval $obj name]
+            # Primary: use the stored type node (set by declare_local via LetDecl/params)
+            set tn [my lookup_type_node $var_name]
+            if {$tn ne "" && ![pak::isnil $tn]} {
+                if {[pak::kindof $tn] eq "TypeName"} {
+                    set type_name [pak::fval $tn name]
+                } elseif {[pak::kindof $tn] eq "TypePointer"} {
+                    set inner [pak::nfield $tn inner]
+                    if {![pak::isnil $inner] && [pak::kindof $inner] eq "TypeName"} {
+                        set type_name [pak::fval $inner name]
+                    }
                 }
             }
+            # Secondary: layout-embedded _type_name
             if {$type_name eq ""} {
-                # Capitalize fallback
-                set n [pak::fval $obj name]
-                set type_name "[string toupper [string index $n 0]][string range $n 1 end]"
+                set local [my lookup_local $var_name]
+                if {$local ne ""} {
+                    set layout [lindex $local 1]
+                    if {[dict exists $layout _type_name]} {
+                        set type_name [dict get $layout _type_name]
+                    }
+                }
+            }
+            # Tertiary: capitalize variable name (best-effort for single-char names)
+            if {$type_name eq ""} {
+                set type_name "[string toupper [string index $var_name 0]][string range $var_name 1 end]"
             }
         }
         set mangled "${type_name}_[pak::fval $access field]"
@@ -3306,18 +3721,43 @@ oo::class create pak::MipsCodegen {
 
     method marshal_args {args_seq {start_idx 0}} {
         set arglist [pak::items $args_seq]
-        set i 0
-        foreach arg $arglist {
+        set n [llength $arglist]
+        if {$n == 0} return
+        # Count float args so each knows its float-index.
+        set float_total 0
+        foreach arg $arglist { if {[my infer_is_float $arg]} { incr float_total } }
+        # Evaluate in REVERSE order to avoid save/reload patterns that the
+        # VR4300 memory scheduler (which lacks alias analysis) would reorder.
+        # After reverse evaluation:
+        #   float 0 stays in $f12      (evaluated last, never overwritten)
+        #   float 1 moved to $f14 via mov.s immediately after its eval
+        #   float 2+ stored to sp+(N*4) outgoing arg area right after eval
+        # Integer args use position-based slots; reverse order only affects
+        # side-effect sequencing (pure-expression args are unaffected).
+        set fi_counter $float_total
+        for {set i [expr {$n - 1}]} {$i >= 0} {incr i -1} {
+            set arg [lindex $arglist $i]
             set slot [expr {$i + $start_idx}]
-            if {$slot < 4} {
-                my emit_expr $arg [lindex $::pak::ARG_GPRS $slot]
+            if {[my infer_is_float $arg]} {
+                incr fi_counter -1
+                set fi $fi_counter
+                my emit_expr $arg {$zero}   ;# result in $f12
+                if {$fi == 1} {
+                    $em mov_s {$f14} {$f12}
+                } elseif {$fi >= 2} {
+                    $em swc1 {$f12} [expr {$fi * 4}] {$sp}
+                }
+                # fi==0: 1st float stays in $f12 (evaluated last, correct at call)
             } else {
-                set tmp [$ra alloc_temp]
-                my emit_expr $arg $tmp
-                $em sw $tmp [expr {($slot - 4) * 4 + 16}] {$sp}
-                $ra free_temp $tmp
+                if {$slot < 4} {
+                    my emit_expr $arg [lindex $::pak::ARG_GPRS $slot]
+                } else {
+                    set tmp [$ra alloc_temp]
+                    my emit_expr $arg $tmp
+                    $em sw $tmp [expr {($slot - 4) * 4 + 16}] {$sp}
+                    $ra free_temp $tmp
+                }
             }
-            incr i
         }
     }
 }

@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -149,11 +150,11 @@
 	.globl double_value
 	.type double_value, @function
 double_value:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t6, 96($sp)
     lw $t7, 0($t6)
     li $t6, 2

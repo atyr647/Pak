@@ -1,0 +1,86 @@
+-- test_arena_integration.pk64
+-- Integration test: exercises the Arena bump allocator.
+-- Uses debug.log for output; Python test replaces debugf with printf.
+
+use n64.debug
+
+entry {
+    -- ── Set up a 256-byte arena backed by a stack buffer ─────────────────────
+    let buf: [256]byte = undefined
+    let a: Arena = undefined
+    a.base = &buf[0]
+    a.ptr  = &buf[0]
+    a.capacity = 256
+
+    -- ── Allocate a single i32 ─────────────────────────────────────────────────
+    let p1: *i32 = arena.alloc(a, 4) as *i32
+    let alloc1_ok: i32 = 0
+    if p1 != none {
+        alloc1_ok = 1
+        *p1 = 42
+    }
+    debug.log("RESULT_ALLOC1_OK={alloc1_ok}")
+
+    -- ── Allocate a second i32 and verify the pointer advanced ─────────────────
+    let p2: *i32 = arena.alloc(a, 4) as *i32
+    let alloc2_ok: i32 = 0
+    if p2 != none {
+        alloc2_ok = 1
+        *p2 = 99
+    }
+    debug.log("RESULT_ALLOC2_OK={alloc2_ok}")
+
+    -- ── Verify stored values survive ──────────────────────────────────────────
+    let val1: i32 = 0
+    if p1 != none {
+        val1 = *p1
+    }
+    debug.log("RESULT_VAL1={val1}")
+
+    let val2: i32 = 0
+    if p2 != none {
+        val2 = *p2
+    }
+    debug.log("RESULT_VAL2={val2}")
+
+    -- ── Reset arena and re-allocate from the start ────────────────────────────
+    arena.reset(a)
+
+    let p3: *i32 = arena.alloc(a, 4) as *i32
+    let alloc3_ok: i32 = 0
+    if p3 != none {
+        alloc3_ok = 1
+        *p3 = 77
+    }
+    debug.log("RESULT_ALLOC3_AFTER_RESET={alloc3_ok}")
+
+    let val3: i32 = 0
+    if p3 != none {
+        val3 = *p3
+    }
+    debug.log("RESULT_VAL3={val3}")
+
+    -- ── Exhaust the arena to check OOM returns none ───────────────────────────
+    -- After reset, buf is fresh. Allocate 256/8 = 32 blocks of 8 bytes.
+    -- Each pak_arena_alloc aligns to 8 bytes, so 4-byte alloc uses 8 bytes.
+    -- 256 bytes / 8 bytes per alloc = 32 allocations max.
+    -- Allocate 32 more blocks (we already used 1 after reset → 31 more to fill)
+    let fill_count: i32 = 0
+    let k: i32 = 0
+    while k < 31 {
+        let px: *i32 = arena.alloc(a, 4) as *i32
+        if px != none {
+            fill_count += 1
+        }
+        k += 1
+    }
+    debug.log("RESULT_FILL_COUNT={fill_count}")
+
+    -- One more should return none (arena is full)
+    let pover: *i32 = arena.alloc(a, 4) as *i32
+    let oom: i32 = 0
+    if pover == none {
+        oom = 1
+    }
+    debug.log("RESULT_OOM={oom}")
+}

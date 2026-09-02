@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -149,12 +150,12 @@
 	.globl add
 	.type add, @function
 add:
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    sw $a1, 100($sp)
     lw $t9, 96($sp)
     lw $t8, 100($sp)
     addu $v0, $t9, $t8
@@ -172,15 +173,22 @@ add:
 	.globl max
 	.type max, @function
 max:
-    swc1 $f12, 96($sp)
-    swc1 $f12, 100($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    swc1 $f12, 96($sp)
+    mov.s $f12, $f14
+    swc1 $f12, 100($sp)
     lwc1 $f12, 96($sp)
+    mov.s $f14, $f12
     lwc1 $f12, 100($sp)
-    sgt $t9, $t8, $t7
+    c.lt.s $f12, $f14
+    li $t9, 0
+    bc1f .Lfgt_3
+    nop
+    li $t9, 1
+.Lfgt_3:
     beqz $t9, .Lif_end_2
     nop
     lwc1 $f12, 96($sp)
@@ -202,35 +210,49 @@ max:
 	.globl clamp
 	.type clamp, @function
 clamp:
-    swc1 $f12, 96($sp)
-    swc1 $f12, 100($sp)
-    swc1 $f12, 104($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    swc1 $f12, 96($sp)
+    mov.s $f12, $f14
+    swc1 $f12, 100($sp)
+    lwc1 $f12, 8($fp)
+    swc1 $f12, 104($sp)
     lwc1 $f12, 96($sp)
+    mov.s $f14, $f12
     lwc1 $f12, 100($sp)
-    slt $t9, $t8, $t7
-    beqz $t9, .Lif_end_4
+    c.lt.s $f14, $f12
+    li $t9, 0
+    bc1f .Lflt_6
     nop
-    lwc1 $f12, 100($sp)
-    j .Lclamp_ret_3
-    nop
-.Lif_end_4:
-    lwc1 $f12, 96($sp)
-    lwc1 $f12, 104($sp)
-    sgt $t9, $t8, $t7
+    li $t9, 1
+.Lflt_6:
     beqz $t9, .Lif_end_5
     nop
-    lwc1 $f12, 104($sp)
-    j .Lclamp_ret_3
+    lwc1 $f12, 100($sp)
+    j .Lclamp_ret_4
     nop
 .Lif_end_5:
     lwc1 $f12, 96($sp)
-    j .Lclamp_ret_3
+    mov.s $f14, $f12
+    lwc1 $f12, 104($sp)
+    c.lt.s $f12, $f14
+    li $t9, 0
+    bc1f .Lfgt_8
     nop
-.Lclamp_ret_3:
+    li $t9, 1
+.Lfgt_8:
+    beqz $t9, .Lif_end_7
+    nop
+    lwc1 $f12, 104($sp)
+    j .Lclamp_ret_4
+    nop
+.Lif_end_7:
+    lwc1 $f12, 96($sp)
+    j .Lclamp_ret_4
+    nop
+.Lclamp_ret_4:
     lw $fp, 248($sp)
     lw $ra, 252($sp)
     addiu $sp, $sp, 256
@@ -242,16 +264,16 @@ clamp:
 	.globl reset
 	.type reset, @function
 reset:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     li $t8, 0
     lw $t7, 96($sp)
     sw $t8, 0($t7)
     move $t9, $t8
-.Lreset_ret_6:
+.Lreset_ret_9:
     lw $fp, 248($sp)
     lw $ra, 252($sp)
     addiu $sp, $sp, 256
@@ -263,11 +285,11 @@ reset:
 	.globl increment
 	.type increment, @function
 increment:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t6, 96($sp)
     lw $t7, 0($t6)
     li $t6, 1
@@ -275,7 +297,7 @@ increment:
     lw $t7, 96($sp)
     sw $t8, 0($t7)
     move $t9, $t8
-.Lincrement_ret_7:
+.Lincrement_ret_10:
     lw $fp, 248($sp)
     lw $ra, 252($sp)
     addiu $sp, $sp, 256
@@ -291,8 +313,8 @@ main:
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
-    li $a0, 3
     li $a1, 4
+    li $a0, 3
     jal add
     nop
     move $t8, $v0
@@ -301,6 +323,7 @@ main:
     move $t9, $t8
     la $t8, .Lf320
     lwc1 $f12, 0($t8)
+    mov.s $f14, $f12
     la $t8, .Lf321
     lwc1 $f12, 0($t8)
     jal max
@@ -309,8 +332,10 @@ main:
     sw $t9, 96($sp)
     la $t8, .Lf322
     lwc1 $f12, 0($t8)
+    swc1 $f12, 8($sp)
     la $t8, .Lf323
     lwc1 $f12, 0($t8)
+    mov.s $f14, $f12
     la $t8, .Lf324
     lwc1 $f12, 0($t8)
     jal clamp
@@ -337,7 +362,7 @@ main:
     la $t7, result_sink
     sw $t8, 0($t7)
     move $t9, $t8
-.Lmain_ret_8:
+.Lmain_ret_11:
     lw $fp, 248($sp)
     lw $ra, 252($sp)
     addiu $sp, $sp, 256
@@ -348,19 +373,19 @@ main:
 	.section .rodata
 	.align 2
 .Lf320:
-	.word 1069547520
-	.align 2
-.Lf321:
 	.word 1075838976
 	.align 2
+.Lf321:
+	.word 1069547520
+	.align 2
 .Lf322:
-	.word 1125515264
+	.word 1120403456
 	.align 2
 .Lf323:
 	.word 0
 	.align 2
 .Lf324:
-	.word 1120403456
+	.word 1125515264
 
 	.section .data
 	.align 2

@@ -1,0 +1,597 @@
+-- 16_platformer.pk64
+-- Demonstrates: large program — side-scrolling platformer game engine.
+-- Features: structs, variants, enums, impl blocks, multiple functions,
+--           control flow, arithmetic, N64 APIs (display, controller, rdpq),
+--           fixed-point physics, static buffers, match/if chains.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+use n64.debug
+use n64.math
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Constants
+-- ─────────────────────────────────────────────────────────────────────────────
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+
+const GRAVITY: fix16.16     = 0.4
+const JUMP_FORCE: fix16.16  = 6.0
+const MOVE_SPEED: fix16.16  = 2.5
+const MAX_FALL: fix16.16    = 8.0
+
+const PLAYER_W: i32 = 12
+const PLAYER_H: i32 = 16
+
+const MAX_PLATFORMS: i32 = 8
+const MAX_COINS: i32     = 16
+
+const TILE_SIZE: i32 = 16
+
+-- Colors (RGBA packed)
+const COLOR_SKY:      u32 = 0x5588CCFF
+const COLOR_GROUND:   u32 = 0x4A3728FF
+const COLOR_PLAYER:   u32 = 0xFF4444FF
+const COLOR_COIN:     u32 = 0xFFDD00FF
+const COLOR_PLATFORM: u32 = 0x336633FF
+const COLOR_BLACK:    u32 = 0x000000FF
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Enums and variants
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Player animation/movement state
+enum PlayerState: u8 {
+    idle
+    running
+    jumping
+    falling
+    landing
+}
+
+-- Game phase
+enum GamePhase: u8 {
+    title
+    playing
+    paused
+    gameover
+}
+
+-- Pickup variants
+variant Pickup {
+    coin(i32, i32)    -- x, y screen position
+    empty             -- inactive slot
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Structs
+-- ─────────────────────────────────────────────────────────────────────────────
+
+struct Platform {
+    x: i32
+    y: i32
+    w: i32
+    h: i32
+    active: bool
+}
+
+struct Player {
+    x: fix16.16
+    y: fix16.16
+    vx: fix16.16
+    vy: fix16.16
+    state: PlayerState
+    on_ground: bool
+    facing_right: bool
+    health: i32
+    score: i32
+    jump_timer: i32
+    coyote_time: i32
+}
+
+struct Camera {
+    x: fix16.16
+    scroll_speed: fix16.16
+    offset: i32
+}
+
+struct GameState {
+    player: Player
+    camera: Camera
+    phase: GamePhase
+    frame: i32
+    coins_collected: i32
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Static buffers (prefer static over alloc on N64)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+static platforms: [8]Platform = undefined
+static pickups: [16]Pickup = undefined
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Platform helpers
+-- ─────────────────────────────────────────────────────────────────────────────
+
+fn init_platforms() {
+    platforms[0] = Platform { x: 0,   y: 200, w: 320, h: 40, active: true }
+    platforms[1] = Platform { x: 40,  y: 160, w: 80,  h: 12, active: true }
+    platforms[2] = Platform { x: 160, y: 130, w: 80,  h: 12, active: true }
+    platforms[3] = Platform { x: 60,  y: 100, w: 60,  h: 12, active: true }
+    platforms[4] = Platform { x: 220, y: 90,  w: 70,  h: 12, active: true }
+    platforms[5] = Platform { x: 10,  y: 60,  w: 50,  h: 12, active: true }
+    platforms[6] = Platform { x: 130, y: 50,  w: 60,  h: 12, active: true }
+    platforms[7] = Platform { x: 250, y: 70,  w: 60,  h: 12, active: false }
+}
+
+fn init_pickups() {
+    pickups[0]  = Pickup.coin(60,  145)
+    pickups[1]  = Pickup.coin(80,  145)
+    pickups[2]  = Pickup.coin(180, 115)
+    pickups[3]  = Pickup.coin(200, 115)
+    pickups[4]  = Pickup.coin(80,  85)
+    pickups[5]  = Pickup.coin(150, 35)
+    pickups[6]  = Pickup.coin(165, 35)
+    pickups[7]  = Pickup.coin(260, 55)
+    pickups[8]  = Pickup.empty
+    pickups[9]  = Pickup.empty
+    pickups[10] = Pickup.empty
+    pickups[11] = Pickup.empty
+    pickups[12] = Pickup.empty
+    pickups[13] = Pickup.empty
+    pickups[14] = Pickup.empty
+    pickups[15] = Pickup.empty
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Collision detection
+-- ─────────────────────────────────────────────────────────────────────────────
+
+fn aabb_overlap(ax: i32, ay: i32, aw: i32, ah: i32,
+                bx: i32, by: i32, bw: i32, bh: i32) -> bool {
+    if ax + aw <= bx { return false }
+    if ax >= bx + bw { return false }
+    if ay + ah <= by { return false }
+    if ay >= by + bh { return false }
+    return true
+}
+
+-- Returns the platform top Y if player lands on one, -1 otherwise.
+fn check_platform_landing(px: i32, py: i32, pvy: fix16.16) -> i32 {
+    if pvy <= 0.0 { return -1 }
+
+    let i: i32 = 0
+    while i < MAX_PLATFORMS {
+        let plat = &platforms[i]
+        if plat.active {
+            let feet_y = py + PLAYER_H
+            let overlap = aabb_overlap(px, feet_y - 2, PLAYER_W, 4,
+                                       plat.x, plat.y, plat.w, plat.h)
+            if overlap {
+                return plat.y
+            }
+        }
+        i += 1
+    }
+    return -1
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Player impl block
+-- ─────────────────────────────────────────────────────────────────────────────
+
+impl Player {
+    fn init(self: *Player) {
+        self.x = 40.0
+        self.y = 180.0
+        self.vx = 0.0
+        self.vy = 0.0
+        self.state = PlayerState.idle
+        self.on_ground = false
+        self.facing_right = true
+        self.health = 3
+        self.score = 0
+        self.jump_timer = 0
+        self.coyote_time = 0
+    }
+
+    fn physics(self: *Player) {
+        if not self.on_ground {
+            self.vy += GRAVITY
+            if self.vy > MAX_FALL {
+                self.vy = MAX_FALL
+            }
+        }
+
+        self.y += self.vy
+        self.x += self.vx
+        self.vx = self.vx * 0.8
+
+        if self.x < 0.0 { self.x = 0.0 }
+        if self.x > 308.0 { self.x = 308.0 }
+    }
+
+    fn resolve_collisions(self: *Player) {
+        let px = self.x as i32
+        let py = self.y as i32
+
+        let land_y = check_platform_landing(px, py, self.vy)
+        if land_y != -1 {
+            self.y = (land_y - PLAYER_H) as fix16.16
+            self.vy = 0.0
+            if not self.on_ground {
+                self.state = PlayerState.landing
+                self.jump_timer = 4
+            }
+            self.on_ground = true
+            self.coyote_time = 8
+        } else {
+            if self.coyote_time > 0 {
+                self.coyote_time -= 1
+            } else {
+                self.on_ground = false
+            }
+        }
+
+        if self.y > 280.0 {
+            self.y = 180.0
+            self.x = 40.0
+            self.vy = 0.0
+            self.vx = 0.0
+            self.health -= 1
+        }
+    }
+
+    fn handle_input(self: *Player, pad: joypad_status_t) {
+        -- Analog stick horizontal
+        let raw_x = pad.stick_x as i32
+        let dead: i32 = 10
+        if raw_x > dead {
+            self.vx = (raw_x as fix16.16) * 0.02
+            self.facing_right = true
+        } elif raw_x < -dead {
+            self.vx = (raw_x as fix16.16) * 0.02
+            self.facing_right = false
+        }
+
+        -- D-pad digital movement
+        if pad.held.right {
+            self.vx = MOVE_SPEED
+            self.facing_right = true
+        }
+        if pad.held.left {
+            self.vx = -MOVE_SPEED
+            self.facing_right = false
+        }
+
+        -- Jump on A press
+        if pad.pressed.a {
+            if self.on_ground or self.coyote_time > 0 {
+                self.vy = -JUMP_FORCE
+                self.on_ground = false
+                self.coyote_time = 0
+                self.state = PlayerState.jumping
+            }
+        }
+    }
+
+    fn update_state(self: *Player) {
+        if self.jump_timer > 0 {
+            self.jump_timer -= 1
+        }
+
+        if not self.on_ground {
+            if self.vy < 0.0 {
+                self.state = PlayerState.jumping
+            } else {
+                self.state = PlayerState.falling
+            }
+        } elif self.jump_timer > 0 {
+            self.state = PlayerState.landing
+        } elif self.vx > 0.2 or self.vx < -0.2 {
+            self.state = PlayerState.running
+        } else {
+            self.state = PlayerState.idle
+        }
+    }
+
+    fn collect_pickups(self: *Player) {
+        let px = self.x as i32
+        let py = self.y as i32
+        let i: i32 = 0
+        while i < MAX_COINS {
+            match pickups[i] {
+                .coin(cx, cy) => {
+                    if aabb_overlap(px, py, PLAYER_W, PLAYER_H,
+                                   cx - 4, cy - 4, 8, 8) {
+                        self.score += 10
+                        pickups[i] = Pickup.empty
+                    }
+                }
+                .empty => {}
+            }
+            i += 1
+        }
+    }
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Camera impl block
+-- ─────────────────────────────────────────────────────────────────────────────
+
+impl Camera {
+    fn init(self: *Camera) {
+        self.x = 0.0
+        self.scroll_speed = 0.0
+        self.offset = 0
+    }
+
+    fn follow(self: *Camera, player_x: fix16.16) {
+        let target: fix16.16 = player_x - 120.0
+        let diff = target - self.x
+        self.x += diff * 0.1
+        if self.x < 0.0 { self.x = 0.0 }
+        self.offset = self.x as i32
+    }
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Rendering helpers
+-- ─────────────────────────────────────────────────────────────────────────────
+
+fn draw_rect_world(wx: i32, wy: i32, ww: i32, wh: i32,
+                   cam_x: i32, color: u32) {
+    let sx = wx - cam_x
+    if sx + ww < 0 { return }
+    if sx > SCREEN_W { return }
+    let x0 = sx
+    let x1 = sx + ww
+    if x0 < 0 { x0 = 0 }
+    if x1 > SCREEN_W { x1 = SCREEN_W }
+    rdpq.set_fill_color(color)
+    rdpq.fill_rectangle(x0, wy, x1, wy + wh)
+}
+
+fn draw_platforms(cam_x: i32) {
+    let i: i32 = 0
+    while i < MAX_PLATFORMS {
+        let plat = &platforms[i]
+        if plat.active {
+            draw_rect_world(plat.x, plat.y, plat.w, plat.h,
+                            cam_x, COLOR_PLATFORM)
+        }
+        i += 1
+    }
+}
+
+fn draw_player(p: *Player, cam_x: i32) {
+    let px = p.x as i32
+    let py = p.y as i32
+    let sx = px - cam_x
+
+    -- Cull
+    if sx + PLAYER_W < 0 or sx > SCREEN_W { return }
+
+    -- Pick body color based on state
+    let color: u32 = COLOR_PLAYER
+    match p.state {
+        .idle    => { color = 0xFF4444FF }
+        .running => { color = 0xFF6622FF }
+        .jumping => { color = 0xFFAA00FF }
+        .falling => { color = 0xFF8844FF }
+        .landing => { color = 0xFFFFAAFF }
+    }
+
+    rdpq.set_fill_color(color)
+    rdpq.fill_rectangle(sx, py, sx + PLAYER_W, py + PLAYER_H)
+
+    -- Eyes
+    rdpq.set_fill_color(0xFFFFFFFF)
+    if p.facing_right {
+        rdpq.fill_rectangle(sx + 8, py + 4, sx + 10, py + 6)
+    } else {
+        rdpq.fill_rectangle(sx + 2, py + 4, sx + 4,  py + 6)
+    }
+}
+
+fn draw_pickup(p: Pickup, cam_x: i32) {
+    match p {
+        .coin(cx, cy) => {
+            let sx = cx - cam_x
+            if sx < -8 or sx > SCREEN_W { return }
+            rdpq.set_fill_color(COLOR_COIN)
+            rdpq.fill_rectangle(sx - 4, cy - 4, sx + 4, cy + 4)
+        }
+        .empty => {}
+    }
+}
+
+fn draw_pickups(cam_x: i32) {
+    let i: i32 = 0
+    while i < MAX_COINS {
+        draw_pickup(pickups[i], cam_x)
+        i += 1
+    }
+}
+
+fn draw_hud(gs: *GameState) {
+    -- Health pips
+    let i: i32 = 0
+    while i < gs.player.health {
+        let hx = 8 + i * 14
+        rdpq.set_fill_color(0xFF2222FF)
+        rdpq.fill_rectangle(hx, 8, hx + 10, 16)
+        i += 1
+    }
+
+    -- Score progress bar
+    let bar_w = gs.player.score
+    if bar_w > 200 { bar_w = 200 }
+    if bar_w > 0 {
+        rdpq.set_fill_color(0xFFDD44FF)
+        rdpq.fill_rectangle(8, 20, 8 + bar_w, 26)
+    }
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Game update per-phase
+-- ─────────────────────────────────────────────────────────────────────────────
+
+fn update_playing(gs: *GameState, pad: joypad_status_t) {
+    gs.player.handle_input(pad)
+    gs.player.physics()
+    gs.player.resolve_collisions()
+    gs.player.update_state()
+    gs.player.collect_pickups()
+    gs.camera.follow(gs.player.x)
+
+    if pad.pressed.start {
+        gs.phase = GamePhase.paused
+    }
+    if gs.player.health <= 0 {
+        gs.phase = GamePhase.gameover
+    }
+
+    gs.frame += 1
+}
+
+fn update_title(gs: *GameState, pad: joypad_status_t) {
+    if pad.pressed.start or pad.pressed.a {
+        gs.phase = GamePhase.playing
+    }
+}
+
+fn update_paused(gs: *GameState, pad: joypad_status_t) {
+    if pad.pressed.start {
+        gs.phase = GamePhase.playing
+    }
+}
+
+fn update_gameover(gs: *GameState, pad: joypad_status_t) {
+    if pad.pressed.start or pad.pressed.a {
+        gs.player.init()
+        gs.camera.init()
+        gs.frame = 0
+        gs.coins_collected = 0
+        init_platforms()
+        init_pickups()
+        gs.phase = GamePhase.title
+    }
+}
+
+fn update(gs: *GameState, pad: joypad_status_t) {
+    match gs.phase {
+        .title    => { update_title(gs, pad) }
+        .playing  => { update_playing(gs, pad) }
+        .paused   => { update_paused(gs, pad) }
+        .gameover => { update_gameover(gs, pad) }
+    }
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Render per-phase
+-- ─────────────────────────────────────────────────────────────────────────────
+
+fn render_world(gs: *GameState) {
+    let cam_x = gs.camera.offset
+
+    rdpq.set_mode_fill(COLOR_SKY)
+    rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+
+    rdpq.sync_pipe()
+    draw_platforms(cam_x)
+
+    rdpq.sync_pipe()
+    draw_pickups(cam_x)
+
+    rdpq.sync_pipe()
+    draw_player(&gs.player, cam_x)
+
+    rdpq.sync_pipe()
+    draw_hud(gs)
+}
+
+fn render_title() {
+    rdpq.set_mode_fill(0x1A1A4AFF)
+    rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(0xFF4444FF)
+    rdpq.fill_rectangle(60, 80, 260, 100)
+
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(0xFFFFFFFF)
+    rdpq.fill_rectangle(100, 150, 220, 160)
+}
+
+fn render_paused(gs: *GameState) {
+    render_world(gs)
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(0x00000088)
+    rdpq.fill_rectangle(80, 100, 240, 140)
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(0xFFFFFFFF)
+    rdpq.fill_rectangle(100, 112, 220, 120)
+}
+
+fn render_gameover() {
+    rdpq.set_mode_fill(0x220000FF)
+    rdpq.fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(0xFF2222FF)
+    rdpq.fill_rectangle(60, 100, 260, 130)
+    rdpq.sync_pipe()
+    rdpq.set_mode_fill(0xFFFFFFFF)
+    rdpq.fill_rectangle(100, 160, 220, 170)
+}
+
+fn render(gs: *GameState) {
+    let fb = display.get()
+    rdpq.attach_clear(fb)
+
+    match gs.phase {
+        .title    => { render_title() }
+        .playing  => { render_world(gs) }
+        .paused   => { render_paused(gs) }
+        .gameover => { render_gameover() }
+    }
+
+    rdpq.detach_show()
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Entry point
+-- ─────────────────────────────────────────────────────────────────────────────
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+
+    defer {
+        rdpq.close()
+        debug.log("platformer: shutdown")
+    }
+
+    let gs: GameState = undefined
+    gs.player.init()
+    gs.camera.init()
+    gs.phase = GamePhase.title
+    gs.frame = 0
+    gs.coins_collected = 0
+
+    init_platforms()
+    init_pickups()
+
+    loop {
+        controller.poll()
+        let pad = controller.read(0)
+        update(&gs, pad)
+        render(&gs)
+    }
+}

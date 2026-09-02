@@ -31,9 +31,12 @@
 #include "pakfs.h"
 
 #include <libdragon.h>
+#include <system.h>     /* filesystem_t, attach_filesystem, detach_filesystem */
+#include <sys/stat.h>   /* struct stat, S_IFREG */
 #include <malloc.h>
 #include <string.h>
 #include <errno.h>
+#include <stdio.h>
 
 /* ── Archive format constants ─────────────────────────────────────────── */
 
@@ -147,7 +150,7 @@ typedef struct {
     uint32_t        pos;
 } PakFD;
 
-static void *pakfs_open(const char *name, int flags) {
+static void *pakfs_open(char *name, int flags) {
     (void)flags;
     const PakEntry *e = find_entry(name);
     if (!e) { errno = ENOENT; return NULL; }
@@ -163,18 +166,18 @@ static int pakfs_fclose(void *file) {
     return 0;
 }
 
-static int pakfs_read(void *file, void *buf, int len) {
+static int pakfs_read(void *file, uint8_t *ptr, int len) {
     PakFD *fd = file;
     uint32_t remaining = fd->entry->size - fd->pos;
     if ((uint32_t)len > remaining) len = (int)remaining;
     if (len <= 0) return 0;
-    memcpy(buf, archive_buf + fd->entry->offset + fd->pos, (size_t)len);
+    memcpy(ptr, archive_buf + fd->entry->offset + fd->pos, (size_t)len);
     fd->pos += (uint32_t)len;
     return len;
 }
 
-static int pakfs_write(void *file, const void *buf, int len) {
-    (void)file; (void)buf; (void)len;
+static int pakfs_write(void *file, uint8_t *ptr, int len) {
+    (void)file; (void)ptr; (void)len;
     errno = EROFS;
     return -1;
 }
@@ -208,7 +211,7 @@ static filesystem_t pakfs_vtable = {
     .close = pakfs_fclose,
     .read  = pakfs_read,
     .write = pakfs_write,
-    .seek  = pakfs_seek,
+    .lseek = pakfs_seek,
     .fstat = pakfs_fstat,
 };
 
@@ -217,24 +220,27 @@ static filesystem_t pakfs_vtable = {
 bool pakfs_init(const char *rom_path) {
     if (initialized) return true;
 
-    /* Open archive from ROM filesystem (e.g. "rom:/mygame.pakfs") */
-    int fd = dfs_open(rom_path);
-    if (fd < 0) {
+    /* Open archive via newlib/DFS — accepts "rom:/file.pakfs" or "/file.pakfs" */
+    FILE *f = fopen(rom_path, "rb");
+    if (!f) {
         debugf("[pakfs] failed to open archive: %s\n", rom_path);
         return false;
     }
 
-    archive_size = (uint32_t)dfs_size(fd);
+    fseek(f, 0, SEEK_END);
+    archive_size = (uint32_t)ftell(f);
+    fseek(f, 0, SEEK_SET);
+
     /* Allocate 16-byte aligned buffer for DMA safety */
     archive_buf = memalign(16, archive_size);
     if (!archive_buf) {
-        dfs_close(fd);
+        fclose(f);
         debugf("[pakfs] out of memory (%lu bytes)\n", (unsigned long)archive_size);
         return false;
     }
 
-    dfs_read(archive_buf, 1, archive_size, fd);
-    dfs_close(fd);
+    fread(archive_buf, 1, archive_size, f);
+    fclose(f);
 
     if (!parse_archive()) {
         free(archive_buf);

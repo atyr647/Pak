@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -149,11 +150,11 @@
 	.globl update
 	.type update, @function
 update:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     li $a0, 0
     jal joypad_get_status
     nop
@@ -165,8 +166,8 @@ update:
     beqz $t9, .Lif_end_1
     nop
     li $t8, 2
-    la $t7, __cur
-    lw $t7, 0($t7)
+    lw $t6, 96($sp)
+    lw $t7, 0($t6)
     addu $t8, $t7, $t8
     lw $t7, 96($sp)
     sw $t8, 0($t7)
@@ -178,8 +179,8 @@ update:
     beqz $t9, .Lif_end_2
     nop
     li $t8, 2
-    la $t7, __cur
-    lw $t7, 0($t7)
+    lw $t6, 96($sp)
+    lw $t7, 0($t6)
     subu $t8, $t7, $t8
     lw $t7, 96($sp)
     sw $t8, 0($t7)
@@ -191,8 +192,8 @@ update:
     beqz $t9, .Lif_end_3
     nop
     li $t8, 2
-    la $t7, __cur
-    lw $t7, 0($t7)
+    lw $t6, 96($sp)
+    lw $t7, 4($t6)
     addu $t8, $t7, $t8
     lw $t7, 96($sp)
     sw $t8, 4($t7)
@@ -204,8 +205,8 @@ update:
     beqz $t9, .Lif_end_4
     nop
     li $t8, 2
-    la $t7, __cur
-    lw $t7, 0($t7)
+    lw $t6, 96($sp)
+    lw $t7, 4($t6)
     subu $t8, $t7, $t8
     lw $t7, 96($sp)
     sw $t8, 4($t7)
@@ -277,11 +278,11 @@ update:
 	.globl render
 	.type render, @function
 render:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     jal display_get
     nop
     move $t9, $v0
@@ -294,18 +295,18 @@ render:
     jal rdpq_set_mode_fill
     nop
     move $t9, $v0
-    lw $t8, 96($sp)
-    lw $a0, 0($t8)
-    lw $t8, 96($sp)
-    lw $a1, 4($t8)
-    lw $t7, 96($sp)
-    lw $t8, 0($t7)
-    li $t7, 16
-    addu $a2, $t8, $t7
     lw $t7, 96($sp)
     lw $t8, 4($t7)
     li $t7, 16
     addu $a3, $t8, $t7
+    lw $t7, 96($sp)
+    lw $t8, 0($t7)
+    li $t7, 16
+    addu $a2, $t8, $t7
+    lw $t8, 96($sp)
+    lw $a1, 4($t8)
+    lw $t8, 96($sp)
+    lw $a0, 0($t8)
     jal rdpq_fill_rectangle
     nop
     move $t9, $v0
@@ -328,12 +329,12 @@ main:
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
-    li $a0, 0
-    li $a1, 0
-    li $a2, 2
-    li $a3, 0
     li $t8, 0
     sw $t8, 16($sp)
+    li $a3, 0
+    li $a2, 2
+    li $a1, 0
+    li $a0, 0
     jal display_init
     nop
     move $t9, $v0
@@ -346,17 +347,23 @@ main:
     jal timer_init
     nop
     move $t9, $v0
-    sw $zero, 100($sp)
-    sw $zero, 104($sp)
     sw $zero, 108($sp)
-    li $t8, 160
-    sw $t8, 100($sp)
-    li $t8, 120
-    sw $t8, 104($sp)
-    li $t8, 1
-    sb $t8, 108($sp)
-    addiu $t9, $sp, 100
-    sw $t9, 96($sp)
+    sw $zero, 112($sp)
+    sw $zero, 116($sp)
+    li $t7, 160
+    sw $t7, 108($sp)
+    li $t7, 120
+    sw $t7, 112($sp)
+    li $t7, 1
+    sb $t7, 116($sp)
+    addiu $t9, $sp, 108
+    addiu $t8, $sp, 96
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
 .Lloop_h_12:
     jal joypad_poll
     nop

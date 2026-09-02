@@ -1,0 +1,17 @@
+[project]
+name = "dungeon_quartet"
+rom_title = "DUNGEON QUARTET"
+save_type = "none"
+
+[display]
+resolution = "320x240"
+bit_depth = 16
+framebuffers = 3
+
+[dependencies]
+# Pulls in Tiny3D and enables the .glb/.gltf -> .t3dm asset rule.
+# Requires TINY3D_INST to point at your Tiny3D installation.
+tiny3d = true
+
+[build]
+optimization = "debug"

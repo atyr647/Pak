@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -149,12 +150,12 @@
 	.globl vec2fx_add
 	.type vec2fx_add, @function
 vec2fx_add:
-    sw $a0, 96($sp)
-    sw $a1, 104($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    sw $a1, 104($sp)
     sw $zero, 112($sp)
     sw $zero, 116($sp)
     lw $t7, 96($sp)
@@ -184,12 +185,12 @@ vec2fx_add:
 	.globl vec2fx_scale
 	.type vec2fx_scale, @function
 vec2fx_scale:
-    sw $a0, 96($sp)
-    sw $a1, 104($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
+    sw $a1, 104($sp)
     sw $zero, 108($sp)
     sw $zero, 112($sp)
     lw $t7, 96($sp)
@@ -275,39 +276,47 @@ main:
     la $t7, sink_x
     sw $t8, 0($t7)
     move $t9, $t8
-    sw $zero, 128($sp)
     sw $zero, 132($sp)
-    la $t7, .Lf323
-    lwc1 $f12, 0($t7)
-    sw $t8, 128($sp)
-    la $t7, .Lf324
-    lwc1 $f12, 0($t7)
-    sw $t8, 132($sp)
-    addiu $t9, $sp, 128
-    sw $t9, 124($sp)
-    sw $zero, 140($sp)
-    sw $zero, 144($sp)
-    la $t7, .Lf320
-    lwc1 $f12, 0($t7)
-    sw $t8, 140($sp)
-    la $t7, .Lf322
-    lwc1 $f12, 0($t7)
-    sw $t8, 144($sp)
-    addiu $t9, $sp, 140
-    sw $t9, 136($sp)
+    sw $zero, 136($sp)
+    la $t6, .Lf323
+    lwc1 $f12, 0($t6)
+    sw $t7, 132($sp)
+    la $t6, .Lf324
+    lwc1 $f12, 0($t6)
+    sw $t7, 136($sp)
+    addiu $t9, $sp, 132
+    addiu $t8, $sp, 124
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    sw $zero, 148($sp)
+    sw $zero, 152($sp)
+    la $t6, .Lf320
+    lwc1 $f12, 0($t6)
+    sw $t7, 148($sp)
+    la $t6, .Lf322
+    lwc1 $f12, 0($t6)
+    sw $t7, 152($sp)
+    addiu $t9, $sp, 148
+    addiu $t8, $sp, 140
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $a1, 140($sp)
     lw $a0, 124($sp)
-    lw $a1, 136($sp)
     jal vec2fx_add
     nop
     move $t9, $v0
-    sw $t9, 148($sp)
-    lw $a0, 136($sp)
+    sw $t9, 156($sp)
     la $t8, .Lf321
     lwc1 $f12, 0($t8)
+    lw $a0, 140($sp)
     jal vec2fx_scale
     nop
     move $t9, $v0
-    sw $t9, 152($sp)
+    sw $t9, 160($sp)
     lw $t3, 108($sp)
     lw $t2, 112($sp)
     addu $t4, $t3, $t2
@@ -315,10 +324,10 @@ main:
     addu $t5, $t4, $t3
     lw $t4, 120($sp)
     addu $t6, $t5, $t4
-    lw $t4, 148($sp)
+    lw $t4, 156($sp)
     lw $t5, 0($t4)
     addu $t7, $t6, $t5
-    lw $t5, 152($sp)
+    lw $t5, 160($sp)
     lw $t6, 0($t5)
     addu $t8, $t7, $t6
     la $t7, sink_x

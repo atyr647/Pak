@@ -127,7 +127,7 @@ oo::class create pak::Codegen {
              tuple_typedefs tuple_typedef_names vec_typedefs vec_typedef_names vec_used \
              container_typedefs container_typedef_names \
              current_ret_type closures fmt_counter tmp_counter \
-             mono_cache pending_mono pending_nested _in_stmt
+             mono_cache pending_mono pending_nested _in_stmt loop_result_var loop_res_counter
 
     constructor {{fname "<unknown>"} {mod_headers {}}} {
         set filename $fname
@@ -167,6 +167,8 @@ oo::class create pak::Codegen {
         set pending_mono {}
         set pending_nested {}
         set _in_stmt 0
+        set loop_result_var {}
+        set loop_res_counter 0
     }
 
     # Seed enum_variants from a program (case/variant name -> type name), used
@@ -963,7 +965,12 @@ oo::class create pak::Codegen {
             return "(($obj) < ($a0) ? ($a0) : ($obj) > ($a1) ? ($a1) : ($obj))"
         }
         if {$method in {as_slice as_slice_mut}} {
-            if {[pak::kindof $obj_type] eq "TypeArray"} { pak::cg_unported "builtin:as_slice" }
+            if {[pak::kindof $obj_type] eq "TypeArray"} {
+                set inner_t [pak::nfield $obj_type inner]
+                set td [my slice_typedef $inner_t]
+                set sz [my gen_expr [pak::nfield $obj_type size]]
+                return "($td)\{.data = ($obj), .len = (int32_t)($sz)\}"
+            }
             return "(\{ __auto_type _arr = &($obj)\[0\]; (void*)_arr; \})"
         }
         if {$method eq "get_unchecked" && $na == 1} {
@@ -1334,7 +1341,14 @@ oo::class create pak::Codegen {
                 if {[pak::isnil $v]} { set r "${pad}return;" } else { set r "${pad}return [my gen_expr $v];" }
                 return [join [concat $defers [list $r]] \n]
             }
-            Break    { return "${pad}break;" }
+            Break    {
+                set bv [pak::nfield $stmt value]
+                if {![pak::isnil $bv] && [llength $loop_result_var] > 0} {
+                    set rv [lindex $loop_result_var end]
+                    return "${pad}$rv = [my gen_expr $bv];\n${pad}break;"
+                }
+                return "${pad}break;"
+            }
             Continue { return "${pad}continue;" }
             GotoStmt { return "${pad}goto [pak::fval $stmt label];" }
             LabelStmt {
@@ -1435,6 +1449,20 @@ oo::class create pak::Codegen {
         set val [pak::nfield $s value]
         if {![pak::isnil $val] && [pak::kindof $val] ne "UndefinedLit"} {
             if {[pak::kindof $val] eq "CatchExpr"} { return [my gen_catch_let $s $val $pad $prefix $decl] }
+            # loop-as-expression: let x = loop { ... break v ... }
+            if {[pak::kindof $val] in {LoopStmt WhileStmt}} {
+                incr loop_res_counter
+                set rv "_loop_res_${loop_res_counter}"
+                set c_type [expr {![pak::isnil $typ] ? [my gen_type $typ] : "int32_t"}]
+                lappend loop_result_var $rv
+                if {[pak::kindof $val] eq "LoopStmt"} {
+                    set loop_body [my gen_loop $val $pad 1]
+                } else {
+                    set loop_body [my gen_while $val $pad 1]
+                }
+                set loop_result_var [lrange $loop_result_var 0 end-1]
+                return "${pad}${c_type} ${rv} = (${c_type})0;\n${loop_body}\n${pad}${prefix}${decl} = ${rv};"
+            }
             if {[pak::kindof $val] eq "ArrayLit" && ![pak::isnil [pak::nfield $val repeat]]} {
                 set rep [pak::nfield $val repeat]
                 set elems [pak::items [pak::nfield $val elements]]

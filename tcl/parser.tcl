@@ -616,7 +616,15 @@ oo::class create pak::Parser {
                 if {![my check RBRACE] && ![my check EOF]} { set v [my parse_expr] }
                 return [pak::N Return value $v]
             }
-            BREAK    { my advance; return [pak::N Break value [pak::Nil]] }
+            BREAK    {
+                my advance
+                set bval [pak::Nil]
+                # break value only if next token is on the same source line
+                if {![my check RBRACE] && ![my check EOF] && ![my _newline_before]} {
+                    set bval [my parse_expr]
+                }
+                return [pak::N Break value $bval]
+            }
             CONTINUE { my advance; return [pak::N Continue] }
             IF       { return [my parse_if] }
             LOOP     { my advance; return [pak::N LoopStmt body [my parse_block]] }
@@ -1161,6 +1169,17 @@ oo::class create pak::Parser {
                     set targs {}
                 }
                 return [pak::N Ident name $name type_args $targs]
+            }
+            LOOP {
+                # loop { ... } as expression (loop-as-expression / break-with-value)
+                my advance
+                return [pak::N LoopStmt body [my parse_block]]
+            }
+            WHILE {
+                # while cond { ... } as expression
+                my advance
+                set c [my parse_expr]
+                return [pak::N WhileStmt condition $c body [my parse_block]]
             }
             default {
                 set tk [my peek]

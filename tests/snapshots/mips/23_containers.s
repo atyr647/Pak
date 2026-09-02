@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -233,7 +234,7 @@ main:
     lw $t8, 512($sp)
     lwc1 $f12, 0($t8)
     la $t8, sink_f
-    sw $t7, 0($t8)
+    swc1 $f12, 0($t8)
     move $t9, $t7
     lw $t7, 480($sp)
     la $t8, sink_i
@@ -328,7 +329,7 @@ main:
     sw $t9, 560($sp)
     lw $t4, 560($sp)
     la $t5, sink_f
-    sw $t4, 0($t5)
+    swc1 $f12, 0($t5)
     move $t9, $t4
     lw $t4, 548($sp)
     li $t5, 4
@@ -350,7 +351,7 @@ main:
     sw $t9, 564($sp)
     lw $t8, 564($sp)
     la $t6, sink_f
-    sw $t8, 0($t6)
+    swc1 $f12, 0($t6)
     move $t9, $t8
     lw $t5, 556($sp)
     seq $t6, $t5, $zero
@@ -371,20 +372,20 @@ main:
     nop
     addiu $a0, $sp, 568
     li $a1, 16
-    li $a2, 1
     li $a3, 100
+    li $a2, 1
     jal pak_map_set
     nop
     addiu $a0, $sp, 568
     li $a1, 16
-    li $a2, 2
     li $a3, 200
+    li $a2, 2
     jal pak_map_set
     nop
     addiu $a0, $sp, 568
     li $a1, 16
-    li $a2, 3
     li $a3, 300
+    li $a2, 3
     jal pak_map_set
     nop
     lw $t8, 712($sp)
@@ -458,7 +459,7 @@ main:
     lw $t6, 920($sp)
     lwc1 $f12, 0($t6)
     la $t6, sink_f
-    sw $t8, 0($t6)
+    swc1 $f12, 0($t6)
     move $t9, $t8
     addiu $a0, $sp, 724
     lw $a1, 920($sp)
@@ -469,12 +470,18 @@ main:
     la $t6, sink_i
     sw $t8, 0($t6)
     move $t9, $t8
-    la $t8, Vec
-    move $a0, $t8
+    la $t6, Vec
+    move $a0, $t6
     jal Vec_init
     nop
     move $t9, $v0
-    sw $t9, 924($sp)
+    addiu $t8, $sp, 924
+    lw $t6, 0($t9)
+    sw $t6, 0($t8)
+    lw $t6, 4($t9)
+    sw $t6, 4($t8)
+    lw $t6, 8($t9)
+    sw $t6, 8($t8)
     addiu $a0, $sp, 924
     li $a1, 10
     jal _pak_vec_push

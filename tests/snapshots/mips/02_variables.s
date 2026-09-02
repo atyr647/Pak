@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -168,9 +169,10 @@ main:
     sw $t8, 96($sp)
     move $t9, $t8
     lwc1 $f12, 100($sp)
+    mov.s $f14, $f12
     la $t5, .Lf322
     lwc1 $f12, 0($t5)
-    mul $t8, $t7, $t6
+    mul.s $f12, $f14, $f12
     swc1 $f12, 100($sp)
     move $t9, $t8
     li $t8, 5
@@ -221,9 +223,10 @@ main:
     sw $t8, 112($sp)
     move $t9, $t8
     lw $t7, 116($sp)
+    mov.s $f14, $f12
     la $t5, .Lf324
     lwc1 $f12, 0($t5)
-    addu $t8, $t7, $t6
+    add.s $f12, $f14, $f12
     sw $t8, 116($sp)
     move $t9, $t8
     la $t8, .Lstr5

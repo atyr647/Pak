@@ -132,6 +132,7 @@
 	.extern __pak_panic
 	.extern memcpy
 	.extern memset
+	.extern snprintf
 	.extern strlen
 	.extern strcmp
 	.extern strncmp
@@ -149,11 +150,11 @@
 	.globl abs
 	.type abs, @function
 abs:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t8, 96($sp)
     li $t7, 0
     slt $t9, $t8, $t7
@@ -179,11 +180,11 @@ abs:
 	.globl sign
 	.type sign, @function
 sign:
-    sw $a0, 96($sp)
     addiu $sp, $sp, -256
     sw $ra, 252($sp)
     sw $fp, 248($sp)
     addiu $fp, $sp, 256
+    sw $a0, 96($sp)
     lw $t8, 96($sp)
     li $t7, 0
     sgt $t9, $t8, $t7
@@ -314,45 +315,47 @@ main:
     li $t8, 10
 .Lfor_h_17:
     lw $t7, 116($sp)
-    bge $t7, $t8, .Lfor_x_18
+    bge $t7, $t8, .Lfor_x_19
     nop
     lw $t5, 116($sp)
     lw $t4, 112($sp)
     addu $t5, $t4, $t5
     sw $t5, 112($sp)
     move $t6, $t5
+.Lfor_i_18:
     lw $t7, 116($sp)
     addiu $t7, $t7, 1
     sw $t7, 116($sp)
     j .Lfor_h_17
     nop
-.Lfor_x_18:
+.Lfor_x_19:
     li $t9, 0
     sw $t9, 120($sp)
     li $t8, 10
-.Lfor_h_19:
+.Lfor_h_20:
     lw $t7, 120($sp)
-    bge $t7, $t8, .Lfor_x_20
+    bge $t7, $t8, .Lfor_x_22
     nop
     lw $t5, 120($sp)
     li $t4, 5
     seq $t6, $t5, $t4
-    beqz $t6, .Lif_end_21
+    beqz $t6, .Lif_end_23
     nop
-    j .Lfor_h_19
+    j .Lfor_i_21
     nop
-.Lif_end_21:
+.Lif_end_23:
     lw $t5, 120($sp)
     lw $t4, 112($sp)
     addu $t5, $t4, $t5
     sw $t5, 112($sp)
     move $t6, $t5
+.Lfor_i_21:
     lw $t7, 120($sp)
     addiu $t7, $t7, 1
     sw $t7, 120($sp)
-    j .Lfor_h_19
+    j .Lfor_h_20
     nop
-.Lfor_x_20:
+.Lfor_x_22:
     li $t2, 3
     subu $a0, $zero, $t2
     jal abs

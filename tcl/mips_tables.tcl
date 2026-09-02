@@ -135,6 +135,7 @@ set ::pak::MIPS_EXTERNS [list \
     __pak_panic \
     memcpy \
     memset \
+    snprintf \
     strlen \
     strcmp \
     strncmp \
