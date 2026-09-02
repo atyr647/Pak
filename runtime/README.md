@@ -32,3 +32,24 @@ The HAL for the path that needs no external tools at all: no GCC, no `as`, no
 * The libdragon-named headers (`rdpq.h`, `joypad.h`, `display.h`, …) are
   stubs that redirect to `pak_hal.h`, so generated code that includes them
   builds without libdragon installed.
+
+### What the standalone runtime provides
+
+| Area | Status |
+|------|--------|
+| Video Interface | 320x240 16bpp, triple buffered, vblank wait, flip |
+| RDP | full display list: fills, copies, texturing, flat triangles, all modes, colour registers, syncs — see `docs/toolchain-free-rom.md` |
+| Controller | SI/PIF polling for port 0, held/pressed/released + stick |
+| PI DMA | cartridge to and from RDRAM, with the busy wait |
+| Timer | COP0 Count, `get_ticks`, frame delta in seconds |
+| Memory | bump allocator, `memset`, `memcpy`, `memcmp` |
+| Strings | `strlen`, `strcmp`, `strncmp`, `strstr` |
+| Cache | hit-writeback, hit-invalidate, and both together |
+
+Not provided, so a program using these needs the libdragon path (`--backend c`)
+or its own implementation: **audio** (the AI), **EEPROM / SRAM / FlashRAM
+saves**, **Controller Pak and Transfer Pak**, **rumble**, **sprite loading and
+blitting** (`sprite_load`, `rdpq_sprite_blit` — the RDP texturing primitives
+underneath them are all here), **rspq blocks**, and **Tiny3D**. They are
+declared as externs, so a program that calls one fails at link time with an
+undefined symbol rather than silently doing nothing.

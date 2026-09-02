@@ -123,6 +123,34 @@ ok ".text base"   [format %#010x [dict get $r section_bases .text]]   0x80000400
 ok ".rodata base" [format %#010x [dict get $r section_bases .rodata]] 0x80000420
 ok "rosym vaddr"  [format %#010x [dict get $r symbols rosym]]         0x80000420
 
+puts "== local labels are object-local =="
+# Assembler temporaries (".L*") are per-function names the codegen reinvents in
+# every object. They must not collide across objects, and a reference must
+# resolve to the one in the referring object.
+set r [link_texts [list "section .text
+sym runtime_fn 0
+sym .Lif_end_3 4
+reloc 0 R_MIPS_26 .Lif_end_3
+data 0c000000 03e00008
+" "section .text
+sym game_fn 0
+sym .Lif_end_3 4
+reloc 0 R_MIPS_26 .Lif_end_3
+data 0c000000 03e00008
+"]]
+ok "first object kept"  [format %#010x [dict get $r symbols runtime_fn]] 0x80000400
+ok "second object kept" [format %#010x [dict get $r symbols game_fn]]    0x80000408
+ok "no global .L entry" [dict exists $r symbols .Lif_end_3] 0
+# Object 0's jal targets its own .Lif_end_3 at 0x80000404 -> (>>2)&0x3FFFFFF = 0x101.
+ok "object 0 reloc" [word_at [dict get $r image] 0x80000400] 0C000101
+# Object 1's targets ITS own, at 0x8000040C -> 0x103.
+ok "object 1 reloc" [word_at [dict get $r image] 0x80000408] 0C000103
+expect_error "duplicate local within one object" {link_texts [list "section .text
+sym .Ldup 0
+sym .Ldup 4
+data 03e00008 03e00008
+"]} .Ldup
+
 puts "== error cases =="
 expect_error "undefined symbol" {link_texts [list "section .text
 reloc 0 R_MIPS_26 nowhere

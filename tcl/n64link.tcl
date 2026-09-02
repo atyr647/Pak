@@ -227,21 +227,34 @@ proc pak::link_parsed_objects {objects {entry _start}} {
         incr cursor $size
     }
 
-    # 3. Build the global symbol table, rejecting duplicate definitions.
+    # 3. Build the symbol table. Names beginning with ".L" are assembler
+    #    temporaries -- branch targets and block labels the codegen invents per
+    #    function -- so they are local to the object that defines them, exactly
+    #    as a real linker treats them. Only the rest go in the global table,
+    #    where a duplicate is an error.
     set symbols [dict create]
     set sym_origin [dict create]
+    set locals [dict create]
     foreach sec $::pak::LINK_SECTION_ORDER {
         set sec_base [dict get $section_bases $sec]
         foreach c [dict get $contributions $sec] {
             lassign $c obj contrib_off
+            set opath [dict get $obj path]
             dict for {name byte_off} [dict get $obj sections $sec symbols] {
                 set vaddr [expr {$sec_base + $contrib_off + $byte_off}]
+                if {[string match ".L*" $name]} {
+                    if {[dict exists $locals $opath $name]} {
+                        pak::link_error "duplicate local symbol '$name' in $opath"
+                    }
+                    dict set locals $opath $name $vaddr
+                    continue
+                }
                 if {[dict exists $symbols $name]} {
                     pak::link_error "duplicate symbol '$name': defined in\
-                        [dict get $sym_origin $name] and [dict get $obj path] (section $sec)"
+                        [dict get $sym_origin $name] and $opath (section $sec)"
                 }
                 dict set symbols $name $vaddr
-                dict set sym_origin $name "[dict get $obj path] (section $sec)"
+                dict set sym_origin $name "$opath (section $sec)"
             }
         }
     }
@@ -276,16 +289,20 @@ proc pak::link_parsed_objects {objects {entry _start}} {
         set buf [dict get $section_bytes $sec]
         foreach c [dict get $contributions $sec] {
             lassign $c obj contrib_off
+            set opath [dict get $obj path]
             foreach rel [dict get $obj sections $sec relocs] {
                 lassign $rel off kind symbol
-                if {![dict exists $symbols $symbol]} {
-                    lappend undefined "$symbol (referenced from [dict get $obj path]\
+                if {[dict exists $locals $opath $symbol]} {
+                    set S [dict get $locals $opath $symbol]
+                } elseif {[dict exists $symbols $symbol]} {
+                    set S [dict get $symbols $symbol]
+                } else {
+                    lappend undefined "$symbol (referenced from $opath\
                         section $sec offset $off)"
                     continue
                 }
-                pak::link_apply_reloc buf [expr {$contrib_off + $off}] $kind \
-                    [dict get $symbols $symbol] \
-                    "[dict get $obj path] $sec+[format %#x $off]"
+                pak::link_apply_reloc buf [expr {$contrib_off + $off}] $kind $S \
+                    "$opath $sec+[format %#x $off]"
             }
         }
         dict set section_bytes $sec $buf

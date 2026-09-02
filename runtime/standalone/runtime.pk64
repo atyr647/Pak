@@ -758,3 +758,180 @@ fn memcpy(dst: *u8, src: *u8, n: i32) -> *u8 {
     }
     return dst
 }
+
+-- ── Timer (COP0 Count) ──────────────────────────────────────────────────────
+-- The VR4300's Count register increments at half the CPU clock: 93.75 MHz / 2.
+-- Reading it needs `mfc0`, which Pak cannot express, so the asm block parks the
+-- value in a static and the function returns that.
+const TICKS_PER_SECOND: u32 = 46875000
+
+static g_ticks_tmp: u32 = 0
+static g_last_ticks: u32 = 0
+
+fn timer_init() {
+    -- Count runs from reset; nothing to set up. Seed the delta baseline.
+    g_last_ticks = get_ticks()
+}
+
+fn get_ticks() -> u32 {
+    asm {
+        "mfc0 $t0, $9"
+        "la $t1, g_ticks_tmp"
+        "sw $t0, 0($t1)"
+    }
+    return g_ticks_tmp
+}
+
+-- Seconds since the previous call. Count wraps every ~91 s; unsigned
+-- subtraction gives the right delta across the wrap.
+fn _pak_delta_time() -> f32 {
+    let now: u32 = get_ticks()
+    let delta: u32 = now - g_last_ticks
+    g_last_ticks = now
+    return (delta as f32) / (TICKS_PER_SECOND as f32)
+}
+
+-- ── PI DMA (cartridge <-> RDRAM) ────────────────────────────────────────────
+const PI_DRAM_ADDR: u32 = 0xA4600000
+const PI_CART_ADDR: u32 = 0xA4600004
+const PI_RD_LEN:    u32 = 0xA4600008
+const PI_WR_LEN:    u32 = 0xA460000C
+const PI_STATUS:    u32 = 0xA4600010
+
+const PI_STATUS_DMA_BUSY: u32 = 0x01
+const PI_STATUS_IO_BUSY:  u32 = 0x02
+const PI_STATUS_CLR_INTR: u32 = 0x02
+
+fn dma_wait() {
+    loop {
+        let st: u32 = vi_read(PI_STATUS)
+        if (st & (PI_STATUS_DMA_BUSY | PI_STATUS_IO_BUSY)) == 0 { break }
+    }
+}
+
+fn data_cache_hit_writeback_invalidate(ptr: *u8, sz: i32) {
+    data_cache_hit_writeback(ptr, sz)
+    data_cache_hit_invalidate(ptr, sz)
+}
+
+-- Cartridge -> RDRAM. PI_WR_LEN is the one that writes *to* RDRAM; the length
+-- register takes one less than the byte count. The caller is responsible for
+-- cache maintenance around this (the checker enforces it: E201/E202).
+fn dma_read(dst: *u8, cart: u32, len: i32) {
+    dma_wait()
+    vi_write(PI_STATUS, PI_STATUS_CLR_INTR)
+    vi_write(PI_DRAM_ADDR, (dst as u32) & 0x00FFFFFF)
+    vi_write(PI_CART_ADDR, cart)
+    vi_write(PI_WR_LEN, (len - 1) as u32)
+    dma_wait()
+}
+
+-- RDRAM -> cartridge (SRAM / FlashRAM carts). PI_RD_LEN reads *from* RDRAM.
+fn dma_write(src: *u8, cart: u32, len: i32) {
+    dma_wait()
+    vi_write(PI_STATUS, PI_STATUS_CLR_INTR)
+    vi_write(PI_DRAM_ADDR, (src as u32) & 0x00FFFFFF)
+    vi_write(PI_CART_ADDR, cart)
+    vi_write(PI_RD_LEN, (len - 1) as u32)
+    dma_wait()
+}
+
+-- ── Heap (bump allocator) ───────────────────────────────────────────────────
+-- Cached RDRAM above the framebuffers and the display list, below the stack.
+-- Freeing is a no-op: a game that needs reuse should use an arena.
+const HEAP_BASE:  u32 = 0x80280000
+const HEAP_LIMIT: u32 = 0x803C0000
+
+static g_heap_ptr: u32 = 0
+
+fn __pak_alloc(size: i32) -> *u8 {
+    if g_heap_ptr == 0 { g_heap_ptr = HEAP_BASE }
+    let aligned: u32 = ((size as u32) + 7) & 0xFFFFFFF8
+    if g_heap_ptr + aligned > HEAP_LIMIT { return 0 as *u8 }
+    let p: u32 = g_heap_ptr
+    g_heap_ptr = g_heap_ptr + aligned
+    return p as *u8
+}
+
+fn __pak_free(p: *u8) {
+}
+
+-- ── Fixed point ─────────────────────────────────────────────────────────────
+-- fix16.16 divide: (a << 16) / b, with the shift done in 64-bit-free steps so
+-- the intermediate does not overflow for the usual operand ranges.
+fn __pak_fix16_div(a: i32, b: i32) -> i32 {
+    if b == 0 { return 0 }
+    return (a * 65536) / b
+}
+
+fn __pak_panic() {
+    loop { }
+}
+
+fn assert(cond: i32) {
+    if cond == 0 { __pak_panic() }
+}
+
+-- No ISViewer on a bare cartridge; debug output is a no-op rather than a
+-- link error.
+fn debugf(fmt: *u8) {
+}
+
+-- ── libc-style string helpers ───────────────────────────────────────────────
+fn strlen(s: *u8) -> i32 {
+    let mut i: i32 = 0
+    while s[i] != 0 as u8 {
+        i = i + 1
+    }
+    return i
+}
+
+fn strcmp(a: *u8, b: *u8) -> i32 {
+    let mut i: i32 = 0
+    loop {
+        let ca: u8 = a[i]
+        let cb: u8 = b[i]
+        if ca != cb { return (ca as i32) - (cb as i32) }
+        if ca == 0 as u8 { return 0 }
+        i = i + 1
+    }
+}
+
+fn strncmp(a: *u8, b: *u8, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        let ca: u8 = a[i]
+        let cb: u8 = b[i]
+        if ca != cb { return (ca as i32) - (cb as i32) }
+        if ca == 0 as u8 { return 0 }
+        i = i + 1
+    }
+    return 0
+}
+
+fn memcmp(a: *u8, b: *u8, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        if a[i] != b[i] { return (a[i] as i32) - (b[i] as i32) }
+        i = i + 1
+    }
+    return 0
+}
+
+fn strstr(hay: *u8, needle: *u8) -> *u8 {
+    let nlen: i32 = strlen(needle)
+    if nlen == 0 { return hay }
+    let hlen: i32 = strlen(hay)
+    let mut i: i32 = 0
+    while i + nlen <= hlen {
+        let mut j: i32 = 0
+        let mut same: i32 = 1
+        while j < nlen {
+            if hay[i + j] != needle[j] { same = 0; break }
+            j = j + 1
+        }
+        if same == 1 { return (hay as u32 + i as u32) as *u8 }
+        i = i + 1
+    }
+    return 0 as *u8
+}
