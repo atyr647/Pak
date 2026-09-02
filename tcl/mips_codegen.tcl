@@ -461,7 +461,7 @@ oo::class create pak::MipsCodegen {
     variable em pool ra ret_label scopes defers next_local loop_header loop_exit loop_defer_depth \
              loop_result \
              globals consts label_n fmtstr_counter \
-             tenv_layouts tenv_enum_values tenv_variant_decls \
+             tenv_layouts tenv_enum_values tenv_variant_decls fn_decls \
              generic_fns generic_structs mono_emitted type_nodes
 
     constructor {} {
@@ -487,6 +487,7 @@ oo::class create pak::MipsCodegen {
         set generic_structs [dict create]
         set mono_emitted [dict create]
         set type_nodes [dict create]
+        set fn_decls [dict create]
     }
     destructor {
         $em destroy
@@ -496,13 +497,14 @@ oo::class create pak::MipsCodegen {
 
     # ── type environment: user-defined and well-known external types ─────────
     # Well-known external types (tiny3d / libdragon), pre-registered so user
-    # structs containing e.g. Vec3 fields resolve. Mirrors _EXTERNAL_TYPES.
+    # structs containing e.g. Vec3 fields resolve.
     method register_external_types {} {
         foreach {name sz al fl} {
             Vec3        12  4 1
             Mat4        64  4 1
             Quat        16  4 1
             Color        4  4 0
+            T3DMat4     64  4 1
             T3DMat4FP  128 16 0
             T3DViewport 128 16 0
         } {
@@ -510,6 +512,35 @@ oo::class create pak::MipsCodegen {
                 dict set tenv_layouts $name [dict create size $sz align $al \
                     is_float $fl is_signed 1 is_ptr 0 fields {} frac_bits 0]
             }
+        }
+        # Opaque handles from libdragon and Tiny3D. Pak code only ever holds
+        # these behind a pointer, so a pointer-sized slot is the whole layout.
+        foreach name {
+            sprite_t surface_t wav64_t xm64player_t ym64player_t rspq_block_t
+            T3DModel T3DSkeleton T3DAnim T3DVertPacked timer_link_t
+        } {
+            if {![dict exists $tenv_layouts $name]} {
+                dict set tenv_layouts $name [dict create size 4 align 4 \
+                    is_float 0 is_signed 0 is_ptr 1 fields {} frac_bits 0]
+            }
+        }
+        # The allocator interface and the arena it wraps, matching the structs
+        # the C backend emits: Allocator is {self, vtable} and Arena is
+        # {base, ptr, capacity}.
+        if {![dict exists $tenv_layouts Allocator]} {
+            set af [dict create]
+            dict set af self   [dict create name self   offset 0 size 4 align 4 type_node ""]
+            dict set af vtable [dict create name vtable offset 4 size 4 align 4 type_node ""]
+            dict set tenv_layouts Allocator [dict create size 8 align 4 \
+                is_float 0 is_signed 0 is_ptr 0 fields $af field_order {self vtable}]
+        }
+        if {![dict exists $tenv_layouts Arena]} {
+            set rf [dict create]
+            dict set rf base     [dict create name base     offset 0 size 4 align 4 type_node ""]
+            dict set rf ptr      [dict create name ptr      offset 4 size 4 align 4 type_node ""]
+            dict set rf capacity [dict create name capacity offset 8 size 4 align 4 type_node ""]
+            dict set tenv_layouts Arena [dict create size 12 align 4 \
+                is_float 0 is_signed 0 is_ptr 0 fields $rf field_order {base ptr capacity}]
         }
         # ButtonState: 14 bool fields at consecutive byte offsets 0-13, size=14, align=1
         if {![dict exists $tenv_layouts ButtonState]} {
@@ -558,6 +589,7 @@ oo::class create pak::MipsCodegen {
                 EnumDecl    { lappend enums    $decl }
                 StructDecl  { lappend structs  $decl }
                 VariantDecl { lappend variants $decl }
+                FnDecl      { dict set fn_decls [pak::fval $decl name] $decl }
             }
         }
         foreach e $enums    { my register_enum    $e }
@@ -690,7 +722,12 @@ oo::class create pak::MipsCodegen {
                     return [dict create size $sz align $al is_float $fl is_signed $sg is_ptr 0 \
                         fields {} frac_bits [pak::frac_bits_for $n]]
                 }
-                pak::mips_unported "layout:$n"
+                # An unrecognised name is an extern the compiler was never
+                # shown -- Pak lets you name a C type without declaring it. A
+                # pointer-sized slot is what such handles always are, and is a
+                # far better answer than refusing to compile the program.
+                return [dict create size 4 align 4 is_float 0 is_signed 0 is_ptr 1 \
+                    fields {} frac_bits 0]
             }
             TypePointer {
                 return [dict create size 4 align 4 is_float 0 is_signed 0 is_ptr 1 fields {} frac_bits 0]
@@ -1037,10 +1074,39 @@ oo::class create pak::MipsCodegen {
             }
             AssetDecl   { $em extern [pak::fval $decl name] }
             CfgBlock    { my emit_top_decl [pak::nfield $decl decl] }
+            ComptimeIf  { my emit_comptime_if_decls $decl }
             default     { pak::mips_unported "decl:[pak::kindof $decl]" }
         }
     }
 
+    # ── comptime conditions ───────────────────────────────────────────────────
+    # `comptime if (COND) { ... }` is resolved here rather than by a
+    # preprocessor: this backend IS the target, so the cfg features it satisfies
+    # are known. A condition that is not a feature name falls back to constant
+    # evaluation, and anything still unresolved takes the `then` branch, which
+    # is what a CfgBlock does too.
+    method comptime_cond_true {cond} {
+        if {[pak::isnil $cond]} { return 1 }
+        if {[pak::kindof $cond] eq "Ident"} {
+            switch -- [string tolower [pak::fval $cond name]] {
+                n64 - mips - mips_backend { return 1 }
+                c_backend                 { return 0 }
+            }
+        }
+        set v [my eval_const_expr $cond]
+        if {$v eq ""} { return 1 }
+        return [expr {$v != 0}]
+    }
+
+    method emit_comptime_if_decls {decl} {
+        if {[my comptime_cond_true [pak::nfield $decl condition]]} {
+            set branch [pak::nfield $decl then]
+        } else {
+            set branch [pak::nfield $decl else_branch]
+        }
+        if {[pak::isnil $branch]} return
+        foreach d [pak::items [pak::nfield $branch stmts]] { my emit_top_decl $d }
+    }
     method collect_const {decl} {
         set v [my eval_const_expr [pak::nfield $decl value]]
         if {$v ne ""} { dict set consts [pak::fval $decl name] $v }
@@ -1349,13 +1415,16 @@ oo::class create pak::MipsCodegen {
                         }
                     }
                 }
+                # `let _ = expr` evaluates for effect and declares nothing.
+                # This is a switch arm, not a loop body, so the statement ends
+                # with a return -- `continue` escapes emit_stmt entirely.
                 if {[pak::fval $stmt name] eq "_"} {
                     if {![pak::isnil $v]} {
                         set tmp [$ra alloc_temp]
                         my emit_expr $v $tmp
                         $ra free_temp $tmp
                     }
-                    continue
+                    return
                 }
                 set off [my declare_local [pak::fval $stmt name] $layout $tn]
                 if {![pak::isnil $v]} {
@@ -1406,6 +1475,19 @@ oo::class create pak::MipsCodegen {
                 }
             }
             StaticDecl { my emit_static $stmt }
+            ConstDecl  {
+                # A const in statement position has no runtime representation;
+                # its value is folded into each use, as at top level.
+                my collect_const $stmt
+            }
+            ComptimeIf {
+                if {[my comptime_cond_true [pak::nfield $stmt condition]]} {
+                    set branch [pak::nfield $stmt then]
+                } else {
+                    set branch [pak::nfield $stmt else_branch]
+                }
+                if {![pak::isnil $branch]} { my emit_block $branch }
+            }
             Assign {
                 set val [$ra alloc_temp]
                 my emit_expr [pak::nfield $stmt value] $val
@@ -1765,7 +1847,7 @@ oo::class create pak::MipsCodegen {
                 if {![pak::isnil $binding] && $binding ne ""} {
                     # DotAccess with a single binding — treat as single-arg Call
                     set fake_call [pak::N Call func [pak::N EnumVariantAccess name $variant] \
-                        args [pak::Seq [list [pak::N Ident name [pak::sval $binding]]]] type_args {}]
+                        args [pak::Seq [list [pak::N Ident name [pak::sval $binding] type_args [pak::Seq {}]]]] type_args {}]
                     my emit_variant_arm $val $fake_call [pak::nfield $arm body] $skip_label $end_label $arm
                 } else {
                     set case_val [my resolve_enum_case_value $variant]
@@ -2133,6 +2215,7 @@ oo::class create pak::MipsCodegen {
                 }
                 $em addiu $dst {$sp} $off
             }
+            NamedArg  { my emit_expr [pak::nfield $expr value] $dst }
             RangeExpr { pak::mips_unported "RangeExpr-as-expr (only valid in for-loop)" }
             EnumVariantAccess {
                 set val [my resolve_enum_case_value [pak::fval $expr name]]
@@ -2253,8 +2336,26 @@ oo::class create pak::MipsCodegen {
         return $name
     }
 
+    # A block in expression position: emit its statements, and take the value of
+    # a trailing expression statement as the block's value.
+    method emit_block_expr {block dst} {
+        set stmts [pak::items [pak::nfield $block stmts]]
+        set n [llength $stmts]
+        my push_scope
+        for {set i 0} {$i < $n} {incr i} {
+            set st [lindex $stmts $i]
+            if {$i == $n - 1 && [pak::kindof $st] eq "ExprStmt"} {
+                my emit_expr [pak::nfield $st expr] $dst
+            } else {
+                my emit_stmt $st
+            }
+        }
+        foreach d [my pop_scope] { my emit_stmt $d }
+    }
+
     method emit_catch {expr dst} {
         set ok_label [my fresh_label .Lcatch_ok]
+        set end_label [my fresh_label .Lcatch_end]
         # Result layout: {is_ok@0, payload@4}
         set t_off 0
         set p_off 4
@@ -2276,10 +2377,19 @@ oo::class create pak::MipsCodegen {
                 $em sw $err_val $bind_off {$sp}
                 $ra free_temp $err_val
             }
-            my emit_expr $handler $dst
+            if {[pak::kindof $handler] eq "Block"} {
+                my emit_block_expr $handler $dst
+            } else {
+                my emit_expr $handler $dst
+            }
         }
+        # The handler produced the value; falling through would overwrite it
+        # with the ok payload.
+        $em j $end_label
+        $em nop
         $em label $ok_label
         $em lw $dst $p_off $result_ptr
+        $em label $end_label
         $ra free_temp $result_ptr
     }
 
@@ -3084,7 +3194,7 @@ oo::class create pak::MipsCodegen {
             if {[llength $type_args] > 0 && [dict exists $generic_fns $fname]} {
                 set fname [my monomorphize $fname $type_args]
             }
-            my marshal_args [pak::nfield $expr args]
+            my marshal_args [my resolve_named_args $fname [pak::nfield $expr args]]
             my emit_jal $fname
             if {$dst ne {$v0}} { $em move $dst {$v0} }
             return
@@ -3759,6 +3869,53 @@ oo::class create pak::MipsCodegen {
         }
     }
 
+    # Resolve a call's arguments against a known function's parameter list,
+    # placing NamedArg values by name and filling in defaults for omitted
+    # parameters. Returns a Seq of argument nodes in declaration order, or the
+    # original sequence when the callee is unknown or nothing needs moving.
+    method resolve_named_args {fname args_seq} {
+        if {![dict exists $fn_decls $fname]} { return $args_seq }
+        set params [pak::items [pak::nfield [dict get $fn_decls $fname] params]]
+        set arg_nodes [pak::items $args_seq]
+        set has_named 0
+        foreach a $arg_nodes {
+            if {[pak::kindof $a] eq "NamedArg"} { set has_named 1; break }
+        }
+        if {!$has_named && [llength $arg_nodes] >= [llength $params]} { return $args_seq }
+        if {[llength $params] == 0} { return $args_seq }
+
+        set n [llength $params]
+        set slots {}
+        for {set i 0} {$i < $n} {incr i} { lappend slots "" }
+        set positional_idx 0
+        foreach arg $arg_nodes {
+            if {[pak::kindof $arg] eq "NamedArg"} {
+                set want [pak::fval $arg name]
+                for {set pi 0} {$pi < $n} {incr pi} {
+                    if {[pak::fval [lindex $params $pi] name] eq $want} {
+                        lset slots $pi [pak::nfield $arg value]
+                        break
+                    }
+                }
+            } else {
+                while {$positional_idx < $n && [lindex $slots $positional_idx] ne ""} {
+                    incr positional_idx
+                }
+                if {$positional_idx < $n} {
+                    lset slots $positional_idx $arg
+                    incr positional_idx
+                }
+            }
+        }
+        for {set i 0} {$i < $n} {incr i} {
+            if {[lindex $slots $i] ne ""} continue
+            set dv [pak::nfield [lindex $params $i] default_value]
+            if {![pak::isnil $dv]} { lset slots $i $dv }
+        }
+        set out {}
+        foreach sl $slots { if {$sl ne ""} { lappend out $sl } }
+        return [pak::Seq $out]
+    }
     method marshal_args {args_seq {start_idx 0}} {
         set arglist [pak::items $args_seq]
         set n [llength $arglist]

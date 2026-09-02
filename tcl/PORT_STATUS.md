@@ -32,10 +32,11 @@ gated by hash; diagnostics are stored in full because they are worth reading in
 a diff. Human-readable per-example C and MIPS also live in `tests/snapshots/`.
 
 The `mips` stage is a self-snapshot: the Python MIPS backend was retired before
-that port finished, so its goldens pin the current output *including* the
-`UNPORTED` markers for constructs the backend cannot lower yet. Closing one of
-those gaps therefore shows up as a deliberate golden change rather than slipping
-through unnoticed.
+that port finished, so its goldens pin the current output rather than comparing
+against an oracle. Every valid file in the corpus now lowers to assembly; the
+only `UNPORTED` markers left are the 43 deliberately-invalid snippets, which
+fail to parse. A construct the backend cannot lower would show up here as a
+golden change rather than slipping through unnoticed.
 
 ## Source positions
 
