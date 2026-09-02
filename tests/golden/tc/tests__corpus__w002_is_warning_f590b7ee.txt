@@ -1,0 +1,1 @@
+(W002 warning "function 'UpdatePlayer' should be snake_case" "Rename to 'update_player'")

@@ -1,0 +1,6 @@
+use n64.display as disp
+use n64.controller as ctrl
+entry {
+    disp.init(0, 2, 3, 0, 1)
+    ctrl.init()
+}

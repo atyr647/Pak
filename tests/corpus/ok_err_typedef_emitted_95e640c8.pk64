@@ -1,0 +1,4 @@
+enum LoadErr: u8 { not_found, corrupt }
+fn load_sprite(path: *c_char) -> Result(i32, LoadErr) {
+    return ok(42)
+}

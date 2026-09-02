@@ -1,0 +1,2 @@
+use pak.arena
+entry { let p: *i32 = arena.alloc(a, 4) }

@@ -1,0 +1,3 @@
+fn f(s: CStr, needle: CStr) -> void {
+    let found = s.contains(needle)
+}

@@ -1,0 +1,3 @@
+struct Hdr { magic: u32
+version: u16 }
+           fn f() { let off: i32 = offsetof(Hdr, version) }

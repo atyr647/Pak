@@ -1,0 +1,6 @@
+fn foo(a: i32, b: i32 = 10, c: i32 = 20) -> i32 {
+    return a + b + c
+}
+entry {
+    let r = foo(5, 15)
+}

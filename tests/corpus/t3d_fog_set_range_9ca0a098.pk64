@@ -1,0 +1,2 @@
+use t3d.fog
+entry { t3d.fog_set_range(10.0, 100.0) }

@@ -1,0 +1,14 @@
+struct Stack { data: [64]i32  top: i32 }
+impl Stack {
+    fn push(self: *Stack, v: i32) {
+        self.data[self.top] = v
+        self.top = self.top + 1
+    }
+    fn pop(self: *Stack) -> i32 {
+        self.top = self.top - 1
+        return self.data[self.top]
+    }
+    fn is_empty(self: *Stack) -> bool {
+        return self.top == 0
+    }
+}

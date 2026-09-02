@@ -1,0 +1,3 @@
+fn nop_loop() {
+    asm { "nop" }
+}

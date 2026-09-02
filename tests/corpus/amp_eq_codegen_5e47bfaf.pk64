@@ -1,0 +1,2 @@
+fn f() { let mut x: i32 = 0xFF
+ x &= 0x0F }

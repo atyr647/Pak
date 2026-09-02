@@ -1,0 +1,5 @@
+entry {
+    let mut m: FixedMap(i32, i32, 8) = FixedMap.init()
+    m.set(1, 42)
+    let p = m.get(1)
+}

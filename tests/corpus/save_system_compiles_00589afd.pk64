@@ -1,0 +1,19 @@
+use n64.eeprom
+
+struct SaveData {
+    score: i32
+    level: i32
+    health: i32
+}
+
+enum SaveErr: u8 { read_failed, corrupt }
+
+fn load_save() -> Result(SaveData, SaveErr) {
+    let raw: [16]byte = undefined
+    let read_ok = eeprom.read(0, &raw, 16)
+    return ok(SaveData { score: 0  level: 1  health: 3 })
+}
+
+entry {
+    let save = load_save() catch { SaveData { score: 0  level: 1  health: 3 } }
+}

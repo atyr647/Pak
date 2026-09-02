@@ -1,0 +1,2 @@
+struct Foo { x: i32, y: f32 }
+entry { let s: i32 = sizeof(Foo) }

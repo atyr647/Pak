@@ -1,0 +1,4 @@
+fn f() -> void {
+    let c1: *void = fn(x: i32) -> i32 { return x }
+    let c2: *void = fn(y: i32) -> i32 { return y }
+}

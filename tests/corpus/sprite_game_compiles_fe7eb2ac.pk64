@@ -1,0 +1,57 @@
+use n64.display
+use n64.controller
+use n64.rdpq
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const MAX_BULLETS: i32 = 16
+
+enum PlayerState { idle, running, jumping }
+
+struct Bullet {
+    x: f32
+    y: f32
+    active: bool
+}
+
+struct Player {
+    x: f32
+    y: f32
+    speed: f32
+    state: PlayerState
+    health: i32
+}
+
+fn update_player(p: *Player, dx: f32, dy: f32) {
+    p.x = p.x + p.speed * dx
+    p.y = p.y + p.speed * dy
+    p.x = p.x.clamp(0.0, SCREEN_W.as_f32())
+    p.y = p.y.clamp(0.0, SCREEN_H.as_f32())
+}
+
+fn player_state_name(s: PlayerState) -> *c_char {
+    match s {
+        .idle    => { return "idle" }
+        .running => { return "running" }
+        .jumping => { return "jumping" }
+    }
+}
+
+entry {
+    display.init(RESOLUTION_320x240, DEPTH_16_BPP, 3, GAMMA_NONE, FILTERS_RESAMPLE)
+
+    let bullets: FixedList(Bullet, MAX_BULLETS) = FixedList.init()
+    let player = Player {
+        x: 160.0  y: 120.0  speed: 2.0
+        state: PlayerState.idle  health: 3
+    }
+
+    loop {
+        let disp = display.get()
+        rdpq.attach_clear(disp, none)
+
+        let state_str = player_state_name(player.state)
+
+        rdpq.detach_show()
+    }
+}

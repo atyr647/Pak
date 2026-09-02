@@ -1,0 +1,7 @@
+use n64.display
+fn init_display() {
+    n64.display.init(320, 240, 2, 0, 0)
+}
+entry {
+    init_display()
+}

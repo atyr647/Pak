@@ -1,0 +1,6 @@
+struct E { x: f32 }
+entry {
+    let list: FixedList(E, 10) = FixedList.init()
+    let e = E { x: 1.0 }
+    list.push(e)
+}

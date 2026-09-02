@@ -1,0 +1,4 @@
+@no_alloc
+fn pure_math(x: i32) -> i32 {
+    return x + 1
+}

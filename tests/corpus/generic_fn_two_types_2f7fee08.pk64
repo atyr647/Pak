@@ -1,0 +1,5 @@
+fn swap<T>(a: T, b: T) -> T { return b }
+entry {
+    let x: i32 = swap(1, 2)
+    let y: f32 = swap(1.0, 2.0)
+}

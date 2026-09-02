@@ -1,0 +1,1 @@
+fn f(d: Dir) -> void { match d { Dir.Up => { } } }

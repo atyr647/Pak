@@ -1,0 +1,4 @@
+struct Foo { x: i32 }
+impl Foo {
+    fn bar(self: *Foo) -> i32 { return self.x }
+}

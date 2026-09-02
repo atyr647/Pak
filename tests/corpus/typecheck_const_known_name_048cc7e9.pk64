@@ -1,0 +1,4 @@
+const LIMIT: i32 = 10
+fn f() -> void {
+    let x: i32 = LIMIT
+}

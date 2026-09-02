@@ -1,0 +1,5 @@
+fn test_copy() {
+    let x: i32 = 5
+    let y = x
+    let z = x
+}

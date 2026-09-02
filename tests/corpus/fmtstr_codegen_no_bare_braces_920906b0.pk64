@@ -1,0 +1,3 @@
+fn show(score: i32) -> *c_char {
+    return "score: {score}"
+}

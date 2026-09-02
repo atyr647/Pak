@@ -1,0 +1,4 @@
+struct Node { val: i32 }
+fn f() {
+    let p: ?*Node = none
+}

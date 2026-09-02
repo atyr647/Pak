@@ -1,0 +1,5 @@
+fn identity<T>(x: T) -> T { return x }
+entry {
+    let a: i32 = identity(42)
+    let b: f32 = identity(3.14)
+}

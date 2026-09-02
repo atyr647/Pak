@@ -1,0 +1,1 @@
+(E010 error "unknown name 'DEBUG'" "declare it with 'let DEBUG = ...'")

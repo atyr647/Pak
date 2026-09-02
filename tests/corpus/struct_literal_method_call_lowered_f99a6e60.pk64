@@ -1,0 +1,7 @@
+struct P { x: i32 }
+impl P { fn get(self: *P) -> i32 { return self.x } }
+static r: i32 = 0
+entry {
+    let mut p = P { x: 9 }
+    r = p.get()
+}

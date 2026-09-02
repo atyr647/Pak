@@ -1,0 +1,4 @@
+extern const SCREEN_W: i32
+fn f() -> void {
+    let w: i32 = SCREEN_W
+}

@@ -1,0 +1,8 @@
+struct Counter { val: i32 }
+impl Counter {
+    fn get(self: *Counter) -> i32 { return self.val }
+}
+entry {
+    let c: Counter = Counter{ val: 0 }
+    let v: i32 = c.get()
+}

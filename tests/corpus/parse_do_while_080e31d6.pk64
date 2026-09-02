@@ -1,0 +1,1 @@
+fn f() -> void { do { x = x + 1; } while x < 10; }

@@ -1,0 +1,1 @@
+fn f() -> u8 { return 42 as u8 }

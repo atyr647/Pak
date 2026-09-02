@@ -1,0 +1,1 @@
+struct Pos { x: i32, y: i32 }

@@ -1,0 +1,5 @@
+entry {
+    let found: i32 = loop {
+        break 42
+    }
+}

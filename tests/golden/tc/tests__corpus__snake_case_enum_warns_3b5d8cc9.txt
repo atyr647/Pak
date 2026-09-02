@@ -1,0 +1,1 @@
+(W001 warning "type 'my_dir' should be PascalCase" "Rename to 'MyDir'")

@@ -1,0 +1,1 @@
+(E011 error "struct 'Pos' has no field 'z'" "Available fields: x, y")

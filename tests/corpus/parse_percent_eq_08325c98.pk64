@@ -1,0 +1,4 @@
+fn f() -> void {
+    let mut x: i32 = 10
+    x %= 3
+}

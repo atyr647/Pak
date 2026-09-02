@@ -1,0 +1,3 @@
+fn f() {
+    let r: *volatile u32 = 0xA4600000 as *volatile u32
+}

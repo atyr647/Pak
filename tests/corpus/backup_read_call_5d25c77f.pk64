@@ -1,0 +1,2 @@
+use n64.backup;
+fn f() -> void { backup.read(buf, 0, 64); }

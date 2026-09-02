@@ -1,0 +1,1 @@
+(W101 warning "Unreachable statement" "This code can never execute — it follows a return, break, or continue")

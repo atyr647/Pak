@@ -1,0 +1,7 @@
+struct R { v: i32 }
+fn test() {
+    let r: *R = none
+    let r2 = r
+    let r: *R = none
+    let r3 = r
+}

@@ -1,0 +1,1 @@
+(E012 error "function 'setup' takes 3 argument(s), got 1" "Expected: setup(x: i32, y: i32, z: i32)")

@@ -1,0 +1,1 @@
+(E106 error "const 'X': value is not a compile-time constant" "Only literals, other consts, and arithmetic on consts are allowed")

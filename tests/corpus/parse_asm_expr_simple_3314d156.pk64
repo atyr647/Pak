@@ -1,0 +1,3 @@
+fn f() -> void {
+    let x: u32 = asm("mfc0 %0, $9" : "=r"(x) : : "memory")
+}

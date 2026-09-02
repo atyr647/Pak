@@ -1,0 +1,4 @@
+struct Player { x: f32  y: f32  health: i32 }
+entry {
+    comptime_assert(sizeof(Player) <= 64, "Player too large")
+}

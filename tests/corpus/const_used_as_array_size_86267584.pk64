@@ -1,0 +1,5 @@
+const POOL_SIZE: i32 = 32
+struct E { x: f32 }
+entry {
+    let pool: [POOL_SIZE]E = undefined
+}

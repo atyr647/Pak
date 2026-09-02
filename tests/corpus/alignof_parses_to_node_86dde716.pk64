@@ -1,0 +1,1 @@
+entry { let a = alignof(i32) }

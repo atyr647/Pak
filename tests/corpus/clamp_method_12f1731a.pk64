@@ -1,0 +1,3 @@
+fn clamp_val(x: f32) -> f32 {
+    return x.clamp(0.0, 1.0)
+}

@@ -1,0 +1,3 @@
+fn greet(name: *c_char) -> *c_char {
+    return "hi {name}"
+}

@@ -1,0 +1,1 @@
+(W001 warning "type 'bad_name' should be PascalCase" "Rename to 'BadName'")

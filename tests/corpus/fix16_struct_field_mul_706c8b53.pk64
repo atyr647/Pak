@@ -1,0 +1,4 @@
+struct Ball { vx: fix16.16 }
+fn update(b: Ball, dt: fix16.16) -> fix16.16 {
+    return b.vx * dt
+}

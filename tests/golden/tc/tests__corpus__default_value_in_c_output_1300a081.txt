@@ -1,0 +1,1 @@
+(E012 error "function 'make' takes 2 argument(s), got 0" "Expected: make(width: i32, height: i32)")

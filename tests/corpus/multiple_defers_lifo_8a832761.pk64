@@ -1,0 +1,5 @@
+fn multi_defer() {
+    defer { let _a: i32 = 1 }
+    defer { let _b: i32 = 2 }
+    let _x: i32 = 0
+}

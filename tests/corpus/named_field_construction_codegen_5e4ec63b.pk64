@@ -1,0 +1,7 @@
+variant Event {
+    resize { w: i32, h: i32 }
+    quit
+}
+fn f() {
+    let e = Event.resize { w: 320, h: 240 }
+}

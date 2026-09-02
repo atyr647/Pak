@@ -1,0 +1,3 @@
+fn f(s: CStr) -> void {
+    let result = s.ends_with("world")
+}

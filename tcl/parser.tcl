@@ -619,8 +619,10 @@ oo::class create pak::Parser {
             BREAK    {
                 my advance
                 set bval [pak::Nil]
-                # break value only if next token is on the same source line
-                if {![my check RBRACE] && ![my check EOF] && ![my _newline_before]} {
+                # break value only if next token is on the same source line,
+                # and `break;` is a bare break, not a break of `;`
+                if {![my check RBRACE] && ![my check EOF] && ![my check SEMICOLON] \
+                        && ![my _newline_before]} {
                     set bval [my parse_expr]
                 }
                 return [pak::N Break value $bval]

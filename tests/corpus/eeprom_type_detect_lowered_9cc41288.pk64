@@ -1,0 +1,4 @@
+use n64.eeprom
+entry {
+    let t = eeprom.type_detect()
+}

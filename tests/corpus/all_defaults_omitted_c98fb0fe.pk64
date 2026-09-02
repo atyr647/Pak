@@ -1,0 +1,6 @@
+fn zero_or(x: i32 = 0) -> i32 {
+    return x
+}
+entry {
+    let r = zero_or()
+}

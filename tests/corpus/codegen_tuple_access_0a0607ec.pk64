@@ -1,0 +1,4 @@
+fn f() -> void {
+    let t = (10, 20)
+    let x = t.0
+}

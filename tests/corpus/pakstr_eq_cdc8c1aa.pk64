@@ -1,0 +1,3 @@
+fn f(s: Str, t: Str) -> void {
+    let eq = s.eq(t)
+}

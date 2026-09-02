@@ -1,0 +1,6 @@
+fn f() -> i32 {
+    let v: i32 = loop {
+        break 42
+    }
+    return v
+}

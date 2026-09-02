@@ -1,0 +1,6 @@
+fn scale(val: i32, factor: i32 = 2) -> i32 {
+    return val * factor
+}
+entry {
+    let r = scale(val: 5)
+}

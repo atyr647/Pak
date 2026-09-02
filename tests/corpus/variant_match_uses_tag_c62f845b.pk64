@@ -1,0 +1,7 @@
+variant Cmd { Move { dx: i32 }, Stop }
+fn handle(c: Cmd) -> void {
+    match c {
+        Cmd.Move(m) => { }
+        Cmd.Stop => { }
+    }
+}

@@ -1,0 +1,5 @@
+fn f() {
+    defer { first_cleanup() }
+    defer { second_cleanup() }
+    defer { third_cleanup() }
+}

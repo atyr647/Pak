@@ -1,0 +1,3 @@
+@cfg(UNKNOWN_FEATURE_XYZ)
+fn maybe() { }
+entry { }

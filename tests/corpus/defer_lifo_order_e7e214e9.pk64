@@ -1,0 +1,4 @@
+fn f() -> void {
+    defer { first(); }
+    defer { second(); }
+}

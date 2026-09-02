@@ -1,0 +1,1 @@
+fn f(arr: [8]i32) -> void { let s: []i32 = arr[2..6]; }

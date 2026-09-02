@@ -1,0 +1,5 @@
+fn run() -> i32 {
+    loop {
+        return 0;
+    }
+}

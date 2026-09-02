@@ -1,0 +1,1 @@
+fn f(a: fix16.16, b: fix16.16) -> fix16.16 { return a * b; }

@@ -1,0 +1,9 @@
+enum Dir { up, down, left, right }
+fn move_player(d: Dir) -> i32 {
+    match d {
+        .up    => { return 1 }
+        .down  => { return 2 }
+        .left  => { return 3 }
+        .right => { return 4 }
+    }
+}

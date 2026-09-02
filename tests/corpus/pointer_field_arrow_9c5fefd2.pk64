@@ -1,0 +1,2 @@
+struct Node { val: i32 }
+fn get(p: *Node) -> i32 { return p.val; }

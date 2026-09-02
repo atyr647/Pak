@@ -1,0 +1,7 @@
+struct Point { x: f32  y: f32 }
+impl Point {
+    fn zero(self: *Point) {
+        self.x = 0.0
+        self.y = 0.0
+    }
+}

@@ -1,0 +1,2 @@
+const BUF_SIZE: i32 = 256
+static buf: [BUF_SIZE]byte = undefined

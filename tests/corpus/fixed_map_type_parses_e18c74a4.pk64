@@ -1,0 +1,3 @@
+entry {
+    let m: FixedMap(i32, i32, 64) = FixedMap.init()
+}

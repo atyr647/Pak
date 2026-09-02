@@ -1,0 +1,3 @@
+fn f(s: CStr) -> void {
+    let n = s.len()
+}

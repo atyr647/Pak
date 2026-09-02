@@ -1,0 +1,11 @@
+fn check(x: i32) {
+    if x == 1 {
+        let a: i32 = 1
+    } elif x == 2 {
+        let b: i32 = 2
+    } elif x == 3 {
+        let c: i32 = 3
+    } else {
+        let d: i32 = 4
+    }
+}

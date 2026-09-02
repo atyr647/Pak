@@ -1,0 +1,2 @@
+use n64.cpak;
+fn f() -> void { cpak.read_sector(0, buf, 1); }

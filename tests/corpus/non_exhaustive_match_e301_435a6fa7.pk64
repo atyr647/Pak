@@ -1,0 +1,7 @@
+enum Dir { up, down, left, right }
+fn bad_match(d: Dir) {
+    match d {
+        .up   => {}
+        .down => {}
+    }
+}

@@ -1,0 +1,5 @@
+(W201 warning "non-void function 'player_state_name' may not return a value on all paths" "Ensure all code paths return a value")
+(E010 error "unknown name 'RESOLUTION_320x240'" "declare it with 'let RESOLUTION_320x240 = ...'")
+(E010 error "unknown name 'DEPTH_16_BPP'" "declare it with 'let DEPTH_16_BPP = ...'")
+(E010 error "unknown name 'GAMMA_NONE'" "declare it with 'let GAMMA_NONE = ...'")
+(E010 error "unknown name 'FILTERS_RESAMPLE'" "declare it with 'let FILTERS_RESAMPLE = ...'")

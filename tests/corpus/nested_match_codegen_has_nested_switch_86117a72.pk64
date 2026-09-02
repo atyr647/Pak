@@ -1,0 +1,13 @@
+enum Outer { a, b }
+enum Inner { x, y }
+fn f(o: Outer, i: Inner) {
+    match o {
+        Outer.a => {
+            match i {
+                Inner.x => { }
+                Inner.y => { }
+            }
+        }
+        Outer.b => { }
+    }
+}

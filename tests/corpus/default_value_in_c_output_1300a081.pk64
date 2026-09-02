@@ -1,0 +1,5 @@
+fn make(width: i32 = 320, height: i32 = 240) {
+}
+fn f() {
+    make()
+}

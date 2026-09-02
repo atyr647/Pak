@@ -1,0 +1,2 @@
+trait Shape { fn area(self: *Self) -> f32 }
+fn use_shape(s: *dyn Shape) -> void { return }

@@ -1,0 +1,8 @@
+enum Dir { north, south }
+fn f(d: Dir) -> i32 {
+    match d {
+        .north => { return 1 }
+        .south => { return 2 }
+    }
+}
+entry {}

@@ -1,0 +1,2 @@
+use t3d.math
+entry { t3d.quat_slerp(q1, q2, q3, 0.5) }

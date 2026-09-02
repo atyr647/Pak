@@ -7,6 +7,10 @@
 #
 #   tests/golden/lex.sha256    — sha256 of each corpus file's token dump
 #   tests/golden/ast.sha256    — sha256 of each corpus file's AST dump
+#   tests/golden/cg.sha256     — sha256 of each corpus file's generated C
+#                                (float literals keep their source spelling, so
+#                                 `0.000001` stays `0.000001f` rather than the
+#                                 `1e-06f` the Python oracle's float repr gave)
 #   tests/golden/check/*.txt   — checker diagnostics, verbatim
 #   tests/golden/tc/*.txt      — typechecker diagnostics, verbatim
 #   tests/golden/header/*.h    — generated module headers
@@ -30,7 +34,7 @@ set HERE [file dirname [file normalize [info script]]]
 set REPO [file normalize [file join $HERE .. ..]]
 cd $REPO
 
-set STAGES {lex ast check tc header c2pak makefile pakfs}
+set STAGES {lex ast cg check tc header c2pak makefile pakfs}
 set want $argv
 if {[llength $want] == 0} { set want $STAGES }
 foreach s $want {
@@ -251,7 +255,7 @@ set files [corpus]
 set total_fail 0
 foreach stage $want {
     switch -- $stage {
-        lex - ast   { incr total_fail [check_hash_stage $stage $files] }
+        lex - ast - cg { incr total_fail [check_hash_stage $stage $files] }
         check - tc  { incr total_fail [check_text_stage $stage $files] }
         header {
             # Module headers, one per canonical example, under a synthetic

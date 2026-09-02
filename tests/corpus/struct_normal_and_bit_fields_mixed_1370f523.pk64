@@ -1,0 +1,5 @@
+struct Mixed {
+    id: i32
+    flags: u8 : 4
+    pad: u8 : 4
+}

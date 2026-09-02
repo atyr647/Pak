@@ -1,0 +1,2 @@
+@cfg(not(DEBUG))
+fn release_only() -> void { return }

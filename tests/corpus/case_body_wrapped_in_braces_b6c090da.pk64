@@ -1,0 +1,7 @@
+enum Dir { Up, Down }
+fn f(d: Dir) -> void {
+    match d {
+        Dir.Up => { let x: i32 = 1; }
+        Dir.Down => { }
+    }
+}

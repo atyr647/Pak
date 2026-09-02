@@ -1,0 +1,2 @@
+fn f() { let p: *i32 = alloc(i32)
+ free(p) }

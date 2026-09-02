@@ -1,0 +1,7 @@
+fn classify(x: i32) -> i32 {
+    match x {
+        1 if x > 0 => { return 10 }
+        _ => { return 0 }
+    }
+}
+entry {}

@@ -1,0 +1,1 @@
+fn f() { let p: ?*i32 = none }

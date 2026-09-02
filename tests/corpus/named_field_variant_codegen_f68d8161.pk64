@@ -1,0 +1,4 @@
+variant Packet {
+    connect { id: i32, port: u8 }
+    disconnect
+}

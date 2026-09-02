@@ -1,0 +1,5 @@
+fn f() {
+    comptime if (DEBUG) {
+        let a: i32 = 1
+    }
+}

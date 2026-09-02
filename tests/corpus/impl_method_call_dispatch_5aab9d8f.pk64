@@ -1,0 +1,10 @@
+struct Counter { value: i32 }
+impl Counter {
+    fn increment(self: *Counter) {
+        self.value = self.value + 1
+    }
+}
+entry {
+    let c = Counter { value: 0 }
+    c.increment()
+}

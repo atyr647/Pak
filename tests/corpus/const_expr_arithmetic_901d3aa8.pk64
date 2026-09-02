@@ -1,0 +1,3 @@
+const W: i32 = 320
+const H: i32 = 240
+const HALF_W: i32 = W / 2

@@ -1,0 +1,2 @@
+struct bad_name { x: f32 }
+const lower: i32 = 1

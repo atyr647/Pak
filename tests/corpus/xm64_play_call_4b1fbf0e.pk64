@@ -1,0 +1,2 @@
+use n64.xm64;
+fn f() -> void { xm64.play(player, 0); }

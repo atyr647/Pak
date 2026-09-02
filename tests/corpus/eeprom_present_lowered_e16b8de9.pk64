@@ -1,0 +1,4 @@
+use n64.eeprom
+entry {
+    let is_present = eeprom.present()
+}

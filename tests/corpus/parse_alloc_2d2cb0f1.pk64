@@ -1,0 +1,4 @@
+struct Node { val: i32 }
+fn f() -> void {
+    let p = alloc(Node)
+}

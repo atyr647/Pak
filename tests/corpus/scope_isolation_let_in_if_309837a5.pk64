@@ -1,0 +1,6 @@
+fn f(cond: bool) -> void {
+    if cond {
+        let inner: i32 = 1;
+    }
+    let outer: i32 = 2;
+}

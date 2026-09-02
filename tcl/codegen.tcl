@@ -127,7 +127,8 @@ oo::class create pak::Codegen {
              tuple_typedefs tuple_typedef_names vec_typedefs vec_typedef_names vec_used \
              container_typedefs container_typedef_names \
              current_ret_type closures fmt_counter tmp_counter \
-             mono_cache pending_mono pending_nested _in_stmt loop_result_var loop_res_counter
+             mono_cache pending_mono pending_nested _in_stmt loop_result_var loop_res_counter \
+             fn_decls use_aliases allocator_used
 
     constructor {{fname "<unknown>"} {mod_headers {}}} {
         set filename $fname
@@ -135,6 +136,9 @@ oo::class create pak::Codegen {
         set assets {}
         set module_name ""
         set fn_names {}
+        set fn_decls [dict create]
+        set use_aliases [dict create]
+        set allocator_used 0
         set enum_variants [dict create]
         set variant_types [dict create]
         set struct_fields [dict create]
@@ -552,19 +556,44 @@ oo::class create pak::Codegen {
                 }
                 return "sizeof([my gen_expr $op])"
             }
+            AlignOf {
+                set op [pak::nfield $e operand]
+                if {[pak::kindof $op] in {TypeName TypePointer TypeArray TypeSlice TypeResult TypeGeneric TypeVolatile}} {
+                    return "__alignof__([my gen_type $op])"
+                }
+                return "__alignof__([my gen_expr $op])"
+            }
+            AsmExpr { return [my gen_asm_expr $e] }
             OffsetOf { return "offsetof([pak::fval $e type_name], [pak::fval $e field])" }
             AllocExpr {
-                if {![pak::isnil [pak::nfield $e allocator]]} { pak::cg_unported "alloc:allocator" }
                 set ct [my gen_type [pak::nfield $e type_node]]
                 set count [pak::nfield $e count]
+                set alloc [pak::nfield $e allocator]
+                # `alloc(T using a)` dispatches through the allocator vtable;
+                # the plain form goes straight to malloc.
+                if {![pak::isnil $alloc]} {
+                    set allocator_used 1
+                    set ac [my gen_expr $alloc]
+                    if {![pak::isnil $count]} {
+                        return "($ct *)($ac).vtable->alloc_bytes(($ac).self,\
+ sizeof($ct) * (size_t)([my gen_expr $count]))"
+                    }
+                    return "($ct *)($ac).vtable->alloc_bytes(($ac).self, sizeof($ct))"
+                }
                 if {![pak::isnil $count]} {
                     return "($ct *)malloc(sizeof($ct) * (size_t)([my gen_expr $count]))"
                 }
                 return "($ct *)malloc(sizeof($ct))"
             }
             FreeExpr {
-                if {![pak::isnil [pak::nfield $e allocator]]} { pak::cg_unported "free:allocator" }
-                return "free([my gen_expr [pak::nfield $e ptr]])"
+                set ptr [my gen_expr [pak::nfield $e ptr]]
+                set alloc [pak::nfield $e allocator]
+                if {![pak::isnil $alloc]} {
+                    set allocator_used 1
+                    set ac [my gen_expr $alloc]
+                    return "($ac).vtable->dealloc_bytes(($ac).self, $ptr)"
+                }
+                return "free($ptr)"
             }
             OkExpr {
                 set val [my gen_expr [pak::nfield $e value]]
@@ -659,6 +688,35 @@ oo::class create pak::Codegen {
         set buf "_pak_fmt_$n"
         set args [expr {[llength $arg_parts] > 0 ? ", [join $arg_parts {, }]" : ""}]
         return "(\{ static char $buf\[256\]; snprintf($buf, 256, \"$fmt_str\"$args); (const char*)$buf; \})"
+    }
+
+    # Inline assembly expression: __asm__ __volatile__("tmpl" : outs : ins : clobbers)
+    method gen_asm_expr {e} {
+        set vol [expr {[pak::fval $e volatile] ? "__volatile__" : ""}]
+        set out "__asm__ ${vol}(\"[pak::fval $e template]\""
+        set outs [pak::items [pak::nfield $e outputs]]
+        set ins  [pak::items [pak::nfield $e inputs]]
+        set clob [pak::fval $e clobbers]
+        if {[llength $outs] || [llength $ins] || [llength $clob]} {
+            set op {}
+            foreach o $outs {
+                set pair [pak::items $o]
+                lappend op "\"[pak::sval [lindex $pair 0]]\"([my gen_expr [lindex $pair 1]])"
+            }
+            set ip {}
+            foreach i $ins {
+                set pair [pak::items $i]
+                lappend ip "\"[pak::sval [lindex $pair 0]]\"([my gen_expr [lindex $pair 1]])"
+            }
+            append out " : [join $op {, }] : [join $ip {, }]"
+            if {[llength $clob]} {
+                set cp {}
+                foreach c $clob { lappend cp "\"[pak::sval $c]\"" }
+                append out " : [join $cp {, }]"
+            }
+        }
+        append out ")"
+        return $out
     }
 
     # ── closures (mirror codegen._gen_closure / _emit_closures) ────────────────
@@ -1213,6 +1271,57 @@ oo::class create pak::Codegen {
         return ""
     }
 
+    # Resolve a call's arguments against a known function's parameter list,
+    # placing NamedArg values by name rather than position and filling in
+    # defaults for omitted params. Returns the ordered C argument strings.
+    method apply_named_args_and_defaults {params arg_nodes} {
+        set has_named 0
+        foreach a $arg_nodes {
+            if {[pak::kindof $a] eq "NamedArg"} { set has_named 1; break }
+        }
+        if {!$has_named && [llength $arg_nodes] >= [llength $params]} {
+            set out {}
+            foreach a $arg_nodes { lappend out [my gen_expr $a] }
+            return $out
+        }
+
+        set n [llength $params]
+        set result {}
+        for {set i 0} {$i < $n} {incr i} { lappend result "" }
+        set positional_idx 0
+
+        foreach arg_node $arg_nodes {
+            if {[pak::kindof $arg_node] eq "NamedArg"} {
+                set want [pak::fval $arg_node name]
+                for {set pi 0} {$pi < $n} {incr pi} {
+                    if {[pak::fval [lindex $params $pi] name] eq $want} {
+                        lset result $pi [my gen_expr [pak::nfield $arg_node value]]
+                        break
+                    }
+                }
+            } else {
+                # Skip slots a named argument already claimed.
+                while {$positional_idx < $n && [lindex $result $positional_idx] ne ""} {
+                    incr positional_idx
+                }
+                if {$positional_idx < $n} {
+                    lset result $positional_idx [my gen_expr $arg_node]
+                    incr positional_idx
+                }
+            }
+        }
+
+        for {set i 0} {$i < $n} {incr i} {
+            if {[lindex $result $i] ne ""} continue
+            set dv [pak::nfield [lindex $params $i] default_value]
+            if {![pak::isnil $dv]} { lset result $i [my gen_expr $dv] }
+        }
+
+        set out {}
+        foreach r $result { if {$r ne ""} { lappend out $r } }
+        return $out
+    }
+
     method gen_call {e} {
         set args {}
         foreach a [pak::items [pak::nfield $e args]] { lappend args [my gen_expr $a] }
@@ -1225,8 +1334,12 @@ oo::class create pak::Codegen {
                 set msg [expr {[llength $args] > 1 ? [lindex $args 1] : {"assertion"}}]
                 return "_Static_assert($cond, $msg)"
             }
-            if {$fnm eq "heap_allocator"} { return "pak_heap_allocator()" }
+            if {$fnm eq "heap_allocator"} {
+                set allocator_used 1
+                return "pak_heap_allocator()"
+            }
             if {$fnm eq "arena_allocator"} {
+                set allocator_used 1
                 set arg [expr {[llength $args] > 0 ? [lindex $args 0] : "0"}]
                 return "Allocator_from_Arena($arg)"
             }
@@ -1270,7 +1383,11 @@ oo::class create pak::Codegen {
                 } else {
                     set self_arg "&$obj_name"
                 }
-                set all_args [concat [list $self_arg] $args]
+                # Named-arg reordering / default fill over the non-self params.
+                set user_params [expr {[llength $params] > 0 ? [lrange $params 1 end] : {}}]
+                set user_args [my apply_named_args_and_defaults $user_params \
+                    [pak::items [pak::nfield $e args]]]
+                set all_args [concat [list $self_arg] $user_args]
                 return "${c_fn}([join $all_args {, }])"
             }
         }
@@ -1303,6 +1420,7 @@ oo::class create pak::Codegen {
         # Module API call: module.function(args) → C API
         if {[pak::kindof $func] eq "DotAccess" && [pak::kindof [pak::nfield $func obj]] eq "Ident"} {
             set mod [pak::fval [pak::nfield $func obj] name]
+            if {[dict exists $use_aliases $mod]} { set mod [dict get $use_aliases $mod] }
             set fn [pak::fval $func field]
             set key [list $mod $fn]
             if {[dict exists $::pak::CG_API $key]} {
@@ -1326,11 +1444,47 @@ oo::class create pak::Codegen {
                 }
             }
         }
+        # Named-arg reordering / default fill for calls to a known function.
+        if {[pak::kindof $func] eq "Ident"} {
+            set fname [pak::fval $func name]
+            if {[dict exists $fn_decls $fname]} {
+                set params [pak::items [pak::nfield [dict get $fn_decls $fname] params]]
+                set arg_nodes [pak::items [pak::nfield $e args]]
+                set needs 0
+                foreach a $arg_nodes {
+                    if {[pak::kindof $a] eq "NamedArg"} { set needs 1; break }
+                }
+                if {[llength $arg_nodes] < [llength $params]} { set needs 1 }
+                if {[llength $params] > 0 && $needs} {
+                    set args [my apply_named_args_and_defaults $params $arg_nodes]
+                }
+            }
+        }
         return "[my gen_expr $func]([join $args {, }])"
     }
 
     # ── statements ────────────────────────────────────────────────────────────
+    # Wrapper: emit any capturing closures used by this statement as GCC
+    # nested-function definitions in the enclosing block, just before the
+    # statement that references them, so lexical capture is in scope.
     method gen_stmt {stmt indent} {
+        set saved_pending $pending_nested
+        set saved_in $_in_stmt
+        set pending_nested {}
+        set _in_stmt 1
+        set body [my gen_stmt_body $stmt $indent]
+        set hoisted $pending_nested
+        set pending_nested $saved_pending
+        set _in_stmt $saved_in
+        if {[llength $hoisted] > 0} {
+            set defs [my emit_nested_closures $indent $hoisted]
+            set pad [string repeat "    " $indent]
+            return "[join $defs \n]\n[expr {$body ne "" ? $body : "${pad};"}]"
+        }
+        return $body
+    }
+
+    method gen_stmt_body {stmt indent} {
         set pad [string repeat "    " $indent]
         switch -- [pak::kindof $stmt] {
             LetDecl    { return [my gen_let_stmt $stmt $pad] }
@@ -1416,6 +1570,14 @@ oo::class create pak::Codegen {
         set anns [pak::annlist_or $s]
         set typ [pak::nfield $s type]
         set name [pak::fval $s name]
+        # `let _ = expr` discards the value. Emitting a real declaration named
+        # `_` would collide with every other discard in the same scope, so the
+        # value is evaluated and cast to void instead.
+        if {$name eq "_"} {
+            set v [pak::nfield $s value]
+            if {[pak::isnil $v]} { return "" }
+            return "${pad}(void)([my gen_expr $v]);"
+        }
         set prefix ""
         if {[string first "@aligned" [join $anns " "]] >= 0} {
             foreach ann $anns {
@@ -1793,10 +1955,13 @@ oo::class create pak::Codegen {
             set guard_str ""
             if {![pak::isnil $guard]} {
                 set gc [my gen_expr $guard]
+                # The guard runs before the binding declarations exist, so each
+                # binding name is replaced by the field access it stands for.
+                # Tcl regexps spell the word boundary \y -- \b is a backspace.
                 foreach binding $bindings {
                     set vname [lindex $binding 0]
                     set facc  [lindex $binding 1]
-                    regsub -all "\\b${vname}\\b" $gc $facc gc
+                    regsub -all "\\y${vname}\\y" $gc [string map {\\ \\\\ & \\&} $facc] gc
                 }
                 set guard_str " && ($gc)"
             }
@@ -2332,20 +2497,10 @@ oo::class create pak::Codegen {
     method gen_entry {entry} {
         set lines [list "int main(void) {"]
         my scope_push
-        set saved_in $_in_stmt
-        set _in_stmt 1
         foreach st [pak::items [pak::nfield [pak::nfield $entry body] stmts]] {
-            set saved_pending $pending_nested
-            set pending_nested {}
             set s [my gen_stmt $st 1]
-            set hoisted $pending_nested
-            set pending_nested $saved_pending
-            if {[llength $hoisted] > 0} {
-                foreach hl [my emit_nested_closures 1 $hoisted] { lappend lines $hl }
-            }
             if {$s ne ""} { lappend lines $s }
         }
-        set _in_stmt $saved_in
         foreach d [my emit_defers_for_scope 1] { lappend lines $d }
         my scope_pop
         lappend lines "    return 0;"
@@ -2359,11 +2514,21 @@ oo::class create pak::Codegen {
         # pass 1: collect declarations
         foreach decl $decls {
             switch -- [pak::kindof $decl] {
-                UseDecl { lappend uses [pak::fval $decl path] }
+                UseDecl {
+                    lappend uses [pak::fval $decl path]
+                    # `use n64.display as disp` — record disp → display so
+                    # calls through the alias still resolve to the module API.
+                    set al [pak::nfield $decl alias]
+                    if {![pak::isnil $al]} {
+                        set segs [split [pak::fval $decl path] .]
+                        dict set use_aliases [pak::sval $al] [lindex $segs end]
+                    }
+                }
                 AssetDecl { lappend assets $decl }
                 ModuleDecl { set module_name [pak::fval $decl path] }
                 FnDecl {
                     lappend fn_names [pak::fval $decl name]
+                    dict set fn_decls [pak::fval $decl name] $decl
                     if {[llength [pak::items [pak::nfield $decl type_params]]] > 0} {
                         dict set generic_fns [pak::fval $decl name] $decl
                     }
@@ -2496,6 +2661,22 @@ oo::class create pak::Codegen {
         lappend out "    if (a->ptr + sz > a->base + a->capacity) return NULL;"
         lappend out "    void *p = a->ptr; a->ptr += sz; return p; }"
         lappend out "static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }"
+        if {$allocator_used} {
+            lappend out ""
+            lappend out "/* -- Allocator trait (vtable-based custom allocator interface) -- */"
+            lappend out "typedef struct { void *(*alloc_bytes)(void *, size_t); void (*dealloc_bytes)(void *, void *); } Allocator_vtable;"
+            lappend out "typedef struct { void *self; const Allocator_vtable *vtable; } Allocator;"
+            lappend out "/* PakArena as Allocator */"
+            lappend out "static void *_pak_alloc_bytes_Arena(void *_s, size_t sz) { return pak_arena_alloc((PakArena *)_s, sz); }"
+            lappend out "static void _pak_dealloc_bytes_Arena(void *_s, void *p) { (void)_s; (void)p; }"
+            lappend out "static const Allocator_vtable _pak_vtable_Arena = { _pak_alloc_bytes_Arena, _pak_dealloc_bytes_Arena };"
+            lappend out "static inline Allocator Allocator_from_Arena(PakArena *p) { return (Allocator){ .self=(void *)p, .vtable=&_pak_vtable_Arena }; }"
+            lappend out "/* Heap (malloc/free) as Allocator */"
+            lappend out "static void *_pak_alloc_bytes_Heap(void *_s, size_t sz) { (void)_s; return malloc(sz); }"
+            lappend out "static void _pak_dealloc_bytes_Heap(void *_s, void *p) { (void)_s; free(p); }"
+            lappend out "static const Allocator_vtable _pak_vtable_Heap = { _pak_alloc_bytes_Heap, _pak_dealloc_bytes_Heap };"
+            lappend out "static inline Allocator pak_heap_allocator(void) { return (Allocator){ .self=NULL, .vtable=&_pak_vtable_Heap }; }"
+        }
 
         # Result typedefs (collected as a side effect of body generation above).
         if {[llength $result_typedefs] > 0} {
@@ -2636,6 +2817,12 @@ proc pak::cg_addr {arglist i} {
 # ── module-API lambda lowering (hand-ported subset; raises for the rest) ───────
 # Param is named `arglist` deliberately: a proc parameter literally named `args`
 # is Tcl's variadic collector, which would re-wrap the passed list one level deep.
+# Argument `i` if the call supplied it, else the module API's documented default.
+proc pak::cg_arg_or {arglist i default} {
+    if {[llength $arglist] > $i} { return [lindex $arglist $i] }
+    return $default
+}
+
 proc pak::cg_api_lambda {mod fn arglist} {
     switch -- "$mod $fn" {
         "controller read" {
@@ -2705,6 +2892,51 @@ proc pak::cg_api_lambda {mod fn arglist} {
         "str from_cstr"    { return "pak_str_from_cstr([lindex $arglist 0])" }
         "str len"          { return "([lindex $arglist 0]).len" }
         "str eq"           { return "pak_str_eq([lindex $arglist 0], [lindex $arglist 1])" }
+        "str concat"       {
+            if {[llength $arglist] >= 4} {
+                lassign $arglist a b buf cap
+                return "(snprintf($buf, (size_t)($cap), \"%.*s%.*s\",\
+ (int)($a).len, ($a).data,\
+ (int)($b).len, ($b).data),\
+ (PakStr)\{.data=$buf, .len=(int32_t)strlen($buf)\})"
+            }
+            return "pak_str_from_cstr(([lindex $arglist 0]).data)"
+        }
+        "str data"         { return "([lindex $arglist 0]).data" }
+        "str print"        {
+            set a [lindex $arglist 0]
+            return "debugf(\"%.*s\", ($a).len, ($a).data)"
+        }
+        "mem alloc"         { return "malloc([lindex $arglist 0])" }
+        "mem alloc_aligned" { return "memalign([lindex $arglist 1], [lindex $arglist 0])" }
+        "mem free"          { return "free([lindex $arglist 0])" }
+        "mem realloc"       { return "realloc([lindex $arglist 0], [lindex $arglist 1])" }
+        "mem copy"          { return "memcpy([lindex $arglist 0], [lindex $arglist 1], [lindex $arglist 2])" }
+        "mem move"          { return "memmove([lindex $arglist 0], [lindex $arglist 1], [lindex $arglist 2])" }
+        "mem zero"          { return "memset([lindex $arglist 0], 0, [lindex $arglist 1])" }
+        "system has_expansion" { return "(get_memory_size() > 0x400000)" }
+        "system ticks"         { return "TICKS_READ()" }
+        "system ticks_to_ms"   { return "TICKS_TO_MS([lindex $arglist 0])" }
+        "system reset"         { return "n64sys_reset()" }
+        "system tv_type"       { return "sys_tv_type()" }
+        "vi get_width"      { return "display_get_width()" }
+        "vi get_height"     { return "display_get_height()" }
+        "vi wait_vblank"    { return "vi_wait_vblank()" }
+        "rtc is_running"    { return "!rtc_is_stopped()" }
+        "rumble is_plugged" {
+            return "(joypad_get_accessory_type([pak::cg_arg_or $arglist 0 0]) ==\
+ JOYPAD_ACCESSORY_TYPE_RUMBLE_PAK)"
+        }
+        "mouse get_buttons" { return "joypad_get_buttons_pressed([pak::cg_arg_or $arglist 0 0])" }
+        "mouse get_delta_x" { return "joypad_get_axis_pressed([pak::cg_arg_or $arglist 0 0], JOYPAD_AXIS_STICK_X)" }
+        "mouse get_delta_y" { return "joypad_get_axis_pressed([pak::cg_arg_or $arglist 0 0], JOYPAD_AXIS_STICK_Y)" }
+        "rdpq_mode antialias"  { return "rdpq_mode_antialias([pak::cg_arg_or $arglist 0 AA_STANDARD])" }
+        "rdpq_mode blending"   { return "rdpq_mode_blending([pak::cg_arg_or $arglist 0 RDPQ_BLENDING_MULTIPLY])" }
+        "rdpq_mode dithering"  { return "rdpq_mode_dithering([pak::cg_arg_or $arglist 0 DITHER_SQUARE_SQUARE])" }
+        "rdpq_mode filter"     { return "rdpq_mode_filter([pak::cg_arg_or $arglist 0 FILTER_BILINEAR])" }
+        "rdpq_mode persp_norm" { return "rdpq_mode_persp_norm([pak::cg_arg_or $arglist 0 true])" }
+        "rdpq_mode tlut"       { return "rdpq_mode_tlut([pak::cg_arg_or $arglist 0 TLUT_RGBA16])" }
+        "rdpq_mode zbuf"       { return "rdpq_mode_zbuf(true, [pak::cg_arg_or $arglist 0 true])" }
         default { pak::cg_unported "api-lambda:$mod $fn" }
     }
 }

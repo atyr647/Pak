@@ -1,0 +1,4 @@
+use n64.display as disp
+entry {
+    let fb = disp.get()
+}

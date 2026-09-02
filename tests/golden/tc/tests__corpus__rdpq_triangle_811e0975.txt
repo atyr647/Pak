@@ -1,0 +1,5 @@
+(E010 error "unknown name 'NULL'" "declare it with 'let NULL = ...'")
+(E010 error "unknown name 'NULL'" "declare it with 'let NULL = ...'")
+(E010 error "unknown name 'NULL'" "declare it with 'let NULL = ...'")
+(E010 error "unknown name 'NULL'" "declare it with 'let NULL = ...'")
+(E010 error "unknown name 'NULL'" "declare it with 'let NULL = ...'")

@@ -1,0 +1,5 @@
+fn f() -> void {
+    comptime if (DEBUG) {
+        x = 1;
+    }
+}

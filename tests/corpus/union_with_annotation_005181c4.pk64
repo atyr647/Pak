@@ -1,0 +1,1 @@
+@packed union Packed { x: u8; y: u16; }

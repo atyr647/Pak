@@ -1,0 +1,2 @@
+entry { let x: i32 = 5
+ let s = "val is {x}" }

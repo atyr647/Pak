@@ -1,0 +1,6 @@
+fn f() {
+    let mut i: i32 = 0
+    do {
+        i += 1
+    } while i < 3
+}

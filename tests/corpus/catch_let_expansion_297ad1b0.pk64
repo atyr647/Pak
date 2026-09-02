@@ -1,0 +1,4 @@
+fn may_fail() -> Result(i32, i32) { return ok(1) }
+entry {
+    let x: i32 = may_fail() catch e { return }
+}

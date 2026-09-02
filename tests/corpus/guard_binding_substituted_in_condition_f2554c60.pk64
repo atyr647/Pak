@@ -1,0 +1,12 @@
+variant Opt {
+    some(i32)
+    none
+}
+fn check(v: Opt) -> i32 {
+    match v {
+        .some(x) if x > 0 => { return x }
+        .none => { return -1 }
+        _ => { return 0 }
+    }
+}
+entry {}

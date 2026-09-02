@@ -1,0 +1,2 @@
+@cfg(FEATURE_A)
+struct Foo { x: i32 }

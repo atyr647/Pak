@@ -1,0 +1,8 @@
+enum E: u8 { bad }
+fn step1() -> Result(i32, E) { return ok(1) }
+fn step2(x: i32) -> Result(i32, E) { return ok(x + 1) }
+fn run() -> Result(i32, E) {
+    let a = step1() catch e { return err(e) }
+    let b = step2(a) catch e { return err(e) }
+    return ok(b)
+}

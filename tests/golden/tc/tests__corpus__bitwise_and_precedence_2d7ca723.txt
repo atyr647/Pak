@@ -1,0 +1,2 @@
+(E010 error "unknown name 'x'" "declare it with 'let x = ...'")
+(E010 error "unknown name 'y'" "declare it with 'let y = ...'")

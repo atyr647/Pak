@@ -1,0 +1,2 @@
+use game.math;
+fn call_add() -> i32 { return add(1, 2); }

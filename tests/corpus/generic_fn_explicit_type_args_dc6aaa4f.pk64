@@ -1,0 +1,3 @@
+fn id<T>(x: T) -> T { return x }
+static s: i32 = 0
+entry { s = id<i32>(42) }

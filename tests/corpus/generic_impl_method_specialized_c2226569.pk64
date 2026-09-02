@@ -1,0 +1,7 @@
+struct Box<T> { value: T }
+impl Box<T> { fn get(self: *Box<T>) -> T { return self.value } }
+static r: i32 = 0
+entry {
+    let mut b = Box<i32> { value: 42 }
+    r = b.get()
+}

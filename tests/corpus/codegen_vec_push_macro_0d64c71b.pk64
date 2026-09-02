@@ -1,0 +1,4 @@
+fn f() -> void {
+    let v: Vec(i32) = undefined
+    v.push(42)
+}
