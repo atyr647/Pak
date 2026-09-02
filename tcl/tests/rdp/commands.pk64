@@ -1,0 +1,25 @@
+-- Driver for tcl/tools/rdp_test.tcl. Every call here has its resulting RDP
+-- command words asserted against the hardware encoding, by running the
+-- runtime's own MIPS code in the simulator and reading back the display list.
+entry {
+    rdpq.init()
+    rdpq.attach(0xA0200000)
+    rdpq.set_mode_fill(0xFF0000FF)
+    rdpq.fill_rectangle(0, 0, 320, 240)
+    rdpq.fill_rectangle(16, 32, 48, 64)
+    rdpq.set_scissor(8, 8, 312, 232)
+    rdpq.set_mode_copy()
+    rdpq.set_texture_image(0xA0300000, 0, 2, 32)
+    rdpq.set_tile(0, 0, 2, 8, 0, 0)
+    rdpq.load_tile(0, 0, 0, 32, 32)
+    rdpq.set_tile_size(0, 0, 0, 32, 32)
+    rdpq.texture_rectangle(0, 100, 50, 132, 82, 0, 0)
+    rdpq.set_mode_standard()
+    rdpq.set_prim_color(0x1122_33FF)
+    rdpq.set_blend_color(0x4455_66FF)
+    rdpq.triangle(10, 10, 100, 20, 40, 90)
+    rdpq.sync_pipe()
+    rdpq.sync_tile()
+    rdpq.sync_load()
+    rdpq.detach_show()
+}

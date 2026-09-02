@@ -24,6 +24,24 @@
 	.extern rdpq_sync_tile
 	.extern rdpq_sync_load
 	.extern rdpq_set_scissor
+	.extern rdpq_set_color_image
+	.extern rdpq_set_z_image
+	.extern rdpq_set_other_modes_raw
+	.extern rdpq_set_combiner_raw
+	.extern rdpq_set_fill_color
+	.extern rdpq_set_blend_color
+	.extern rdpq_set_fog_color
+	.extern rdpq_set_env_color
+	.extern rdpq_set_prim_color
+	.extern rdpq_set_texture_image
+	.extern rdpq_set_tile
+	.extern rdpq_set_tile_size
+	.extern rdpq_load_tile
+	.extern rdpq_load_block
+	.extern rdpq_load_tlut
+	.extern rdpq_texture_rectangle
+	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_triangle
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -150,27 +168,45 @@
 	.globl check_greeting
 	.type check_greeting, @function
 check_greeting:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    lw $t8, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t8, 136($sp)
     la $t7, .Lstr0
     move $a0, $t7
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal strlen
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $a2, $v0
     move $a0, $t8
     move $a1, $t7
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal strncmp
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     seq $t9, $v0, $zero
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     move $a0, $t7
     la $a1, .Lstr1
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal strstr
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     sltu $t8, $zero, $v0
     move $t8, $v0
     sltu $t8, $zero, $t8
@@ -181,9 +217,9 @@ check_greeting:
     j .Lcheck_greeting_ret_0
     nop
 .Lcheck_greeting_ret_0:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size check_greeting, . - check_greeting
@@ -192,24 +228,26 @@ check_greeting:
 	.globl same_string
 	.type same_string, @function
 same_string:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
-    lw $t9, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    sw $a1, 140($sp)
+    lw $t9, 136($sp)
     move $a0, $t9
-    lw $a1, 100($sp)
+    lw $a1, 140($sp)
+    sw $t9, 96($sp)
     jal strcmp
     nop
+    lw $t9, 96($sp)
     seq $v0, $v0, $zero
     j .Lsame_string_ret_1
     nop
 .Lsame_string_ret_1:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size same_string, . - same_string
@@ -218,17 +256,19 @@ same_string:
 	.globl find_offset
 	.type find_offset, @function
 find_offset:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
-    lw $t9, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    sw $a1, 140($sp)
+    lw $t9, 136($sp)
     move $a0, $t9
-    lw $a1, 100($sp)
+    lw $a1, 140($sp)
+    sw $t9, 96($sp)
     jal strstr
     nop
+    lw $t9, 96($sp)
     bne $v0, $zero, .Lsf_3
     nop
     li $v0, -1
@@ -240,9 +280,9 @@ find_offset:
     j .Lfind_offset_ret_2
     nop
 .Lfind_offset_ret_2:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size find_offset, . - find_offset
@@ -251,18 +291,18 @@ find_offset:
 	.globl check_pakstr
 	.type check_pakstr, @function
 check_pakstr:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    lw $v0, 100($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $v0, 140($sp)
     j .Lcheck_pakstr_ret_5
     nop
 .Lcheck_pakstr_ret_5:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size check_pakstr, . - check_pakstr
@@ -271,80 +311,152 @@ check_pakstr:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
     la $t9, .Lstr2
-    sw $t9, 96($sp)
-    lw $t7, 96($sp)
+    sw $t9, 136($sp)
+    lw $t7, 136($sp)
     move $a0, $t7
     la $a1, .Lstr1
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal strstr
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     sltu $t8, $zero, $v0
     move $t8, $v0
     sltu $t8, $zero, $t8
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     la $t6, .Lstr0
     move $a0, $t6
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
+    sw $t6, 108($sp)
     jal strlen
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
+    lw $t6, 108($sp)
     move $a2, $v0
     move $a0, $t7
     move $a1, $t6
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
+    sw $t6, 108($sp)
     jal strncmp
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
+    lw $t6, 108($sp)
     seq $t8, $v0, $zero
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     la $t6, .Lstr1
     move $a0, $t6
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
+    sw $t6, 108($sp)
     jal strlen
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
+    lw $t6, 108($sp)
     move $t5, $v0
     move $a0, $t7
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
+    sw $t6, 108($sp)
+    sw $t5, 112($sp)
     jal strlen
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
+    lw $t6, 108($sp)
+    lw $t5, 112($sp)
     move $t4, $v0
     addu $t3, $t7, $t4
     subu $t3, $t3, $t5
     move $a0, $t3
     move $a1, $t6
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
+    sw $t6, 108($sp)
+    sw $t5, 112($sp)
+    sw $t4, 116($sp)
+    sw $t3, 120($sp)
     jal strcmp
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
+    lw $t6, 108($sp)
+    lw $t5, 112($sp)
+    lw $t4, 116($sp)
+    lw $t3, 120($sp)
     seq $t8, $v0, $zero
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     move $a0, $t7
     la $a1, .Lstr2
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal strcmp
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     seq $t8, $v0, $zero
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     move $a0, $t7
     la $a1, .Lstr3
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal strcmp
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     seq $t8, $v0, $zero
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     move $a0, $t7
     la $a1, .Lstr1
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal strstr
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     bne $v0, $zero, .Lsf_7
     nop
     li $t8, -1
@@ -356,11 +468,17 @@ main:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     move $a0, $t7
     la $a1, .Lstr0
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal strstr
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     bne $v0, $zero, .Lsf_9
     nop
     li $t8, -1
@@ -372,11 +490,17 @@ main:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     move $a0, $t7
     la $a1, .Lstr4
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal strstr
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     bne $v0, $zero, .Lsf_11
     nop
     li $t8, -1
@@ -388,55 +512,77 @@ main:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     lb $t8, 0($t7)
     sltiu $t8, $t8, 1
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
     la $t9, .Lstr5
-    sw $t9, 100($sp)
-    lw $t7, 100($sp)
+    sw $t9, 140($sp)
+    lw $t7, 140($sp)
     lb $t8, 0($t7)
     sltiu $t8, $t8, 1
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     move $a0, $t7
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal strlen
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $a0, 96($sp)
+    lw $a0, 136($sp)
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal check_greeting
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
     la $a1, .Lstr2
-    lw $a0, 96($sp)
+    lw $a0, 136($sp)
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal same_string
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
     la $a1, .Lstr6
-    lw $a0, 96($sp)
+    lw $a0, 136($sp)
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal same_string
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
     la $a1, .Lstr1
-    lw $a0, 96($sp)
+    lw $a0, 136($sp)
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal find_offset
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_i
     sw $t8, 0($t7)
@@ -444,65 +590,97 @@ main:
     la $t8, str
     move $a0, $t8
     la $a1, .Lstr7
+    sw $t9, 96($sp)
     jal Str_from_cstr
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 104($sp)
-    lw $a0, 104($sp)
+    sw $t9, 144($sp)
+    lw $a0, 144($sp)
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal check_pakstr
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 108($sp)
+    lw $t7, 148($sp)
     seq $t8, $t7, $zero
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t8, 96($sp)
-    sw $t8, 120($sp)
+    lw $t8, 136($sp)
+    sw $t8, 160($sp)
     move $a0, $t8
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal strlen
     nop
-    sw $v0, 124($sp)
-    addiu $t9, $sp, 120
-    sw $t9, 112($sp)
-    lw $t8, 116($sp)
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    sw $v0, 164($sp)
+    addiu $t9, $sp, 160
+    sw $t9, 152($sp)
+    lw $t8, 156($sp)
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t8, 96($sp)
+    lw $t8, 136($sp)
     li $t7, 6
     addu $t9, $t8, $t7
-    sw $t9, 128($sp)
-    lw $t7, 128($sp)
+    sw $t9, 168($sp)
+    lw $t7, 168($sp)
     move $a0, $t7
     la $a1, .Lstr1
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal strcmp
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     seq $t8, $v0, $zero
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 128($sp)
+    lw $t7, 168($sp)
     la $t3, .Lstr1
     move $a0, $t3
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
+    sw $t3, 108($sp)
     jal strlen
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
+    lw $t3, 108($sp)
     move $a2, $v0
     move $a0, $t7
     move $a1, $t3
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
+    sw $t3, 108($sp)
     jal strncmp
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
+    lw $t3, 108($sp)
     seq $t8, $v0, $zero
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_6:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size main, . - main

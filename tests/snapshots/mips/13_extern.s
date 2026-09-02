@@ -24,6 +24,24 @@
 	.extern rdpq_sync_tile
 	.extern rdpq_sync_load
 	.extern rdpq_set_scissor
+	.extern rdpq_set_color_image
+	.extern rdpq_set_z_image
+	.extern rdpq_set_other_modes_raw
+	.extern rdpq_set_combiner_raw
+	.extern rdpq_set_fill_color
+	.extern rdpq_set_blend_color
+	.extern rdpq_set_fog_color
+	.extern rdpq_set_env_color
+	.extern rdpq_set_prim_color
+	.extern rdpq_set_texture_image
+	.extern rdpq_set_tile
+	.extern rdpq_set_tile_size
+	.extern rdpq_load_tile
+	.extern rdpq_load_block
+	.extern rdpq_load_tlut
+	.extern rdpq_texture_rectangle
+	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_triangle
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -150,10 +168,10 @@
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
     li $a2, 64
     li $a1, 0
     la $t7, buf
@@ -162,37 +180,45 @@ main:
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     lw $t8, 0($t7)
-    sw $t8, 96($sp)
-    addiu $a0, $sp, 96
+    sw $t8, 136($sp)
+    addiu $a0, $sp, 136
+    sw $t9, 96($sp)
     jal memset
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
     move $t9, $zero
-    sw $t9, 100($sp)
+    sw $t9, 140($sp)
     li $a2, 8
-    lw $t7, 100($sp)
+    lw $t7, 140($sp)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     lw $t8, 0($t7)
-    sw $t8, 108($sp)
-    addiu $a1, $sp, 108
+    sw $t8, 148($sp)
+    addiu $a1, $sp, 148
     la $t7, buf
     lw $t7, 0($t7)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     lw $t8, 0($t7)
-    sw $t8, 112($sp)
-    addiu $a0, $sp, 112
+    sw $t8, 152($sp)
+    addiu $a0, $sp, 152
+    sw $t9, 96($sp)
     jal memcpy
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
     la $t9, .Lstr0
-    sw $t9, 116($sp)
-    lw $a0, 116($sp)
+    sw $t9, 156($sp)
+    lw $a0, 156($sp)
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal strlen
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
@@ -213,9 +239,9 @@ main:
     sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_0:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size main, . - main

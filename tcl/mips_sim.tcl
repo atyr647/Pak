@@ -55,17 +55,45 @@ proc trunc_mod {a b} {
 }
 
 # ── assembly text parser + pre-resolver ──────────────────────────────────────
-# Returns {labels_dict insns_list}.
 # Each insn is a list {op tok tok ...} where:
 #   - register tokens "$rN" are pre-resolved to integers (0-31)
 #   - memory operands "off($base)" are pre-resolved to two-element lists {off reg_int}
 #   - immediate/label tokens are kept as strings
 # This eliminates all string operations from the hot simulation loop.
 
+# Parse an assembly listing into {labels insns data_syms data_image}.
+#
+#   labels     — text label -> instruction index
+#   insns      — the instruction stream
+#   data_syms  — data label -> simulated RDRAM address (what `la` resolves to)
+#   data_image — {address -> word} initial contents of .data/.rodata/.bss
+#
+# Data lives at DATA_BASE upward. The layout only has to be self-consistent:
+# nothing in the simulator cares where a static actually lands on hardware, only
+# that each one gets its own address and its initialiser is readable.
+variable DATA_BASE 0x80300000
+
 proc parse_asm {text} {
     variable REGNUM
+    variable DATA_BASE
     set labels [dict create]
     set insns  [list]
+    set data_syms [dict create]
+    set data_image [dict create]
+
+    set section .text
+    set daddr $DATA_BASE
+    set pending_labels {}
+
+    # Write one byte into the data image, which is stored as aligned words so
+    # the simulator's word loads can read it back directly.
+    proc _dbyte {imgvar addr val} {
+        upvar 1 $imgvar img
+        set w [expr {$addr & ~3}]
+        set shift [expr {(3 - ($addr & 3)) * 8}]
+        set cur [expr {[dict exists $img $w] ? [dict get $img $w] : 0}]
+        dict set img $w [expr {($cur & ~(0xFF << $shift)) | (($val & 0xFF) << $shift)}]
+    }
 
     foreach raw [split $text "\n"] {
         set line [string trim [regsub {[#;].*$} $raw ""]]
@@ -73,11 +101,91 @@ proc parse_asm {text} {
 
         # label: no internal whitespace, ends with ":"
         if {[string match "*:" $line] && [string first " " $line] < 0} {
-            dict set labels [string trimright $line ":"] [llength $insns]
+            set name [string trimright $line ":"]
+            if {$section eq ".text"} {
+                dict set labels $name [llength $insns]
+            } else {
+                dict set data_syms $name $daddr
+            }
             continue
         }
+
         # assembler directive (dot-prefixed, not a label)
-        if {[string index $line 0] eq "."} continue
+        if {[string index $line 0] eq "."} {
+            set parts [regexp -all -inline {\S+} $line]
+            set d [lindex $parts 0]
+            switch -- $d {
+                .section { set section [lindex $parts 1] }
+                .text    { set section .text }
+                .data    { set section .data }
+                .align {
+                    if {$section ne ".text"} {
+                        set a [expr {1 << [lindex $parts 1]}]
+                        set daddr [expr {($daddr + $a - 1) & ~($a - 1)}]
+                    }
+                }
+                .word {
+                    if {$section ne ".text"} {
+                        foreach v [lrange $parts 1 end] {
+                            set v [string trimright $v ","]
+                            if {![string is integer -strict $v]} { set v 0 }
+                            for {set i 3} {$i >= 0} {incr i -1} {
+                                _dbyte data_image $daddr [expr {($v >> ($i * 8)) & 0xFF}]
+                                incr daddr
+                            }
+                        }
+                    }
+                }
+                .half - .short {
+                    if {$section ne ".text"} {
+                        foreach v [lrange $parts 1 end] {
+                            set v [string trimright $v ","]
+                            if {![string is integer -strict $v]} { set v 0 }
+                            _dbyte data_image $daddr [expr {($v >> 8) & 0xFF}]; incr daddr
+                            _dbyte data_image $daddr [expr {$v & 0xFF}];        incr daddr
+                        }
+                    }
+                }
+                .byte {
+                    if {$section ne ".text"} {
+                        foreach v [lrange $parts 1 end] {
+                            set v [string trimright $v ","]
+                            if {![string is integer -strict $v]} { set v 0 }
+                            _dbyte data_image $daddr $v
+                            incr daddr
+                        }
+                    }
+                }
+                .space {
+                    if {$section ne ".text"} {
+                        set n [lindex $parts 1]
+                        if {![string is integer -strict $n]} { set n 0 }
+                        for {set i 0} {$i < $n} {incr i} {
+                            _dbyte data_image $daddr 0
+                            incr daddr
+                        }
+                    }
+                }
+                .asciiz - .ascii {
+                    if {$section ne ".text"} {
+                        # The string is everything after the directive, quoted.
+                        if {[regexp {"((?:[^"\\]|\\.)*)"} $line -> str]} {
+                            set str [subst -nocommands -novariables \
+                                [string map {\\n \\n \\t \\t \\" \" \\\\ \\\\} $str]]
+                            foreach ch [split $str ""] {
+                                _dbyte data_image $daddr [scan $ch %c]
+                                incr daddr
+                            }
+                        }
+                        if {$d eq ".asciiz"} { _dbyte data_image $daddr 0; incr daddr }
+                    }
+                }
+            }
+            continue
+        }
+
+        # Only .text carries instructions.
+        if {$section ne ".text"} continue
 
         # tokenise: split on whitespace, strip trailing commas
         set parts [list]
@@ -107,7 +215,7 @@ proc parse_asm {text} {
         if {[llength $parts] == 0} continue
         lappend insns $parts
     }
-    return [list $labels $insns]
+    return [list $labels $insns $data_syms $data_image]
 }
 
 # ── instruction executor ──────────────────────────────────────────────────────
@@ -124,7 +232,7 @@ proc parse_asm {text} {
 #          "jmp:L"  → branch/jump taken; caller executes delay slot then jumps
 
 proc exec_insn {op args} {
-    upvar 1 R R  HI HI  LO LO  mh mh  mw mw
+    upvar 1 R R  HI HI  LO LO  mh mh  mw mw  dsyms dsyms  mseq mseq  mseqi mseqi
 
     switch -- $op {
         nop - sync { return "" }
@@ -185,6 +293,33 @@ proc exec_insn {op args} {
                 set sb [expr {$b >= 0x80000000 ? $b - 0x100000000 : $b}]
                 set R($n) [expr {$sa < $sb ? 1 : 0}]
             }
+        }
+        sle - sgt - sge {
+            # Signed comparison pseudo-instructions the backend emits alongside
+            # slt; without them a comparison silently leaves its destination
+            # register untouched and every guarded branch goes the wrong way.
+            set n [lindex $args 0]
+            if {$n} {
+                set a $R([lindex $args 1]);  set b $R([lindex $args 2])
+                set sa [expr {$a >= 0x80000000 ? $a - 0x100000000 : $a}]
+                set sb [expr {$b >= 0x80000000 ? $b - 0x100000000 : $b}]
+                switch -- $op {
+                    sle { set R($n) [expr {$sa <= $sb ? 1 : 0}] }
+                    sgt { set R($n) [expr {$sa >  $sb ? 1 : 0}] }
+                    sge { set R($n) [expr {$sa >= $sb ? 1 : 0}] }
+                }
+            }
+        }
+        seq {
+            set n [lindex $args 0]
+            if {$n} { set R($n) [expr {$R([lindex $args 1]) == $R([lindex $args 2]) ? 1 : 0}] }
+        }
+        sne {
+            set n [lindex $args 0]
+            if {$n} { set R($n) [expr {$R([lindex $args 1]) != $R([lindex $args 2]) ? 1 : 0}] }
+        }
+        cache {
+            # Cache maintenance has no effect on the simulator's flat memory.
         }
         sltu {
             set n [lindex $args 0]
@@ -277,10 +412,29 @@ proc exec_insn {op args} {
 
         lw {
             set n [lindex $args 0]
+            lassign [lindex $args 1] off base
+            set addr [expr {($R($base) + $off) & 0xFFFFFFFF}]
+            # A preset address given a list of values models a register the
+            # hardware changes under the program's feet: successive reads walk
+            # the list and then hold the last value. Without it a wait loop that
+            # spins on one register until it changes can never terminate.
+            if {[dict exists $mseq $addr]} {
+                set vals [dict get $mseq $addr]
+                set i [dict get $mseqi $addr]
+                if {$n} { set R($n) [lindex $vals $i] }
+                if {$i + 1 < [llength $vals]} { dict set mseqi $addr [expr {$i + 1}] }
+            } elseif {$n} {
+                set R($n) [expr {[dict exists $mw $addr] ? [dict get $mw $addr] : 0}]
+            }
+        }
+        lbu {
+            set n [lindex $args 0]
             if {$n} {
                 lassign [lindex $args 1] off base
                 set addr [expr {($R($base) + $off) & 0xFFFFFFFF}]
-                set R($n) [expr {[dict exists $mw $addr] ? [dict get $mw $addr] : 0}]
+                set w [expr {$addr & ~3}]
+                set word [expr {[dict exists $mw $w] ? [dict get $mw $w] : 0}]
+                set R($n) [expr {($word >> ((3 - ($addr & 3)) * 8)) & 0xFF}]
             }
         }
         lhu {
@@ -323,17 +477,34 @@ proc exec_insn {op args} {
             if {$v >= 0} { return "jmp:[lindex $args 1]" }
         }
 
+        la {
+            set n [lindex $args 0]
+            set sym [lindex $args 1]
+            if {$n} {
+                set R($n) [expr {[dict exists $dsyms $sym] ? [dict get $dsyms $sym] : 0}]
+            }
+        }
+
         j    { return "jmp:[lindex $args 0]" }
-        jal  { return "jmp:[lindex $args 0]" }
-        jr - jalr { return "done" }
+        jal  { return "call:[lindex $args 0]" }
+        jr {
+            # The simulator works on an instruction list rather than addresses,
+            # so $ra holds the index of the instruction after the call's delay
+            # slot. `jr $ra` returns there; $ra starts out invalid, so the
+            # outermost return ends the run. Computed jumps are not modelled.
+            set n [lindex $args 0]
+            if {$n eq "" || $R($n) == 0xFFFFFFFF} { return "done" }
+            return "ret:$R($n)"
+        }
+        jalr { return "done" }
     }
     return ""
 }
 
 # ── public run procedure ──────────────────────────────────────────────────────
 
-proc run {text {start "main"} {limit 20000000}} {
-    lassign [parse_asm $text] labels insns
+proc run {text {start "main"} {limit 20000000} {preset {}}} {
+    lassign [parse_asm $text] labels insns dsyms dimage
     set n_insns [llength $insns]
 
     if {![dict exists $labels $start]} {
@@ -346,9 +517,27 @@ proc run {text {start "main"} {limit 20000000}} {
                  16 0 17 0 18 0 19 0 20 0 21 0 22 0 23 0
                  24 0 25 0 26 0 27 0 28 0 29 0 30 0 31 0}
     set R(29) [expr {0x80380000}]   ;# $sp — RDRAM top
+    set R(31) 0xFFFFFFFF            ;# $ra — invalid, so the outermost jr halts
     set HI 0;  set LO 0
     set mh [dict create]   ;# sh stores
-    set mw [dict create]   ;# sw stores
+    # Seed memory with the data sections so a static's initialiser is readable,
+    # then with any caller-supplied values. `preset` is how a test models MMIO
+    # the program polls: without it a status register reads 0 forever and a
+    # hardware wait loop never exits.
+    set mw $dimage
+    set mseq  [dict create]
+    set mseqi [dict create]
+    dict for {a v} $preset {
+        set addr [expr {$a}]
+        if {[llength $v] > 1} {
+            set vals {}
+            foreach e $v { lappend vals [expr {$e}] }
+            dict set mseq $addr $vals
+            dict set mseqi $addr 0
+        } else {
+            dict set mw $addr [expr {$v}]
+        }
+    }
 
     set pc    [dict get $labels $start]
     set count 0
@@ -360,15 +549,24 @@ proc run {text {start "main"} {limit 20000000}} {
 
         if {$result eq "done"} break
 
-        if {[string match "jmp:*" $result]} {
+        if {[string match "jmp:*" $result] || [string match "call:*" $result]} {
             # MIPS branch delay slot: instruction at PC+1 always executes
             set ds [lindex $insns [expr {$pc + 1}]]
             if {[llength $ds]} { incr count; exec_insn {*}$ds }
-            set lbl [string range $result 4 end]
+            if {[string match "call:*" $result]} {
+                set R(31) [expr {$pc + 2}]
+                set lbl [string range $result 5 end]
+            } else {
+                set lbl [string range $result 4 end]
+            }
             if {![dict exists $labels $lbl]} break   ;# external symbol — halt
             set new_pc [dict get $labels $lbl]
             if {$new_pc == $pc} break                ;# self-loop = infinite loop; halt
             set pc $new_pc
+        } elseif {[string match "ret:*" $result]} {
+            set ds [lindex $insns [expr {$pc + 1}]]
+            if {[llength $ds]} { incr count; exec_insn {*}$ds }
+            set pc [string range $result 4 end]
         } else {
             incr pc
         }

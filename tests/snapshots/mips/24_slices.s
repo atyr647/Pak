@@ -24,6 +24,24 @@
 	.extern rdpq_sync_tile
 	.extern rdpq_sync_load
 	.extern rdpq_set_scissor
+	.extern rdpq_set_color_image
+	.extern rdpq_set_z_image
+	.extern rdpq_set_other_modes_raw
+	.extern rdpq_set_combiner_raw
+	.extern rdpq_set_fill_color
+	.extern rdpq_set_blend_color
+	.extern rdpq_set_fog_color
+	.extern rdpq_set_env_color
+	.extern rdpq_set_prim_color
+	.extern rdpq_set_texture_image
+	.extern rdpq_set_tile
+	.extern rdpq_set_tile_size
+	.extern rdpq_load_tile
+	.extern rdpq_load_block
+	.extern rdpq_load_tlut
+	.extern rdpq_texture_rectangle
+	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_triangle
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -150,47 +168,47 @@
 	.globl sum
 	.type sum, @function
 sum:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
     li $t9, 0
-    sw $t9, 104($sp)
-    lw $t9, 96($sp)
-    sw $t9, 108($sp)
+    sw $t9, 144($sp)
+    lw $t9, 136($sp)
+    sw $t9, 148($sp)
     lw $t8, 4($t9)
-    sw $t8, 112($sp)
-    sw $zero, 116($sp)
+    sw $t8, 152($sp)
+    sw $zero, 156($sp)
 .Lfeach_h_1:
-    lw $t9, 116($sp)
-    lw $t8, 112($sp)
+    lw $t9, 156($sp)
+    lw $t8, 152($sp)
     bge $t9, $t8, .Lfeach_x_3
     nop
-    lw $t7, 108($sp)
+    lw $t7, 148($sp)
     sll $t6, $t9, 2
     addu $t7, $t7, $t6
     lw $t6, 0($t7)
-    sw $t6, 120($sp)
-    lw $t6, 120($sp)
-    lw $t5, 104($sp)
+    sw $t6, 160($sp)
+    lw $t6, 160($sp)
+    lw $t5, 144($sp)
     addu $t6, $t5, $t6
-    sw $t6, 104($sp)
+    sw $t6, 144($sp)
     move $t7, $t6
 .Lfeach_i_2:
-    lw $t9, 116($sp)
+    lw $t9, 156($sp)
     addiu $t9, $t9, 1
-    sw $t9, 116($sp)
+    sw $t9, 156($sp)
     j .Lfeach_h_1
     nop
 .Lfeach_x_3:
-    lw $v0, 104($sp)
+    lw $v0, 144($sp)
     j .Lsum_ret_0
     nop
 .Lsum_ret_0:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size sum, . - sum
@@ -199,55 +217,55 @@ sum:
 	.globl find_max
 	.type find_max, @function
 find_max:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    lw $t8, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t8, 136($sp)
     li $t7, 0
     sll $t7, $t7, 2
     addu $t8, $t8, $t7
     lw $t9, 0($t8)
-    sw $t9, 104($sp)
-    lw $t9, 96($sp)
-    sw $t9, 108($sp)
+    sw $t9, 144($sp)
+    lw $t9, 136($sp)
+    sw $t9, 148($sp)
     lw $t8, 4($t9)
-    sw $t8, 112($sp)
-    sw $zero, 116($sp)
+    sw $t8, 152($sp)
+    sw $zero, 156($sp)
 .Lfeach_h_5:
-    lw $t9, 116($sp)
-    lw $t8, 112($sp)
+    lw $t9, 156($sp)
+    lw $t8, 152($sp)
     bge $t9, $t8, .Lfeach_x_7
     nop
-    lw $t7, 108($sp)
+    lw $t7, 148($sp)
     sll $t6, $t9, 2
     addu $t7, $t7, $t6
     lw $t6, 0($t7)
-    sw $t6, 120($sp)
-    lw $t6, 120($sp)
-    lw $t5, 104($sp)
+    sw $t6, 160($sp)
+    lw $t6, 160($sp)
+    lw $t5, 144($sp)
     sgt $t7, $t6, $t5
     beqz $t7, .Lif_end_8
     nop
-    lw $t6, 120($sp)
-    sw $t6, 104($sp)
+    lw $t6, 160($sp)
+    sw $t6, 144($sp)
     move $t7, $t6
 .Lif_end_8:
 .Lfeach_i_6:
-    lw $t9, 116($sp)
+    lw $t9, 156($sp)
     addiu $t9, $t9, 1
-    sw $t9, 116($sp)
+    sw $t9, 156($sp)
     j .Lfeach_h_5
     nop
 .Lfeach_x_7:
-    lw $v0, 104($sp)
+    lw $v0, 144($sp)
     j .Lfind_max_ret_4
     nop
 .Lfind_max_ret_4:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size find_max, . - find_max
@@ -256,43 +274,43 @@ find_max:
 	.globl double_all
 	.type double_all, @function
 double_all:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
     li $t9, 0
-    sw $t9, 104($sp)
-    lw $t7, 96($sp)
+    sw $t9, 144($sp)
+    lw $t7, 136($sp)
     lw $t8, 4($t7)
 .Lfor_h_10:
-    lw $t7, 104($sp)
+    lw $t7, 144($sp)
     bge $t7, $t8, .Lfor_x_12
     nop
-    lw $t3, 96($sp)
-    lw $t2, 104($sp)
+    lw $t3, 136($sp)
+    lw $t2, 144($sp)
     sll $t2, $t2, 2
     addu $t3, $t3, $t2
     lw $t4, 0($t3)
     li $t3, 2
     mul $t5, $t4, $t3
-    lw $t4, 96($sp)
-    lw $t3, 104($sp)
+    lw $t4, 136($sp)
+    lw $t3, 144($sp)
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     sw $t5, 0($t4)
     move $t6, $t5
 .Lfor_i_11:
-    lw $t7, 104($sp)
+    lw $t7, 144($sp)
     addiu $t7, $t7, 1
-    sw $t7, 104($sp)
+    sw $t7, 144($sp)
     j .Lfor_h_10
     nop
 .Lfor_x_12:
 .Ldouble_all_ret_9:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size double_all, . - double_all
@@ -301,48 +319,48 @@ double_all:
 	.globl sum_x
 	.type sum_x, @function
 sum_x:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
     li $t9, 0
-    sw $t9, 104($sp)
-    lw $t9, 96($sp)
-    sw $t9, 108($sp)
+    sw $t9, 144($sp)
+    lw $t9, 136($sp)
+    sw $t9, 148($sp)
     lw $t8, 4($t9)
-    sw $t8, 112($sp)
-    sw $zero, 116($sp)
+    sw $t8, 152($sp)
+    sw $zero, 156($sp)
 .Lfeach_h_14:
-    lw $t9, 116($sp)
-    lw $t8, 112($sp)
+    lw $t9, 156($sp)
+    lw $t8, 152($sp)
     bge $t9, $t8, .Lfeach_x_16
     nop
-    lw $t7, 108($sp)
+    lw $t7, 148($sp)
     sll $t6, $t9, 2
     addu $t7, $t7, $t6
     lw $t6, 0($t7)
-    sw $t6, 120($sp)
-    lw $t5, 120($sp)
+    sw $t6, 160($sp)
+    lw $t5, 160($sp)
     lw $t6, 0($t5)
-    lw $t5, 104($sp)
+    lw $t5, 144($sp)
     addu $t6, $t5, $t6
-    sw $t6, 104($sp)
+    sw $t6, 144($sp)
     move $t7, $t6
 .Lfeach_i_15:
-    lw $t9, 116($sp)
+    lw $t9, 156($sp)
     addiu $t9, $t9, 1
-    sw $t9, 116($sp)
+    sw $t9, 156($sp)
     j .Lfeach_h_14
     nop
 .Lfeach_x_16:
-    lw $v0, 104($sp)
+    lw $v0, 144($sp)
     j .Lsum_x_ret_13
     nop
 .Lsum_x_ret_13:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size sum_x, . - sum_x
@@ -351,164 +369,178 @@ sum_x:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
     move $t9, $zero
-    sw $t9, 96($sp)
+    sw $t9, 136($sp)
     li $t8, 10
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 20
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 1
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 30
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 2
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 40
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 3
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 50
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 4
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 60
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 5
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 70
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 6
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 80
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 7
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t7, 136($sp)
+    sw $t7, 176($sp)
     li $t6, 8
     li $t5, 0
     subu $t6, $t6, $t5
-    sw $t6, 140($sp)
-    addiu $t9, $sp, 136
-    addiu $t8, $sp, 128
+    sw $t6, 180($sp)
+    addiu $t9, $sp, 176
+    addiu $t8, $sp, 168
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t7, 128($sp)
+    lw $t7, 168($sp)
     lw $t8, 4($t7)
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t7, 152($sp)
+    sw $t7, 192($sp)
     li $t6, 4
     li $t5, 0
     subu $t6, $t6, $t5
-    sw $t6, 156($sp)
-    addiu $t9, $sp, 152
-    addiu $t8, $sp, 144
+    sw $t6, 196($sp)
+    addiu $t9, $sp, 192
+    addiu $t8, $sp, 184
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t7, 144($sp)
+    lw $t7, 184($sp)
     lw $t8, 4($t7)
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $a0, 144($sp)
+    lw $a0, 184($sp)
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal sum
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 4
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t7, 168($sp)
+    sw $t7, 208($sp)
     li $t6, 8
     li $t5, 4
     subu $t6, $t6, $t5
-    sw $t6, 172($sp)
-    addiu $t9, $sp, 168
-    addiu $t8, $sp, 160
+    sw $t6, 212($sp)
+    addiu $t9, $sp, 208
+    addiu $t8, $sp, 200
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $a0, 160($sp)
+    lw $a0, 200($sp)
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal sum
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $a0, 128($sp)
+    lw $a0, 168($sp)
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal find_max
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t7, 184($sp)
+    sw $t7, 224($sp)
     li $t6, 4
     li $t5, 0
     subu $t6, $t6, $t5
-    sw $t6, 188($sp)
-    addiu $t9, $sp, 184
-    addiu $t8, $sp, 176
+    sw $t6, 228($sp)
+    addiu $t9, $sp, 224
+    addiu $t8, $sp, 216
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $a0, 176($sp)
+    lw $a0, 216($sp)
+    sw $t9, 96($sp)
     jal double_all
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
@@ -516,118 +548,126 @@ main:
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $a0, 144($sp)
+    lw $a0, 184($sp)
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal sum
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
     move $t9, $zero
-    sw $t9, 192($sp)
-    sw $zero, 224($sp)
-    sw $zero, 228($sp)
+    sw $t9, 232($sp)
+    sw $zero, 264($sp)
+    sw $zero, 268($sp)
     li $t7, 1
-    sw $t7, 224($sp)
+    sw $t7, 264($sp)
     li $t7, 10
-    sw $t7, 228($sp)
-    addiu $t8, $sp, 224
-    lw $t7, 192($sp)
+    sw $t7, 268($sp)
+    addiu $t8, $sp, 264
+    lw $t7, 232($sp)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
-    sw $zero, 232($sp)
-    sw $zero, 236($sp)
+    sw $zero, 272($sp)
+    sw $zero, 276($sp)
     li $t7, 2
-    sw $t7, 232($sp)
+    sw $t7, 272($sp)
     li $t7, 20
-    sw $t7, 236($sp)
-    addiu $t8, $sp, 232
-    lw $t7, 192($sp)
+    sw $t7, 276($sp)
+    addiu $t8, $sp, 272
+    lw $t7, 232($sp)
     li $t6, 1
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
-    sw $zero, 240($sp)
-    sw $zero, 244($sp)
+    sw $zero, 280($sp)
+    sw $zero, 284($sp)
     li $t7, 3
-    sw $t7, 240($sp)
+    sw $t7, 280($sp)
     li $t7, 30
-    sw $t7, 244($sp)
-    addiu $t8, $sp, 240
-    lw $t7, 192($sp)
+    sw $t7, 284($sp)
+    addiu $t8, $sp, 280
+    lw $t7, 232($sp)
     li $t6, 2
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
-    sw $zero, 248($sp)
-    sw $zero, 252($sp)
+    sw $zero, 288($sp)
+    sw $zero, 292($sp)
     li $t7, 4
-    sw $t7, 248($sp)
+    sw $t7, 288($sp)
     li $t7, 40
-    sw $t7, 252($sp)
-    addiu $t8, $sp, 248
-    lw $t7, 192($sp)
+    sw $t7, 292($sp)
+    addiu $t8, $sp, 288
+    lw $t7, 232($sp)
     li $t6, 3
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 192($sp)
+    lw $t7, 232($sp)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t7, 264($sp)
+    sw $t7, 304($sp)
     li $t6, 4
     li $t5, 0
     subu $t6, $t6, $t5
-    sw $t6, 268($sp)
-    addiu $t9, $sp, 264
-    addiu $t8, $sp, 256
+    sw $t6, 308($sp)
+    addiu $t9, $sp, 304
+    addiu $t8, $sp, 296
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t7, 256($sp)
+    lw $t7, 296($sp)
     lw $t8, 4($t7)
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $a0, 256($sp)
+    lw $a0, 296($sp)
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal sum_x
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 192($sp)
+    lw $t7, 232($sp)
     li $t6, 1
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t7, 280($sp)
+    sw $t7, 320($sp)
     li $t6, 3
     li $t5, 1
     subu $t6, $t6, $t5
-    sw $t6, 284($sp)
-    addiu $t9, $sp, 280
-    addiu $t8, $sp, 272
+    sw $t6, 324($sp)
+    addiu $t9, $sp, 320
+    addiu $t8, $sp, 312
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t7, 272($sp)
+    lw $t7, 312($sp)
     lw $t8, 4($t7)
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_17:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size main, . - main

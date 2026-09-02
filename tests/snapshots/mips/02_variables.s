@@ -24,6 +24,24 @@
 	.extern rdpq_sync_tile
 	.extern rdpq_sync_load
 	.extern rdpq_set_scissor
+	.extern rdpq_set_color_image
+	.extern rdpq_set_z_image
+	.extern rdpq_set_other_modes_raw
+	.extern rdpq_set_combiner_raw
+	.extern rdpq_set_fill_color
+	.extern rdpq_set_blend_color
+	.extern rdpq_set_fog_color
+	.extern rdpq_set_env_color
+	.extern rdpq_set_prim_color
+	.extern rdpq_set_texture_image
+	.extern rdpq_set_tile
+	.extern rdpq_set_tile_size
+	.extern rdpq_load_tile
+	.extern rdpq_load_block
+	.extern rdpq_load_tlut
+	.extern rdpq_texture_rectangle
+	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_triangle
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -150,57 +168,57 @@
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
     li $t9, 10
-    sw $t9, 96($sp)
+    sw $t9, 136($sp)
     la $t8, .Lf320
     lwc1 $f12, 0($t8)
-    swc1 $f12, 100($sp)
+    swc1 $f12, 140($sp)
     li $t9, 1
-    sb $t9, 104($sp)
+    sb $t9, 144($sp)
     la $t9, .Lstr1
-    sw $t9, 108($sp)
-    lw $t7, 96($sp)
+    sw $t9, 148($sp)
+    lw $t7, 136($sp)
     li $t6, 1
     addu $t8, $t7, $t6
-    sw $t8, 96($sp)
+    sw $t8, 136($sp)
     move $t9, $t8
-    lwc1 $f12, 100($sp)
+    lwc1 $f12, 140($sp)
     mov.s $f14, $f12
     la $t5, .Lf322
     lwc1 $f12, 0($t5)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 100($sp)
+    swc1 $f12, 140($sp)
     move $t9, $t8
     li $t8, 5
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     addu $t8, $t7, $t8
-    sw $t8, 96($sp)
+    sw $t8, 136($sp)
     move $t9, $t8
     li $t8, 2
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     subu $t8, $t7, $t8
-    sw $t8, 96($sp)
+    sw $t8, 136($sp)
     move $t9, $t8
     li $t8, 3
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     mul $t8, $t7, $t8
-    sw $t8, 96($sp)
+    sw $t8, 136($sp)
     move $t9, $t8
     li $t8, 2
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     div $t7, $t8
     mflo $t8
-    sw $t8, 96($sp)
+    sw $t8, 136($sp)
     move $t9, $t8
     li $t9, 0
-    sw $t9, 112($sp)
+    sw $t9, 152($sp)
     la $t8, .Lf323
     lwc1 $f12, 0($t8)
-    sw $t9, 116($sp)
+    sw $t9, 156($sp)
     li $t8, 1
     la $t7, frame_count
     lw $t7, 0($t7)
@@ -209,33 +227,33 @@ main:
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 100
-    sw $t8, 96($sp)
+    sw $t8, 136($sp)
     move $t9, $t8
     la $t8, SPEED
     lw $t8, 0($t8)
-    swc1 $f12, 100($sp)
+    swc1 $f12, 140($sp)
     move $t9, $t8
     li $t8, 0
-    sb $t8, 104($sp)
+    sb $t8, 144($sp)
     move $t9, $t8
     la $t8, frame_count
     lw $t8, 0($t8)
-    sw $t8, 112($sp)
+    sw $t8, 152($sp)
     move $t9, $t8
-    lw $t7, 116($sp)
+    lw $t7, 156($sp)
     mov.s $f14, $f12
     la $t5, .Lf324
     lwc1 $f12, 0($t5)
     add.s $f12, $f14, $f12
-    sw $t8, 116($sp)
+    sw $t8, 156($sp)
     move $t9, $t8
     la $t8, .Lstr5
-    sw $t8, 108($sp)
+    sw $t8, 148($sp)
     move $t9, $t8
 .Lmain_ret_0:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size main, . - main

@@ -144,7 +144,7 @@ fn draw_glyph(gi: i32, x: i32, y: i32, scale: i32, col: u32) {
     for row in 0..5 {
         let bits: i32 = (packed >> (row * 3)) & 7
         for cx in 0..3 {
-            if (bits >> (2 - cx)) & 1 == 1 {
+            if ((bits >> (2 - cx)) & 1) == 1 {
                 let px: i32 = x + cx * scale
                 let py: i32 = y + row * scale
                 rdpq.fill_rectangle(px, py, px + scale, py + scale)

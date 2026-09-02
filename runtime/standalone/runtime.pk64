@@ -41,8 +41,6 @@ const NUM_BUFS: i32 = 3
 
 static g_draw: i32       = 1
 static g_shown: i32      = 0
-static g_fill_color: u16 = 0xFFFF
-static g_current_fb: u32 = 0
 
 -- ── MMIO helpers ───────────────────────────────────────────────────────────
 fn vi_write(reg: u32, val: u32) {
@@ -210,7 +208,7 @@ fn si_wait() {
     loop {
         let p: *volatile u32 = SI_STATUS as *volatile u32
         let v: u32 = *p
-        if v & 3 == 0 { break }
+        if (v & 3) == 0 { break }
     }
 }
 
@@ -355,84 +353,390 @@ fn joypad_get_status(port: i32) -> *ControllerState {
     return &g_cs_0 as *ControllerState
 }
 
--- ── rdpq software renderer ──────────────────────────────────────────────────
+-- ── RDP (Display Processor) ─────────────────────────────────────────────────
+-- Commands are built into a display list in uncached RDRAM and handed to the
+-- DP by writing DPC_START/DPC_END. The CPU never touches pixels: fills, copies,
+-- textured rectangles and triangles are all done by the rasterizer.
+--
+-- The list lives in KSEG1 so a CPU write lands in RDRAM immediately and the DP
+-- reads exactly what was written, with no cache writeback step to get wrong.
+
+const DPC_START:   u32 = 0xA4100000
+const DPC_END:     u32 = 0xA4100004
+const DPC_CURRENT: u32 = 0xA4100008
+const DPC_STATUS:  u32 = 0xA410000C
+
+-- DPC_STATUS write bits (clear/set pairs).
+const DPC_CLR_XBUS:  u32 = 0x0001
+const DPC_CLR_FREEZE: u32 = 0x0004
+const DPC_CLR_FLUSH: u32 = 0x0010
+
+-- DPC_STATUS read bits.
+const DPC_PIPE_BUSY: u32 = 0x0020
+const DPC_CMD_BUSY:  u32 = 0x0040
+const DPC_DMA_BUSY:  u32 = 0x0100
+
+-- Display list: 8 KiB (1024 commands) of uncached RDRAM just past FB2.
+const DL_BASE:  u32 = 0xA0271000
+const DL_PHYS:  u32 = 0x00271000
+const DL_BYTES: u32 = 8192
+
+static g_dl_off: u32 = 0        -- write cursor, bytes from DL_BASE
+
+-- RDP command opcodes.
+const RDP_TRI_FILL:        u32 = 0x08
+const RDP_TEXTURE_RECT:    u32 = 0x24
+const RDP_SYNC_LOAD:       u32 = 0x26
+const RDP_SYNC_PIPE:       u32 = 0x27
+const RDP_SYNC_TILE:       u32 = 0x28
+const RDP_SYNC_FULL:       u32 = 0x29
+const RDP_SET_SCISSOR:     u32 = 0x2D
+const RDP_SET_OTHER_MODES: u32 = 0x2F
+const RDP_LOAD_TLUT:       u32 = 0x30
+const RDP_SET_TILE_SIZE:   u32 = 0x32
+const RDP_LOAD_BLOCK:      u32 = 0x33
+const RDP_LOAD_TILE:       u32 = 0x34
+const RDP_SET_TILE:        u32 = 0x35
+const RDP_FILL_RECT:       u32 = 0x36
+const RDP_SET_FILL_COLOR:  u32 = 0x37
+const RDP_SET_FOG_COLOR:   u32 = 0x38
+const RDP_SET_BLEND_COLOR: u32 = 0x39
+const RDP_SET_PRIM_COLOR:  u32 = 0x3A
+const RDP_SET_ENV_COLOR:   u32 = 0x3B
+const RDP_SET_COMBINE:     u32 = 0x3C
+const RDP_SET_TEX_IMAGE:   u32 = 0x3D
+const RDP_SET_Z_IMAGE:     u32 = 0x3E
+const RDP_SET_COLOR_IMAGE: u32 = 0x3F
+
+-- Cycle types, as they sit in SET_OTHER_MODES bits 53:52 (w0 bits 21:20).
+const CYCLE_1CYCLE: u32 = 0
+const CYCLE_2CYCLE: u32 = 1
+const CYCLE_COPY:   u32 = 2
+const CYCLE_FILL:   u32 = 3
+
+static g_current_fb: u32 = 0
+static g_fill_color: u16 = 0xFFFF
+
+-- ── display list plumbing ──────────────────────────────────────────────────
+
+fn dl_reset() {
+    g_dl_off = 0
+}
+
+-- Hand the pending commands to the DP and wait for it to drain. The DP reads
+-- physical addresses, so the KSEG1 alias is masked off.
+fn dl_submit() {
+    if g_dl_off == 0 { return }
+    let len: u32 = g_dl_off
+    g_dl_off = 0
+
+    -- Take the DP out of XBUS mode (it reads RDRAM, not RSP DMEM) and make
+    -- sure it is neither frozen nor flushing before pointing it at the list.
+    vi_write(DPC_STATUS, DPC_CLR_XBUS | DPC_CLR_FREEZE | DPC_CLR_FLUSH)
+    vi_write(DPC_START, DL_PHYS)
+    vi_write(DPC_END, DL_PHYS + len)
+
+    loop {
+        let st: u32 = vi_read(DPC_STATUS)
+        if (st & (DPC_PIPE_BUSY | DPC_CMD_BUSY | DPC_DMA_BUSY)) == 0 { break }
+    }
+}
+
+-- Append one 64-bit command. A full buffer is submitted first, which is safe
+-- because every command is self-contained once the DP has seen it.
+fn dl_cmd(w0: u32, w1: u32) {
+    if g_dl_off + 8 > DL_BYTES { dl_submit() }
+    let p0: *volatile u32 = (DL_BASE + g_dl_off) as *volatile u32
+    *p0 = w0
+    let p1: *volatile u32 = (DL_BASE + g_dl_off + 4) as *volatile u32
+    *p1 = w1
+    g_dl_off = g_dl_off + 8
+}
+
+fn dl_word(w: u32) {
+    if g_dl_off + 4 > DL_BYTES { dl_submit() }
+    let p: *volatile u32 = (DL_BASE + g_dl_off) as *volatile u32
+    *p = w
+    g_dl_off = g_dl_off + 4
+}
+
+-- Screen coordinate -> the RDP's 10.2 fixed point, clamped to the 12-bit field.
+fn to_fx102(v: i32) -> u32 {
+    let mut x: i32 = v
+    if x < 0 { x = 0 }
+    if x > 1023 { x = 1023 }
+    return (x * 4) as u32
+}
+
+-- ── surface + mode state ───────────────────────────────────────────────────
+
 fn rdpq_init() {
+    dl_reset()
+    vi_write(DPC_STATUS, DPC_CLR_XBUS | DPC_CLR_FREEZE | DPC_CLR_FLUSH)
 }
 
 fn rdpq_close() {
+    dl_submit()
+}
+
+-- SET_COLOR_IMAGE: format (RGBA=0), size (16bpp=2), width-1, physical address.
+fn rdpq_set_color_image(addr: u32, fmt: u32, size: u32, width: i32) {
+    let wm1: u32 = (width - 1) as u32 & 0x3FF
+    let w0: u32 = (RDP_SET_COLOR_IMAGE << 24) | (fmt << 21) | (size << 19) | wm1
+    dl_cmd(w0, addr & 0x00FFFFFF)
+}
+
+fn rdpq_set_z_image(addr: u32) {
+    dl_cmd(RDP_SET_Z_IMAGE << 24, addr & 0x00FFFFFF)
+}
+
+fn rdpq_set_scissor(x0: i32, y0: i32, x1: i32, y1: i32) {
+    let w0: u32 = (RDP_SET_SCISSOR << 24) | (to_fx102(x0) << 12) | to_fx102(y0)
+    let w1: u32 = (to_fx102(x1) << 12) | to_fx102(y1)
+    dl_cmd(w0, w1)
+}
+
+fn rdpq_set_other_modes_raw(hi: u32, lo: u32) {
+    dl_cmd((RDP_SET_OTHER_MODES << 24) | (hi & 0x00FFFFFF), lo)
+}
+
+fn rdpq_set_combiner_raw(hi: u32, lo: u32) {
+    dl_cmd((RDP_SET_COMBINE << 24) | (hi & 0x00FFFFFF), lo)
 }
 
 fn rdpq_attach(fb: u32) {
     g_current_fb = fb
+    rdpq_set_color_image(fb, 0, 2, SCREEN_W)
+    rdpq_set_scissor(0, 0, SCREEN_W, SCREEN_H)
 }
 
 fn rdpq_attach_clear(fb: u32, color: u32) {
-    g_current_fb = fb
-    fb_fill(fb, color32_to_16(color))
+    rdpq_attach(fb)
+    rdpq_set_mode_fill(color)
+    rdpq_fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
 }
 
 fn rdpq_detach() {
+    dl_cmd(RDP_SYNC_FULL << 24, 0)
+    dl_submit()
     g_current_fb = 0
 }
 
 fn rdpq_detach_show() {
     let fb: u32 = g_current_fb
-    g_current_fb = 0
+    rdpq_detach()
     if fb != 0 {
         vi_show(fb)
     }
 }
 
+-- ── render modes ───────────────────────────────────────────────────────────
+
+-- FILL cycle: the rasterizer writes the fill colour straight out, four bytes
+-- (two 16bpp pixels) per cycle. This is what makes a clear cost microseconds
+-- instead of a CPU loop over 76 800 uncached halfword stores.
 fn rdpq_set_mode_fill(color: u32) {
-    g_fill_color = color32_to_16(color)
+    dl_cmd(RDP_SYNC_PIPE << 24, 0)
+    rdpq_set_other_modes_raw(CYCLE_FILL << 20, 0)
+    rdpq_set_fill_color(color)
 }
 
-fn rdpq_fill_rectangle(x0: i32, y0: i32, x1: i32, y1: i32) {
-    if g_current_fb == 0 { return }
+-- COPY cycle: four texels per cycle, no filtering or blending. The fast path
+-- for opaque sprite blits.
+fn rdpq_set_mode_copy() {
+    dl_cmd(RDP_SYNC_PIPE << 24, 0)
+    -- alpha_compare_en (bit 0) so fully transparent texels are dropped.
+    rdpq_set_other_modes_raw(CYCLE_COPY << 20, 0x00000001)
+}
 
+-- 1-cycle mode with the combiner passing the texel straight through and the
+-- blender doing source-alpha over the framebuffer.
+--
+-- Blender: (P * A + M * B) / (A + B) with P = combined colour (0),
+-- A = combined alpha (0), M = memory colour (1), B = 1-A (0). The pair of
+-- fields is set for both blender cycles because 1-cycle mode still reads the
+-- second cycle's mux on some paths.
+fn rdpq_set_mode_standard() {
+    dl_cmd(RDP_SYNC_PIPE << 24, 0)
+    let blend: u32 = (1 << 22) | (1 << 20)
+    -- force_blend (14) | alpha_cvg_select (13) | image_read_en (6)
+    rdpq_set_other_modes_raw(CYCLE_1CYCLE << 20, blend | 0x00006040)
+    -- Combiner (A-B)*C+D with A=B=C=0 and D=TEX0, for colour and alpha, in
+    -- both cycles: sub_A=0, sub_B=0, mul=0, add=TEX0.
+    rdpq_set_combiner_raw(0x00887F10, 0x88FCF279)
+}
+
+-- ── colour registers ───────────────────────────────────────────────────────
+
+fn rdpq_set_fill_color(color: u32) {
+    let px: u32 = color32_to_16(color) as u32
+    g_fill_color = px as u16
+    -- In 16bpp fill mode the 32-bit register supplies two adjacent pixels.
+    dl_cmd(RDP_SET_FILL_COLOR << 24, (px << 16) | px)
+}
+
+fn rdpq_set_blend_color(color: u32) {
+    dl_cmd(RDP_SET_BLEND_COLOR << 24, color)
+}
+
+fn rdpq_set_fog_color(color: u32) {
+    dl_cmd(RDP_SET_FOG_COLOR << 24, color)
+}
+
+fn rdpq_set_env_color(color: u32) {
+    dl_cmd(RDP_SET_ENV_COLOR << 24, color)
+}
+
+fn rdpq_set_prim_color(color: u32) {
+    dl_cmd(RDP_SET_PRIM_COLOR << 24, color)
+}
+
+-- ── primitives ─────────────────────────────────────────────────────────────
+
+-- FILL_RECTANGLE takes an inclusive rectangle; the API bounds are exclusive,
+-- so the lower-right corner is pulled in by one pixel.
+fn rdpq_fill_rectangle(x0: i32, y0: i32, x1: i32, y1: i32) {
+    if x1 <= x0 { return }
+    if y1 <= y0 { return }
+    let w0: u32 = (RDP_FILL_RECT << 24) | (to_fx102(x1 - 1) << 12) | to_fx102(y1 - 1)
+    let w1: u32 = (to_fx102(x0) << 12) | to_fx102(y0)
+    dl_cmd(w0, w1)
+}
+
+-- ── texturing ──────────────────────────────────────────────────────────────
+
+fn rdpq_set_texture_image(addr: u32, fmt: u32, size: u32, width: i32) {
+    let wm1: u32 = (width - 1) as u32 & 0x3FF
+    let w0: u32 = (RDP_SET_TEX_IMAGE << 24) | (fmt << 21) | (size << 19) | wm1
+    dl_cmd(w0, addr & 0x00FFFFFF)
+}
+
+-- SET_TILE describes one of the eight tile descriptors: where in TMEM the
+-- texels live, how wide a line is, and how the S/T axes wrap.
+fn rdpq_set_tile(tile: u32, fmt: u32, size: u32, line: u32, tmem_addr: u32, palette: u32) {
+    let lt: u32 = ((line & 0x1FF) << 9) | (tmem_addr & 0x1FF)
+    let w0: u32 = (RDP_SET_TILE << 24) | (fmt << 21) | (size << 19) | lt
+    let w1: u32 = ((tile & 7) << 24) | ((palette & 0xF) << 20)
+    dl_cmd(w0, w1)
+}
+
+fn rdpq_set_tile_size(tile: u32, s0: i32, t0: i32, s1: i32, t1: i32) {
+    let w0: u32 = (RDP_SET_TILE_SIZE << 24) | (to_fx102(s0) << 12) | to_fx102(t0)
+    let w1: u32 = ((tile & 7) << 24) | (to_fx102(s1 - 1) << 12) | to_fx102(t1 - 1)
+    dl_cmd(w0, w1)
+}
+
+fn rdpq_load_tile(tile: u32, s0: i32, t0: i32, s1: i32, t1: i32) {
+    let w0: u32 = (RDP_LOAD_TILE << 24) | (to_fx102(s0) << 12) | to_fx102(t0)
+    let w1: u32 = ((tile & 7) << 24) | (to_fx102(s1 - 1) << 12) | to_fx102(t1 - 1)
+    dl_cmd(w0, w1)
+}
+
+fn rdpq_load_block(tile: u32, s0: u32, t0: u32, texels: u32, dxt: u32) {
+    let w0: u32 = (RDP_LOAD_BLOCK << 24) | ((s0 & 0xFFF) << 12) | (t0 & 0xFFF)
+    let w1: u32 = ((tile & 7) << 24) | (((texels - 1) & 0xFFF) << 12) | (dxt & 0xFFF)
+    dl_cmd(w0, w1)
+}
+
+fn rdpq_load_tlut(tile: u32, first: u32, count: u32) {
+    let w0: u32 = (RDP_LOAD_TLUT << 24) | ((first * 4) << 12)
+    let w1: u32 = ((tile & 7) << 24) | (((first + count - 1) * 4) << 12)
+    dl_cmd(w0, w1)
+}
+
+-- TEXTURE_RECTANGLE is four words: the rectangle, then the texture coordinate
+-- at its top-left plus the per-pixel S and T steps, both s10.5.
+fn rdpq_texture_rectangle_scaled(tile: u32, x0: i32, y0: i32, x1: i32, y1: i32,
+                                 s: i32, t: i32, dsdx: i32, dtdy: i32) {
+    if x1 <= x0 { return }
+    if y1 <= y0 { return }
+    let w0: u32 = (RDP_TEXTURE_RECT << 24) | (to_fx102(x1 - 1) << 12) | to_fx102(y1 - 1)
+    let w1: u32 = ((tile & 7) << 24) | (to_fx102(x0) << 12) | to_fx102(y0)
+    dl_cmd(w0, w1)
+    let w2: u32 = (((s * 32) as u32 & 0xFFFF) << 16) | ((t * 32) as u32 & 0xFFFF)
+    let w3: u32 = ((dsdx as u32 & 0xFFFF) << 16) | (dtdy as u32 & 0xFFFF)
+    dl_cmd(w2, w3)
+}
+
+-- 1:1 blit: one texel per pixel. In COPY cycle the S step is four texels per
+-- cycle, which the RDP expects as 4<<10 rather than 1<<10.
+fn rdpq_texture_rectangle(tile: u32, x0: i32, y0: i32, x1: i32, y1: i32, s: i32, t: i32) {
+    rdpq_texture_rectangle_scaled(tile, x0, y0, x1, y1, s, t, 4096, 1024)
+}
+
+-- ── triangles ──────────────────────────────────────────────────────────────
+
+-- Flat (edge-only) triangle. The RDP wants the three vertices sorted by Y and
+-- described as three edges: the "major" edge spanning top to bottom, and the
+-- two "minor" edges that meet at the middle vertex.
+--
+-- X positions and slopes are s15.16; Y positions are 11.2.
+fn rdp_edge_slope(dx: i32, dy: i32) -> i32 {
+    if dy == 0 { return 0 }
+    return (dx * 65536) / dy
+}
+
+fn rdpq_triangle(x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
+    -- Sort the three vertices by Y (ya <= yb <= yc).
     let mut xa: i32 = x0
     let mut ya: i32 = y0
     let mut xb: i32 = x1
     let mut yb: i32 = y1
-    if xa < 0 { xa = 0 }
-    if ya < 0 { ya = 0 }
-    if xb > SCREEN_W { xb = SCREEN_W }
-    if yb > SCREEN_H { yb = SCREEN_H }
-    if xa >= xb { return }
-    if ya >= yb { return }
+    let mut xc: i32 = x2
+    let mut yc: i32 = y2
 
-    let base: u32 = g_current_fb
-    let px: u16 = g_fill_color
-    let mut y: i32 = ya
-    while y < yb {
-        let mut x: i32 = xa
-        while x < xb {
-            let off: i32 = (y * SCREEN_W + x) * 2
-            let p: *volatile u16 = (base + off as u32) as *volatile u16
-            *p = px
-            x = x + 1
-        }
-        y = y + 1
+    if yb < ya {
+        let tx: i32 = xa; let ty: i32 = ya
+        xa = xb; ya = yb; xb = tx; yb = ty
     }
+    if yc < ya {
+        let tx: i32 = xa; let ty: i32 = ya
+        xa = xc; ya = yc; xc = tx; yc = ty
+    }
+    if yc < yb {
+        let tx: i32 = xb; let ty: i32 = yb
+        xb = xc; yb = yc; xc = tx; yc = ty
+    }
+
+    -- Degenerate: no vertical extent, nothing to rasterize.
+    if ya == yc { return }
+
+    -- Which side the major edge falls on. Comparing the two cross-product
+    -- terms avoids forming the product's sign separately.
+    let mut lft: u32 = 0
+    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+
+    -- Major edge spans the full height; the minor edges meet at the middle.
+    let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
+    let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
+    let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
+
+    let w0: u32 = (RDP_TRI_FILL << 24) | (lft << 23) | to_fx102(yc)
+    let w1: u32 = (to_fx102(yb) << 16) | to_fx102(ya)
+    dl_cmd(w0, w1)
+    dl_cmd((xb * 65536) as u32, dxldy as u32)
+    dl_cmd((xa * 65536) as u32, dxhdy as u32)
+    dl_cmd((xa * 65536) as u32, dxmdy as u32)
 }
 
--- No-op rendering-mode stubs (match the C runtime).
-fn rdpq_set_mode_standard() {
-}
+-- ── syncs ──────────────────────────────────────────────────────────────────
 
-fn rdpq_set_mode_copy() {
-}
-
+-- SYNC_FULL is the only sync that also drains the pipe, so it submits.
 fn rdpq_sync_full() {
+    dl_cmd(RDP_SYNC_FULL << 24, 0)
+    dl_submit()
 }
 
 fn rdpq_sync_pipe() {
+    dl_cmd(RDP_SYNC_PIPE << 24, 0)
 }
 
 fn rdpq_sync_tile() {
+    dl_cmd(RDP_SYNC_TILE << 24, 0)
 }
 
 fn rdpq_sync_load() {
+    dl_cmd(RDP_SYNC_LOAD << 24, 0)
 }
 
 -- ── libc-style memory helpers (no libc in the standalone build) ─────────────

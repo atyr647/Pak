@@ -30,6 +30,24 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_sync_tile \
     rdpq_sync_load \
     rdpq_set_scissor \
+    rdpq_set_color_image \
+    rdpq_set_z_image \
+    rdpq_set_other_modes_raw \
+    rdpq_set_combiner_raw \
+    rdpq_set_fill_color \
+    rdpq_set_blend_color \
+    rdpq_set_fog_color \
+    rdpq_set_env_color \
+    rdpq_set_prim_color \
+    rdpq_set_texture_image \
+    rdpq_set_tile \
+    rdpq_set_tile_size \
+    rdpq_load_tile \
+    rdpq_load_block \
+    rdpq_load_tlut \
+    rdpq_texture_rectangle \
+    rdpq_texture_rectangle_scaled \
+    rdpq_triangle \
     sprite_load \
     rdpq_sprite_blit \
     timer_init \
@@ -175,6 +193,24 @@ set ::pak::MIPS_API [dict create \
     {rdpq sync_tile} {rdpq_sync_tile} \
     {rdpq sync_load} {rdpq_sync_load} \
     {rdpq set_scissor} {rdpq_set_scissor} \
+    {rdpq set_color_image} {rdpq_set_color_image} \
+    {rdpq set_z_image} {rdpq_set_z_image} \
+    {rdpq set_other_modes_raw} {rdpq_set_other_modes_raw} \
+    {rdpq set_combiner_raw} {rdpq_set_combiner_raw} \
+    {rdpq set_fill_color} {rdpq_set_fill_color} \
+    {rdpq set_blend_color} {rdpq_set_blend_color} \
+    {rdpq set_fog_color} {rdpq_set_fog_color} \
+    {rdpq set_env_color} {rdpq_set_env_color} \
+    {rdpq set_prim_color} {rdpq_set_prim_color} \
+    {rdpq set_texture_image} {rdpq_set_texture_image} \
+    {rdpq set_tile} {rdpq_set_tile} \
+    {rdpq set_tile_size} {rdpq_set_tile_size} \
+    {rdpq load_tile} {rdpq_load_tile} \
+    {rdpq load_block} {rdpq_load_block} \
+    {rdpq load_tlut} {rdpq_load_tlut} \
+    {rdpq texture_rectangle} {rdpq_texture_rectangle} \
+    {rdpq texture_rectangle_scaled} {rdpq_texture_rectangle_scaled} \
+    {rdpq triangle} {rdpq_triangle} \
     {sprite load} {sprite_load} \
     {sprite blit} {rdpq_sprite_blit} \
     {timer init} {timer_init} \

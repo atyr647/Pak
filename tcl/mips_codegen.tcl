@@ -33,6 +33,9 @@ namespace eval pak::reg {
 set ::pak::CALLER_SAVED_GPRS {{$t0} {$t1} {$t2} {$t3} {$t4} {$t5} {$t6} {$t7} {$t8} {$t9}}
 set ::pak::CALLEE_SAVED_GPRS {{$s0} {$s1} {$s2} {$s3} {$s4} {$s5} {$s6} {$s7}}
 set ::pak::ARG_GPRS {{$a0} {$a1} {$a2} {$a3}}
+# Stack area where live caller-saved temps are parked across a call; one slot
+# per register in CALLER_SAVED_GPRS. See MipsCodegen's frame-layout comment.
+set ::pak::CALL_SAVE_BASE 96
 
 # ── Emitter — accumulates assembly lines and their binary records ───────────────
 oo::class create pak::Emitter {
@@ -252,6 +255,8 @@ oo::class create pak::RegAlloc {
             if {$r ni $free_temps} { lappend free_temps $r }
         }
     }
+
+    method alloc_order {} { return $alloc_order }
 
     method used_callee_gprs {} {
         return [lsort -command pak::gpr_cmp $used_saved]
@@ -1068,8 +1073,10 @@ oo::class create pak::MipsCodegen {
         if {$ra ne ""} { catch {$ra destroy} }
         # Frame layout: $sp+0..15 = O32 home area; $sp+16..63 = outgoing stack args
         # (up to 12 extra args beyond the 4 register args); $sp+64..95 = 8 spill
-        # slots; $sp+96+ = local variables.  Keeping spill slots above the O32
-        # outgoing-arg area prevents marshal_args from clobbering spilled values.
+        # slots; $sp+96..135 = 10 call-save slots, one per caller-saved temp;
+        # $sp+136+ = local variables.  Keeping the spill and call-save areas
+        # above the O32 outgoing-arg area prevents marshal_args from clobbering
+        # either.
         set spill_base 64
         set ra [pak::RegAlloc new [self] $spill_base]
         set scopes {}
@@ -1078,7 +1085,7 @@ oo::class create pak::MipsCodegen {
         set loop_exit {}
         set loop_defer_depth {}
         set loop_result {}
-        set next_local [expr {$spill_base + 8 * 4}]
+        set next_local [expr {$::pak::CALL_SAVE_BASE + 10 * 4}]
         my push_scope
         # Declare param stack slots (allocate offsets, no emission yet).
         # Stores happen AFTER the prologue so that $sp-relative offsets are
@@ -1093,7 +1100,7 @@ oo::class create pak::MipsCodegen {
             if {[dict get $p_layout is_float]} { incr float_param_n }
             incr i
         }
-        set frame_size 256
+        set frame_size 320
         set prologue_start [$em len]
         my emit_prologue_placeholder $frame_size
         set prologue_end [$em len]
@@ -1137,6 +1144,54 @@ oo::class create pak::MipsCodegen {
     # Called by RegAlloc during alloc_temp / free_temp when spilling.
     method emit_spill_store {reg slot} { $em sw $reg $slot {$sp} }
     method emit_spill_load  {reg slot} { $em lw $reg $slot {$sp} }
+
+    # ── calls ─────────────────────────────────────────────────────────────────
+    # $t0-$t9 are caller-saved: a callee is free to destroy them. Any temp still
+    # holding a live value across a call therefore has to go to the stack first,
+    # or an expression like `f(a) | g(b)` loses f's result inside g.
+    #
+    # One flat save area is enough. Saves, the call and the reloads are emitted
+    # contiguously, so a nested call inside argument evaluation has already
+    # finished and released its own saves by the time the outer call is emitted.
+    method live_caller_saved {} {
+        set live {}
+        foreach r [$ra alloc_order] {
+            if {$r in $::pak::CALLER_SAVED_GPRS} { lappend live $r }
+        }
+        return $live
+    }
+
+    method emit_call_saves {} {
+        set live [my live_caller_saved]
+        set i 0
+        foreach r $live {
+            $em sw $r [expr {$::pak::CALL_SAVE_BASE + $i * 4}] {$sp}
+            incr i
+        }
+        return $live
+    }
+
+    method emit_call_restores {live} {
+        set i 0
+        foreach r $live {
+            $em lw $r [expr {$::pak::CALL_SAVE_BASE + $i * 4}] {$sp}
+            incr i
+        }
+    }
+
+    method emit_jal {target} {
+        set live [my emit_call_saves]
+        $em jal $target
+        $em nop
+        my emit_call_restores $live
+    }
+
+    method emit_jalr_reg {reg} {
+        set live [my emit_call_saves]
+        $em jalr $reg
+        $em nop
+        my emit_call_restores $live
+    }
 
     method emit_prologue_placeholder {frame_size} {
         $em addiu {$sp} {$sp} -$frame_size
@@ -2093,8 +2148,7 @@ oo::class create pak::MipsCodegen {
                     $em mul {$a0} {$a0} $cnt
                     $ra free_temp $cnt
                 }
-                $em jal __pak_alloc
-                $em nop
+                my emit_jal __pak_alloc
                 $em move $dst {$v0}
             }
             FreeExpr {
@@ -2102,8 +2156,7 @@ oo::class create pak::MipsCodegen {
                 my emit_expr [pak::nfield $expr ptr] $ptr
                 $em move {$a0} $ptr
                 $ra free_temp $ptr
-                $em jal __pak_free
-                $em nop
+                my emit_jal __pak_free
                 $em move $dst {$zero}
             }
             Assign {
@@ -2184,8 +2237,7 @@ oo::class create pak::MipsCodegen {
             incr i
         }
         foreach t $arg_regs { $ra free_temp $t }
-        $em jal snprintf
-        $em nop
+        my emit_jal snprintf
         $em la $dst $buf_name
     }
 
@@ -2374,8 +2426,7 @@ oo::class create pak::MipsCodegen {
             $em addiu {$a0} {$sp} $off
             $em move {$a1} {$zero}
             $em li {$a2} $sz
-            $em jal memset
-            $em nop
+            my emit_jal memset
         }
 
         # Per-field stores
@@ -2679,8 +2730,7 @@ oo::class create pak::MipsCodegen {
         if {$frac_bits == 16} {
             $em move {$a0} $lhs
             $em move {$a1} $rhs
-            $em jal __pak_fix16_div
-            $em nop
+            my emit_jal __pak_fix16_div
             if {$dst ne {$v0}} { $em move $dst {$v0} }
         } else {
             set tmp [$ra alloc_temp]
@@ -2716,8 +2766,7 @@ oo::class create pak::MipsCodegen {
             $em move {$a0} $dst_reg
             $em move {$a1} $src_reg
             $em li {$a2} $nbytes
-            $em jal memcpy
-            $em nop
+            my emit_jal memcpy
         }
     }
 
@@ -3036,8 +3085,7 @@ oo::class create pak::MipsCodegen {
                 set fname [my monomorphize $fname $type_args]
             }
             my marshal_args [pak::nfield $expr args]
-            $em jal $fname
-            $em nop
+            my emit_jal $fname
             if {$dst ne {$v0}} { $em move $dst {$v0} }
             return
         }
@@ -3045,8 +3093,7 @@ oo::class create pak::MipsCodegen {
         my marshal_args [pak::nfield $expr args]
         set fptr [$ra alloc_temp]
         my emit_expr $func $fptr
-        $em jalr $fptr
-        $em nop
+        my emit_jalr_reg $fptr
         $ra free_temp $fptr
         if {$dst ne {$v0}} { $em move $dst {$v0} }
     }
@@ -3256,8 +3303,7 @@ oo::class create pak::MipsCodegen {
         $ra free_temp $self_ptr
 
         my marshal_args $args_seq 1
-        $em jal $mangled
-        $em nop
+        my emit_jal $mangled
         if {$dst ne {$v0}} { $em move $dst {$v0} }
     }
 
@@ -3269,8 +3315,7 @@ oo::class create pak::MipsCodegen {
             set sym "${mod}_${fn}"
         }
         if {$sym eq ""} { set sym "${mod}_${fn}" }
-        $em jal $sym
-        $em nop
+        my emit_jal $sym
         if {$dst ne {$v0}} { $em move $dst {$v0} }
     }
 
@@ -3287,8 +3332,7 @@ oo::class create pak::MipsCodegen {
         switch -- $method {
             len {
                 $em move {$a0} $str_r
-                $em jal strlen
-                $em nop
+                my emit_jal strlen
                 if {$dst ne {$v0}} { $em move $dst {$v0} }
             }
             is_empty {
@@ -3298,8 +3342,7 @@ oo::class create pak::MipsCodegen {
             contains {
                 $em move {$a0} $str_r
                 my marshal_args $args_seq 1
-                $em jal strstr
-                $em nop
+                my emit_jal strstr
                 $em sltu $dst {$zero} {$v0}
                 if {$dst ne {$v0}} { $em move $dst {$v0}; $em sltu $dst {$zero} $dst }
             }
@@ -3308,13 +3351,11 @@ oo::class create pak::MipsCodegen {
                 my emit_expr [lindex $args 0] $arg0_r
                 # strlen(arg0) → a2
                 $em move {$a0} $arg0_r
-                $em jal strlen
-                $em nop
+                my emit_jal strlen
                 $em move {$a2} {$v0}
                 $em move {$a0} $str_r
                 $em move {$a1} $arg0_r
-                $em jal strncmp
-                $em nop
+                my emit_jal strncmp
                 $em seq $dst {$v0} {$zero}
                 $ra free_temp $arg0_r
             }
@@ -3323,14 +3364,12 @@ oo::class create pak::MipsCodegen {
                 my emit_expr [lindex $args 0] $arg0_r
                 # nlen = strlen(arg0)
                 $em move {$a0} $arg0_r
-                $em jal strlen
-                $em nop
+                my emit_jal strlen
                 set nlen_r [$ra alloc_temp]
                 $em move $nlen_r {$v0}
                 # slen = strlen(str)
                 $em move {$a0} $str_r
-                $em jal strlen
-                $em nop
+                my emit_jal strlen
                 set slen_r [$ra alloc_temp]
                 $em move $slen_r {$v0}
                 # end_ptr = str + slen - nlen
@@ -3339,8 +3378,7 @@ oo::class create pak::MipsCodegen {
                 $em subu $ep_r $ep_r $nlen_r
                 $em move {$a0} $ep_r
                 $em move {$a1} $arg0_r
-                $em jal strcmp
-                $em nop
+                my emit_jal strcmp
                 $em seq $dst {$v0} {$zero}
                 $ra free_temp $arg0_r; $ra free_temp $nlen_r
                 $ra free_temp $slen_r; $ra free_temp $ep_r
@@ -3348,15 +3386,13 @@ oo::class create pak::MipsCodegen {
             eq {
                 $em move {$a0} $str_r
                 my marshal_args $args_seq 1
-                $em jal strcmp
-                $em nop
+                my emit_jal strcmp
                 $em seq $dst {$v0} {$zero}
             }
             find {
                 $em move {$a0} $str_r
                 my marshal_args $args_seq 1
-                $em jal strstr
-                $em nop
+                my emit_jal strstr
                 set lbl_found [my fresh_label .Lsf]
                 set lbl_end   [my fresh_label .Lsfe]
                 $em bne {$v0} {$zero} $lbl_found
@@ -3378,16 +3414,14 @@ oo::class create pak::MipsCodegen {
                 set ps_off [my declare_local __ps [dict create size 8 align 4 is_float 0 is_signed 1 is_ptr 0 fields {} frac_bits 0]]
                 $em sw $str_r $ps_off {$sp}
                 $em move {$a0} $str_r
-                $em jal strlen
-                $em nop
+                my emit_jal strlen
                 $em sw {$v0} [expr {$ps_off + 4}] {$sp}
                 $em addiu $dst {$sp} $ps_off
             }
             default {
                 $em move {$a0} $str_r
                 my marshal_args $args_seq 1
-                $em jal "cstr_${method}"
-                $em nop
+                my emit_jal "cstr_${method}"
                 if {$dst ne {$v0}} { $em move $dst {$v0} }
             }
         }
@@ -3417,16 +3451,14 @@ oo::class create pak::MipsCodegen {
                 $em lw {$a2} 0 $arg_r
                 $em lw {$a3} 4 $arg_r
                 $ra free_temp $arg_r
-                $em jal pak_str_eq
-                $em nop
+                my emit_jal pak_str_eq
                 if {$dst ne {$v0}} { $em move $dst {$v0} }
             }
             default {
                 $em lw {$a0} $base_off {$sp}
                 $em lw {$a1} [expr {$base_off + 4}] {$sp}
                 my marshal_args $args_seq 2
-                $em jal "pak_str_${method}"
-                $em nop
+                my emit_jal "pak_str_${method}"
                 if {$dst ne {$v0}} { $em move $dst {$v0} }
             }
         }
@@ -3537,21 +3569,18 @@ oo::class create pak::MipsCodegen {
                 }
                 acquire {
                     $em addiu {$a0} {$sp} $base_off
-                    $em jal pak_pool_acquire
-                    $em nop
+                    my emit_jal pak_pool_acquire
                     if {$dst ne {$v0}} { $em move $dst {$v0} }
                 }
                 release {
                     $em addiu {$a0} {$sp} $base_off
                     my marshal_args $args_seq 1
-                    $em jal pak_pool_release
-                    $em nop
+                    my emit_jal pak_pool_release
                 }
                 default {
                     $em addiu {$a0} {$sp} $base_off
                     my marshal_args $args_seq 1
-                    $em jal "_PakList_${method}"
-                    $em nop
+                    my emit_jal "_PakList_${method}"
                     if {$dst ne {$v0}} { $em move $dst {$v0} }
                 }
             }
@@ -3651,8 +3680,7 @@ oo::class create pak::MipsCodegen {
                 default {
                     $em addiu {$a0} {$sp} $base_off
                     my marshal_args $args_seq 1
-                    $em jal "_PakRBuf_${method}"
-                    $em nop
+                    my emit_jal "_PakRBuf_${method}"
                     if {$dst ne {$v0}} { $em move $dst {$v0} }
                 }
             }
@@ -3667,31 +3695,27 @@ oo::class create pak::MipsCodegen {
                     $em addiu {$a0} {$sp} $base_off
                     $em li {$a1} $cap
                     my marshal_args $args_seq 2
-                    $em jal pak_map_set
-                    $em nop
+                    my emit_jal pak_map_set
                 }
                 get {
                     $em addiu {$a0} {$sp} $base_off
                     $em li {$a1} $cap
                     my marshal_args $args_seq 2
-                    $em jal pak_map_get
-                    $em nop
+                    my emit_jal pak_map_get
                     if {$dst ne {$v0}} { $em move $dst {$v0} }
                 }
                 has {
                     $em addiu {$a0} {$sp} $base_off
                     $em li {$a1} $cap
                     my marshal_args $args_seq 2
-                    $em jal pak_map_has
-                    $em nop
+                    my emit_jal pak_map_has
                     if {$dst ne {$v0}} { $em move $dst {$v0} }
                 }
                 remove {
                     $em addiu {$a0} {$sp} $base_off
                     $em li {$a1} $cap
                     my marshal_args $args_seq 2
-                    $em jal pak_map_remove
-                    $em nop
+                    my emit_jal pak_map_remove
                 }
                 len {
                     set lo [expr {$base_off + [dict get [dict get $fields len] offset]}]
@@ -3701,8 +3725,7 @@ oo::class create pak::MipsCodegen {
                     $em addiu {$a0} {$sp} $base_off
                     $em li {$a1} $cap
                     my marshal_args $args_seq 2
-                    $em jal "pak_map_${method}"
-                    $em nop
+                    my emit_jal "pak_map_${method}"
                     if {$dst ne {$v0}} { $em move $dst {$v0} }
                 }
             }
@@ -3714,8 +3737,7 @@ oo::class create pak::MipsCodegen {
                 push {
                     $em addiu {$a0} {$sp} $base_off
                     my marshal_args $args_seq 1
-                    $em jal _pak_vec_push
-                    $em nop
+                    my emit_jal _pak_vec_push
                 }
                 len {
                     $em lw $dst [expr {$base_off + 4}] {$sp}
@@ -3729,8 +3751,7 @@ oo::class create pak::MipsCodegen {
                 default {
                     $em addiu {$a0} {$sp} $base_off
                     my marshal_args $args_seq 1
-                    $em jal "_pak_vec_${method}"
-                    $em nop
+                    my emit_jal "_pak_vec_${method}"
                     if {$dst ne {$v0}} { $em move $dst {$v0} }
                 }
             }

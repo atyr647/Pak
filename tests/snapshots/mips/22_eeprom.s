@@ -24,6 +24,24 @@
 	.extern rdpq_sync_tile
 	.extern rdpq_sync_load
 	.extern rdpq_set_scissor
+	.extern rdpq_set_color_image
+	.extern rdpq_set_z_image
+	.extern rdpq_set_other_modes_raw
+	.extern rdpq_set_combiner_raw
+	.extern rdpq_set_fill_color
+	.extern rdpq_set_blend_color
+	.extern rdpq_set_fog_color
+	.extern rdpq_set_env_color
+	.extern rdpq_set_prim_color
+	.extern rdpq_set_texture_image
+	.extern rdpq_set_tile
+	.extern rdpq_set_tile_size
+	.extern rdpq_load_tile
+	.extern rdpq_load_block
+	.extern rdpq_load_tlut
+	.extern rdpq_texture_rectangle
+	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_triangle
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -150,12 +168,16 @@
 	.globl save_game
 	.type save_game, @function
 save_game:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal eeprom_present
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     sltiu $t9, $t8, 1
     beqz $t9, .Lif_end_1
@@ -248,16 +270,18 @@ save_game:
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     lw $t8, 0($t7)
-    sw $t8, 96($sp)
-    addiu $a1, $sp, 96
+    sw $t8, 136($sp)
+    addiu $a1, $sp, 136
     li $a0, 0
+    sw $t9, 96($sp)
     jal eeprom_write
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
 .Lsave_game_ret_0:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size save_game, . - save_game
@@ -266,12 +290,16 @@ save_game:
 	.globl load_game
 	.type load_game, @function
 load_game:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal eeprom_present
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     sltiu $t9, $t8, 1
     beqz $t9, .Lif_end_3
@@ -286,11 +314,13 @@ load_game:
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     lw $t8, 0($t7)
-    sw $t8, 96($sp)
-    addiu $a1, $sp, 96
+    sw $t8, 136($sp)
+    addiu $a1, $sp, 136
     li $a0, 0
+    sw $t9, 96($sp)
     jal eeprom_read
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
     la $t7, eeprom_buf
     lw $t7, 0($t7)
@@ -373,9 +403,9 @@ load_game:
     j .Lload_game_ret_2
     nop
 .Lload_game_ret_2:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size load_game, . - load_game
@@ -384,27 +414,33 @@ load_game:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
     li $t8, 0
     sw $t8, 16($sp)
     li $a3, 0
     li $a2, 2
     li $a1, 2
     li $a0, 0
+    sw $t9, 96($sp)
     jal display_init
     nop
-    move $t9, $v0
-    jal rdpq_init
-    nop
-    move $t9, $v0
-    jal load_game
-    nop
+    lw $t9, 96($sp)
     move $t9, $v0
     sw $t9, 96($sp)
-    lw $t8, 96($sp)
+    jal rdpq_init
+    nop
+    lw $t9, 96($sp)
+    move $t9, $v0
+    sw $t9, 96($sp)
+    jal load_game
+    nop
+    lw $t9, 96($sp)
+    move $t9, $v0
+    sw $t9, 136($sp)
+    lw $t8, 136($sp)
     sltiu $t9, $t8, 1
     beqz $t9, .Lif_end_7
     nop
@@ -431,39 +467,51 @@ main:
     la $t7, level
     sw $t8, 0($t7)
     move $t9, $t8
+    sw $t9, 96($sp)
     jal save_game
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
 .Lloop_h_8:
+    sw $t9, 96($sp)
     jal display_get
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 100($sp)
-    lw $a0, 100($sp)
+    sw $t9, 140($sp)
+    lw $a0, 140($sp)
+    sw $t9, 96($sp)
     jal rdpq_attach_clear
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
     li $a0, 437923583
+    sw $t9, 96($sp)
     jal rdpq_set_mode_fill
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 240
     li $a2, 320
     li $a1, 0
     li $a0, 0
+    sw $t9, 96($sp)
     jal rdpq_fill_rectangle
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
+    sw $t9, 96($sp)
     jal rdpq_detach_show
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
     j .Lloop_h_8
     nop
 .Lloop_x_9:
 .Lmain_ret_6:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size main, . - main

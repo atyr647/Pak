@@ -120,6 +120,12 @@ jobs:
       - name: Flat linker + ROM packer
         run: tclsh tcl/tools/n64link_test.tcl
 
+      # Runs the standalone runtime's own generated MIPS in the simulator and
+      # asserts every RDP command word it builds, plus the DP kick and VI flip.
+      # There is no emulator here, so this is what proves the hardware path.
+      - name: RDP command stream (runtime executed in the MIPS simulator)
+        run: tclsh tcl/tools/rdp_test.tcl
+
       - name: Assembler front end
         run: bash tcl/tools/n64asm_parity.sh
 

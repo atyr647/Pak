@@ -80,6 +80,13 @@ proc corpus_walk {dir} {
     return $out
 }
 
+proc write_golden {path content} {
+    set body [string trimright $content "\n"]
+    set fh [open $path w]
+    if {$body ne ""} { puts $fh $body }
+    close $fh
+}
+
 proc golden_name {path} {
     return "[string map {/ __ .pk64 {}} $path].txt"
 }
@@ -155,9 +162,7 @@ proc check_text_stage {stage files} {
     if {$::REGEN} {
         file mkdir $dir
         foreach f $files {
-            set fh [open [file join $dir [golden_name $f]] w]
-            puts -nonewline $fh [run_dump $stage $f]
-            close $fh
+            write_golden [file join $dir [golden_name $f]] [run_dump $stage $f]
         }
         puts "$stage: regenerated [llength $files] goldens"
         return 0
@@ -202,7 +207,7 @@ proc check_mapped_stage {stage inputs golden_of cmd_of} {
             if {$got eq ""} { set got "DUMPCRASH" }
         }
         if {$::REGEN} {
-            set fh [open $gp w]; puts -nonewline $fh $got; close $fh
+            write_golden $gp $got
             continue
         }
         if {![file exists $gp]} {
@@ -231,7 +236,7 @@ proc check_single_stage {stage} {
         if {$got eq ""} { set got "DUMPCRASH" }
     }
     if {$::REGEN} {
-        set fh [open $gp w]; puts -nonewline $fh $got\n; close $fh
+        write_golden $gp $got
         puts "$stage: regenerated"
         return 0
     }

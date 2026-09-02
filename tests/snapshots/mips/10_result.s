@@ -24,6 +24,24 @@
 	.extern rdpq_sync_tile
 	.extern rdpq_sync_load
 	.extern rdpq_set_scissor
+	.extern rdpq_set_color_image
+	.extern rdpq_set_z_image
+	.extern rdpq_set_other_modes_raw
+	.extern rdpq_set_combiner_raw
+	.extern rdpq_set_fill_color
+	.extern rdpq_set_blend_color
+	.extern rdpq_set_fog_color
+	.extern rdpq_set_env_color
+	.extern rdpq_set_prim_color
+	.extern rdpq_set_texture_image
+	.extern rdpq_set_tile
+	.extern rdpq_set_tile_size
+	.extern rdpq_load_tile
+	.extern rdpq_load_block
+	.extern rdpq_load_tlut
+	.extern rdpq_texture_rectangle
+	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_triangle
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -150,38 +168,38 @@
 	.globl load_data
 	.type load_data, @function
 load_data:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    lw $t8, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t8, 136($sp)
     move $t7, $zero
     seq $t9, $t8, $t7
     beqz $t9, .Lif_end_1
     nop
-    sw $zero, 100($sp)
-    sw $zero, 104($sp)
-    sb $zero, 100($sp)
+    sw $zero, 140($sp)
+    sw $zero, 144($sp)
+    sb $zero, 140($sp)
     li $t9, 0
-    sw $t9, 104($sp)
-    addiu $v0, $sp, 100
+    sw $t9, 144($sp)
+    addiu $v0, $sp, 140
     j .Lload_data_ret_0
     nop
 .Lif_end_1:
-    sw $zero, 108($sp)
-    sw $zero, 112($sp)
+    sw $zero, 148($sp)
+    sw $zero, 152($sp)
     li $v0, 1
-    sb $v0, 108($sp)
+    sb $v0, 148($sp)
     li $t9, 42
-    sw $t9, 112($sp)
-    addiu $v0, $sp, 108
+    sw $t9, 152($sp)
+    addiu $v0, $sp, 148
     j .Lload_data_ret_0
     nop
 .Lload_data_ret_0:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size load_data, . - load_data
@@ -190,42 +208,42 @@ load_data:
 	.globl divide
 	.type divide, @function
 divide:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
-    lw $t8, 100($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    sw $a1, 140($sp)
+    lw $t8, 140($sp)
     li $t7, 0
     seq $t9, $t8, $t7
     beqz $t9, .Lif_end_3
     nop
-    sw $zero, 104($sp)
-    sw $zero, 108($sp)
-    sb $zero, 104($sp)
+    sw $zero, 144($sp)
+    sw $zero, 148($sp)
+    sb $zero, 144($sp)
     li $t9, 1
-    sw $t9, 108($sp)
-    addiu $v0, $sp, 104
+    sw $t9, 148($sp)
+    addiu $v0, $sp, 144
     j .Ldivide_ret_2
     nop
 .Lif_end_3:
-    sw $zero, 112($sp)
-    sw $zero, 116($sp)
+    sw $zero, 152($sp)
+    sw $zero, 156($sp)
     li $v0, 1
-    sb $v0, 112($sp)
-    lw $t8, 96($sp)
-    lw $t7, 100($sp)
+    sb $v0, 152($sp)
+    lw $t8, 136($sp)
+    lw $t7, 140($sp)
     div $t8, $t7
     mflo $t9
-    sw $t9, 116($sp)
-    addiu $v0, $sp, 112
+    sw $t9, 156($sp)
+    addiu $v0, $sp, 152
     j .Ldivide_ret_2
     nop
 .Ldivide_ret_2:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size divide, . - divide
@@ -234,16 +252,18 @@ divide:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
     la $a0, .Lstr0
+    sw $t9, 96($sp)
     jal load_data
     nop
-    move $t9, $v0
-    sw $t9, 96($sp)
     lw $t9, 96($sp)
+    move $t9, $v0
+    sw $t9, 136($sp)
+    lw $t9, 136($sp)
     lbu $t8, 0($t9)
     li $t7, 0
     bne $t8, $t7, .Larm_skip_7
@@ -302,11 +322,13 @@ main:
 .Lmatch_end_5:
     li $a1, 2
     li $a0, 10
+    sw $t9, 96($sp)
     jal divide
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 100($sp)
-    lw $t9, 100($sp)
+    sw $t9, 140($sp)
+    lw $t9, 140($sp)
     lbu $t8, 0($t9)
     li $t7, 0
     bne $t8, $t7, .Larm_skip_19
@@ -332,30 +354,30 @@ main:
     nop
 .Larm_skip_21:
 .Lmatch_end_17:
-    sw $zero, 112($sp)
-    sw $zero, 116($sp)
+    sw $zero, 152($sp)
+    sw $zero, 156($sp)
     li $t9, 1
-    sb $t9, 112($sp)
+    sb $t9, 152($sp)
     li $t7, 100
-    sw $t7, 116($sp)
-    addiu $t9, $sp, 112
-    addiu $t8, $sp, 104
+    sw $t7, 156($sp)
+    addiu $t9, $sp, 152
+    addiu $t8, $sp, 144
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    sw $zero, 128($sp)
-    sw $zero, 132($sp)
-    sb $zero, 128($sp)
+    sw $zero, 168($sp)
+    sw $zero, 172($sp)
+    sb $zero, 168($sp)
     li $t7, 1
-    sw $t7, 132($sp)
-    addiu $t9, $sp, 128
-    addiu $t8, $sp, 120
+    sw $t7, 172($sp)
+    addiu $t9, $sp, 168
+    addiu $t8, $sp, 160
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t9, 104($sp)
+    lw $t9, 144($sp)
     lbu $t8, 0($t9)
     li $t7, 0
     bne $t8, $t7, .Larm_skip_24
@@ -376,7 +398,7 @@ main:
     nop
 .Larm_skip_26:
 .Lmatch_end_22:
-    lw $t9, 120($sp)
+    lw $t9, 160($sp)
     lbu $t8, 0($t9)
     li $t7, 0
     bne $t8, $t7, .Larm_skip_29
@@ -398,9 +420,9 @@ main:
 .Larm_skip_31:
 .Lmatch_end_27:
 .Lmain_ret_4:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size main, . - main

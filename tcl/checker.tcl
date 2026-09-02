@@ -208,6 +208,25 @@ oo::class create pak::Checker {
         }
     }
 
+    # `&`, `|` and `^` bind looser than the comparisons, as in C. So
+    # `status & BUSY == 0` parses as `status & (BUSY == 0)`, which is
+    # `status & 0`, which is always 0 -- a wait loop written that way never
+    # exits. The shape is detectable: a comparison directly under a bitwise
+    # operator only arises when the parentheses are missing (or, written
+    # deliberately, means masking with a 0/1, which is worth flagging anyway).
+    method check_bitwise_precedence {expr} {
+        set op [pak::fval $expr op]
+        if {$op ni {& | ^}} return
+        foreach side {left right} {
+            set child [pak::nfield $expr $side]
+            if {[pak::kindof $child] ne "BinaryOp"} continue
+            set cop [pak::fval $child op]
+            if {$cop ni {== != < <= > >=}} continue
+            my warn W104 "Comparison '$cop' binds tighter than '$op'" \
+                "This parses as `a $op (b $cop c)`; write `(a $op b) $cop c` if that is what you meant" \
+                $expr
+        }
+    }
     method check_expr_calls {expr} {
         if {[pak::isnil $expr]} return
         switch -- [pak::kindof $expr] {
@@ -216,6 +235,7 @@ oo::class create pak::Checker {
                 foreach arg [pak::items [pak::nfield $expr args]] { my check_expr_calls $arg }
             }
             BinaryOp {
+                my check_bitwise_precedence $expr
                 my check_expr_calls [pak::nfield $expr left]
                 my check_expr_calls [pak::nfield $expr right]
             }
