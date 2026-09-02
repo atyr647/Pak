@@ -8,7 +8,7 @@ source to machine code.
 ## Pipeline
 
 ```
-.pk64  (game + runtime/runtime.pk64)      boot.S (hand-written crt0)
+.pk64  (game + runtime/standalone/runtime.pk64)      boot.S (hand-written crt0)
   → Tcl MIPS codegen (tcl/mips_codegen.tcl)     → Tcl asm front-end
       structured RECORD stream                       (tcl/n64enc.tcl parse_asm)
   → Tcl binary encoder (tcl/n64enc.tcl) ───────────────┘
@@ -23,13 +23,13 @@ No GCC, no `as`, no `ld`, no `objcopy`, no `n64tool`.
 
 ## The runtime is Pak + a tiny hand-written crt0
 
-* **`runtime/runtime.pk64`** — the HAL (display, framebuffers, software
+* **`runtime/standalone/runtime.pk64`** — the HAL (display, framebuffers, software
   `rdpq` fill, `memset`/`memcpy`) written entirely in Pak. Free functions emit
   bare symbol names (`display_init`, `rdpq_fill_rectangle`, …) matching the
   calls the codegen lowers game code into. MMIO is done with
   `(0xA4400000 as *volatile u32)` writes; framebuffers live in uncached KSEG1
   RDRAM so CPU writes are immediately visible to the Video Interface.
-* **`runtime/boot.S`** — the crt0 (~12 instructions). It needs CP0 access
+* **`runtime/standalone/boot.S`** — the crt0 (~12 instructions). It needs CP0 access
   (`mfc0`/`mtc0`) which Pak cannot express, so it stays hand-written assembly
   and is assembled by the encoder's `.s` front-end (`pak asmobj`). The linker
   supplies `__bss_start`/`__bss_end` so boot can zero `.bss`, and boot's
@@ -39,8 +39,8 @@ A full ROM is three objects linked in order — **boot first** so `_start` lands
 at `0x80000400`:
 
 ```sh
-pak asmobj runtime/boot.S        -o boot.pakobj      # crt0
-pak objgen runtime/runtime.pk64  -o runtime.pakobj   # HAL
+pak asmobj runtime/standalone/boot.S        -o boot.pakobj      # crt0
+pak objgen runtime/standalone/runtime.pk64  -o runtime.pakobj   # HAL
 pak objgen game.pk64             -o game.pakobj      # the game
 pak link boot.pakobj runtime.pakobj game.pakobj -o game.z64 --name GAME
 ```
@@ -101,7 +101,7 @@ data 48656c6c 6f000000
 The encoder resolves PC-relative branches (`beq`/`bne` family) locally; absolute
 references (`la`, `j`/`jal`, `.word sym`) become relocations the linker patches.
 
-## Memory layout (matches `runtime/n64.ld`)
+## Memory layout (matches `runtime/standalone/n64.ld`)
 
 * Base `0x80000400` (after the IPL3 stack reservation).
 * Section order: `.text` → align16 `.rodata` → align8 `.data` → align8 `.bss`.

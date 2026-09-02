@@ -1,5 +1,5 @@
 # tcl/pakfs.tcl — PakFS archive format (pack/unpack).
-# Byte-exact Tcl port of pak/pakfs.py. Little-endian binary layout:
+# Little-endian binary layout:
 #   header: "PKFS"(4) version:u16 num_files:u16 index_off:u32
 #   index:  per file -> name_len:u16 name offset:u32 size:u32 flags:u16
 #   data:   raw bytes, 16-byte aligned

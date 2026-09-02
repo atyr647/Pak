@@ -1,6 +1,9 @@
-# GENERATED from pak/ast.py by tcl/tools/gen_schema.py — DO NOT EDIT.
-# Each AST node kind is a struct::record; members mirror the dataclass
-# fields (excluding line/col). Regenerate: python3 tcl/tools/gen_schema.py
+# tcl/ast_schema.tcl — the AST node schema.
+#
+# Each node kind is a struct::record whose members are its fields. This file
+# was generated while the compiler had a second implementation; it is now
+# hand-maintained source. Adding a node kind means adding it here, to the
+# kind→field-shape table at the bottom, and to the parser.
 package require struct::record
 
 struct::record define AddrOf {expr mutable}

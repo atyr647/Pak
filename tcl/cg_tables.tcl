@@ -1,5 +1,7 @@
-# GENERATED from pak/codegen.py by tcl/tools/gen_cg_tables.py — DO NOT EDIT.
-# Regenerate: python3 tcl/tools/gen_cg_tables.py
+# tcl/cg_tables.tcl — lookup tables for the C backend: the module API map
+# (Pak call → C symbol), the calls needing a lambda, module includes, primitive
+# type spellings and printf format specifiers.
+# Generated once from a second implementation; now hand-maintained source.
 namespace eval pak {}
 # Include guard (reachable via multiple consumers; see ast.tcl).
 if {[info exists ::pak::_cg_tables_loaded]} { return }

@@ -34,7 +34,7 @@ set ::pak::CALLER_SAVED_GPRS {{$t0} {$t1} {$t2} {$t3} {$t4} {$t5} {$t6} {$t7} {$
 set ::pak::CALLEE_SAVED_GPRS {{$s0} {$s1} {$s2} {$s3} {$s4} {$s5} {$s6} {$s7}}
 set ::pak::ARG_GPRS {{$a0} {$a1} {$a2} {$a3}}
 
-# ── Emitter — accumulates assembly lines (port of mips/emit.py) ─────────────────
+# ── Emitter — accumulates assembly lines and their binary records ───────────────
 oo::class create pak::Emitter {
     variable buf indent recs
     constructor {} { set buf {}; set indent "    "; set recs {} }
@@ -281,7 +281,7 @@ proc pak::frac_bits_for {n} {
     }
 }
 
-# ── Literal pool (port of mips/literals.py: strings + floats + static globals) ─────
+# ── Literal pool: interned strings + float constants + static globals ─────────────
 oo::class create pak::LiteralPool {
     variable strings floats counter str_order float_order data_syms
     constructor {} {
@@ -384,7 +384,7 @@ proc pak::emit_init {em size value} {
     }
 }
 
-# ── type layout (subset of mips/types.py) ──────────────────────────────────────
+# ── type layout: primitives, pointers and arrays ───────────────────────────────
 # Global proc handles only primitives/pointers/arrays — user-defined types are
 # handled by the MipsCodegen method mips_layout (which checks tenv first).
 proc pak::mips_layout {type_tv} {
@@ -489,7 +489,7 @@ oo::class create pak::MipsCodegen {
         if {$ra ne ""} { catch {$ra destroy} }
     }
 
-    # ── type environment (port of mips/types.py MipsTypeEnv) ─────────────────
+    # ── type environment: user-defined and well-known external types ─────────
     # Well-known external types (tiny3d / libdragon), pre-registered so user
     # structs containing e.g. Vec3 fields resolve. Mirrors _EXTERNAL_TYPES.
     method register_external_types {} {

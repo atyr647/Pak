@@ -1,4 +1,4 @@
-# tcl/codegen.tcl — Pak → C code generator, Tcl port of pak/codegen.py (incremental).
+# tcl/codegen.tcl — Pak → C code generator (the libdragon backend).
 #
 # Emits C byte-identical to the Python backend, verified per-file against
 # `pak explain` via tcl/tools/cg_parity.sh. The port is incremental: any

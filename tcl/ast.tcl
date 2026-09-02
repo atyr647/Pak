@@ -9,7 +9,7 @@
 #   {bool 0|1}                             a boolean
 #   {nil}                                  None
 #
-# serialize produces output identical to tcl/tools/ast_dump.py.
+# serialize produces the canonical AST dump format (see tools/ast_dump.tcl).
 
 namespace eval pak {}
 
@@ -18,7 +18,7 @@ namespace eval pak {}
 if {[info exists ::pak::_ast_loaded]} { return }
 set ::pak::_ast_loaded 1
 
-# Node schema mirrors pak/ast.py (generated). struct::record holds the field
+# Node schema lives in ast_schema.tcl. struct::record holds the field
 # set per kind; pak::N validates construction and pak::nfield validates reads,
 # turning stringly-typed field-name slips into immediate, located errors.
 package require struct::record
@@ -50,7 +50,7 @@ proc pak::N {kind args} {
     return [list node $kind $fields]
 }
 
-# Wrap a raw field value according to its kind (see gen_schema.py header).
+# Wrap a raw field value according to its kind (see ast_schema.tcl header).
 proc pak::wrap {k v} {
     switch -- $k {
         s - i   { return [list lit $v] }

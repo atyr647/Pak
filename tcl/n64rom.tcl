@@ -1,5 +1,5 @@
 # tcl/n64rom.tcl — build a bootable .z64 from a flat program image, with no
-# external tools. Tcl port of pak/tools/rompack.py: 64-byte header, IPL3
+# external tools: 64-byte header, IPL3
 # region, program at ROM 0x1000 (linked to run at 0x80000400), padded to a
 # full 1 MB CRC window, with CIC-NUS-6102 CRC1/CRC2 patched into the header.
 # Pure binary assembly via `binary format`, like pakfs.tcl.

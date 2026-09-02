@@ -8,6 +8,7 @@
 #   tests/golden/lex.sha256    — sha256 of each corpus file's token dump
 #   tests/golden/ast.sha256    — sha256 of each corpus file's AST dump
 #   tests/golden/cg.sha256     — sha256 of each corpus file's generated C
+#   tests/golden/mips.sha256   — sha256 of each corpus file's MIPS assembly
 #                                (float literals keep their source spelling, so
 #                                 `0.000001` stays `0.000001f` rather than the
 #                                 `1e-06f` the Python oracle's float repr gave)
@@ -29,12 +30,18 @@
 #
 # REGEN rewrites the goldens from the CURRENT Tcl output. Only do that when you
 # have decided the new output is correct — it will happily bless a regression.
+#
+# The mips stage has no external oracle (the Python MIPS backend was removed
+# before the port finished), so its goldens are a self-snapshot: they pin the
+# current output, including the UNPORTED markers for constructs the backend
+# cannot lower yet, so closing one of those gaps shows up as a deliberate
+# golden change rather than passing unnoticed.
 
 set HERE [file dirname [file normalize [info script]]]
 set REPO [file normalize [file join $HERE .. ..]]
 cd $REPO
 
-set STAGES {lex ast cg check tc header c2pak makefile pakfs}
+set STAGES {lex ast cg mips check tc header c2pak makefile pakfs}
 set want $argv
 if {[llength $want] == 0} { set want $STAGES }
 foreach s $want {
@@ -255,7 +262,7 @@ set files [corpus]
 set total_fail 0
 foreach stage $want {
     switch -- $stage {
-        lex - ast - cg { incr total_fail [check_hash_stage $stage $files] }
+        lex - ast - cg - mips { incr total_fail [check_hash_stage $stage $files] }
         check - tc  { incr total_fail [check_text_stage $stage $files] }
         header {
             # Module headers, one per canonical example, under a synthetic

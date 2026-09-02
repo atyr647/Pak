@@ -1,9 +1,9 @@
 # tcl/n64link.tcl — minimal static linker for Pak ".pakobj" object files.
 #
-# Tcl port of pak/tools/n64_link.py. There is NO MIPS toolchain and NO ELF
+# There is NO MIPS toolchain and NO ELF
 # involved: this combines relocatable object files (the text format the
 # encoder emits) into a flat N64 RDRAM image laid out exactly like
-# pak/runtime/n64.ld, which tcl/n64rom.tcl then packs into a .z64.
+# runtime/standalone/n64.ld, which tcl/n64rom.tcl then packs into a .z64.
 #
 # Object file format (line oriented text)
 #     # pak object v1            -- comments and blank lines ignored

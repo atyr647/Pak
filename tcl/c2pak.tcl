@@ -313,7 +313,7 @@ proc pak::c2pak::atTypeStart {} {
 proc pak::c2pak::parse {toks macros} {
     variable P_toks; variable P_pos; variable P_typedefs; variable P_anon
     set P_toks $toks; set P_pos 0; set P_typedefs {}; set P_anon 0
-    # prelude typedefs (so id resolution matches python's _is_user_typedef seeding)
+    # prelude typedefs, seeding user-typedef resolution
     foreach n {s8 u8 s16 u16 s32 u32 s64 u64 f32 f64 int8_t uint8_t int16_t uint16_t
                int32_t uint32_t int64_t uint64_t size_t ptrdiff_t __builtin_va_list
                bool FILE surface_t wchar_t uintptr_t intptr_t} {
@@ -400,7 +400,7 @@ proc pak::c2pak::p_topdecl {} {
     return [concat $tagdecls $results]
 }
 
-# When `typedef struct {..} Name;` the python produces a single CTypeDef whose
+# When `typedef struct {..} Name;` we produce a single CTypeDef whose
 # typ is the CStruct. We already store typ as the struct. No extra tag decl.
 # When `struct Name {..} var;` produces both the struct decl... but corpus doesn't.
 proc pak::c2pak::p_maybeTagDecl {base results isTypedef} {
@@ -934,7 +934,7 @@ proc pak::c2pak::p_statement {} {
     if {$ty eq "id" && [lindex [p_peek 1] 0] eq "punc" && [lindex [p_peek 1] 1] eq ":"} {
         set lbl $v; p_next; p_next
         # label may be followed by a statement; in our block model we emit label then
-        # subsequent statements are separate block items. But python attaches stmt.
+        # subsequent statements are separate block items, with stmt attached.
         # pycparser: Label has a stmt. We attach the following statement.
         if {[p_is punc "\}"]} {
             return [dict create k label name $lbl stmt ""]

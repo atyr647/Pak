@@ -1,9 +1,9 @@
 # tcl/optimize.tcl — MIPS peephole optimizer, scheduler, delay-slot filler.
-# Byte-exact Tcl port of pak/mips/optimize.py. Operates on assembly TEXT
+# Operates on assembly TEXT
 # (a post-processing pass over MipsCodegen output), not a structured IR.
 #
 # Four passes, in order: peephole, VR4300 scheduling, delay-slot filling,
-# dead-label elimination. See pak/mips/optimize.py for the rationale.
+# dead-label elimination.
 
 namespace eval pak::opt {}
 if {[info exists ::pak::_optimize_loaded]} { return }

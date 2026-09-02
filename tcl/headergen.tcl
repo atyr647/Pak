@@ -1,5 +1,5 @@
 # tcl/headergen.tcl — generate C header files from Pak module declarations.
-# Byte-exact Tcl port of pak/headergen.py. Reuses pak::Codegen's gen_struct /
+# Reuses pak::Codegen's gen_struct /
 # gen_enum / gen_variant / gen_type / gen_array_decl, exactly as the Python
 # headergen reuses the Python Codegen.
 

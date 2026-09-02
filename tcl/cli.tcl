@@ -1,4 +1,4 @@
-# tcl/cli.tcl — Pak command-line interface, Tcl port of pak/cli.py.
+# tcl/cli.tcl — Pak command-line interface.
 # Drives the Tcl compiler stages + headergen/makefile_gen/pakfs to build a
 # project, byte-exact with the Python `pak` CLI on the compilation artifacts.
 

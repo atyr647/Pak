@@ -6,7 +6,7 @@
 >
 > For **mechanically verified** failing examples with enforced error codes,
 > see [`tests/invalid/`](../../tests/invalid/). Those files contain actual
-> broken code and are tested by `pytest tests/test_invalid.py`.
+> broken code; CI asserts every one of them fails `pak check`.
 
 ---
 

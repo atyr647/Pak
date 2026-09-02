@@ -1,4 +1,4 @@
-# tcl/parser.tcl — Pak parser, Tcl port of pak/parser.py (incremental).
+# tcl/parser.tcl — Pak parser: tokens → AST.
 #
 # Builds the tagged-value AST from tcl/ast.tcl. Validated for structural parity
 # against the Python parser via tcl/tools/ast_parity.sh. Constructs not yet

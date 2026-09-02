@@ -1,4 +1,4 @@
-# tcl/checker.tcl — extended semantic checker, Tcl port of pak/checker.py.
+# tcl/checker.tcl — extended semantic checker (module resolution, arity,
 #
 # Runs after parsing and enforces the E1xx/W1xx invariants the typechecker
 # doesn't: entry/duplicate-name rules, n64 module + API-arity validation,

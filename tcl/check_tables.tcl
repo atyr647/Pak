@@ -1,5 +1,6 @@
-# GENERATED from pak/checker.py by tcl/tools/gen_check_tables.py — DO NOT EDIT.
-# Regenerate: python3 tcl/tools/gen_check_tables.py
+# tcl/check_tables.tcl — lookup tables for the semantic checker: known
+# modules and their functions, builtin arities, and recognized @cfg features.
+# Generated once from a second implementation; now hand-maintained source.
 namespace eval pak {}
 # Include guard (reachable via multiple consumers; see ast.tcl).
 if {[info exists ::pak::_check_tables_loaded]} { return }

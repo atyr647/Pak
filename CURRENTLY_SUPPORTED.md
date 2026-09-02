@@ -183,7 +183,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `@cfg` conditional compilation | ✅ Full | Maps to `#if`/`#endif` |
 | `comptime if` | ✅ Full | Maps to `#if` |
 | Inline `asm` | ✅ Full | |
-| Generic functions | ✅ Full | Monomorphised at call sites; type inference for unspecified type params; all 29 canonical examples byte-identical to Python backend |
+| Generic functions | ✅ Full | Monomorphised at call sites; type inference for unspecified type params; all 32 canonical examples covered by the golden suite |
 | Non-capturing closures | ✅ Full | Lowered to a top-level fn + function pointer |
 | Closures capturing environment | ✅ Full | Emitted as a GCC nested function; captures by reference within the enclosing frame |
 | Trait object dispatch (`dyn`) | ✅ Full | Vtable struct + fat pointer + thunks; constructor helpers emitted |
@@ -250,7 +250,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | MIPS compound-assign `/=`, `%=`, `<<=`, `>>=` were silently discarded | Fixed — `/=` uses `div`/`mflo`, `%=` uses `div`/`mfhi`, `<<=` uses `sllv`, `>>=` uses `srav`; unrecognised operators now raise `mips_unported` |
 | MIPS float arithmetic used integer GPR paths (`addu`/`subu`/`mul`/`div`) for `f32` | Fixed — FPU dispatch (`add.s`/`sub.s`/`mul.s`/`div.s`/`neg.s`); comparisons via `c.eq.s`/`c.lt.s`/`bc1t`/`bc1f`; second float param now correctly loaded from `$f14` |
 | MIPS `Option(non-pointer T)` layout raised `MIPSUNPORTED` | Fixed — implemented 1-byte-tag + aligned-payload struct layout |
-| Tcl C codegen `arr.as_slice()` raised `CGUNPORTED` for array types | Fixed — emits `(PakSlice_T){.data = arr, .len = N}` matching Python codegen |
+| Tcl C codegen `arr.as_slice()` raised `CGUNPORTED` for array types | Fixed — emits `(PakSlice_T){.data = arr, .len = N}` as the golden suite pins |
 | MIPS interpolated format strings raised `MIPSUNPORTED` | Fixed — emits `snprintf` call into a static `__pak_fmtbuf_N` buffer; `snprintf` added to extern list |
 | MIPS function parameters stored before stack frame established (pre-prologue `sw`) | Fixed — all param stores now happen after `emit_prologue_placeholder`; 3rd+ float params arriving on stack are loaded from `$fp+(N*4)` (fp = old_sp) |
 | MIPS `marshal_args` used a two-pass save/reload pattern for float args that the VR4300 scheduler misoptimized (moved reload before save due to missing memory alias analysis) | Fixed — replaced with single-pass reverse-order evaluation; each float arg is emitted directly into `$f12`, then `mov.s $f14,$f12` (2nd) or `swc1 $f12,N($sp)` (3rd+) immediately; no save-slot temporaries needed |

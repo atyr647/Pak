@@ -1,5 +1,8 @@
-# Base table generated from pak/mips/n64_runtime.py by tcl/tools/gen_mips_tables.py.
-# Manual additions (string/container runtime symbols, CStr/Str layout) follow after memset.
+# tcl/mips_tables.tcl — lookup tables for the MIPS backend: the runtime
+# symbols the generated code may reference, the module API map (Pak call →
+# runtime symbol), and primitive type layouts.
+# Generated once from a second implementation; now hand-maintained source.
+# String/container runtime symbols and the CStr/Str layout follow after memset.
 namespace eval pak {}
 if {[info exists ::pak::_mips_tables_loaded]} { return }
 set ::pak::_mips_tables_loaded 1

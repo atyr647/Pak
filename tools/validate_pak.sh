@@ -26,7 +26,7 @@ cd "$REPO_ROOT"
 
 # Ensure pak is installed
 if ! command -v pak &>/dev/null; then
-    echo "ERROR: 'pak' not found. Install with: pip install -e ." >&2
+    echo "ERROR: 'pak' not found. Put the repo's bin/ directory on PATH." >&2
     exit 1
 fi
 
