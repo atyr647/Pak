@@ -1,0 +1,1 @@
+(E401 error "use of 'p' after it was moved" "If you need to use 'p' after passing it, pass a pointer: &p")

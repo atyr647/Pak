@@ -13,6 +13,8 @@ source [file join $_clihere pakfs.tcl]
 source [file join $_clihere mips_codegen.tcl]
 source [file join $_clihere optimize.tcl]
 source [file join $_clihere n64enc.tcl]
+source [file join $_clihere n64link.tcl]
+source [file join $_clihere n64rom.tcl]
 
 namespace eval pak {}
 set ::pak::CLI_ROOT [file normalize [file join $_clihere ..]]
@@ -514,6 +516,51 @@ proc pak::cmd_asmobj {opts} {
     puts "Wrote $out"
 }
 
+# Link .pakobj files into a flat image, and optionally pack a bootable .z64.
+# Objects link in argument order, so the boot object goes first: its _start
+# then lands at the base address the ROM header's entry point names.
+proc pak::cmd_link {opts} {
+    set objs [dict get $opts files]
+    if {[llength $objs] == 0} {
+        puts stderr "error: no object files given"; exit 1
+    }
+    foreach o $objs {
+        if {![file exists $o]} { puts stderr "error: file not found: $o"; exit 1 }
+    }
+    set out [dict get $opts output]
+    set emit_bin [dict get $opts emit_bin]
+    if {$out eq "" && $emit_bin eq ""} {
+        puts stderr "error: nothing to do: pass -o/--output and/or --emit-bin"; exit 1
+    }
+
+    if {[catch {pak::link_objects $objs [dict get $opts entry]} result]} {
+        if {[string match "LINKERROR*" $result]} {
+            puts stderr "link error: [string range $result 10 end]"
+            exit 1
+        }
+        return -code error $result
+    }
+
+    set image [dict get $result image]
+    if {$emit_bin ne ""} {
+        set f [open $emit_bin wb]; puts -nonewline $f $image; close $f
+        puts "BIN: $emit_bin  ([string length $image] bytes)\
+              base=[format %#010x [dict get $result base]]"
+    }
+    if {$out ne ""} {
+        set ipl3 [pak::n64rom_ipl3_from_z64 [dict get $opts ipl3]]
+        set rom [pak::n64rom $image [dict get $opts name] $ipl3]
+        set f [open $out wb]; puts -nonewline $f $rom; close $f
+        binary scan [string range $rom 16 23] IuIu crc1 crc2
+        puts [format "ROM: %s  (%d bytes)  CRC1=%08X  CRC2=%08X" \
+            $out [string length $rom] $crc1 $crc2]
+    }
+    set entry [dict get $opts entry]
+    if {[dict exists $result symbols $entry]} {
+        puts "entry $entry -> [format %#010x [dict get $result symbols $entry]]"
+    }
+}
+
 proc pak::cmd_run {opts} {
     pak::cmd_build $opts
     set root [pak::cli_find_project_root]
@@ -656,6 +703,8 @@ proc pak::cli_main {argv} {
         explain { pak::cmd_explain [pak::_parse_opts $rest {file "" backend c}] }
         objgen { pak::cmd_objgen [pak::_parse_opts $rest {file "" output ""}] }
         asmobj { pak::cmd_asmobj [pak::_parse_opts $rest {file "" output ""}] }
+        link   { pak::cmd_link [pak::_parse_opts $rest \
+                     {files {} output "" emit_bin "" name "PAK GAME" ipl3 "" entry _start}] }
         run    { pak::cmd_run [pak::_parse_opts $rest {verbose 0 backend c no_style_warnings 0}] }
         init   { pak::cmd_init [pak::_parse_opts $rest {name ""}] }
         clean  { pak::cmd_clean {} }
@@ -667,7 +716,7 @@ proc pak::cli_main {argv} {
 }
 proc pak::cli_help {} {
     puts "usage: pak \[--version\] COMMAND ..."
-    puts "commands: build check explain run init clean pack"
+    puts "commands: build check explain run init clean pack objgen asmobj link"
 }
 # Tiny flag parser: positionals fill 'file'/'name'/'files'; flags set keys.
 proc pak::_parse_opts {argv defaults} {
@@ -682,12 +731,20 @@ proc pak::_parse_opts {argv defaults} {
             --backend { incr i; dict set o backend [lindex $argv $i] }
             --output - -o { incr i; dict set o output [lindex $argv $i] }
             --base { incr i; dict set o base [lindex $argv $i] }
+            --emit-bin { incr i; dict set o emit_bin [lindex $argv $i] }
+            --name { incr i; dict set o name [lindex $argv $i] }
+            --ipl3 { incr i; dict set o ipl3 [lindex $argv $i] }
+            --entry { incr i; dict set o entry [lindex $argv $i] }
             -* { }
             default { lappend pos $a }
         }
     }
     if {[dict exists $o file] && [llength $pos] > 0}  { dict set o file [lindex $pos 0] }
-    if {[dict exists $o name] && [llength $pos] > 0}  { dict set o name [lindex $pos 0] }
+    # `init NAME` takes its name positionally; commands that collect a list of
+    # positional files (link) carry --name as a real option instead.
+    if {[dict exists $o name] && ![dict exists $o files] && [llength $pos] > 0} {
+        dict set o name [lindex $pos 0]
+    }
     if {[dict exists $o files]} { dict set o files $pos }
     return $o
 }

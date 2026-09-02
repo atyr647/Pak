@@ -1,0 +1,1 @@
+(E012 error "function 'add' takes 2 argument(s), got 1" "Expected: add(a: i32, b: i32)")

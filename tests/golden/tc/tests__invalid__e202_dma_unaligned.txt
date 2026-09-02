@@ -1,0 +1,3 @@
+(E202 error "buffer 'buf' may not be 16-byte aligned for DMA" "Declare it with @aligned(16): @aligned(16) let buf: ...")
+(E202 error "buffer 'buf' may not be 16-byte aligned for DMA" "Declare it with @aligned(16): @aligned(16) let buf: ...")
+(E202 error "buffer 'buf' may not be 16-byte aligned for DMA" "Declare it with @aligned(16): @aligned(16) let buf: ...")

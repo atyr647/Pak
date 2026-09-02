@@ -1,0 +1,2 @@
+(W201 warning "non-void function 'area' may not return a value on all paths" "Ensure all code paths return a value")
+(W201 warning "non-void function 'entity_id' may not return a value on all paths" "Ensure all code paths return a value")

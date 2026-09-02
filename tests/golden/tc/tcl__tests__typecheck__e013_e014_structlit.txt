@@ -1,0 +1,2 @@
+(E013 error "struct 'Cfg' has no field 'bogus'" "Valid fields: h, w")
+(E014 error "struct 'Cfg' missing fields: h" "Add the missing fields or initialise them to a default value")

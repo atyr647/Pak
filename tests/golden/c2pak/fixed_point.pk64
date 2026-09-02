@@ -1,0 +1,13 @@
+-- Transpiled from C by pak convert
+
+const FIX16_ONE: i32 = 65536
+
+-- c2pak: typedef fix16 → fix16.16
+
+static mut velocity: fix16.16 = 5 * 65536
+
+static mut friction: fix16.16 = 62259
+
+fn update_vel(v: fix16.16, f: fix16.16) -> fix16.16 {
+    return (v as i64 * f >> 16) as i32
+}

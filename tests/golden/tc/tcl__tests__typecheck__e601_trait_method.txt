@@ -1,0 +1,1 @@
+(E601 error "method 'extra' is not declared in trait 'Drawable'" "Remove this method or add it to trait 'Drawable'")

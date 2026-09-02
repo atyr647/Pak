@@ -1,0 +1,2 @@
+(E201 error "possible stale cache before DMA transfer of 'buf'" "Add before the transfer: cache.writeback(&buf)")
+(E202 error "buffer 'buf' may not be 16-byte aligned for DMA" "Declare it with @aligned(16): @aligned(16) let buf: ...")

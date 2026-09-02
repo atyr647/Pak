@@ -1,0 +1,24 @@
+-- Transpiled from C by pak convert
+
+const SCREEN_WIDTH: i32 = 320
+const SCREEN_HEIGHT: i32 = 240
+const MAX_ENTITIES: i32 = 64
+const GRAVITY: f32 = 9.8
+const PI: f32 = 3.14159
+
+static frame_count: i32 = 0
+
+static delta_time: f32 = 0.016
+
+const version: i32 = 1
+
+static mut entity_count: i32 = 0
+
+fn tick() {
+    frame_count += 1
+    delta_time = 1.0 / 60.0
+}
+
+fn get_frame() -> i32 {
+    return frame_count
+}
