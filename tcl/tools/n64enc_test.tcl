@@ -121,6 +121,35 @@ check_eq ".rodata asciiz bytes (padded to 4)" \
 check_eq ".rodata word0 = 'h''i'0x00 pad" \
     [format 0x%08X [word_at $ctx .rodata 0]] 0x68690000
 
+puts "== COP1 unary / compare / branch =="
+# mov.s $f4,$f6 -> 010001 10000 00000 00110 00100 000110
+check {i mov.s {$f4} {$f6}}   0x46003106
+# neg.s $f0,$f2 -> funct 0x07
+check {i neg.s {$f0} {$f2}}   0x46001007
+# abs.s $f0,$f2 -> funct 0x05
+check {i abs.s {$f0} {$f2}}   0x46001005
+# sqrt.s $f0,$f2 -> funct 0x04
+check {i sqrt.s {$f0} {$f2}}  0x46001004
+# c.eq.s $f4,$f6 -> fmt=16 ft=6 fs=4 funct=0x30|2
+check {i c.eq.s {$f4} {$f6}}  0x46062032
+# c.lt.s $f4,$f6 -> funct=0x30|12
+check {i c.lt.s {$f4} {$f6}}  0x4606203C
+# c.le.s $f4,$f6 -> funct=0x30|14
+check {i c.le.s {$f4} {$f6}}  0x4606203E
+
+# bc1t/bc1f resolve like any other local-label branch.
+set ctx [pak::enc::encode {
+    {d section .text}
+    {label .Lfp}
+    {i nop}
+    {i bc1t .Lfp}
+    {i bc1f .Lfp}
+}]
+# bc1t at 4: target 0, offset = (0 - 8) >> 2 = -2 -> 0xFFFE
+check_eq "bc1t backward" [format 0x%08X [word_at $ctx .text 1]] 0x4501FFFE
+# bc1f at 8: offset = (0 - 12) >> 2 = -3 -> 0xFFFD
+check_eq "bc1f backward" [format 0x%08X [word_at $ctx .text 2]] 0x4500FFFD
+
 puts "== CACHE instruction =="
 # cache 0x19, 0($a0) -> op=0x2F(47) rs=$a0(4) rt=0x19(25) imm=0
 # 0b10_1111_00100_11001_0000000000000000 = 0xBC990000

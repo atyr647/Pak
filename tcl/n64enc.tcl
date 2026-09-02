@@ -356,6 +356,40 @@ proc pak::enc::emit_real {ctxVar mnem args} {
         emit_word ctx [R 0x11 $fmt 0 [fpr $fs] [fpr $fd] $funct]
         return
     }
+    # COP1 fmt unary: mov.s/neg.s/abs.s/sqrt.s (and .d)  fd,fs
+    #   [31:26]=0x11 [25:21]=fmt [20:16]=0 [15:11]=fs [10:6]=fd [5:0]=funct
+    if {[regexp {^(mov|neg|abs|sqrt)\.(s|d)$} $mnem -> opn fmtc]} {
+        lassign $ops fd fs
+        set fmt [expr {$fmtc eq "s" ? 16 : 17}]
+        set funct [dict get {sqrt 0x04 abs 0x05 mov 0x06 neg 0x07} $opn]
+        emit_word ctx [R 0x11 $fmt 0 [fpr $fs] [fpr $fd] $funct]
+        return
+    }
+    # COP1 compare: c.<cond>.s / c.<cond>.d  fs,ft  -> sets FP condition code 0.
+    #   [31:26]=0x11 [25:21]=fmt [20:16]=ft [15:11]=fs [10:6]=0 [5:0]=0x30|cond
+    if {[regexp {^c\.([a-z]+)\.(s|d)$} $mnem -> cond fmtc]} {
+        set conds {f 0 un 1 eq 2 ueq 3 olt 4 ult 5 ole 6 ule 7
+                   sf 8 ngle 9 seq 10 ngl 11 lt 12 nge 13 le 14 ngt 15}
+        if {[dict exists $conds $cond]} {
+            lassign $ops fs ft
+            set fmt [expr {$fmtc eq "s" ? 16 : 17}]
+            emit_word ctx [R 0x11 $fmt [fpr $ft] [fpr $fs] 0 \
+                [expr {0x30 | [dict get $conds $cond]}]]
+            return
+        }
+    }
+    # COP1 branch on condition code 0: bc1t/bc1f label
+    #   op=0x11 rs=0x08 (BC) rt=(cc<<2)|(nd<<1)|tf, 16-bit PC-relative offset.
+    if {$mnem eq "bc1t" || $mnem eq "bc1f"} {
+        lassign $ops label
+        set tf [expr {$mnem eq "bc1t" ? 1 : 0}]
+        set woff [cur_off ctx]
+        emit_word ctx [I 0x11 0x08 $tf 0]
+        add_branch_fixup ctx $woff $label
+        set sec [dict get $ctx cur]
+        dict set ctx secdata $sec brmeta $woff [list 0x11 0x08 $tf]
+        return
+    }
     # CACHE instruction: cache hint, off(base)  op=0x2F (47)
     if {$mnem eq "cache"} {
         lassign $ops hint m

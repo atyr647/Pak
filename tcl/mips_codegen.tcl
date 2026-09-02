@@ -522,14 +522,26 @@ oo::class create pak::MipsCodegen {
         # ControllerState: held/pressed/released (*ButtonState pointers) + stick_x/y (i32)
         if {![dict exists $tenv_layouts ControllerState]} {
             set cs_fields [dict create]
-            dict set cs_fields held     [dict create name held     offset 0  size 4 align 4 type_node ""]
-            dict set cs_fields pressed  [dict create name pressed  offset 4  size 4 align 4 type_node ""]
-            dict set cs_fields released [dict create name released offset 8  size 4 align 4 type_node ""]
-            dict set cs_fields stick_x  [dict create name stick_x  offset 12 size 4 align 4 type_node ""]
-            dict set cs_fields stick_y  [dict create name stick_y  offset 16 size 4 align 4 type_node ""]
+            set bs_ptr [pak::N TypePointer inner [pak::N TypeName name ButtonState] nullable 0 mutable 0]
+            set i32_tn [pak::N TypeName name i32]
+            dict set cs_fields held     [dict create name held     offset 0  size 4 align 4 type_node $bs_ptr]
+            dict set cs_fields pressed  [dict create name pressed  offset 4  size 4 align 4 type_node $bs_ptr]
+            dict set cs_fields released [dict create name released offset 8  size 4 align 4 type_node $bs_ptr]
+            dict set cs_fields stick_x  [dict create name stick_x  offset 12 size 4 align 4 type_node $i32_tn]
+            dict set cs_fields stick_y  [dict create name stick_y  offset 16 size 4 align 4 type_node $i32_tn]
             dict set tenv_layouts ControllerState [dict create size 20 align 4 \
                 is_float 0 is_signed 1 is_ptr 0 fields $cs_fields \
                 field_order {held pressed released stick_x stick_y}]
+        }
+        # joypad_status_t is the libdragon spelling used in Pak source. On the
+        # standalone path `controller.read` lowers to joypad_get_status, which
+        # returns a *ControllerState, so the value is pointer-shaped (4 bytes)
+        # while still exposing ControllerState's fields for `pad.held.a` etc.
+        if {![dict exists $tenv_layouts joypad_status_t]} {
+            set cs [dict get $tenv_layouts ControllerState]
+            dict set tenv_layouts joypad_status_t [dict create size 4 align 4 \
+                is_float 0 is_signed 0 is_ptr 1 frac_bits 0 \
+                fields [dict get $cs fields] field_order [dict get $cs field_order]]
         }
     }
 
@@ -2542,10 +2554,17 @@ oo::class create pak::MipsCodegen {
                 return [expr {[dict get $tl is_float] ? 1 : 0}]
             }
             BinaryOp {
+                # Comparisons and logical connectives yield a 0/1 integer, no
+                # matter how the operands are typed: `a > 1.0 or b < 2.0` is an
+                # integer `or` of two integer results, not a float operation.
+                if {[pak::fval $expr op] in {== != < <= > >= && || and or}} { return 0 }
                 if {[my infer_is_float [pak::nfield $expr left]]}  { return 1 }
                 return [my infer_is_float [pak::nfield $expr right]]
             }
-            UnaryOp { return [my infer_is_float [pak::nfield $expr operand]] }
+            UnaryOp {
+                if {[pak::fval $expr op] in {! not}} { return 0 }
+                return [my infer_is_float [pak::nfield $expr operand]]
+            }
             DotAccess {
                 set fi [my resolve_field_info $expr]
                 if {$fi ne ""} {
