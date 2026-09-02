@@ -37,11 +37,17 @@ that port finished, so its goldens pin the current output *including* the
 those gaps therefore shows up as a deliberate golden change rather than slipping
 through unnoticed.
 
-## Known boundary: source positions
+## Source positions
 
-The AST schema carries no `line`/`col` fields (see the header in
-`tcl/ast_schema.tcl`). Diagnostics therefore have the right text and codes but
-report `:0:0` on the `--> file:line:col` location line, and E107's "first
-defined at line N" hint is normalized in the golden comparison. Threading real
-positions through the lexer, every parser node and each diagnostic site is a
-cross-cutting change; it is the one remaining deferred item.
+Nodes carry their position out of band, as a fourth element of the node value
+(`{node Kind {fields...} {line col}}`), rather than as schema fields. The
+parser brackets three rule levels -- `parse_top_level`, `parse_stmt` and
+`parse_primary` -- with the position of the token they start on, and `pak::N`
+stamps whatever is innermost, so every node gets the start of the construct it
+belongs to rather than wherever the parse happened to end.
+
+Keeping it out of the field dict means the schema, `pak::nfield` and the AST
+dump format are untouched: a node's structure is exactly what it was, and the
+`ast` goldens did not move when positions were added. Nodes synthesized outside
+parsing (by the checker, typechecker or codegen) get `{0 0}`, which the CLI
+renders as no location rather than a wrong one.

@@ -131,10 +131,21 @@ proc pak::_errmsg {err} {
 # Format a diagnostic dict exactly like PakError/CheckDiag.__str__.
 proc pak::diag_str {d} {
     set fn [expr {[dict exists $d filename] ? [dict get $d filename] : ""}]
-    if {$fn ne ""} { set loc "$fn:[dict get $d line]:[dict get $d col]" } \
-    else { set loc "[dict get $d line]:[dict get $d col]" }
+    set line [dict get $d line]
+    set col [dict get $d col]
     set prefix [expr {[dict get $d severity] eq "warning" ? "warning" : "error"}]
-    set lines [list "$prefix\[[dict get $d code]\]: [dict get $d message]" "  --> $loc"]
+    set lines [list "$prefix\[[dict get $d code]\]: [dict get $d message]"]
+    # Project-level diagnostics (no file, no position) get no location line at
+    # all; "--> 0:0" points at nothing and reads like a bug.
+    if {$fn ne ""} {
+        if {$line == 0 && $col == 0} {
+            lappend lines "  --> $fn"
+        } else {
+            lappend lines "  --> $fn:$line:$col"
+        }
+    } elseif {$line != 0 || $col != 0} {
+        lappend lines "  --> $line:$col"
+    }
     if {[dict get $d hint] ne ""} { lappend lines "  help: [dict get $d hint]" }
     return [join $lines "\n"]
 }

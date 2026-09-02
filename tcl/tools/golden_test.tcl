@@ -80,14 +80,6 @@ proc corpus_walk {dir} {
     return $out
 }
 
-# Source positions are not yet tracked in the Tcl AST, so the one
-# position-bearing diagnostic text -- E107's "first defined at line N" hint --
-# is normalized on both sides. The goldens keep the real line numbers, so this
-# normalization can simply be deleted once the parser records positions.
-proc normalize_diag {s} {
-    return [regsub -all {line [0-9]+} $s {line N}]
-}
-
 proc golden_name {path} {
     return "[string map {/ __ .pk64 {}} $path].txt"
 }
@@ -179,8 +171,6 @@ proc check_text_stage {stage files} {
         }
         set fh [open $gp r]; set want [read $fh]; close $fh
         set got [run_dump $stage $f]
-        set want [normalize_diag $want]
-        set got [normalize_diag $got]
         # The dumps end with a newline the golden captured verbatim; compare
         # trimmed so a trailing-newline difference is not a false failure.
         if {[string trimright $got "\n"] eq [string trimright $want "\n"]} {

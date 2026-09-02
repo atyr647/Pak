@@ -35,13 +35,18 @@ oo::class create pak::Checker {
     method diags {} { return $diags }
 
     # ── diagnostic helpers ────────────────────────────────────────────────────
+    # `node` supplies the location: pak::nodepos returns the position of the
+    # token the construct started on, or {0 0} for a synthesized node, which the
+    # CLI renders as no location rather than a wrong one.
     method err {code msg hint node} {
+        lassign [pak::nodepos $node] line col
         lappend diags [dict create code $code severity error \
-            message $msg hint $hint line 0 col 0 filename $filename]
+            message $msg hint $hint line $line col $col filename $filename]
     }
     method warn {code msg hint node} {
+        lassign [pak::nodepos $node] line col
         lappend diags [dict create code $code severity warning \
-            message $msg hint $hint line 0 col 0 filename $filename]
+            message $msg hint $hint line $line col $col filename $filename]
     }
 
     # ── top-level program walk ────────────────────────────────────────────────
@@ -86,7 +91,7 @@ oo::class create pak::Checker {
             my err E107 "Duplicate top-level name '$name'" \
                 "First defined at line [dict get $top_names $name]" $node
         } else {
-            dict set top_names $name 0
+            dict set top_names $name [pak::nodeline $node]
         }
     }
 
