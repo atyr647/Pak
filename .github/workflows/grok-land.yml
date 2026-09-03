@@ -1,0 +1,80 @@
+name: grok-land
+
+# Permanent lander on main. Feature-branch mailboxes never touch this file,
+# so git-am of week patches cannot conflict with it.
+#
+# All-at-once payload (first match wins):
+#   1. gist_url — raw URL of one gzip+base64 mailbox
+#   2. grok-sync/<prefix>.partNN.b64 on target_branch (upload every part in
+#      a single github___push_files commit; do not drip 1–2 parts per commit)
+on:
+  workflow_dispatch:
+    inputs:
+      gist_url:
+        description: Raw gist/URL of gzip+base64 mailbox (optional; preferred)
+        required: false
+        default: ""
+      payload_prefix:
+        description: Path prefix on the target branch for .partNN.b64 files
+        required: true
+        default: grok-sync/week1
+      target_branch:
+        description: Feature branch to replace with base + mailbox
+        required: true
+        default: grok/airtight-week1
+      base_ref:
+        description: Clean base to apply onto
+        required: true
+        default: main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout clean base
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.base_ref }}
+
+      - name: Decode mailbox and apply
+        env:
+          GIST_URL: ${{ github.event.inputs.gist_url }}
+          PREFIX: ${{ github.event.inputs.payload_prefix }}
+          SRC_REF: ${{ github.event.inputs.target_branch }}
+          TARGET: ${{ github.event.inputs.target_branch }}
+        run: |
+          set -euo pipefail
+          if [ -n "${GIST_URL}" ]; then
+            echo "fetching mailbox from ${GIST_URL}"
+            curl -fsSL "$GIST_URL" -o /tmp/all.b64
+          else
+            git fetch origin "$SRC_REF"
+            git ls-tree -r --name-only "origin/${SRC_REF}" \
+              | awk -v p="$PREFIX" '$0 ~ "^" p "\\.part[0-9]+\\.b64$" { print }' \
+              | sort > /tmp/parts.txt
+            test -s /tmp/parts.txt
+            echo "parts:" && cat /tmp/parts.txt
+            : > /tmp/all.b64
+            while read -r p; do
+              git show "origin/${SRC_REF}:${p}" >> /tmp/all.b64
+            done < /tmp/parts.txt
+          fi
+          python3 - << 'PY'
+          import base64, gzip, pathlib
+          raw = pathlib.Path("/tmp/all.b64").read_text().replace("\n", "")
+          pathlib.Path("/tmp/week.patch").write_bytes(
+              gzip.decompress(base64.b64decode(raw))
+          )
+          print("patch bytes", pathlib.Path("/tmp/week.patch").stat().st_size)
+          PY
+          git checkout -B "$TARGET"
+          git config user.name "grok-land"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git am --committer-date-is-author-date /tmp/week.patch
+          git log --oneline -5
+          git push --force-with-lease "origin" "$TARGET"
