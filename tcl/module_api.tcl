@@ -119,6 +119,14 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     eeprom_type_detect 1 \
     eeprom_read 1 \
     eeprom_write 1 \
+    audio_init 1 \
+    audio_close 1 \
+    audio_get_buffer 1 \
+    audio_get_frequency 1 \
+    audio_can_write 1 \
+    audio_write 1 \
+    audio_write_silence 1 \
+    audio_set_buffer_num 1 \
     memset 1 \
     memcpy 1 \
     memcmp 1 \

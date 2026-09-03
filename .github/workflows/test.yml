@@ -126,6 +126,9 @@ jobs:
       - name: EEPROM SI/PIF + PI DMA goldens
         run: tclsh tcl/tools/eeprom_test.tcl
 
+      - name: Audio PCM (AI DACRATE/LEN/kick)
+        run: tclsh tcl/tools/audio_test.tcl
+
       - name: Generic instantiation checking (E015/E016)
         run: tclsh tcl/tools/generic_inst_test.tcl
 

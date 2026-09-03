@@ -71,7 +71,20 @@ entry { audio.init(22050, 1) }
 set diags [pak::semantic_check $ast "t.pk64" c]
 ok "audio.init accepted on libdragon" [expr {[llength $diags] == 0}] $diags
 set diags [pak::semantic_check $ast "t.pk64" mips]
-ok "audio.init is E010 on mips" [has_code $diags E010] [codes $diags]
+ok "audio.init accepted on mips" [expr {[llength $diags] == 0}] $diags
+
+set ast [parse_src "use n64.audio
+entry {
+    audio.init(44100, 4)
+    let b: *i16 = audio.get_buffer()
+    audio.write(b)
+    audio.write_silence()
+    audio.set_buffer_num(2)
+    audio.close()
+}
+"]
+set diags [pak::semantic_check $ast "t.pk64" mips]
+ok "audio PCM surface accepted on mips" [expr {[llength $diags] == 0}] $diags
 
 set ast [parse_src "use n64.eeprom
 entry { eeprom.present() }
@@ -103,7 +116,9 @@ puts "== tables =="
 ok "MODULE_API is non-empty" [expr {[llength [pak::module_api_keys]] > 50}] \
     [llength [pak::module_api_keys]]
 ok "display_init is in the HAL" [pak::mips_hal_symbol display_init]
-ok "audio_init is not in the HAL" [expr {![pak::mips_hal_symbol audio_init]}]
+ok "audio_init is in the HAL" [pak::mips_hal_symbol audio_init]
+ok "audio_get_buffer is in the HAL" [pak::mips_hal_symbol audio_get_buffer]
+ok "audio_write is in the HAL" [pak::mips_hal_symbol audio_write]
 ok "sprite_load is not in the HAL" [expr {![pak::mips_hal_symbol sprite_load]}]
 ok "rdpq_triangle_tex is in the HAL" [pak::mips_hal_symbol rdpq_triangle_tex]
 ok "rdpq_set_tile_mask is in the HAL" [pak::mips_hal_symbol rdpq_set_tile_mask]

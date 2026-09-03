@@ -260,14 +260,14 @@ rejects a no.
 |--------|----------|----------|-----------|------------|
 | `arena` | `alloc` | `arena_alloc` | yes | no |
 | `arena` | `reset` | `arena_reset` | yes | no |
-| `audio` | `can_write` | `audio_can_write` | yes | no |
-| `audio` | `close` | `audio_close` | yes | no |
-| `audio` | `get_buffer` | `audio_get_buffer` | yes | no |
-| `audio` | `get_frequency` | `audio_get_frequency` | yes | no |
-| `audio` | `init` | `audio_init` | yes | no |
-| `audio` | `set_buffer_num` | `audio_set_buffer_num` | yes | no |
-| `audio` | `write` | `audio_write` | yes | no |
-| `audio` | `write_silence` | `audio_write_silence` | yes | no |
+| `audio` | `can_write` | `audio_can_write` | yes | yes |
+| `audio` | `close` | `audio_close` | yes | yes |
+| `audio` | `get_buffer` | `audio_get_buffer` | yes | yes |
+| `audio` | `get_frequency` | `audio_get_frequency` | yes | yes |
+| `audio` | `init` | `audio_init` | yes | yes |
+| `audio` | `set_buffer_num` | `audio_set_buffer_num` | yes | yes |
+| `audio` | `write` | `audio_write` | yes | yes |
+| `audio` | `write_silence` | `audio_write_silence` | yes | yes |
 | `backup` | `read` | `backup_read` | yes | no |
 | `backup` | `size` | `backup_size` | yes | no |
 | `backup` | `type` | `backup_type` | yes | no |
@@ -579,7 +579,7 @@ rejects a no.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**320 functions** across the module surface; **74** exist on the standalone HAL.
+**320 functions** across the module surface; **82** exist on the standalone HAL.
 
 <!-- END GENERATED MODULE API -->
 
@@ -1009,10 +1009,12 @@ use n64.audio            -- #include <audio.h> + <xm64.h> + <wav64.h>
 | `audio.set_buffer_num` | `(n: i32)` | Set number of audio buffers |
 
 **Behavioral rules:**
-- `frequency`: `22050`, `32000`, or `44100` (Hz).
-- `buffers`: `2`–`8`; `4` is a good default.
+- `frequency`: `22050`, `32000`, or `44100` (Hz). Other values become 44100.
+- `buffers`: `2`–`8`; `4` is a good default. Values outside the range are clamped.
 - `audio.get_buffer()` returns `none` if no buffer is ready — always check.
 - Buffer is interleaved stereo `i16`: `[L, R, L, R, ...]`. Fill it entirely.
+- On the standalone HAL this is a real AI DMA: DACRATE/BITRATE, `get_buffer`
+  auto-submits the previous buffer so a fill-only game loop still plays.
 - See `N64_HARDWARE.md` → Audio System for buffer size calculation.
 
 ---

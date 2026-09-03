@@ -45,9 +45,11 @@ The HAL for the path that needs no external tools at all: no GCC, no `as`, no
 | Memory | bump allocator, `memset`, `memcpy`, `memcmp` |
 | Strings | `strlen`, `strcmp`, `strncmp`, `strstr` |
 | Cache | hit-writeback, hit-invalidate, and both together |
+| EEPROM | SI/PIF Joybus channel 4: present / type_detect / read / write |
+| Audio | AI 16-bit stereo PCM: init / get_buffer / write / close |
 
 Not provided, so a program using these needs the libdragon path (`--backend c`)
-or its own implementation: **audio** (the AI), **EEPROM / SRAM / FlashRAM
+or its own implementation: **mixer / wav64 / xm64**, **SRAM / FlashRAM
 saves**, **Controller Pak and Transfer Pak**, **rumble**, **sprite loading and
 blitting** (`sprite_load`, `rdpq_sprite_blit` — the RDP texturing primitives
 underneath them are all here), **rspq blocks**, and **Tiny3D**. They are

@@ -123,14 +123,15 @@ framebuffers and the display list).
 | FB0 / FB1 / FB2 | `0x80200000` / `0x80225800` / `0x8024B000` | 320×240×16bpp each (`0x25800`) |
 | Z buffer | `0x80271000` | 320×240×16-bit (`0x25800`) |
 | RDP display list | `0x80297000` | 8 KB |
+| AI PCM ring | `0x80299000` | 28 KB (up to 8 stereo buffers) |
 | bump heap | `0x802A0000`–`0x803C0000` | |
 | stack top | `0x80400000` | grows down |
 
 Cart images are padded to 4/8/16/32/64 MiB
 (`pak link --size 4`, default 4); a 2.9 MB `.z64` crashes on flashcarts.
 
-The linker exports `__fb0`, `__fb1`, `__fb2`, `__zb`, `__dl_base`, `__heap_start`,
-`__heap_end`, `__stack_top` so a program can read the map instead of
+The linker exports `__fb0`, `__fb1`, `__fb2`, `__zb`, `__dl_base`, `__ab`,
+`__heap_start`, `__heap_end`, `__stack_top` so a program can read the map instead of
 hard-coding it. `.bss` still reserves address space but is not stored in the
 ROM image (boot.S zero-fills it at startup). `R_MIPS_HI16`/`LO16` use the
 standard `+0x8000` carry correction.
@@ -191,6 +192,10 @@ wait loops terminate instead of hanging.
   exception vectors and `jal`s `exception_paint`, which fills FB0/FB1/FB2 with
   RGBA5551 `0xF801` and programs the VI. `assert` / `__pak_panic` take the same
   path. Goldens live in `tcl/tools/exception_test.tcl`.
+* **Audio PCM.** `audio.init` programs the AI (NTSC DACRATE/BITRATE, DMA
+  enable). Buffers sit at `0x80299000`; `get_buffer` returns `none` when
+  `AI_STATUS.FULL` is set, and a fill-only loop kicks the previous buffer.
+  Goldens live in `tcl/tools/audio_test.tcl`.
 * **FPU encodings.** COP1 ops (`add.s`/`sub.s`/`mul.s`/`div.s`, the
   `mov`/`neg`/`abs`/`sqrt` unary group, `cvt.*`, the `c.<cond>.s` compare
   family, `bc1t`/`bc1f`, `mtc1`/`mfc1`) all have golden encodings in

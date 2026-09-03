@@ -1,14 +1,12 @@
 # Pak Language Reference
 
 This is the canonical syntax reference for the Pak programming language.
-Generated from the parser, lexer, and AST source — not from aspirational docs.
+It matches `tcl/parser.tcl` / `tcl/lexer.tcl` / `GRAMMAR.ebnf`. The grammar
+is frozen: new syntax is a language change, not a documentation edit.
 
-Every feature is tagged:
-- `[IMPLEMENTED]` — fully parsed, type-checked, and code-generated
-- `[PARTIAL]` — parsed and may type-check, but codegen may be incomplete
-- `[PLANNED]` — exists in design docs but NOT in the current implementation
-
-**Do not use `[PLANNED]` features in generated code.**
+`[IMPLEMENTED]` means parsed, type-checked, and code-generated. Things that
+are never legal live in `NOT_SUPPORTED.md`. Do not invent syntax that is in
+neither file.
 
 ---
 

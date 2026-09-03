@@ -62,6 +62,11 @@ set ::pak::MIPS_EXTERNS [list \
     audio_init \
     audio_close \
     audio_get_buffer \
+    audio_get_frequency \
+    audio_can_write \
+    audio_write \
+    audio_write_silence \
+    audio_set_buffer_num \
     debugf \
     assert \
     dma_read \
@@ -231,6 +236,11 @@ set ::pak::MIPS_API [dict create \
     {audio init} {audio_init} \
     {audio close} {audio_close} \
     {audio get_buffer} {audio_get_buffer} \
+    {audio get_frequency} {audio_get_frequency} \
+    {audio can_write} {audio_can_write} \
+    {audio write} {audio_write} \
+    {audio write_silence} {audio_write_silence} \
+    {audio set_buffer_num} {audio_set_buffer_num} \
     {debug log} {debugf} \
     {debug assert} {assert} \
     {debug log_value} {debugf} \

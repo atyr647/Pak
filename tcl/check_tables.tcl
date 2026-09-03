@@ -50,9 +50,14 @@ set ::pak::KNOWN_MODULES [dict create \
 ]
 
 set ::pak::API_ARITY [dict create \
+    {audio can_write} {0 0} \
     {audio close} {0 0} \
     {audio get_buffer} {0 0} \
+    {audio get_frequency} {0 0} \
     {audio init} {2 2} \
+    {audio set_buffer_num} {1 1} \
+    {audio write} {1 1} \
+    {audio write_silence} {0 0} \
     {cache invalidate} {2 2} \
     {cache writeback} {2 2} \
     {cache writeback_inv} {2 2} \

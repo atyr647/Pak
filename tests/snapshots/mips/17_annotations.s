@@ -16,8 +16,10 @@
 	.extern rdpq_detach
 	.extern rdpq_detach_show
 	.extern rdpq_set_mode_standard
+	.extern rdpq_set_mode_standard_z
 	.extern rdpq_set_mode_copy
 	.extern rdpq_set_mode_fill
+	.extern rdpq_clear_z
 	.extern rdpq_fill_rectangle
 	.extern rdpq_sync_full
 	.extern rdpq_sync_pipe
@@ -35,6 +37,7 @@
 	.extern rdpq_set_prim_color
 	.extern rdpq_set_texture_image
 	.extern rdpq_set_tile
+	.extern rdpq_set_tile_mask
 	.extern rdpq_set_tile_size
 	.extern rdpq_load_tile
 	.extern rdpq_load_block
@@ -42,6 +45,9 @@
 	.extern rdpq_texture_rectangle
 	.extern rdpq_texture_rectangle_scaled
 	.extern rdpq_triangle
+	.extern rdpq_triangle_shade
+	.extern rdpq_triangle_shade_z
+	.extern rdpq_triangle_tex
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -50,6 +56,11 @@
 	.extern audio_init
 	.extern audio_close
 	.extern audio_get_buffer
+	.extern audio_get_frequency
+	.extern audio_can_write
+	.extern audio_write
+	.extern audio_write_silence
+	.extern audio_set_buffer_num
 	.extern debugf
 	.extern assert
 	.extern dma_read
@@ -222,10 +233,10 @@ sum_scanline:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -792
+    sw $ra, 788($sp)
+    sw $fp, 784($sp)
+    addiu $fp, $sp, 792
     addiu $a0, $sp, 200
     move $a1, $zero
     li $a2, 64
@@ -313,9 +324,9 @@ main:
     sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_4:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 784($sp)
+    lw $ra, 788($sp)
+    addiu $sp, $sp, 792
     jr $ra
     nop
 	.size main, . - main

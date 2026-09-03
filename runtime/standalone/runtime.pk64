@@ -1331,9 +1331,165 @@ fn eeprom_write(block: i32, src: *u8) {
     si_exec()
 }
 
+-- ── Audio Interface (16-bit stereo PCM) ─────────────────────────────────────
+-- AI DMA streams interleaved L/R i16 samples from RDRAM to the DAC. Buffers
+-- live in cached KSEG0 just after the display list; we writeback before each
+-- kick. Two slots can be queued (STATUS.FULL); get_buffer returns none when
+-- both are occupied. A fill-only loop (get_buffer, write samples, repeat)
+-- auto-submits the previous buffer so audio.write is optional.
+const AI_DRAM_ADDR: u32 = 0xA4500000
+const AI_LEN:       u32 = 0xA4500004
+const AI_CONTROL:   u32 = 0xA4500008
+const AI_STATUS:    u32 = 0xA450000C
+const AI_DACRATE:   u32 = 0xA4500010
+const AI_BITRATE:   u32 = 0xA4500014
+const AI_FULL:      u32 = 0x80000000
+const AI_NTSC_CLOCK: i32 = 48681818
+const AUDIO_BASE:    u32 = 0x80299000   -- after DL, before heap
+const AUDIO_SPAN:    i32 = 0x7000       -- 28 KB until HEAP_BASE
+const AUDIO_MAX_BUFS: i32 = 8
+
+static g_audio_freq:  i32 = 0
+static g_audio_nbuf:  i32 = 0
+static g_audio_bytes: i32 = 0
+static g_audio_next:  i32 = 0
+static g_audio_have:  i32 = 0
+
+fn audio_ai_full() -> i32 {
+    if (vi_read(AI_STATUS) & AI_FULL) != 0 { return 1 }
+    return 0
+}
+
+fn audio_buf_addr(i: i32) -> u32 {
+    return AUDIO_BASE + (i * g_audio_bytes) as u32
+}
+
+fn audio_kick(i: i32) {
+    let addr: u32 = audio_buf_addr(i)
+    data_cache_hit_writeback(addr as *u8, g_audio_bytes)
+    vi_write(AI_DRAM_ADDR, addr & 0x00FFFFFF)
+    vi_write(AI_LEN, g_audio_bytes as u32)
+    vi_write(AI_CONTROL, 1)
+}
+
+fn audio_init(frequency: i32, buffers: i32) {
+    let mut freq: i32 = frequency
+    if freq != 22050 {
+        if freq != 32000 { freq = 44100 }
+    }
+    let mut n: i32 = buffers
+    if n < 2 { n = 2 }
+    if n > AUDIO_MAX_BUFS { n = AUDIO_MAX_BUFS }
+
+    -- One 1/60 s of stereo i16, length a multiple of 8 (AI) and 16 (cache).
+    let mut frames: i32 = (freq + 59) / 60
+    if (frames & 1) != 0 { frames = frames + 1 }
+    let mut bytes: i32 = frames * 4
+    bytes = (bytes + 15) & 0xFFFFFFF0
+    if n * bytes > AUDIO_SPAN { n = AUDIO_SPAN / bytes }
+
+    let dacrate: i32 = ((2 * AI_NTSC_CLOCK / freq) + 1) / 2
+    let mut bitrate: i32 = dacrate / 66
+    if bitrate > 16 { bitrate = 16 }
+    if bitrate < 1 { bitrate = 1 }
+
+    vi_write(AI_CONTROL, 0)
+    vi_write(AI_DACRATE, (dacrate - 1) as u32)
+    vi_write(AI_BITRATE, (bitrate - 1) as u32)
+    vi_write(AI_STATUS, 0)
+    vi_write(AI_CONTROL, 1)
+
+    g_audio_freq = freq
+    g_audio_nbuf = n
+    g_audio_bytes = bytes
+    g_audio_next = 0
+    g_audio_have = 0
+
+    let mut i: i32 = 0
+    while i < n {
+        memset(audio_buf_addr(i) as *u8, 0, bytes)
+        i = i + 1
+    }
+}
+
+fn audio_close() {
+    vi_write(AI_CONTROL, 0)
+    vi_write(AI_DACRATE, 0)
+    vi_write(AI_BITRATE, 0)
+    g_audio_freq = 0
+    g_audio_nbuf = 0
+    g_audio_bytes = 0
+    g_audio_next = 0
+    g_audio_have = 0
+}
+
+fn audio_get_frequency() -> i32 {
+    return g_audio_freq
+}
+
+fn audio_can_write() -> i32 {
+    if g_audio_freq == 0 { return 0 }
+    if audio_ai_full() != 0 { return 0 }
+    return 1
+}
+
+fn audio_get_buffer() -> *i16 {
+    if g_audio_freq == 0 { return 0 as *i16 }
+    if g_audio_have != 0 {
+        if audio_ai_full() != 0 { return 0 as *i16 }
+        audio_kick(g_audio_next)
+        g_audio_next = (g_audio_next + 1) % g_audio_nbuf
+        g_audio_have = 0
+    }
+    if audio_ai_full() != 0 { return 0 as *i16 }
+    g_audio_have = 1
+    return audio_buf_addr(g_audio_next) as *i16
+}
+
+fn audio_write(buf: *i16) {
+    if g_audio_freq == 0 { return }
+    loop {
+        if audio_ai_full() == 0 { break }
+    }
+    let mut i: i32 = 0
+    let want: u32 = buf as u32
+    while i < g_audio_nbuf {
+        if audio_buf_addr(i) == want {
+            audio_kick(i)
+            g_audio_next = (i + 1) % g_audio_nbuf
+            g_audio_have = 0
+            return
+        }
+        i = i + 1
+    }
+    audio_kick(g_audio_next)
+    g_audio_next = (g_audio_next + 1) % g_audio_nbuf
+    g_audio_have = 0
+}
+
+fn audio_write_silence() {
+    if g_audio_freq == 0 { return }
+    let buf: *i16 = audio_get_buffer()
+    if buf == none { return }
+    memset(buf as *u8, 0, g_audio_bytes)
+    audio_write(buf)
+}
+
+fn audio_set_buffer_num(n: i32) {
+    if g_audio_freq == 0 { return }
+    let mut b: i32 = n
+    if b < 2 { b = 2 }
+    if b > AUDIO_MAX_BUFS { b = AUDIO_MAX_BUFS }
+    if b * g_audio_bytes > AUDIO_SPAN { b = AUDIO_SPAN / g_audio_bytes }
+    g_audio_nbuf = b
+    g_audio_next = 0
+    g_audio_have = 0
+}
+
+
 -- ── Heap (bump allocator) ───────────────────────────────────────────────────
--- Cached RDRAM above the framebuffers, Z buffer and the display list, below the stack.
--- Freeing is a no-op: a game that needs reuse should use an arena.
+-- Cached RDRAM above the framebuffers, Z, display list and audio PCM, below
+-- the stack. Freeing is a no-op: a game that needs reuse should use an arena.
 const HEAP_BASE:  u32 = 0x802A0000
 const HEAP_LIMIT: u32 = 0x803C0000
 

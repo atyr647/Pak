@@ -12,6 +12,7 @@
  *   0x8024B000  FB2  ends 0x80270800 (KSEG1 0xA024B000)
  *   0x80271000  Z buffer 320×240×16-bit (KSEG1 0xA0271000)  0x25800 bytes
  *   0x80297000  RDP display list, 8 KB (KSEG1 0xA0297000)
+ *   0x80299000  AI PCM ring (up to 8 stereo buffers, 28 KB)
  *   0x802A0000  bump heap
  *   0x803C0000  heap limit
  *   0x80400000  stack top (grows down)

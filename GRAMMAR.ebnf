@@ -1,5 +1,7 @@
 (* Pak Language Grammar — EBNF *)
-(* Generated from pak/parser.py and pak/lexer.py *)
+(* Frozen with tcl/parser.tcl and tcl/lexer.tcl. This is the human-readable
+   copy of that grammar, not a generator input. Language changes go through
+   the Tcl parser first. *)
 (*
    Notation:
      rule = ... ;          definition

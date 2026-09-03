@@ -208,6 +208,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Delay slot filling | ✅ Full | Same record passes |
 | CPU exception paint | ✅ Full | crt0 installs 0x80000000/80/100/180; default fills FB red (`0xF801`) |
 | EEPROM (SI/PIF ch4) | ✅ Full | `present` / `type_detect` / `read` / `write` / `init` on the standalone HAL |
+| Audio PCM (AI) | ✅ Full | `init`/`get_buffer`/`write`/`close` on the standalone HAL; 16-bit stereo |
 | `defer` | ✅ Full | |
 | `match` on enums | ✅ Full | |
 | Named-field variant construction (`Type.case { f: v }`) | ✅ Full | Stack-allocated with tag + payload stores |
