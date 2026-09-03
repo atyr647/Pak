@@ -120,6 +120,9 @@ jobs:
       - name: Encoded exec goldens (optimizer on records, calls + MMIO)
         run: tclsh tcl/tools/enc_exec_test.tcl
 
+      - name: Array address-of and u8 index (sb, not scale-4 sw)
+        run: tclsh tcl/tools/array_addr_test.tcl
+
       - name: Exception paint (sim + vector trampoline + 4 MiB ROM)
         run: tclsh tcl/tools/exception_test.tcl
 

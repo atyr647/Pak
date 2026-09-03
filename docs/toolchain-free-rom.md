@@ -197,6 +197,10 @@ wait loops terminate instead of hanging.
   enable). Buffers sit at `0x80299000`; `get_buffer` returns `none` when
   `AI_STATUS.FULL` is set, and a fill-only loop kicks the previous buffer.
   Goldens live in `tcl/tools/audio_test.tcl`.
+* **Array address.** `&arr` of a static or local array is the first-element
+  address (`la` / `addiu $sp`). Indexing `[N]u8` emits `sb`/`lbu` at `base+i`.
+  `as` binds looser than unary `&`, so `&buf as u32` is the label, not a stack
+  slot. Goldens live in `tcl/tools/array_addr_test.tcl`.
 * **FPU encodings.** COP1 ops (`add.s`/`sub.s`/`mul.s`/`div.s`, the
   `mov`/`neg`/`abs`/`sqrt` unary group, `cvt.*`, the `c.<cond>.s` compare
   family, `bc1t`/`bc1f`, `mtc1`/`mfc1`) all have golden encodings in

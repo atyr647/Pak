@@ -201,7 +201,6 @@ main:
     move $t9, $t8
     li $t8, 100
     la $t7, score_table
-    lw $t7, 0($t7)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
@@ -217,15 +216,12 @@ main:
     lw $t7, 0($t7)
     andi $t8, $t7, 255
     la $t7, dma_buffer
-    lw $t7, 0($t7)
     li $t6, 0
-    sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     li $t8, 16
     la $t7, score_table
-    lw $t7, 0($t7)
     li $t6, 1
     sll $t6, $t6, 2
     addu $t7, $t7, $t6

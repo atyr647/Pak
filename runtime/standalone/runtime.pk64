@@ -155,22 +155,13 @@ const PIF_RAM_PHYS:      u32 = 0x1FC007C0
 
 -- PIF command buffer: 64 bytes, 16-byte aligned so DMA is valid (E202).
 static g_pif_buf: [64]u8 @aligned(16)
--- Address of g_pif_buf, filled by pif_addr via `la`. Taking `&g_pif_buf` in
--- Pak currently loads the first word instead of the address, so SI DMA and
--- byte pokes go through this helper.
-static g_pif_addr: u32 = 0
 
 fn pif_addr() -> u32 {
-    asm {
-        "la $t0, g_pif_buf"
-        "la $t1, g_pif_addr"
-        "sw $t0, 0($t1)"
-    }
-    return g_pif_addr
+    return &g_pif_buf as u32
 }
 
--- Byte poke/peek through a u32 address. `*volatile u8` locals whose value
--- is a function argument actually emit `sb`/`lbu`; address-of-array does not.
+-- Byte poke/peek through a u32 address. Used when the destination is a
+-- computed offset (EEPROM payload copy), not a static array index.
 fn poke8(addr: u32, val: u32) {
     let p: *volatile u8 = addr as *volatile u8
     *p = val as u8
@@ -182,10 +173,9 @@ fn peek8(addr: u32) -> u32 {
 }
 
 fn pif_zero() {
-    let b: u32 = pif_addr()
     let mut i: i32 = 0
     while i < 64 {
-        poke8(b + i as u32, 0)
+        g_pif_buf[i] = 0
         i = i + 1
     }
 }

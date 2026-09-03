@@ -277,21 +277,21 @@ main:
     move $t9, $zero
     sw $t9, 168($sp)
     li $t8, 100
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 200
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     li $t6, 1
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 50
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     li $t6, 2
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
@@ -299,64 +299,58 @@ main:
     move $t9, $t8
     li $a2, 0
     li $a1, 8
-    lw $t7, 136($sp)
-    li $t6, 0
-    sll $t6, $t6, 2
-    addu $t7, $t7, $t6
-    lw $t8, 0($t7)
-    sw $t8, 232($sp)
-    addiu $a0, $sp, 232
+    addiu $t8, $sp, 136
+    li $t7, 0
+    sll $t7, $t7, 2
+    addu $t8, $t8, $t7
+    move $a0, $t8
     sw $t9, 96($sp)
     jal fill
     nop
     lw $t9, 96($sp)
     move $t9, $v0
     li $t8, 5
-    lw $t7, 168($sp)
+    addiu $t7, $sp, 168
     li $t4, 3
     li $t3, 8
     mul $t5, $t4, $t3
     li $t4, 2
     addu $t6, $t5, $t4
-    sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
-    lw $t6, 168($sp)
+    addiu $t6, $sp, 168
     li $t3, 3
     li $t2, 8
     mul $t4, $t3, $t2
     li $t3, 2
     addu $t5, $t4, $t3
-    sll $t5, $t5, 2
     addu $t6, $t6, $t5
-    lw $t7, 0($t6)
+    lbu $t7, 0($t6)
     move $t8, $t7
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 10
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 20
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     li $t6, 1
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $a1, 8
-    lw $t6, 136($sp)
-    li $t5, 0
-    sll $t5, $t5, 2
-    addu $t6, $t6, $t5
-    lw $t7, 0($t6)
-    sw $t7, 236($sp)
-    addiu $a0, $sp, 236
+    addiu $t7, $sp, 136
+    li $t6, 0
+    sll $t6, $t6, 2
+    addu $t7, $t7, $t6
+    move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal sum_array

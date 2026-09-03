@@ -213,15 +213,13 @@ map_get:
     nop
 .Lif_end_1:
     la $t9, dungeon_map
-    lw $t9, 0($t9)
     lw $t6, 140($sp)
     li $t5, 16
     mul $t7, $t6, $t5
     lw $t6, 136($sp)
     addu $t8, $t7, $t6
-    sll $t8, $t8, 2
     addu $t9, $t9, $t8
-    lw $v0, 0($t9)
+    lbu $v0, 0($t9)
     j .Lmap_get_ret_0
     nop
 .Lmap_get_ret_0:
@@ -510,15 +508,13 @@ render_minimap:
     beqz $t9, .Lwhile_x_18
     nop
     la $t8, dungeon_map
-    lw $t8, 0($t8)
     lw $t5, 140($sp)
     li $t4, 16
     mul $t6, $t5, $t4
     lw $t5, 144($sp)
     addu $t7, $t6, $t5
-    sll $t7, $t7, 2
     addu $t8, $t8, $t7
-    lw $t9, 0($t8)
+    lbu $t9, 0($t8)
     sb $t9, 148($sp)
     li $t8, 252
     lw $t6, 144($sp)

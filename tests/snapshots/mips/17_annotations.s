@@ -205,9 +205,8 @@ sum_scanline:
     mul $t1, $t0, $s7
     lw $t0, 152($sp)
     addu $t2, $t1, $t0
-    sll $t2, $t2, 2
     addu $t3, $t3, $t2
-    lw $t4, 0($t3)
+    lbu $t4, 0($t3)
     move $t5, $t4
     lw $t4, 148($sp)
     addu $t5, $t4, $t5
@@ -236,10 +235,10 @@ sum_scanline:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -792
-    sw $ra, 788($sp)
-    sw $fp, 784($sp)
-    addiu $fp, $sp, 792
+    addiu $sp, $sp, -784
+    sw $ra, 780($sp)
+    sw $fp, 776($sp)
+    addiu $fp, $sp, 784
     addiu $a0, $sp, 200
     move $a1, $zero
     li $a2, 64
@@ -268,11 +267,9 @@ main:
     lw $t7, 0($t6)
     andi $t8, $t7, 255
     la $t7, dma_out
-    lw $t7, 0($t7)
     li $t6, 0
-    sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     addiu $a0, $sp, 520
     move $a1, $zero
@@ -308,14 +305,10 @@ main:
     move $t9, $t8
     li $a2, 320
     li $a1, 0
-    la $t6, dma_out
-    lw $t6, 0($t6)
-    li $t5, 0
-    sll $t5, $t5, 2
-    addu $t6, $t6, $t5
-    lw $t7, 0($t6)
-    sw $t7, 776($sp)
-    addiu $a0, $sp, 776
+    la $t7, dma_out
+    li $t6, 0
+    addu $t7, $t7, $t6
+    move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal sum_scanline
@@ -327,9 +320,9 @@ main:
     sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_4:
-    lw $fp, 784($sp)
-    lw $ra, 788($sp)
-    addiu $sp, $sp, 792
+    lw $fp, 776($sp)
+    lw $ra, 780($sp)
+    addiu $sp, $sp, 784
     jr $ra
     nop
 	.size main, . - main

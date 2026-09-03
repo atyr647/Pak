@@ -896,7 +896,15 @@ oo::class create pak::Parser {
     method parse_cmp {} { return [my binop_chain parse_shift {LT < GT > LTE <= GTE >=}] }
     method parse_shift {} { return [my binop_chain parse_add {SHL << SHR >>}] }
     method parse_add {} { return [my binop_chain parse_mul {PLUS + MINUS -}] }
-    method parse_mul {} { return [my binop_chain parse_unary {STAR * SLASH / PERCENT %}] }
+    method parse_mul {} { return [my binop_chain parse_cast {STAR * SLASH / PERCENT %}] }
+
+    method parse_cast {} {
+        set expr [my parse_unary]
+        if {[my accept AS]} {
+            return [pak::N Cast expr $expr type [my parse_type]]
+        }
+        return $expr
+    }
 
     method parse_unary {} {
         if {[my accept BANG] || [my accept NOT]} {
@@ -909,15 +917,7 @@ oo::class create pak::Parser {
             return [pak::N AddrOf expr [my parse_unary] mutable $mut]
         }
         if {[my accept STAR]} { return [pak::N Deref expr [my parse_unary]] }
-        return [my parse_cast]
-    }
-
-    method parse_cast {} {
-        set expr [my parse_postfix]
-        if {[my accept AS]} {
-            return [pak::N Cast expr $expr type [my parse_type]]
-        }
-        return $expr
+        return [my parse_postfix]
     }
 
     method parse_postfix {} {

@@ -207,9 +207,9 @@ gen_sample:
     nop
 .Lif_end_1:
     li $t8, 8000
-    sll $t9, $t8, 16
-    sra $t9, $t9, 16
-    subu $v0, $zero, $t9
+    subu $t9, $zero, $t8
+    sll $v0, $t9, 16
+    sra $v0, $v0, 16
     j .Lgen_sample_ret_0
     nop
 .Lgen_sample_ret_0:
@@ -271,18 +271,18 @@ fill_audio_buffer:
     lh $t8, 144($sp)
     lw $t7, 136($sp)
     lw $t6, 140($sp)
-    sll $t6, $t6, 2
+    sll $t6, $t6, 1
     addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    sh $t8, 0($t7)
     move $t9, $t8
     lh $t8, 144($sp)
     lw $t7, 136($sp)
     lw $t5, 140($sp)
     li $t4, 1
     addu $t6, $t5, $t4
-    sll $t6, $t6, 2
+    sll $t6, $t6, 1
     addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    sh $t8, 0($t7)
     move $t9, $t8
     lw $t7, 140($sp)
     li $t6, 2

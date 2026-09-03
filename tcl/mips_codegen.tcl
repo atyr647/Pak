@@ -737,7 +737,8 @@ oo::class create pak::MipsCodegen {
                 set sz [pak::nfield $type_tv size]
                 if {[pak::kindof $sz] eq "IntLit"} { set n [pak::fval $sz value] } else { set n 0 }
                 return [dict create size [expr {[dict get $inner size] * $n}] \
-                    align [dict get $inner align] is_float 0 is_signed 1 is_ptr 0 fields {} frac_bits 0]
+                    align [dict get $inner align] is_float 0 is_signed 1 is_ptr 0 fields {} \
+                    frac_bits 0 is_array 1]
             }
             TypeSlice {
                 # Fat pointer: {ptr@0, len@4}
@@ -1126,6 +1127,7 @@ oo::class create pak::MipsCodegen {
         }
         $pool add_static [pak::fval $decl name] [dict get $layout size] $align $init
         dict set globals [pak::fval $decl name] [list 0 $layout]
+        if {![pak::isnil $typ]} { dict set type_nodes [pak::fval $decl name] $typ }
     }
 
     method emit_fn {name params body} {
@@ -2629,15 +2631,54 @@ oo::class create pak::MipsCodegen {
         if {[dict exists $consts $name]} { $em li $dst [dict get $consts $name]; return }
         set local [my lookup_local $name]
         if {$local ne ""} {
-            my load_from_sp [lindex $local 0] $dst [lindex $local 1]
+            lassign $local off layout
+            # Arrays decay to a pointer: the address of the first element, not
+            # a load of that element. `arr[i]` and `&arr` both need this.
+            if {[dict exists $layout is_array] && [dict get $layout is_array]} {
+                $em addiu $dst {$sp} $off
+                return
+            }
+            my load_from_sp $off $dst $layout
             return
+        }
+        if {[dict exists $globals $name]} {
+            set layout [lindex [dict get $globals $name] 1]
+            if {[dict exists $layout is_array] && [dict get $layout is_array]} {
+                $em la $dst $name
+                return
+            }
         }
         $em la $dst $name
         $em lw $dst 0 $dst
     }
 
-    # element layout for array/slice access — always 4-byte (matches backend).
-    method resolve_elem_layout {obj_expr} { return [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}] }
+    # Element layout for array / pointer / slice indexing. u8 must be 1 so
+    # `buf[i] = v` emits `sb` at base+i, not `sw` at base+i*4.
+    method unwrap_type {tn} {
+        while {$tn ne "" && ![pak::isnil $tn] && [pak::kindof $tn] eq "TypeVolatile"} {
+            set tn [pak::nfield $tn inner]
+        }
+        return $tn
+    }
+    method resolve_elem_layout {obj_expr} {
+        set tn ""
+        switch -- [pak::kindof $obj_expr] {
+            Ident { set tn [my lookup_type_node [pak::fval $obj_expr name]] }
+            Cast  { set tn [pak::nfield $obj_expr type] }
+        }
+        set tn [my unwrap_type $tn]
+        if {$tn ne "" && ![pak::isnil $tn]} {
+            switch -- [pak::kindof $tn] {
+                TypeArray - TypeSlice - TypePointer {
+                    set inner [my unwrap_type [pak::nfield $tn inner]]
+                    if {$inner ne "" && ![pak::isnil $inner]} {
+                        return [my mips_layout $inner]
+                    }
+                }
+            }
+        }
+        return [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]
+    }
 
     method emit_index_addr {obj index} {
         set elem [my resolve_elem_layout $obj]
@@ -2693,21 +2734,32 @@ oo::class create pak::MipsCodegen {
 
     method emit_addr_of {expr dst} {
         set inner [pak::nfield $expr expr]
-        if {[pak::kindof $inner] eq "Ident"} {
-            set local [my lookup_local [pak::fval $inner name]]
-            if {$local ne ""} {
-                $em addiu $dst {$sp} [lindex $local 0]
-                return
+        switch -- [pak::kindof $inner] {
+            Ident {
+                set local [my lookup_local [pak::fval $inner name]]
+                if {$local ne ""} {
+                    $em addiu $dst {$sp} [lindex $local 0]
+                    return
+                }
+                $em la $dst [pak::fval $inner name]
             }
-            $em la $dst [pak::fval $inner name]
-        } else {
-            set layout [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]
-            set off [my declare_local __addrof $layout]
-            set tmp [$ra alloc_temp]
-            my emit_expr $inner $tmp
-            $em sw $tmp $off {$sp}
-            $ra free_temp $tmp
-            $em addiu $dst {$sp} $off
+            IndexAccess {
+                # &arr[i] is the computed element address, not a stack slot
+                # holding a copy of the loaded element.
+                lassign [my emit_index_addr [pak::nfield $inner obj] [pak::nfield $inner index]] base idx elem
+                if {$dst ne $base} { $em move $dst $base }
+                $ra free_temp $idx
+                $ra free_temp $base
+            }
+            default {
+                set layout [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]
+                set off [my declare_local __addrof $layout]
+                set tmp [$ra alloc_temp]
+                my emit_expr $inner $tmp
+                $em sw $tmp $off {$sp}
+                $ra free_temp $tmp
+                $em addiu $dst {$sp} $off
+            }
         }
     }
 

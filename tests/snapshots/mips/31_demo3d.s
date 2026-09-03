@@ -836,33 +836,30 @@ render_cube:
     bge $t7, $t8, .Lfor_x_33
     nop
     la $t4, cv_x
-    lw $t4, 0($t4)
     lw $t3, 252($sp)
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
-    lw $t5, 0($t4)
+    lwc1 $f12, 0($t4)
     mov.s $f14, $f12
     lw $t3, 136($sp)
     lwc1 $f12, 12($t3)
     mul.s $f12, $f14, $f12
     swc1 $f12, 256($sp)
     la $t4, cv_y
-    lw $t4, 0($t4)
     lw $t3, 252($sp)
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
-    lw $t5, 0($t4)
+    lwc1 $f12, 0($t4)
     mov.s $f14, $f12
     lw $t3, 136($sp)
     lwc1 $f12, 12($t3)
     mul.s $f12, $f14, $f12
     swc1 $f12, 260($sp)
     la $t4, cv_z
-    lw $t4, 0($t4)
     lw $t3, 252($sp)
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
-    lw $t5, 0($t4)
+    lwc1 $f12, 0($t4)
     mov.s $f14, $f12
     lw $t3, 136($sp)
     lwc1 $f12, 12($t3)
@@ -932,7 +929,7 @@ render_cube:
     add.s $f12, $f14, $f12
     swc1 $f12, 292($sp)
     li $t5, 0
-    lw $t4, 204($sp)
+    addiu $t4, $sp, 204
     lw $t3, 252($sp)
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
@@ -961,7 +958,7 @@ render_cube:
     move $t4, $t3
     li $t3, 160
     addu $t5, $t4, $t3
-    lw $t4, 140($sp)
+    addiu $t4, $sp, 140
     lw $t3, 252($sp)
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
@@ -979,14 +976,14 @@ render_cube:
     move $t4, $t3
     li $t3, 120
     addu $t5, $t4, $t3
-    lw $t4, 172($sp)
+    addiu $t4, $sp, 172
     lw $t3, 252($sp)
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     sw $t5, 0($t4)
     move $t6, $t5
     li $t5, 1
-    lw $t4, 204($sp)
+    addiu $t4, $sp, 204
     lw $t3, 252($sp)
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
@@ -1008,7 +1005,6 @@ render_cube:
     bge $t7, $t8, .Lfor_x_38
     nop
     la $t5, cf_idx
-    lw $t5, 0($t5)
     lw $t2, 296($sp)
     li $t1, 4
     mul $t3, $t2, $t1
@@ -1019,7 +1015,6 @@ render_cube:
     lw $t6, 0($t5)
     sw $t6, 300($sp)
     la $t5, cf_idx
-    lw $t5, 0($t5)
     lw $t2, 296($sp)
     li $t1, 4
     mul $t3, $t2, $t1
@@ -1030,7 +1025,6 @@ render_cube:
     lw $t6, 0($t5)
     sw $t6, 304($sp)
     la $t5, cf_idx
-    lw $t5, 0($t5)
     lw $t2, 296($sp)
     li $t1, 4
     mul $t3, $t2, $t1
@@ -1041,7 +1035,6 @@ render_cube:
     lw $t6, 0($t5)
     sw $t6, 308($sp)
     la $t5, cf_idx
-    lw $t5, 0($t5)
     lw $t2, 296($sp)
     li $t1, 4
     mul $t3, $t2, $t1
@@ -1051,14 +1044,14 @@ render_cube:
     addu $t5, $t5, $t4
     lw $t6, 0($t5)
     sw $t6, 312($sp)
-    lw $t1, 204($sp)
+    addiu $t1, $sp, 204
     lw $t0, 300($sp)
     sll $t0, $t0, 2
     addu $t1, $t1, $t0
     lw $t2, 0($t1)
     li $t1, 0
     seq $t3, $t2, $t1
-    lw $t0, 204($sp)
+    addiu $t0, $sp, 204
     lw $s7, 304($sp)
     sll $s7, $s7, 2
     addu $t0, $t0, $s7
@@ -1067,7 +1060,7 @@ render_cube:
     seq $t2, $t1, $t0
     or $t1, $t3, $t2
     sltu $t4, $zero, $t1
-    lw $t1, 204($sp)
+    addiu $t1, $sp, 204
     lw $t0, 308($sp)
     sll $t0, $t0, 2
     addu $t1, $t1, $t0
@@ -1076,7 +1069,7 @@ render_cube:
     seq $t3, $t2, $t1
     or $t2, $t4, $t3
     sltu $t5, $zero, $t2
-    lw $t2, 204($sp)
+    addiu $t2, $sp, 204
     lw $t1, 312($sp)
     sll $t1, $t1, 2
     addu $t2, $t2, $t1
@@ -1090,23 +1083,23 @@ render_cube:
     j .Lfor_i_37
     nop
 .Lif_end_39:
-    lw $t3, 140($sp)
+    addiu $t3, $sp, 140
     lw $t2, 304($sp)
     sll $t2, $t2, 2
     addu $t3, $t3, $t2
     lw $t4, 0($t3)
-    lw $t2, 140($sp)
+    addiu $t2, $sp, 140
     lw $t1, 300($sp)
     sll $t1, $t1, 2
     addu $t2, $t2, $t1
     lw $t3, 0($t2)
     subu $t5, $t4, $t3
-    lw $t2, 172($sp)
+    addiu $t2, $sp, 172
     lw $t1, 308($sp)
     sll $t1, $t1, 2
     addu $t2, $t2, $t1
     lw $t3, 0($t2)
-    lw $t1, 172($sp)
+    addiu $t1, $sp, 172
     lw $t0, 300($sp)
     sll $t0, $t0, 2
     addu $t1, $t1, $t0
@@ -1114,23 +1107,23 @@ render_cube:
     subu $t4, $t3, $t2
     mul $t6, $t5, $t4
     sw $t6, 316($sp)
-    lw $t3, 172($sp)
+    addiu $t3, $sp, 172
     lw $t2, 304($sp)
     sll $t2, $t2, 2
     addu $t3, $t3, $t2
     lw $t4, 0($t3)
-    lw $t2, 172($sp)
+    addiu $t2, $sp, 172
     lw $t1, 300($sp)
     sll $t1, $t1, 2
     addu $t2, $t2, $t1
     lw $t3, 0($t2)
     subu $t5, $t4, $t3
-    lw $t2, 140($sp)
+    addiu $t2, $sp, 140
     lw $t1, 308($sp)
     sll $t1, $t1, 2
     addu $t2, $t2, $t1
     lw $t3, 0($t2)
-    lw $t1, 140($sp)
+    addiu $t1, $sp, 140
     lw $t0, 300($sp)
     sll $t0, $t0, 2
     addu $t1, $t1, $t0
@@ -1165,46 +1158,46 @@ render_cube:
     lw $t5, 112($sp)
     move $t5, $v0
     sw $t5, 32($sp)
-    lw $t4, 172($sp)
+    addiu $t4, $sp, 172
     lw $t3, 312($sp)
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lw $t5, 0($t4)
     sw $t5, 28($sp)
-    lw $t4, 140($sp)
+    addiu $t4, $sp, 140
     lw $t3, 312($sp)
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lw $t5, 0($t4)
     sw $t5, 24($sp)
-    lw $t4, 172($sp)
+    addiu $t4, $sp, 172
     lw $t3, 308($sp)
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lw $t5, 0($t4)
     sw $t5, 20($sp)
-    lw $t4, 140($sp)
+    addiu $t4, $sp, 140
     lw $t3, 308($sp)
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lw $t5, 0($t4)
     sw $t5, 16($sp)
-    lw $t5, 172($sp)
+    addiu $t5, $sp, 172
     lw $t4, 304($sp)
     sll $t4, $t4, 2
     addu $t5, $t5, $t4
     lw $a3, 0($t5)
-    lw $t5, 140($sp)
+    addiu $t5, $sp, 140
     lw $t4, 304($sp)
     sll $t4, $t4, 2
     addu $t5, $t5, $t4
     lw $a2, 0($t5)
-    lw $t5, 172($sp)
+    addiu $t5, $sp, 172
     lw $t4, 300($sp)
     sll $t4, $t4, 2
     addu $t5, $t5, $t4
     lw $a1, 0($t5)
-    lw $t5, 140($sp)
+    addiu $t5, $sp, 140
     lw $t4, 300($sp)
     sll $t4, $t4, 2
     addu $t5, $t5, $t4
@@ -1255,7 +1248,6 @@ render_sky_ground:
     mflo $t9
     sw $t9, 140($sp)
     la $t8, sky_col
-    lw $t8, 0($t8)
     li $t7, 0
     sll $t7, $t7, 2
     addu $t8, $t8, $t7
@@ -1273,7 +1265,6 @@ render_sky_ground:
     bge $t7, $t8, .Lfor_x_44
     nop
     la $t5, sky_col
-    lw $t5, 0($t5)
     lw $t4, 144($sp)
     sll $t4, $t4, 2
     addu $t5, $t5, $t4
@@ -1325,7 +1316,6 @@ render_sky_ground:
     bge $t7, $t8, .Lfor_x_47
     nop
     la $t5, gnd_col
-    lw $t5, 0($t5)
     lw $t4, 148($sp)
     sll $t4, $t4, 2
     addu $t5, $t5, $t4
