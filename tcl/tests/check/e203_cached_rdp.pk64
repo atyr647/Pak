@@ -1,0 +1,5 @@
+-- E203: KSEG0 address handed to the DP
+use n64.rdpq
+entry {
+    rdpq.set_texture_image(0x80001000, 0, 2, 32)
+}

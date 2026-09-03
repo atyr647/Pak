@@ -33,6 +33,24 @@ set ::pak::_n64link_loaded 1
 
 set ::pak::LINK_BASE_ADDR 0x80000400
 
+# Standalone RDRAM map (cached KSEG0). Uncached KSEG1 is these | 0xA0000000.
+# Layout, low to high:
+#   .text / .rodata / .data / .bss | 64-byte gap | FB0 FB1 FB2 | (Z later) | DL | heap | stack
+# Framebuffers, the RDP display list, heap and stack are NOT relocatable: the
+# runtime hard-codes the same numbers. The linker refuses to place a section
+# that would collide with them.
+set ::pak::MEM_GAP           64
+set ::pak::MEM_FB0           0x80200000
+set ::pak::MEM_FB_SIZE       0x25800          ;# 320 * 240 * 2
+set ::pak::MEM_FB_COUNT      3
+set ::pak::MEM_DL_BASE       0x80271000
+set ::pak::MEM_DL_SIZE       8192
+set ::pak::MEM_HEAP_BASE     0x80280000
+set ::pak::MEM_HEAP_LIMIT    0x803C0000
+set ::pak::MEM_STACK_TOP     0x80400000
+# FB2 ends at 0x80270800; 64-byte gap then DL at 0x80271000 (matches runtime).
+# A full 320×240 Z buffer is not reserved yet (TRI_TEX, week 2).
+
 # Fixed section order, and the alignment applied BEFORE each section is placed
 # (matching n64.ld's ALIGN directives). .text starts at the already-16-aligned
 # base, so it needs no extra alignment of its own.
@@ -266,6 +284,35 @@ proc pak::link_parsed_objects {objects {entry _start}} {
     set bss_end [expr {$bss_start + [dict get $section_sizes .bss]}]
     foreach {name value} [list __bss_start $bss_start _fbss $bss_start \
                                __bss_end $bss_end _end $bss_end] {
+        if {[dict exists $symbols $name]} {
+            pak::link_error "reserved linker symbol '$name' is also defined in\
+                [dict get $sym_origin $name]"
+        }
+        dict set symbols $name $value
+    }
+
+    # 3c. Memory map: program sections must leave a 64-byte gap before FB0.
+    #     Anything interesting (18×256² sheets in .data) used to land in the
+    #     framebuffers; this is the check that stops it.
+    set code_end $bss_end
+    set fb0 $::pak::MEM_FB0
+    if {$code_end + $::pak::MEM_GAP > $fb0} {
+        pak::link_error [format \
+            "memory map overlap: .text/.rodata/.data/.bss ends at %#010x; framebuffer 0 starts at %#010x (need a %d-byte gap). Layout: .text/.rodata/.data | 64-byte gap | FB | Z | DL | heap | stack. Shrink .data (stream textures via PI DMA) or drop a framebuffer." \
+            $code_end $fb0 $::pak::MEM_GAP]
+    }
+
+    # Linker-defined hardware-region symbols. Same addresses the runtime uses,
+    # so a program that wants to *read* the map (rather than hard-code it) can.
+    set fb1 [expr {$fb0 + $::pak::MEM_FB_SIZE}]
+    set fb2 [expr {$fb1 + $::pak::MEM_FB_SIZE}]
+    foreach {name value} [list \
+            __fb0 $fb0 __fb1 $fb1 __fb2 $fb2 \
+            __dl_base $::pak::MEM_DL_BASE \
+            __dl_end  [expr {$::pak::MEM_DL_BASE + $::pak::MEM_DL_SIZE}] \
+            __heap_start $::pak::MEM_HEAP_BASE \
+            __heap_end   $::pak::MEM_HEAP_LIMIT \
+            __stack_top  $::pak::MEM_STACK_TOP] {
         if {[dict exists $symbols $name]} {
             pak::link_error "reserved linker symbol '$name' is also defined in\
                 [dict get $sym_origin $name]"

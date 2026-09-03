@@ -35,6 +35,7 @@ set ::pak::CG_API [dict create \
     {debug assert} {assert} \
     {debug flush} {flush} \
     {debug init} {debug_init_isviewer} \
+    {debug init_isviewer} {debug_init_isviewer} \
     {debug init_usbfs} {debug_init_usbfs} \
     {debug log} {debugf} \
     {debug print} {debugf} \
@@ -71,6 +72,7 @@ set ::pak::CG_API [dict create \
     {joypad init} {joypad_init} \
     {joypad poll} {joypad_poll} \
     {mixer ch_play} {mixer_ch_play} \
+    {mixer ch_playing} {mixer_ch_playing} \
     {mixer ch_set_freq} {mixer_ch_set_freq} \
     {mixer ch_set_vol} {mixer_ch_set_vol} \
     {mixer ch_stop} {mixer_ch_stop} \
@@ -107,6 +109,7 @@ set ::pak::CG_API [dict create \
     {rdpq set_prim_color} {rdpq_set_prim_color} \
     {rdpq set_scissor} {rdpq_set_scissor} \
     {rdpq set_tile} {rdpq_set_tile} \
+    {rdpq set_tile_mask} {rdpq_set_tile_mask} \
     {rdpq set_tile_size} {rdpq_set_tile_size} \
     {rdpq set_z_image} {rdpq_set_z_image} \
     {rdpq sync_full} {rdpq_sync_full} \
@@ -116,6 +119,7 @@ set ::pak::CG_API [dict create \
     {rdpq texture_rectangle} {rdpq_texture_rectangle} \
     {rdpq texture_rectangle_scaled} {rdpq_texture_rectangle_scaled} \
     {rdpq triangle} {rdpq_triangle} \
+    {rdpq triangle_tex} {rdpq_triangle_tex} \
     {rdpq_font draw_text} {rdpq_text_print} \
     {rdpq_font free} {rdpq_font_free} \
     {rdpq_font load} {rdpq_font_load} \
@@ -205,6 +209,7 @@ set ::pak::CG_API [dict create \
     {t3d viewport_set_projection} {t3d_viewport_set_projection} \
     {timer get_ticks} {get_ticks} \
     {timer init} {timer_init} \
+    {timer ticks} {get_ticks} \
     {tpak get_status} {tpak_get_status} \
     {tpak init} {tpak_init} \
     {tpak read} {tpak_read} \

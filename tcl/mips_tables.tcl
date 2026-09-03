@@ -41,6 +41,7 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_set_prim_color \
     rdpq_set_texture_image \
     rdpq_set_tile \
+    rdpq_set_tile_mask \
     rdpq_set_tile_size \
     rdpq_load_tile \
     rdpq_load_block \
@@ -48,6 +49,7 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_texture_rectangle \
     rdpq_texture_rectangle_scaled \
     rdpq_triangle \
+    rdpq_triangle_tex \
     sprite_load \
     rdpq_sprite_blit \
     timer_init \
@@ -204,6 +206,7 @@ set ::pak::MIPS_API [dict create \
     {rdpq set_prim_color} {rdpq_set_prim_color} \
     {rdpq set_texture_image} {rdpq_set_texture_image} \
     {rdpq set_tile} {rdpq_set_tile} \
+    {rdpq set_tile_mask} {rdpq_set_tile_mask} \
     {rdpq set_tile_size} {rdpq_set_tile_size} \
     {rdpq load_tile} {rdpq_load_tile} \
     {rdpq load_block} {rdpq_load_block} \
@@ -211,6 +214,7 @@ set ::pak::MIPS_API [dict create \
     {rdpq texture_rectangle} {rdpq_texture_rectangle} \
     {rdpq texture_rectangle_scaled} {rdpq_texture_rectangle_scaled} \
     {rdpq triangle} {rdpq_triangle} \
+    {rdpq triangle_tex} {rdpq_triangle_tex} \
     {sprite load} {sprite_load} \
     {sprite blit} {rdpq_sprite_blit} \
     {timer init} {timer_init} \

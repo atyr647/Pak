@@ -177,7 +177,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Fixed-point arithmetic | ✅ Full | Uses C macros |
 | `alloc` / `free` | ✅ Full | Maps to `malloc`/`free` |
 | `defer` → cleanup code | ✅ Full | |
-| N64 module API calls | ✅ Full | All modules in `n64_runtime.py` |
+| N64 module API calls | ✅ Full | `tcl/module_api.tcl` (CG_API ∪ CG_API_LAMBDA). Standalone HAL is the subset in `runtime/standalone/runtime.pk64`; `pak check --backend mips` is E010 on the rest. |
 | `asset` declarations | ✅ Full | |
 | `extern "C"` blocks | ✅ Full | |
 | `@cfg` conditional compilation | ✅ Full | Maps to `#if`/`#endif` |

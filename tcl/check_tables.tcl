@@ -1,6 +1,8 @@
 # tcl/check_tables.tcl — lookup tables for the semantic checker: known
 # modules and their functions, builtin arities, and recognized @cfg features.
-# Generated once from a second implementation; now hand-maintained source.
+# Module *existence* is MODULE_API in tcl/module_api.tcl (CG_API ∪ CG_API_LAMBDA).
+# API_ARITY is the subset with a checked argument count (E105). Unknown methods
+# are E010, never silently lowered.
 namespace eval pak {}
 # Include guard (reachable via multiple consumers; see ast.tcl).
 if {[info exists ::pak::_check_tables_loaded]} { return }
@@ -75,6 +77,11 @@ set ::pak::API_ARITY [dict create \
     {rdpq fill_rectangle} {4 4} \
     {rdpq init} {0 0} \
     {rdpq set_scissor} {4 4} \
+    {rdpq set_tile} {6 6} \
+    {rdpq set_tile_mask} {10 10} \
+    {rdpq set_texture_image} {4 4} \
+    {rdpq triangle} {6 6} \
+    {rdpq triangle_tex} {13 13} \
     {rdpq sync_full} {0 0} \
     {rdpq sync_pipe} {0 0} \
     {sprite blit} {3 3} \

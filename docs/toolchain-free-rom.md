@@ -43,7 +43,10 @@ at `0x80000400`:
 pak asmobj runtime/standalone/boot.S        -o boot.pakobj      # crt0
 pak objgen runtime/standalone/runtime.pk64  -o runtime.pakobj   # HAL
 pak objgen game.pk64             -o game.pakobj      # the game
-pak link boot.pakobj runtime.pakobj game.pakobj -o game.z64 --name GAME
+pak link boot.pakobj runtime.pakobj game.pakobj -o game.z64 --name GAME --size 4
+
+# or, from a pak.toml project:
+pak build --backend mips -o game.z64
 ```
 
 ## Why records instead of re-parsing assembly text
@@ -104,11 +107,26 @@ references (`la`, `j`/`jal`, `.word sym`) become relocations the linker patches.
 
 ## Memory layout (matches `runtime/standalone/n64.ld`)
 
-* Base `0x80000400` (after the IPL3 stack reservation).
-* Section order: `.text` → align16 `.rodata` → align8 `.data` → align8 `.bss`.
-* `.bss` reserves address space but is not stored in the ROM image (boot.S
-  zero-fills it at startup). `R_MIPS_HI16`/`LO16` use the standard `+0x8000`
-  carry correction.
+Cached KSEG0. Uncached KSEG1 is `addr | 0xA0000000` (how the runtime names
+framebuffers and the display list).
+
+| Region | Address | Size |
+|--------|---------|------|
+| `.text` / `.rodata` / `.data` / `.bss` | `0x80000400` | grows up; **must stay 64 bytes below FB0** |
+| 64-byte gap | | linker error on overlap |
+| FB0 / FB1 / FB2 | `0x80200000` / `0x80225800` / `0x8024B000` | 320×240×16bpp each (`0x25800`) |
+| RDP display list | `0x80271000` | 8 KB |
+| bump heap | `0x80280000`–`0x803C0000` | |
+| stack top | `0x80400000` | grows down |
+
+A full Z buffer is not reserved yet. Cart images are padded to 4/8/16/32/64 MiB
+(`pak link --size 4`, default 4); a 2.9 MB `.z64` crashes on flashcarts.
+
+The linker exports `__fb0`, `__fb1`, `__fb2`, `__dl_base`, `__heap_start`,
+`__heap_end`, `__stack_top` so a program can read the map instead of
+hard-coding it. `.bss` still reserves address space but is not stored in the
+ROM image (boot.S zero-fills it at startup). `R_MIPS_HI16`/`LO16` use the
+standard `+0x8000` carry correction.
 
 ## The RDP does the drawing
 
@@ -127,8 +145,8 @@ What the runtime drives:
 | Modes | `SET_OTHER_MODES` (FILL / COPY / 1-cycle), `SET_COMBINE` |
 | Colour registers | fill, blend, fog, env, prim |
 | Fills | `FILL_RECTANGLE` in FILL cycle — four bytes per cycle |
-| Texturing | `SET_TEXTURE_IMAGE`, `SET_TILE`, `SET_TILE_SIZE`, `LOAD_TILE`, `LOAD_BLOCK`, `LOAD_TLUT`, `TEXTURE_RECTANGLE` |
-| Geometry | `TRIANGLE` (flat, edge coefficients in s15.16) |
+| Texturing | `SET_TEXTURE_IMAGE` (writeback of KSEG0 sources), `SET_TILE` / `SET_TILE` clamp+mirror+mask, `SET_TILE_SIZE`, `LOAD_TILE`, `LOAD_BLOCK`, `LOAD_TLUT`, `TEXTURE_RECTANGLE` |
+| Geometry | `TRIANGLE` (0x08 flat fill) and `TRI_TEX` (0x0A, s15.16 edges + ST + 1/w). Shade+Z (0x0C/0x0E) not yet. |
 | Sync | `SYNC_PIPE`, `SYNC_TILE`, `SYNC_LOAD`, `SYNC_FULL` |
 
 A full-screen clear is one `FILL_RECTANGLE` instead of 76 800 uncached

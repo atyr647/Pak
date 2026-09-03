@@ -18,6 +18,8 @@ entry {
     rdpq.set_prim_color(0x1122_33FF)
     rdpq.set_blend_color(0x4455_66FF)
     rdpq.triangle(10, 10, 100, 20, 40, 90)
+    rdpq.set_tile_mask(0, 0, 2, 8, 0, 0, 2, 2, 5, 5)
+    rdpq.triangle_tex(0, 16, 16, 0, 0, 48, 16, 32, 0, 16, 48, 0, 32)
     rdpq.sync_pipe()
     rdpq.sync_tile()
     rdpq.sync_load()

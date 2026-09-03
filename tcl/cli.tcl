@@ -245,7 +245,7 @@ proc pak::cli_check_module_imports {parsed} {
 
 # Returns {hard_errors warnings}. Prints diagnostics to stderr and per-file
 # status to stdout, exactly like _run_full_check.
-proc pak::cli_run_full_check {parsed root no_style} {
+proc pak::cli_run_full_check {parsed root no_style {backend c}} {
     set tc_results [pak::cli_typecheck_multi $parsed $no_style]
     set hard 0; set warns 0
     set tc_diags [dict create]
@@ -256,7 +256,7 @@ proc pak::cli_run_full_check {parsed root no_style} {
     set sem_diags [dict create]
     foreach pr $parsed {
         lassign $pr fn prog
-        set all [pak::semantic_check $prog $fn]
+        set all [pak::semantic_check $prog $fn $backend]
         set errs {}; set ws {}
         foreach d $all { if {[dict get $d severity] eq "warning"} { lappend ws $d } else { lappend errs $d } }
         dict set sem_diags $fn [list $errs $ws]
@@ -333,6 +333,68 @@ proc pak::cli_build_mips {parsed root build_dir verbose} {
     }
     return $s_rel
 }
+
+# One-shot standalone ROM: boot.S + runtime.pk64 + game objects → padded .z64.
+proc pak::cli_build_mips_rom {parsed root out opts config project_name rom_title} {
+    set build_dir [file join $root build]
+    file mkdir $build_dir
+    set rt_dir [file join [pak::cli_runtime_dir] standalone]
+    set boot_s [file join $rt_dir boot.S]
+    set rt_pk  [file join $rt_dir runtime.pk64]
+    if {![file exists $boot_s] || ![file exists $rt_pk]} {
+        puts stderr "error: standalone runtime missing under [pak::cli_runtime_dir]/standalone"
+        exit 1
+    }
+    set boot_obj [file join $build_dir boot.pakobj]
+    set rt_obj   [file join $build_dir runtime.pakobj]
+    set fh [open $boot_s r]; set boot_txt [read $fh]; close $fh
+    pak::enc::write_object_from_asm $boot_txt $boot_obj
+    puts "  asmobj runtime/standalone/boot.S -> build/boot.pakobj"
+    set rt_prog [pak::cli_parse_file $rt_pk]
+    if {$rt_prog eq ""} { exit 1 }
+    pak::enc::write_object [pak::mips_generate_records $rt_prog] $rt_obj
+    puts "  objgen runtime/standalone/runtime.pk64 -> build/runtime.pakobj"
+
+    set objs [list $boot_obj $rt_obj]
+    foreach pr $parsed {
+        lassign $pr pf prog
+        set rel [pak::_relto $pf $root]
+        # Don't link a second copy of the HAL if the project vendored it.
+        if {[string match *runtime/standalone* [string map {\\ /} $rel]]} continue
+        set obj [file join $build_dir [file rootname $rel].pakobj]
+        file mkdir [file dirname $obj]
+        pak::enc::write_object [pak::mips_generate_records $prog] $obj
+        lappend objs $obj
+        puts "  objgen $rel -> [pak::_relto $obj $root]"
+    }
+    set name [dict get $opts name]
+    if {$name eq ""} { set name $rom_title }
+    set size_mib [dict get $opts size]
+    if {$size_mib eq ""} { set size_mib 4 }
+    if {![string is integer -strict $size_mib]} {
+        puts stderr "error: --size must be 4, 8, 16, 32 or 64 (MiB)"; exit 1
+    }
+    set rom_bytes [expr {$size_mib * 1024 * 1024}]
+    if {[catch {pak::link_objects $objs _start} result]} {
+        if {[string match "LINKERROR*" $result]} {
+            puts stderr "link error: [string range $result 10 end]"
+            exit 1
+        }
+        return -code error $result
+    }
+    set image [dict get $result image]
+    if {[catch {set rom [pak::n64rom $image $name "" $rom_bytes]} err]} {
+        puts stderr "rom error: $err"
+        exit 1
+    }
+    set f [open $out wb]; puts -nonewline $f $rom; close $f
+    binary scan [string range $rom 16 23] IuIu crc1 crc2
+    puts [format "ROM: %s  (%d bytes)  CRC1=%08X  CRC2=%08X" \
+        $out [string length $rom] $crc1 $crc2]
+    if {[dict exists $result symbols main]} {
+        puts "entry main -> [format %#010x [dict get $result symbols main]]"
+    }
+}
 proc pak::_module_path {prog} {
     foreach decl [pak::items [pak::nfield $prog decls]] {
         if {[pak::kindof $decl] eq "ModuleDecl"} { return [pak::fval $decl path] }
@@ -372,7 +434,7 @@ proc pak::cmd_build {opts} {
         if {$prog eq ""} { exit 1 }
         lappend parsed [list $pf $prog]
     }
-    lassign [pak::cli_run_full_check $parsed $root $no_style] hard warns
+    lassign [pak::cli_run_full_check $parsed $root $no_style $backend] hard warns
     if {$warns > 0 && !$no_style} {
         puts stderr "\n$warns style warning(s). Use --no-style-warnings to suppress."
     }
@@ -382,6 +444,11 @@ proc pak::cmd_build {opts} {
         exit 1
     }
     if {$backend eq "mips"} {
+        set out [dict get $opts output]
+        if {$out ne ""} {
+            pak::cli_build_mips_rom $parsed $root $out $opts $config $project_name $rom_title
+            return
+        }
         set out_rel [pak::cli_build_mips $parsed $root $build_dir $verbose]
     } else {
         set out_rel [pak::cli_build_c $parsed $root $build_dir $verbose]
@@ -457,6 +524,8 @@ proc pak::cli_write_bin {path data} {
 proc pak::cmd_check {opts} {
     set root [pak::cli_find_project_root]
     set no_style [dict get $opts no_style_warnings]
+    set backend [dict get $opts backend]
+    if {$backend eq ""} { set backend c }
     if {$root eq ""} {
         set files [dict get $opts files]
         if {[llength $files] == 0} {
@@ -476,7 +545,7 @@ proc pak::cmd_check {opts} {
     }
     set hard $n_parse_errors; set warns 0
     if {[llength $parsed] > 0} {
-        lassign [pak::cli_run_full_check $parsed $root $no_style] h w
+        lassign [pak::cli_run_full_check $parsed $root $no_style $backend] h w
         incr hard $h; set warns $w
     }
     set n [llength $src_files]
@@ -560,7 +629,16 @@ proc pak::cmd_link {opts} {
     }
     if {$out ne ""} {
         set ipl3 [pak::n64rom_ipl3_from_z64 [dict get $opts ipl3]]
-        set rom [pak::n64rom $image [dict get $opts name] $ipl3]
+        set size_mib [dict get $opts size]
+        if {$size_mib eq ""} { set size_mib 4 }
+        if {![string is integer -strict $size_mib]} {
+            puts stderr "error: --size must be 4, 8, 16, 32 or 64 (MiB)"; exit 1
+        }
+        set rom_bytes [expr {$size_mib * 1024 * 1024}]
+        if {[catch {set rom [pak::n64rom $image [dict get $opts name] $ipl3 $rom_bytes]} err]} {
+            puts stderr "rom error: $err"
+            exit 1
+        }
         set f [open $out wb]; puts -nonewline $f $rom; close $f
         binary scan [string range $rom 16 23] IuIu crc1 crc2
         puts [format "ROM: %s  (%d bytes)  CRC1=%08X  CRC2=%08X" \
@@ -709,13 +787,13 @@ proc pak::cli_main {argv} {
     set cmd [lindex $argv 0]
     set rest [lrange $argv 1 end]
     switch -- $cmd {
-        build  { pak::cmd_build [pak::_parse_opts $rest {verbose 0 backend c no_style_warnings 0}] }
-        check  { pak::cmd_check [pak::_parse_opts $rest {files {} no_style_warnings 0}] }
+        build  { pak::cmd_build [pak::_parse_opts $rest {verbose 0 backend c no_style_warnings 0 output "" name "" size 4}] }
+        check  { pak::cmd_check [pak::_parse_opts $rest {files {} no_style_warnings 0 backend c}] }
         explain { pak::cmd_explain [pak::_parse_opts $rest {file "" backend c}] }
         objgen { pak::cmd_objgen [pak::_parse_opts $rest {file "" output ""}] }
         asmobj { pak::cmd_asmobj [pak::_parse_opts $rest {file "" output ""}] }
         link   { pak::cmd_link [pak::_parse_opts $rest \
-                     {files {} output "" emit_bin "" name "PAK GAME" ipl3 "" entry _start}] }
+                     {files {} output "" emit_bin "" name "PAK GAME" ipl3 "" entry _start size 4}] }
         run    { pak::cmd_run [pak::_parse_opts $rest {verbose 0 backend c no_style_warnings 0}] }
         init   { pak::cmd_init [pak::_parse_opts $rest {name ""}] }
         clean  { pak::cmd_clean {} }
@@ -727,7 +805,16 @@ proc pak::cli_main {argv} {
 }
 proc pak::cli_help {} {
     puts "usage: pak \[--version\] COMMAND ..."
-    puts "commands: build check explain run init clean pack objgen asmobj link"
+    puts "commands:"
+    puts "  build   [--backend c|mips] [-o FILE.z64] [--size 4|8|16|32|64]"
+    puts "          libdragon: emit C + Makefile. standalone: if -o is given,"
+    puts "          objgen + link a padded .z64 in one step (boot + HAL + game)."
+    puts "  check   [--backend c|mips] [FILE...]     semantic check (E010 HAL gate)"
+    puts "  explain [--backend c|mips] FILE          dump C or MIPS"
+    puts "  objgen  FILE [-o FILE.pakobj]            MIPS records -> object"
+    puts "  asmobj  FILE.S [-o FILE.pakobj]          assemble crt0 / boot.S"
+    puts "  link    OBJS... -o FILE.z64 [--size MiB] [--name TITLE]"
+    puts "  run / init / clean / pack"
 }
 # Tiny flag parser: positionals fill 'file'/'name'/'files'; flags set keys.
 proc pak::_parse_opts {argv defaults} {
@@ -746,6 +833,7 @@ proc pak::_parse_opts {argv defaults} {
             --name { incr i; dict set o name [lindex $argv $i] }
             --ipl3 { incr i; dict set o ipl3 [lindex $argv $i] }
             --entry { incr i; dict set o entry [lindex $argv $i] }
+            --size { incr i; dict set o size [lindex $argv $i] }
             -* { }
             default { lappend pos $a }
         }
