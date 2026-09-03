@@ -4,6 +4,7 @@
  * Cached KSEG0 addresses. Uncached KSEG1 is (addr | 0xA0000000), which is
  * how the runtime names framebuffers and the RDP display list.
  *
+ *   0x80000000  exception vectors (installed at runtime by boot.S)
  *   0x80000400  .text / .rodata / .data / .bss
  *               64-byte gap (linker error if sections grow into it)
  *   0x80200000  FB0  320×240×16bpp   (KSEG1 0xA0200000)  0x25800 bytes

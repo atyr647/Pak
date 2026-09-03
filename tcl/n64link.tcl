@@ -35,6 +35,7 @@ set ::pak::LINK_BASE_ADDR 0x80000400
 
 # Standalone RDRAM map (cached KSEG0). Uncached KSEG1 is these | 0xA0000000.
 # Layout, low to high:
+#   0x80000000 vectors (boot.S copies a trampoline here at runtime)
 #   .text / .rodata / .data / .bss | 64-byte gap | FB0 FB1 FB2 | Z | DL | heap | stack
 # Framebuffers, Z, the RDP display list, heap and stack are NOT relocatable: the
 # runtime hard-codes the same numbers. The linker refuses to place a section

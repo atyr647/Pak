@@ -26,6 +26,7 @@ the old pytest suite into `tests/corpus/`.
 | PakFS archive | `pakfs.tcl` | `tests/golden/pakfs.txt` | 3 scenarios |
 | MIPS encoder | `n64enc.tcl` | `tcl/tools/n64enc_test.tcl` | 55 encodings |
 | Record optimizer + encoded exec | `optimize.tcl` | `tcl/tools/enc_exec_test.tcl` | call/MMIO goldens |
+| Exception paint + crt0 vectors | `boot.S`, `runtime.pk64` | `tcl/tools/exception_test.tcl` | red-screen + 4 MiB ROM |
 | Linker + ROM packer | `n64link.tcl`, `n64rom.tcl` | `tcl/tools/n64link_test.tcl` | 44 assertions |
 
 Token and AST dumps run to megabytes across the corpus, so those stages are

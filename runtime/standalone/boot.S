@@ -5,8 +5,13 @@
  * here (0x80000400), we:
  *   1. Set up the stack pointer
  *   2. Zero .bss
- *   3. Call main()
- *   4. Spin forever on return
+ *   3. Install CPU exception vectors at 0x80000000 / 80 / 100 / 180
+ *   4. Call main()
+ *   5. Spin forever on return
+ *
+ * Pak cannot express mfc0/mtc0/cache, so the vector trampoline stays here.
+ * A crash jal's exception_paint (runtime.pk64) which fills the framebuffers
+ * solid red (RGBA5551 0xF801) so a hung black screen is not a mystery.
  */
 
 .set noreorder
@@ -16,10 +21,11 @@
 .globl _start
 .type  _start, @function
 _start:
-    /* ── Disable interrupts ── */
+    /* ── Disable IE and BEV so vectors live in KSEG0, not bootstrap ── */
     mfc0    $8, $12             /* read CP0 Status */
-    li      $9, ~1
-    and     $8, $8, $9          /* clear IE bit */
+    lui     $9, 0xFFBF
+    ori     $9, $9, 0xFFFE      /* ~ (BEV | IE) */
+    and     $8, $8, $9
     mtc0    $8, $12
 
     /* ── Stack: top of first 4 MB RDRAM ── */
@@ -38,6 +44,33 @@ _start:
     nop
 .Ldone_bss:
 
+    /* ── Install exception vectors ──
+     * Copy the 8-byte stub (j exception_entry; nop) to the four VR4300
+     * vector addresses through KSEG1 so the stores bypass D-cache, then
+     * Hit-Invalidate the corresponding I-cache lines in KSEG0. */
+    la      $8, exception_stub
+    lw      $12, 0($8)
+    lw      $13, 4($8)
+    lui     $9, 0xA000          /* KSEG1 = 0xA0000000 */
+    li      $10, 4
+    li      $11, 0x80
+.Lvec_copy:
+    sw      $12, 0($9)
+    sw      $13, 4($9)
+    addu    $9, $9, $11
+    addiu   $10, $10, -1
+    bnez    $10, .Lvec_copy
+    nop
+
+    lui     $8, 0x8000          /* KSEG0 = 0x80000000 */
+    li      $10, 4
+.Lvec_ic:
+    cache   0x10, 0($8)         /* Hit_Invalidate_I */
+    addu    $8, $8, $11
+    addiu   $10, $10, -1
+    bnez    $10, .Lvec_ic
+    nop
+
     /* ── Call main ── */
     jal     main
     nop
@@ -48,3 +81,37 @@ _start:
     nop
 
 .size _start, . - _start
+
+    /* 8-byte trampoline copied to each exception vector. `j` is patched
+     * at link time; copying the relocated word is correct because 0x80000000
+     * and 0x80000400 sit in the same 256 MB J-region. */
+.globl exception_stub
+exception_stub:
+    j       exception_entry
+    nop
+
+    /* Reset $sp (it may be garbage), then dispatch: a non-zero
+     * g_exc_handler is jalr'd, otherwise exception_paint. Hang after. */
+.globl exception_entry
+exception_entry:
+    mfc0    $8, $12
+    lui     $9, 0xFFBF
+    ori     $9, $9, 0xFFFE
+    and     $8, $8, $9
+    mtc0    $8, $12
+    lui     $29, 0x8040
+    addiu   $29, $29, -16
+    la      $8, g_exc_handler
+    lw      $8, 0($8)
+    beq     $8, $0, .Ldefault
+    nop
+    jalr    $8
+    nop
+    j       .Lexc_hang
+    nop
+.Ldefault:
+    jal     exception_paint
+    nop
+.Lexc_hang:
+    j       .Lexc_hang
+    nop

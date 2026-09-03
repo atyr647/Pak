@@ -77,8 +77,13 @@ fn fb_fill(base: u32, px: u16) {
     }
 }
 
+-- RGBA5551 crash fill: full red, alpha 1. Visible against a black hang.
+const CRASH_RED: u16 = 0xF801
+
 -- ── VI core ────────────────────────────────────────────────────────────────
-fn vi_init() {
+-- Register program only. Used by vi_init (then black-fill) and by
+-- exception_paint (then red-fill) so a crash before display.init still shows.
+fn vi_program() {
     vi_write(VI_CTRL,    VI_CTRL_BLANK)
     vi_write(VI_ORIGIN,  FB0 & 0x00FFFFFF)
     vi_write(VI_WIDTH,   SCREEN_W as u32)
@@ -94,8 +99,10 @@ fn vi_init() {
     vi_write(VI_X_SCALE, 0x00000200)
     vi_write(VI_Y_SCALE, 0x00000400)
     vi_write(VI_CTRL,    VI_CTRL_16BPP)
+}
 
-    -- Clear all buffers to black.
+fn vi_init() {
+    vi_program()
     fb_fill(FB0, 0x0000 as u16)
     fb_fill(FB1, 0x0000 as u16)
     fb_fill(FB2, 0x0000 as u16)
@@ -1229,7 +1236,31 @@ fn __pak_fix16_div(a: i32, b: i32) -> i32 {
     return (a * 65536) / b
 }
 
+-- ── CPU exceptions ──────────────────────────────────────────────────────────
+-- crt0 copies a trampoline to 0x80000000/80/100/180 and jal's exception_paint
+-- on a crash (or jalr's g_exc_handler if the game installed one). Paint fills
+-- every framebuffer solid red and points the VI at FB0 so a crash is visible
+-- even if display.init never ran. Does not hang: boot.S hangs after the jal.
+static g_exc_handler: u32 = 0
+
+fn exception_set_handler(h: *u8) {
+    g_exc_handler = h as u32
+}
+
+fn exception_get_handler() -> *u8 {
+    return g_exc_handler as *u8
+}
+
+fn exception_paint() {
+    vi_program()
+    fb_fill(FB0, CRASH_RED)
+    fb_fill(FB1, CRASH_RED)
+    fb_fill(FB2, CRASH_RED)
+    vi_write(VI_ORIGIN, FB0 & 0x00FFFFFF)
+}
+
 fn __pak_panic() {
+    exception_paint()
     loop { }
 }
 

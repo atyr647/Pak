@@ -127,6 +127,9 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     __pak_free 1 \
     __pak_fix16_div 1 \
     __pak_panic 1 \
+    exception_set_handler 1 \
+    exception_get_handler 1 \
+    exception_paint 1 \
 ]
 
 proc pak::mips_hal_has {mod fn} {

@@ -31,11 +31,14 @@ No GCC, no `as`, no `ld`, no `objcopy`, no `n64tool`.
   into. MMIO is done with `(0xA4400000 as *volatile u32)` writes; framebuffers
   live in uncached KSEG1 RDRAM so CPU writes are immediately visible to the
   Video Interface.
-* **`runtime/standalone/boot.S`** — the crt0 (~12 instructions). It needs CP0 access
-  (`mfc0`/`mtc0`) which Pak cannot express, so it stays hand-written assembly
-  and is assembled by the encoder's `.s` front-end (`pak asmobj`). The linker
-  supplies `__bss_start`/`__bss_end` so boot can zero `.bss`, and boot's
-  `jal main` is resolved to the game's `entry` block across objects.
+* **`runtime/standalone/boot.S`** — the crt0. It needs CP0 access
+  (`mfc0`/`mtc0`) and `cache` which Pak cannot express, so it stays
+  hand-written assembly and is assembled by the encoder's `.s` front-end
+  (`pak asmobj`). After zeroing `.bss` it copies an 8-byte trampoline to
+  0x80000000 / 0x80 / 0x100 / 0x180 (KSEG1 stores + I-cache hit-invalidate)
+  so a CPU exception `jal`s `exception_paint`. The linker supplies
+  `__bss_start`/`__bss_end`; boot's `jal main` is resolved to the game's
+  `entry` block across objects.
 
 A full ROM is three objects linked in order — **boot first** so `_start` lands
 at `0x80000400`:
@@ -183,6 +186,10 @@ wait loops terminate instead of hanging.
   `tcl/tools/enc_exec_test.tcl`.
 * **No shade+tex.** `rdpq.triangle_tex` is affine ST only (0x0A). Combining
   Gouraud with texture (0x0E / 0x0F) is a follow-up.
+* **Exception paint.** `boot.S` copies an 8-byte trampoline to the four VR4300
+  exception vectors and `jal`s `exception_paint`, which fills FB0/FB1/FB2 with
+  RGBA5551 `0xF801` and programs the VI. `assert` / `__pak_panic` take the same
+  path. Goldens live in `tcl/tools/exception_test.tcl`.
 * **FPU encodings.** COP1 ops (`add.s`/`sub.s`/`mul.s`/`div.s`, the
   `mov`/`neg`/`abs`/`sqrt` unary group, `cvt.*`, the `c.<cond>.s` compare
   family, `bc1t`/`bc1f`, `mtc1`/`mfc1`) all have golden encodings in

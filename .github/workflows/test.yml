@@ -120,6 +120,15 @@ jobs:
       - name: Encoded exec goldens (optimizer on records, calls + MMIO)
         run: tclsh tcl/tools/enc_exec_test.tcl
 
+      - name: Exception paint (sim + vector trampoline + 4 MiB ROM)
+        run: tclsh tcl/tools/exception_test.tcl
+
+      - name: HAL contract (MODULE_API + standalone E010)
+        run: tclsh tcl/tools/hal_check_test.tcl
+
+      - name: STDLIB generated from MODULE_API
+        run: tclsh tcl/tools/gen_stdlib.tcl --check
+
       - name: Flat linker + ROM packer
         run: tclsh tcl/tools/n64link_test.tcl
 

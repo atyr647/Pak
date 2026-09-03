@@ -237,6 +237,8 @@ set ::pak::MIPS_API [dict create \
     {dma read} {dma_read} \
     {dma write} {dma_write} \
     {dma wait} {dma_wait} \
+    {exception set_handler} {exception_set_handler} \
+    {exception get_handler} {exception_get_handler} \
     {cache writeback} {data_cache_hit_writeback} \
     {cache invalidate} {data_cache_hit_invalidate} \
     {cache writeback_inv} {data_cache_hit_writeback_invalidate} \

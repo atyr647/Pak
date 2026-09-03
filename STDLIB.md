@@ -311,8 +311,8 @@ rejects a no.
 | `eeprom` | `read` | `eeprom_read` | yes | no |
 | `eeprom` | `type_detect` | `eeprom_type_detect` | yes | no |
 | `eeprom` | `write` | `eeprom_write` | yes | no |
-| `exception` | `get_handler` | `exception_get_handler` | yes | no |
-| `exception` | `set_handler` | `exception_set_handler` | yes | no |
+| `exception` | `get_handler` | `exception_get_handler` | yes | yes |
+| `exception` | `set_handler` | `exception_set_handler` | yes | yes |
 | `flashram` | `erase_sector` | `flashram_erase_sector` | yes | no |
 | `flashram` | `read` | `flashram_read` | yes | no |
 | `flashram` | `write` | `flashram_write` | yes | no |
@@ -579,7 +579,7 @@ rejects a no.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**320 functions** across the module surface; **67** exist on the standalone HAL.
+**320 functions** across the module surface; **69** exist on the standalone HAL.
 
 <!-- END GENERATED MODULE API -->
 
@@ -1283,6 +1283,12 @@ use n64.exception        -- #include <exception.h>
 |----------|---------|-------------|
 | `exception.set_handler` | `exception_set_handler` | Install an exception handler |
 | `exception.get_handler` | `exception_get_handler` | Get the current handler |
+
+On the standalone MIPS HAL the crt0 installs the four VR4300 vectors
+(0x80000000 / 80 / 100 / 180). The default handler fills every framebuffer
+with RGBA5551 `0xF801` (solid red) and points the Video Interface at FB0, so
+a CPU exception or `assert` is a red screen rather than a black hang. A
+non-zero handler installed via `set_handler` is `jalr`'d instead.
 
 ---
 

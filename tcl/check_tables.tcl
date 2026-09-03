@@ -69,6 +69,8 @@ set ::pak::API_ARITY [dict create \
     {dma read} {3 3} \
     {dma wait} {0 0} \
     {dma write} {3 3} \
+    {exception get_handler} {0 0} \
+    {exception set_handler} {1 1} \
     {rdpq attach} {2 2} \
     {rdpq attach_clear} {2 2} \
     {rdpq close} {0 0} \

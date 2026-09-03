@@ -104,6 +104,14 @@ ok "rdpq_set_tile_mask is in the HAL" [pak::mips_hal_symbol rdpq_set_tile_mask]
 ok "rdpq_triangle_shade is in the HAL" [pak::mips_hal_symbol rdpq_triangle_shade]
 ok "rdpq_triangle_shade_z is in the HAL" [pak::mips_hal_symbol rdpq_triangle_shade_z]
 ok "rdpq_clear_z is in the HAL" [pak::mips_hal_symbol rdpq_clear_z]
+ok "exception_paint is in the HAL" [pak::mips_hal_symbol exception_paint]
+ok "exception_set_handler is in the HAL" [pak::mips_hal_symbol exception_set_handler]
+
+set ast [parse_src "use n64.exception
+entry { exception.set_handler(0 as *u8) }
+"]
+set diags [pak::semantic_check $ast "t.pk64" mips]
+ok "exception.set_handler accepted on mips" [expr {[llength $diags] == 0}] $diags
 
 set ast [parse_src "use n64.rdpq
 entry { rdpq.triangle_tex(0, 0, 0, 0, 0, 32, 0, 32, 0, 0, 32, 0, 32) }
