@@ -48,6 +48,9 @@
 	.extern rdpq_triangle_shade
 	.extern rdpq_triangle_shade_z
 	.extern rdpq_triangle_tex
+	.extern rdpq_triangle_shade_tex
+	.extern rdpq_triangle_shade_tex_z
+	.extern rdpq_set_tri_z
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init

@@ -54,6 +54,9 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_triangle_shade \
     rdpq_triangle_shade_z \
     rdpq_triangle_tex \
+    rdpq_triangle_shade_tex \
+    rdpq_triangle_shade_tex_z \
+    rdpq_set_tri_z \
     sprite_load \
     rdpq_sprite_blit \
     timer_init \
@@ -228,6 +231,9 @@ set ::pak::MIPS_API [dict create \
     {rdpq triangle_shade} {rdpq_triangle_shade} \
     {rdpq triangle_shade_z} {rdpq_triangle_shade_z} \
     {rdpq triangle_tex} {rdpq_triangle_tex} \
+    {rdpq triangle_shade_tex} {rdpq_triangle_shade_tex} \
+    {rdpq triangle_shade_tex_z} {rdpq_triangle_shade_tex_z} \
+    {rdpq set_tri_z} {rdpq_set_tri_z} \
     {sprite load} {sprite_load} \
     {sprite blit} {rdpq_sprite_blit} \
     {timer init} {timer_init} \

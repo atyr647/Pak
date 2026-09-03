@@ -150,6 +150,48 @@ set EXPECTED {
     00000000 00000000
     00000000 00000000
     00640064 00000000
+    0E0000C0 00400040
+    00300000 FFFF0000
+    00100000 00000000
+    00100000 00000000
+    00FF0000 000000FF
+    0800F800 00000000
+    00000000 00000000
+    00000000 00000000
+    08000000 F8000000
+    08000000 F8000000
+    00000000 00000000
+    00000000 00000000
+    00000000 7FFF0000
+    00200000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000020 00000000
+    00000020 00000000
+    00000000 00000000
+    00000000 00000000
+    0F0000C0 00400040
+    00300000 FFFF0000
+    00100000 00000000
+    00100000 00000000
+    00FF00FF 00FF00FF
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000000 7FFF0000
+    00200000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000020 00000000
+    00000020 00000000
+    00000000 00000000
+    00000000 00000000
+    0000001F 00004000
+    00FA00FA 00000000
     27000000 00000000
     28000000 00000000
     26000000 00000000
@@ -229,6 +271,48 @@ set NOTES {
     "                  dRdy.. integer"
     "                  dRde.. fractional"
     "                  dRdy.. fractional"
+    "                  Z / dZdx integer then fractional"
+    "                  dZde / dZdy integer then fractional"
+    "TRI_SHADE_TXTR    0x0E Gouraud + affine ST, tile 0, Y=16/16/48"
+    "                  XL / DxLDy"
+    "                  XH / DxHDy"
+    "                  XM / DxMDy"
+    "                  RGBA integer halves"
+    "                  dRdx.. integer"
+    "                  RGBA fractional halves"
+    "                  dRdx.. fractional"
+    "                  dRde.. integer"
+    "                  dRdy.. integer"
+    "                  dRde.. fractional"
+    "                  dRdy.. fractional"
+    "                  S/T/W integer halves (W=0x7FFF)"
+    "                  dSdx / dTdx integer"
+    "                  S/T/W fractional halves"
+    "                  dSdx / dTdx fractional"
+    "                  dSde / dTde integer"
+    "                  dSdy / dTdy integer"
+    "                  dSde / dTde fractional"
+    "                  dSdy / dTdy fractional"
+    "TRI_SHADE_TXTR_Z  0x0F Gouraud + tex + Z, same edges"
+    "                  XL / DxLDy"
+    "                  XH / DxHDy"
+    "                  XM / DxMDy"
+    "                  RGBA integer (white)"
+    "                  dRdx.. integer"
+    "                  RGBA fractional"
+    "                  dRdx.. fractional"
+    "                  dRde.. integer"
+    "                  dRdy.. integer"
+    "                  dRde.. fractional"
+    "                  dRdy.. fractional"
+    "                  S/T/W integer halves"
+    "                  dSdx / dTdx integer"
+    "                  S/T/W fractional"
+    "                  dSdx / dTdx fractional"
+    "                  dSde / dTde integer"
+    "                  dSdy / dTdy integer"
+    "                  dSde / dTde fractional"
+    "                  dSdy / dTdy fractional"
     "                  Z / dZdx integer then fractional"
     "                  dZde / dZdy integer then fractional"
     "SYNC_PIPE"

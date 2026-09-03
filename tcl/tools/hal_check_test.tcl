@@ -124,6 +124,9 @@ ok "rdpq_triangle_tex is in the HAL" [pak::mips_hal_symbol rdpq_triangle_tex]
 ok "rdpq_set_tile_mask is in the HAL" [pak::mips_hal_symbol rdpq_set_tile_mask]
 ok "rdpq_triangle_shade is in the HAL" [pak::mips_hal_symbol rdpq_triangle_shade]
 ok "rdpq_triangle_shade_z is in the HAL" [pak::mips_hal_symbol rdpq_triangle_shade_z]
+ok "rdpq_triangle_shade_tex is in the HAL" [pak::mips_hal_symbol rdpq_triangle_shade_tex]
+ok "rdpq_triangle_shade_tex_z is in the HAL" [pak::mips_hal_symbol rdpq_triangle_shade_tex_z]
+ok "rdpq_set_tri_z is in the HAL" [pak::mips_hal_symbol rdpq_set_tri_z]
 ok "rdpq_clear_z is in the HAL" [pak::mips_hal_symbol rdpq_clear_z]
 ok "exception_paint is in the HAL" [pak::mips_hal_symbol exception_paint]
 ok "exception_set_handler is in the HAL" [pak::mips_hal_symbol exception_set_handler]
@@ -149,6 +152,16 @@ entry { rdpq.triangle_shade(0, 0, 0xFF0000FF, 32, 0, 0x00FF00FF, 0, 32, 0x0000FF
 "]
 set diags [pak::semantic_check $ast "t.pk64" mips]
 ok "triangle_shade accepted on mips" [expr {[llength $diags] == 0}] $diags
+
+set ast [parse_src "use n64.rdpq
+entry {
+    rdpq.set_tri_z(0, 1000, 8000)
+    rdpq.triangle_shade_tex(0, 0, 0, 0xFFFFFFFF, 0, 0, 32, 0, 0xFFFFFFFF, 32, 0, 0, 32, 0xFFFFFFFF, 0, 32)
+    rdpq.triangle_shade_tex_z(0, 0, 0, 0xFFFFFFFF, 0, 0, 32, 0, 0xFFFFFFFF, 32, 0, 0, 32, 0xFFFFFFFF, 0, 32)
+}
+"]
+set diags [pak::semantic_check $ast "t.pk64" mips]
+ok "triangle_shade_tex accepted on mips" [expr {[llength $diags] == 0}] $diags
 
 set ast [parse_src "entry { n64.rdpq.set_texture_image(0x80001000, 0, 2, 32) }
 "]

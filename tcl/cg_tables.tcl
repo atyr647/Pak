@@ -124,6 +124,9 @@ set ::pak::CG_API [dict create \
     {rdpq triangle_shade} {rdpq_triangle_shade} \
     {rdpq triangle_shade_z} {rdpq_triangle_shade_z} \
     {rdpq triangle_tex} {rdpq_triangle_tex} \
+    {rdpq triangle_shade_tex} {rdpq_triangle_shade_tex} \
+    {rdpq triangle_shade_tex_z} {rdpq_triangle_shade_tex_z} \
+    {rdpq set_tri_z} {rdpq_set_tri_z} \
     {rdpq_font draw_text} {rdpq_text_print} \
     {rdpq_font free} {rdpq_font_free} \
     {rdpq_font load} {rdpq_font_load} \

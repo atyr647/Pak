@@ -104,6 +104,9 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     rdpq_triangle_shade 1 \
     rdpq_triangle_shade_z 1 \
     rdpq_triangle_tex 1 \
+    rdpq_triangle_shade_tex 1 \
+    rdpq_triangle_shade_tex_z 1 \
+    rdpq_set_tri_z 1 \
     rdpq_sync_full 1 \
     rdpq_sync_pipe 1 \
     rdpq_sync_tile 1 \

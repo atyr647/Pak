@@ -186,8 +186,9 @@ wait loops terminate instead of hanging.
   binary is delay-slot-filled. `pak explain --backend mips` dumps the same
   optimized stream as text. Encoded-byte call/MMIO goldens live in
   `tcl/tools/enc_exec_test.tcl`.
-* **No shade+tex.** `rdpq.triangle_tex` is affine ST only (0x0A). Combining
-  Gouraud with texture (0x0E / 0x0F) is a follow-up.
+* **Shade+tex.** `rdpq.triangle_shade_tex` is Gouraud + affine ST (0x0E).
+  `rdpq.set_tri_z` then `rdpq.triangle_shade_tex_z` adds Z (0x0F). Same
+  s15.16 coefficients as `triangle_tex` / `triangle_shade`.
 * **Exception paint.** `boot.S` copies an 8-byte trampoline to the four VR4300
   exception vectors and `jal`s `exception_paint`, which fills FB0/FB1/FB2 with
   RGBA5551 `0xF801` and programs the VI. `assert` / `__pak_panic` take the same
