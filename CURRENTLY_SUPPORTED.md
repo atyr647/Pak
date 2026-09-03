@@ -211,6 +211,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Audio PCM (AI) | ✅ Full | `init`/`get_buffer`/`write`/`close` on the standalone HAL; 16-bit stereo |
 | Shade+tex triangles | ✅ Full | RDP 0x0E Gouraud+ST; 0x0F after `rdpq.set_tri_z` |
 | Array address / u8 index | ✅ Full | `&arr` is `la`; `[N]u8` stores `sb` at base+i (not scale-4 `sw`) |
+| `&s.field` / value-struct fields | ✅ Full | Place address of the object, not a spilled copy of the first word |
 | `defer` | ✅ Full | |
 | `match` on enums | ✅ Full | |
 | Named-field variant construction (`Type.case { f: v }`) | ✅ Full | Stack-allocated with tag + payload stores |

@@ -295,7 +295,7 @@ double_all:
     sw $a0, 136($sp)
     li $t9, 0
     sw $t9, 144($sp)
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 4($t7)
 .Lfor_h_10:
     lw $t7, 144($sp)
@@ -355,7 +355,7 @@ sum_x:
     addu $t7, $t7, $t6
     lw $t6, 0($t7)
     sw $t6, 160($sp)
-    lw $t5, 160($sp)
+    addiu $t5, $sp, 160
     lw $t6, 0($t5)
     lw $t5, 144($sp)
     addu $t6, $t5, $t6
@@ -460,7 +460,7 @@ main:
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t7, 168($sp)
+    addiu $t7, $sp, 168
     lw $t8, 4($t7)
     la $t7, sink
     sw $t8, 0($t7)
@@ -480,7 +480,7 @@ main:
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t7, 184($sp)
+    addiu $t7, $sp, 184
     lw $t8, 4($t7)
     la $t7, sink
     sw $t8, 0($t7)
@@ -646,7 +646,7 @@ main:
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t7, 296($sp)
+    addiu $t7, $sp, 296
     lw $t8, 4($t7)
     la $t7, sink
     sw $t8, 0($t7)
@@ -677,7 +677,7 @@ main:
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t7, 312($sp)
+    addiu $t7, $sp, 312
     lw $t8, 4($t7)
     la $t7, sink
     sw $t8, 0($t7)

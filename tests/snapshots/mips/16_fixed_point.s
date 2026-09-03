@@ -190,15 +190,15 @@ vec2fx_add:
     sw $a1, 144($sp)
     sw $zero, 152($sp)
     sw $zero, 156($sp)
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
-    lw $t6, 144($sp)
+    addiu $t6, $sp, 144
     lw $t7, 0($t6)
     addu $t9, $t8, $t7
     sw $t9, 152($sp)
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 4($t7)
-    lw $t6, 144($sp)
+    addiu $t6, $sp, 144
     lw $t7, 4($t6)
     addu $t9, $t8, $t7
     sw $t9, 156($sp)
@@ -225,7 +225,7 @@ vec2fx_scale:
     sw $a1, 144($sp)
     sw $zero, 148($sp)
     sw $zero, 152($sp)
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lw $t7, 144($sp)
     mult $t8, $t7
@@ -235,7 +235,7 @@ vec2fx_scale:
     sll $t6, $t6, 16
     or $t9, $t5, $t6
     sw $t9, 148($sp)
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 4($t7)
     lw $t7, 144($sp)
     mult $t8, $t7
@@ -366,10 +366,10 @@ main:
     addu $t5, $t4, $t3
     lw $t4, 160($sp)
     addu $t6, $t5, $t4
-    lw $t4, 196($sp)
+    addiu $t4, $sp, 196
     lw $t5, 0($t4)
     addu $t7, $t6, $t5
-    lw $t5, 200($sp)
+    addiu $t5, $sp, 200
     lw $t6, 0($t5)
     addu $t8, $t7, $t6
     la $t7, sink_x

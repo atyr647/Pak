@@ -194,7 +194,7 @@ update:
     lw $t9, 96($sp)
     move $t9, $v0
     sw $t9, 140($sp)
-    lw $t7, 140($sp)
+    addiu $t7, $sp, 140
     lw $t8, 0($t7)
     lb $t9, 7($t8)
     beqz $t9, .Lif_end_1
@@ -207,7 +207,7 @@ update:
     sw $t8, 0($t7)
     move $t9, $t8
 .Lif_end_1:
-    lw $t7, 140($sp)
+    addiu $t7, $sp, 140
     lw $t8, 0($t7)
     lb $t9, 6($t8)
     beqz $t9, .Lif_end_2
@@ -220,7 +220,7 @@ update:
     sw $t8, 0($t7)
     move $t9, $t8
 .Lif_end_2:
-    lw $t7, 140($sp)
+    addiu $t7, $sp, 140
     lw $t8, 0($t7)
     lb $t9, 5($t8)
     beqz $t9, .Lif_end_3
@@ -233,7 +233,7 @@ update:
     sw $t8, 4($t7)
     move $t9, $t8
 .Lif_end_3:
-    lw $t7, 140($sp)
+    addiu $t7, $sp, 140
     lw $t8, 0($t7)
     lb $t9, 4($t8)
     beqz $t9, .Lif_end_4
@@ -290,7 +290,7 @@ update:
     sw $t8, 4($t7)
     move $t9, $t8
 .Lif_end_8:
-    lw $t7, 140($sp)
+    addiu $t7, $sp, 140
     lw $t8, 4($t7)
     lb $t9, 3($t8)
     beqz $t9, .Lif_end_9
@@ -428,7 +428,7 @@ main:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lbu $t8, 8($t7)
     sltiu $t9, $t8, 1
     beqz $t9, .Lif_end_14

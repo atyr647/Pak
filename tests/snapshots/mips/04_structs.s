@@ -189,14 +189,12 @@ Player_init:
     sw $a0, 136($sp)
     la $t7, .Lf320
     lwc1 $f12, 0($t7)
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
+    lw $t7, 136($sp)
     swc1 $f12, 0($t7)
     move $t9, $t8
     la $t7, .Lf320
     lwc1 $f12, 0($t7)
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
+    lw $t7, 136($sp)
     swc1 $f12, 4($t7)
     move $t9, $t8
     li $t8, 100
@@ -234,22 +232,18 @@ Player_move:
     swc1 $f12, 144($sp)
     lwc1 $f12, 140($sp)
     mov.s $f14, $f12
-    lw $t5, 136($sp)
-    lw $t6, 0($t5)
+    lw $t6, 136($sp)
     lwc1 $f12, 0($t6)
     add.s $f12, $f12, $f14
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
+    lw $t7, 136($sp)
     swc1 $f12, 0($t7)
     move $t9, $t8
     lwc1 $f12, 144($sp)
     mov.s $f14, $f12
-    lw $t5, 136($sp)
-    lw $t6, 0($t5)
+    lw $t6, 136($sp)
     lwc1 $f12, 4($t6)
     add.s $f12, $f12, $f14
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
+    lw $t7, 136($sp)
     swc1 $f12, 4($t7)
     move $t9, $t8
 .LPlayer_move_ret_1:
@@ -361,13 +355,12 @@ main:
     sw $t7, 12($t8)
     lw $t7, 16($t9)
     sw $t7, 16($t8)
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
+    addiu $t7, $sp, 136
     lwc1 $f12, 0($t7)
     la $t7, sink_x
     swc1 $f12, 0($t7)
     move $t9, $t8
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 8($t7)
     la $t7, sink_hp
     sw $t8, 0($t7)
@@ -392,7 +385,7 @@ main:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 8($t7)
     la $t7, sink_hp
     sw $t8, 0($t7)
@@ -406,7 +399,7 @@ main:
     move $t9, $v0
     beqz $t9, .Lif_end_6
     nop
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 8($t7)
     la $t7, sink_hp
     sw $t8, 0($t7)

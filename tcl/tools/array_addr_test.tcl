@@ -133,6 +133,94 @@ dict for {addr val} $mw {
 }
 check_eq "local u8 index 2 loaded" $sink 00000033
 
+# ── struct field address and value-struct stores ────────────────────────────
+# `&p.y` used to evaluate y, spill it, and return the stack slot. Value
+# `p.x =` used the first word of p as a pointer. Both must hit the object.
+
+set src3 {
+struct Point {
+    x: i32
+    y: i32
+}
+struct Pack {
+    buf: [4]u8
+}
+static p: Point = undefined
+static pack: Pack = undefined
+static addr_p: u32 = 0
+static addr_y: u32 = 0
+static y_sink: i32 = 0
+
+entry {
+    p.x = 0x11111111
+    p.y = 0x22222222
+    addr_p = &p as u32
+    addr_y = &p.y as u32
+    y_sink = p.y
+    pack.buf[0] = 0xAA
+    pack.buf[1] = 0xBB
+    pack.buf[2] = 0xCC
+    pack.buf[3] = 0xDD
+}
+}
+set lx [pak::Lexer new $src3]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set mb [dict get $run mem_b]
+set DATA 0x80300000
+# .data: addr_p, addr_y, y_sink (12 bytes). .bss: p (8), pack (4).
+set P [expr {$DATA + 12}]
+check_eq "value struct p.x store" [word_hex $mw $P] 11111111
+check_eq "value struct p.y store" [word_hex $mw [expr {$P + 4}]] 22222222
+check_eq "address of p" [word_hex $mw $DATA] [format %08X $P]
+check_eq "address of p.y" [word_hex $mw [expr {$DATA + 4}]] [format %08X [expr {$P + 4}]]
+check_eq "loaded p.y" [word_hex $mw [expr {$DATA + 8}]] 22222222
+
+set pack_addrs [lsort -integer [dict keys $mb]]
+check_eq "pack.buf four sb" [llength $pack_addrs] 4
+set PACK [lindex $pack_addrs 0]
+check_eq "pack.buf0" [byte_hex $mb $mw $PACK] AA
+check_eq "pack.buf1" [byte_hex $mb $mw [expr {$PACK + 1}]] BB
+check_eq "pack.buf2" [byte_hex $mb $mw [expr {$PACK + 2}]] CC
+check_eq "pack.buf3" [byte_hex $mb $mw [expr {$PACK + 3}]] DD
+
+# Pointer receiver + nested field: g.player.x must hit player, not a copy.
+set src4 {
+struct Point {
+    x: i32
+    y: i32
+}
+struct Game {
+    player: Point
+}
+static g: Game = undefined
+static sink: i32 = 0
+
+fn bump(gs: *Game) {
+    gs.player.x = 0x7E57
+    gs.player.y = 0xABCD
+}
+
+entry {
+    bump(&g)
+    sink = g.player.x
+}
+}
+set lx [pak::Lexer new $src4]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set DATA 0x80300000
+check_eq "nested ptr field x" [word_hex $mw [expr {$DATA + 4}]] 00007E57
+check_eq "nested ptr field y" [word_hex $mw [expr {$DATA + 8}]] 0000ABCD
+check_eq "loaded nested x" [word_hex $mw $DATA] 00007E57
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }
+

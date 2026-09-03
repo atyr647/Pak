@@ -271,7 +271,7 @@ main:
     addu $t7, $sp, $t7
     lw $t9, 0($t7)
     sw $t9, 552($sp)
-    lw $t8, 552($sp)
+    addiu $t8, $sp, 552
     lwc1 $f12, 0($t8)
     la $t8, sink_f
     swc1 $f12, 0($t8)

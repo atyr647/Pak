@@ -948,7 +948,22 @@ oo::class create pak::MipsCodegen {
     method resolve_field_info {expr} {
         set obj [pak::nfield $expr obj]
         set fname [pak::fval $expr field]
-        # First check local variable's layout
+        # Prefer the object's declared type so `Point.x` does not pick some
+        # other struct's `x` from the tenv scan.
+        set tn [my unwrap_type [my expr_type $obj]]
+        if {$tn ne "" && ![pak::isnil $tn] && [pak::kindof $tn] eq "TypePointer"} {
+            set tn [my unwrap_type [pak::nfield $tn inner]]
+        }
+        if {$tn ne "" && ![pak::isnil $tn] && [pak::kindof $tn] eq "TypeName"} {
+            set n [pak::fval $tn name]
+            if {[dict exists $tenv_layouts $n]} {
+                set layout [dict get $tenv_layouts $n]
+                if {[dict exists $layout fields]} {
+                    set fields [dict get $layout fields]
+                    if {[dict exists $fields $fname]} { return [dict get $fields $fname] }
+                }
+            }
+        }
         if {[pak::kindof $obj] eq "Ident"} {
             set local [my lookup_local [pak::fval $obj name]]
             if {$local ne ""} {
@@ -959,7 +974,6 @@ oo::class create pak::MipsCodegen {
                 }
             }
         }
-        # Fall back: search all registered struct layouts
         dict for {_name layout} $tenv_layouts {
             if {[dict exists $layout fields]} {
                 set fields [dict get $layout fields]
@@ -2474,7 +2488,14 @@ oo::class create pak::MipsCodegen {
             }
         }
         set base [$ra alloc_temp]
-        my emit_expr $obj $base
+        # Pointer receiver: load the pointer. Value struct: address of the
+        # object. `p.x` on a local Point is then `lw` at $sp+off, not a load
+        # of the first word used as a pointer.
+        if {[my type_is_ptr [my expr_type $obj]]} {
+            my emit_expr $obj $base
+        } else {
+            my emit_place_addr $obj $base
+        }
         set fi [my resolve_field_info $expr]
         if {$fi ne ""} {
             set type_node [dict get $fi type_node]
@@ -2493,7 +2514,11 @@ oo::class create pak::MipsCodegen {
 
     method emit_field_store {expr val} {
         set base [$ra alloc_temp]
-        my emit_expr [pak::nfield $expr obj] $base
+        if {[my type_is_ptr [my expr_type [pak::nfield $expr obj]]]} {
+            my emit_expr [pak::nfield $expr obj] $base
+        } else {
+            my emit_place_addr [pak::nfield $expr obj] $base
+        }
         set fi [my resolve_field_info $expr]
         if {$fi ne ""} {
             set type_node [dict get $fi type_node]
@@ -2660,13 +2685,59 @@ oo::class create pak::MipsCodegen {
         }
         return $tn
     }
-    method resolve_elem_layout {obj_expr} {
-        set tn ""
-        switch -- [pak::kindof $obj_expr] {
-            Ident { set tn [my lookup_type_node [pak::fval $obj_expr name]] }
-            Cast  { set tn [pak::nfield $obj_expr type] }
+    method expr_type {expr} {
+        if {$expr eq "" || [pak::isnil $expr]} { return "" }
+        switch -- [pak::kindof $expr] {
+            Ident { return [my lookup_type_node [pak::fval $expr name]] }
+            Cast  { return [pak::nfield $expr type] }
+            Deref {
+                set inner [my unwrap_type [my expr_type [pak::nfield $expr expr]]]
+                if {$inner ne "" && ![pak::isnil $inner] && [pak::kindof $inner] eq "TypePointer"} {
+                    return [pak::nfield $inner inner]
+                }
+                return ""
+            }
+            AddrOf {
+                set inner [my expr_type [pak::nfield $expr expr]]
+                if {$inner eq "" || [pak::isnil $inner]} {
+                    set inner [pak::N TypeName name i32]
+                }
+                return [pak::N TypePointer inner $inner nullable 0 mutable 0]
+            }
+            IndexAccess {
+                set tn [my unwrap_type [my expr_type [pak::nfield $expr obj]]]
+                if {$tn ne "" && ![pak::isnil $tn]} {
+                    switch -- [pak::kindof $tn] {
+                        TypeArray - TypeSlice - TypePointer {
+                            return [pak::nfield $tn inner]
+                        }
+                    }
+                }
+                return ""
+            }
+            DotAccess {
+                set fi [my resolve_field_info $expr]
+                if {$fi ne "" && [dict exists $fi type_node]} { return [dict get $fi type_node] }
+                return ""
+            }
+            default { return "" }
         }
+    }
+    method type_is_ptr {tn} {
         set tn [my unwrap_type $tn]
+        if {$tn eq "" || [pak::isnil $tn]} { return 0 }
+        if {[pak::kindof $tn] eq "TypePointer"} { return 1 }
+        if {[pak::kindof $tn] eq "TypeName"} {
+            set n [pak::fval $tn name]
+            if {[dict exists $tenv_layouts $n]} {
+                set lay [dict get $tenv_layouts $n]
+                if {[dict exists $lay is_ptr] && [dict get $lay is_ptr]} { return 1 }
+            }
+        }
+        return 0
+    }
+    method resolve_elem_layout {obj_expr} {
+        set tn [my unwrap_type [my expr_type $obj_expr]]
         if {$tn ne "" && ![pak::isnil $tn]} {
             switch -- [pak::kindof $tn] {
                 TypeArray - TypeSlice - TypePointer {
@@ -2684,7 +2755,12 @@ oo::class create pak::MipsCodegen {
         set elem [my resolve_elem_layout $obj]
         set base [$ra alloc_temp]
         set idx [$ra alloc_temp]
-        my emit_expr $obj $base
+        set tn [my unwrap_type [my expr_type $obj]]
+        if {$tn ne "" && ![pak::isnil $tn] && [pak::kindof $tn] eq "TypeArray"} {
+            my emit_place_addr $obj $base
+        } else {
+            my emit_expr $obj $base
+        }
         my emit_expr $index $idx
         switch -- [dict get $elem size] {
             4 { $em sll $idx $idx 2 }
@@ -2732,35 +2808,52 @@ oo::class create pak::MipsCodegen {
         pak::emit_int_cast $em $dst $src [dict get $to size] [dict get $to is_signed]
     }
 
-    method emit_addr_of {expr dst} {
-        set inner [pak::nfield $expr expr]
-        switch -- [pak::kindof $inner] {
+    method emit_place_addr {expr dst} {
+        switch -- [pak::kindof $expr] {
             Ident {
-                set local [my lookup_local [pak::fval $inner name]]
+                set local [my lookup_local [pak::fval $expr name]]
                 if {$local ne ""} {
                     $em addiu $dst {$sp} [lindex $local 0]
                     return
                 }
-                $em la $dst [pak::fval $inner name]
+                $em la $dst [pak::fval $expr name]
+            }
+            Deref {
+                my emit_expr [pak::nfield $expr expr] $dst
             }
             IndexAccess {
-                # &arr[i] is the computed element address, not a stack slot
-                # holding a copy of the loaded element.
-                lassign [my emit_index_addr [pak::nfield $inner obj] [pak::nfield $inner index]] base idx elem
+                lassign [my emit_index_addr [pak::nfield $expr obj] [pak::nfield $expr index]] base idx elem
                 if {$dst ne $base} { $em move $dst $base }
                 $ra free_temp $idx
                 $ra free_temp $base
+            }
+            DotAccess {
+                set obj [pak::nfield $expr obj]
+                if {[my type_is_ptr [my expr_type $obj]]} {
+                    my emit_expr $obj $dst
+                } else {
+                    my emit_place_addr $obj $dst
+                }
+                set fi [my resolve_field_info $expr]
+                if {$fi ne ""} {
+                    set off [dict get $fi offset]
+                    if {$off != 0} { $em addiu $dst $dst $off }
+                }
             }
             default {
                 set layout [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]
                 set off [my declare_local __addrof $layout]
                 set tmp [$ra alloc_temp]
-                my emit_expr $inner $tmp
+                my emit_expr $expr $tmp
                 $em sw $tmp $off {$sp}
                 $ra free_temp $tmp
                 $em addiu $dst {$sp} $off
             }
         }
+    }
+
+    method emit_addr_of {expr dst} {
+        my emit_place_addr [pak::nfield $expr expr] $dst
     }
 
     method infer_frac_bits {expr} {

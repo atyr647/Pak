@@ -262,11 +262,12 @@ Enemy_update:
     mov.s $f14, $f12
     lwc1 $f12, 140($sp)
     mul.s $f12, $f14, $f12
+    mov.s $f14, $f12
     lw $t6, 136($sp)
-    lw $t7, 0($t6)
-    addu $t8, $t7, $t8
+    lwc1 $f12, 0($t6)
+    add.s $f12, $f12, $f14
     lw $t7, 136($sp)
-    sw $t8, 0($t7)
+    swc1 $f12, 0($t7)
     move $t9, $t8
 .LEnemy_update_ret_3:
     lw $fp, 312($sp)
@@ -356,7 +357,7 @@ main:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    lw $t6, 168($sp)
+    addiu $t6, $sp, 168
     lwc1 $f12, 0($t6)
     move $t8, $t7
     la $t7, sink

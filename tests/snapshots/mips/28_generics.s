@@ -345,12 +345,12 @@ main:
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t7, 140($sp)
+    addiu $t7, $sp, 140
     lw $t8, 0($t7)
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 140($sp)
+    addiu $t7, $sp, 140
     lw $t8, 4($t7)
     la $t7, sink_i
     sw $t8, 0($t7)
@@ -393,7 +393,7 @@ main:
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t7, 156($sp)
+    addiu $t7, $sp, 156
     lwc1 $f12, 0($t7)
     la $t7, sink_f
     swc1 $f12, 0($t7)
@@ -466,12 +466,12 @@ identity__i32:
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t7, 172($sp)
+    addiu $t7, $sp, 172
     lw $t8, 0($t7)
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 172($sp)
+    addiu $t7, $sp, 172
     lwc1 $f12, 4($t7)
     la $t7, sink_f
     swc1 $f12, 0($t7)

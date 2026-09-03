@@ -1433,7 +1433,7 @@ render_stars:
     sw $t4, 8($t5)
     li $t6, 1145324799
     sw $t6, 156($sp)
-    lw $t4, 144($sp)
+    addiu $t4, $sp, 144
     lwc1 $f12, 8($t4)
     mov.s $f14, $f12
     la $t3, .Lf321
@@ -1452,7 +1452,7 @@ render_stars:
     j .Lif_end_52
     nop
 .Lif_else_53:
-    lw $t4, 144($sp)
+    addiu $t4, $sp, 144
     lwc1 $f12, 8($t4)
     mov.s $f14, $f12
     la $t3, .Lf322
@@ -1471,7 +1471,7 @@ render_stars:
     j .Lif_end_52
     nop
 .Lelif_else_55:
-    lw $t4, 144($sp)
+    addiu $t4, $sp, 144
     lwc1 $f12, 8($t4)
     mov.s $f14, $f12
     la $t3, .Lf323
@@ -1505,7 +1505,7 @@ render_stars:
     move $t6, $v0
     li $t6, 1
     sw $t6, 160($sp)
-    lw $t4, 144($sp)
+    addiu $t4, $sp, 144
     lwc1 $f12, 8($t4)
     mov.s $f14, $f12
     la $t3, .Lf324
@@ -1522,17 +1522,17 @@ render_stars:
     sw $t5, 160($sp)
     move $t6, $t5
 .Lif_end_59:
-    lw $t4, 144($sp)
+    addiu $t4, $sp, 144
     lw $t5, 4($t4)
     lw $t4, 160($sp)
     addu $a3, $t5, $t4
-    lw $t4, 144($sp)
+    addiu $t4, $sp, 144
     lw $t5, 0($t4)
     lw $t4, 160($sp)
     addu $a2, $t5, $t4
-    lw $t5, 144($sp)
+    addiu $t5, $sp, 144
     lw $a1, 4($t5)
-    lw $t5, 144($sp)
+    addiu $t5, $sp, 144
     lw $a0, 0($t5)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
@@ -1587,14 +1587,12 @@ update:
     la $t7, .Lf325
     lwc1 $f12, 0($t7)
     mov.s $f14, $f12
-    la $t5, gs
-    lw $t5, 0($t5)
-    lw $t6, 772($t5)
+    la $t6, gs
+    addiu $t6, $t6, 772
     lwc1 $f12, 24($t6)
     sub.s $f12, $f12, $f14
-    la $t6, gs
-    lw $t6, 0($t6)
-    lw $t7, 772($t6)
+    la $t7, gs
+    addiu $t7, $t7, 772
     swc1 $f12, 24($t7)
     move $t9, $t8
 .Lif_end_62:
@@ -1606,14 +1604,12 @@ update:
     la $t7, .Lf325
     lwc1 $f12, 0($t7)
     mov.s $f14, $f12
-    la $t5, gs
-    lw $t5, 0($t5)
-    lw $t6, 772($t5)
+    la $t6, gs
+    addiu $t6, $t6, 772
     lwc1 $f12, 24($t6)
     add.s $f12, $f12, $f14
-    la $t6, gs
-    lw $t6, 0($t6)
-    lw $t7, 772($t6)
+    la $t7, gs
+    addiu $t7, $t7, 772
     swc1 $f12, 24($t7)
     move $t9, $t8
 .Lif_end_63:
@@ -1625,14 +1621,12 @@ update:
     la $t7, .Lf326
     lwc1 $f12, 0($t7)
     mov.s $f14, $f12
-    la $t5, gs
-    lw $t5, 0($t5)
-    lw $t6, 816($t5)
+    la $t6, gs
+    addiu $t6, $t6, 816
     lwc1 $f12, 24($t6)
     sub.s $f12, $f12, $f14
-    la $t6, gs
-    lw $t6, 0($t6)
-    lw $t7, 816($t6)
+    la $t7, gs
+    addiu $t7, $t7, 816
     swc1 $f12, 24($t7)
     move $t9, $t8
 .Lif_end_64:
@@ -1644,14 +1638,12 @@ update:
     la $t7, .Lf326
     lwc1 $f12, 0($t7)
     mov.s $f14, $f12
-    la $t5, gs
-    lw $t5, 0($t5)
-    lw $t6, 816($t5)
+    la $t6, gs
+    addiu $t6, $t6, 816
     lwc1 $f12, 24($t6)
     add.s $f12, $f12, $f14
-    la $t6, gs
-    lw $t6, 0($t6)
-    lw $t7, 816($t6)
+    la $t7, gs
+    addiu $t7, $t7, 816
     swc1 $f12, 24($t7)
     move $t9, $t8
 .Lif_end_65:
@@ -1662,17 +1654,14 @@ update:
     nop
     li $t8, 0
     la $t7, gs
-    lw $t7, 0($t7)
     sb $t8, 864($t7)
     move $t9, $t8
 .Lif_end_66:
     li $t8, 1
     la $t6, gs
-    lw $t6, 0($t6)
     lw $t7, 860($t6)
     addu $t8, $t7, $t8
     la $t7, gs
-    lw $t7, 0($t7)
     sw $t8, 860($t7)
     move $t9, $t8
 .Lupdate_ret_61:
@@ -1701,7 +1690,6 @@ init_scene:
     lw $t8, 100($sp)
     move $t8, $v0
     la $t7, gs
-    lw $t7, 0($t7)
     sw $t8, 0($t7)
     move $t9, $t8
     la $t8, math
@@ -1813,7 +1801,6 @@ init_scene:
     sw $t7, 192($sp)
     addiu $t8, $sp, 152
     la $t7, gs
-    lw $t7, 0($t7)
     sw $t8, 772($t7)
     move $t9, $t8
     addiu $a0, $sp, 196
@@ -1859,17 +1846,14 @@ init_scene:
     sw $t7, 236($sp)
     addiu $t8, $sp, 196
     la $t7, gs
-    lw $t7, 0($t7)
     sw $t8, 816($t7)
     move $t9, $t8
     li $t8, 0
     la $t7, gs
-    lw $t7, 0($t7)
     sw $t8, 860($t7)
     move $t9, $t8
     li $t8, 1
     la $t7, gs
-    lw $t7, 0($t7)
     sb $t8, 864($t7)
     move $t9, $t8
 .Linit_scene_ret_67:
@@ -1939,7 +1923,6 @@ main:
     lw $t9, 96($sp)
     move $t9, $v0
     la $t7, gs
-    lw $t7, 0($t7)
     lbu $t8, 864($t7)
     sltiu $t9, $t8, 1
     beqz $t9, .Lif_end_73
@@ -1969,21 +1952,15 @@ main:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    la $t7, gs
-    lw $t7, 0($t7)
-    lw $t8, 772($t7)
-    sw $t8, 144($sp)
-    addiu $a0, $sp, 144
+    la $a0, gs
+    addiu $a0, $a0, 772
     sw $t9, 96($sp)
     jal render_cube
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    la $t7, gs
-    lw $t7, 0($t7)
-    lw $t8, 816($t7)
-    sw $t8, 148($sp)
-    addiu $a0, $sp, 148
+    la $a0, gs
+    addiu $a0, $a0, 816
     sw $t9, 96($sp)
     jal render_cube
     nop

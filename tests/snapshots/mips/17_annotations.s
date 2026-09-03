@@ -263,7 +263,7 @@ main:
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
-    lw $t6, 136($sp)
+    addiu $t6, $sp, 136
     lw $t7, 0($t6)
     andi $t8, $t7, 255
     la $t7, dma_out
@@ -293,12 +293,10 @@ main:
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
-    lw $t4, 264($sp)
-    lw $t6, 0($t4)
+    addiu $t6, $sp, 264
     li $t5, 0
-    sll $t5, $t5, 2
     addu $t6, $t6, $t5
-    lw $t7, 0($t6)
+    lbu $t7, 0($t6)
     move $t8, $t7
     la $t7, sink
     sw $t8, 0($t7)

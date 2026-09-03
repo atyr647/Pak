@@ -752,7 +752,7 @@ check_platform_landing:
     addu $t8, $t8, $t7
     move $t9, $t8
     sw $t9, 152($sp)
-    lw $t8, 152($sp)
+    addiu $t8, $sp, 152
     lbu $t9, 16($t8)
     beqz $t9, .Lif_end_12
     nop
@@ -760,16 +760,16 @@ check_platform_landing:
     li $t7, 16
     addu $t9, $t8, $t7
     sw $t9, 156($sp)
-    lw $t7, 152($sp)
+    addiu $t7, $sp, 152
     lw $t8, 12($t7)
     sw $t8, 28($sp)
-    lw $t7, 152($sp)
+    addiu $t7, $sp, 152
     lw $t8, 8($t7)
     sw $t8, 24($sp)
-    lw $t7, 152($sp)
+    addiu $t7, $sp, 152
     lw $t8, 4($t7)
     sw $t8, 20($sp)
-    lw $t7, 152($sp)
+    addiu $t7, $sp, 152
     lw $t8, 0($t7)
     sw $t8, 16($sp)
     li $a3, 4
@@ -787,7 +787,7 @@ check_platform_landing:
     lw $t9, 160($sp)
     beqz $t9, .Lif_end_13
     nop
-    lw $t9, 152($sp)
+    addiu $t9, $sp, 152
     lw $v0, 4($t9)
     j .Lcheck_platform_landing_ret_7
     nop
@@ -1694,7 +1694,7 @@ draw_platforms:
     addu $t8, $t8, $t7
     move $t9, $t8
     sw $t9, 144($sp)
-    lw $t8, 144($sp)
+    addiu $t8, $sp, 144
     lbu $t9, 16($t8)
     beqz $t9, .Lif_end_70
     nop
@@ -1702,13 +1702,13 @@ draw_platforms:
     sw $t8, 20($sp)
     lw $t8, 136($sp)
     sw $t8, 16($sp)
-    lw $t8, 144($sp)
+    addiu $t8, $sp, 144
     lw $a3, 12($t8)
-    lw $t8, 144($sp)
+    addiu $t8, $sp, 144
     lw $a2, 8($t8)
-    lw $t8, 144($sp)
+    addiu $t8, $sp, 144
     lw $a1, 4($t8)
-    lw $t8, 144($sp)
+    addiu $t8, $sp, 144
     lw $a0, 0($t8)
     sw $t9, 96($sp)
     jal draw_rect_world
@@ -2034,8 +2034,7 @@ draw_hud:
     sw $t9, 140($sp)
 .Lwhile_h_97:
     lw $t8, 140($sp)
-    lw $t5, 136($sp)
-    lw $t6, 0($t5)
+    lw $t6, 136($sp)
     lw $t7, 20($t6)
     slt $t9, $t8, $t7
     beqz $t9, .Lwhile_x_98
@@ -2071,8 +2070,7 @@ draw_hud:
     j .Lwhile_h_97
     nop
 .Lwhile_x_98:
-    lw $t7, 136($sp)
-    lw $t8, 0($t7)
+    lw $t8, 136($sp)
     lw $t9, 24($t8)
     sw $t9, 148($sp)
     lw $t8, 148($sp)
@@ -2151,8 +2149,7 @@ update_playing:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    lw $t7, 136($sp)
-    lw $t8, 0($t7)
+    lw $t8, 136($sp)
     lw $a0, 0($t8)
     sw $t9, 96($sp)
     jal camera_follow
@@ -2169,8 +2166,7 @@ update_playing:
     sb $t8, 48($t7)
     move $t9, $t8
 .Lif_end_102:
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
+    lw $t7, 136($sp)
     lw $t8, 20($t7)
     li $t7, 0
     sle $t9, $t8, $t7
@@ -2408,8 +2404,8 @@ render_world:
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
     sw $a0, 136($sp)
-    lw $t7, 136($sp)
-    lw $t8, 36($t7)
+    lw $t8, 136($sp)
+    addiu $t8, $t8, 36
     lw $t9, 8($t8)
     sw $t9, 140($sp)
     li $a0, 1435028735
@@ -2455,10 +2451,7 @@ render_world:
     lw $t9, 96($sp)
     move $t9, $v0
     lw $a1, 140($sp)
-    lw $t7, 136($sp)
-    lw $t8, 0($t7)
-    sw $t8, 144($sp)
-    addiu $a0, $sp, 144
+    lw $a0, 136($sp)
     sw $t9, 96($sp)
     jal draw_player
     nop
@@ -2835,15 +2828,15 @@ main:
     lw $t9, 96($sp)
     move $t9, $v0
     li $t8, 0
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     sb $t8, 48($t7)
     move $t9, $t8
     li $t8, 0
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     sw $t8, 52($t7)
     move $t9, $t8
     li $t8, 0
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     sw $t8, 56($t7)
     move $t9, $t8
     sw $t9, 96($sp)
