@@ -90,9 +90,11 @@ set ::pak::API_ARITY [dict create \
     {rdpq set_tile_mask} {10 10} \
     {rdpq set_texture_image} {4 4} \
     {rdpq triangle} {6 6} \
+    {rdpq triangle_z} {9 9} \
     {rdpq triangle_shade} {9 9} \
     {rdpq triangle_shade_z} {12 12} \
     {rdpq triangle_tex} {13 13} \
+    {rdpq triangle_tex_z} {13 13} \
     {rdpq triangle_shade_tex} {16 16} \
     {rdpq triangle_shade_tex_z} {16 16} \
     {rdpq set_tri_z} {3 3} \

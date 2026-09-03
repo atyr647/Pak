@@ -154,7 +154,7 @@ What the runtime drives:
 | Colour registers | fill, blend, fog, env, prim |
 | Fills | `FILL_RECTANGLE` in FILL cycle — four bytes per cycle |
 | Texturing | `SET_TEXTURE_IMAGE` (writeback of KSEG0 sources), `SET_TILE` / `SET_TILE` clamp+mirror+mask, `SET_TILE_SIZE`, `LOAD_TILE`, `LOAD_BLOCK`, `LOAD_TLUT`, `TEXTURE_RECTANGLE` |
-| Geometry | `TRIANGLE` (0x08), `TRI_TEX` (0x0A), `TRI_SHADE` (0x0C), `TRI_SHADE_Z` (0x0D). Edges s15.16; shade RGBA s15.16; Z 15.16 of 0..32767. |
+| Geometry | `TRIANGLE` (0x08), `TRIANGLE_Z` (0x09), `TRI_TEX` (0x0A), `TRI_TEX_Z` (0x0B), `TRI_SHADE` (0x0C), `TRI_SHADE_Z` (0x0D), `TRI_SHADE_TXTR` (0x0E), `TRI_SHADE_TXTR_Z` (0x0F). Edges s15.16; shade RGBA s15.16; Z 15.16 of 0..32767. |
 | Sync | `SYNC_PIPE`, `SYNC_TILE`, `SYNC_LOAD`, `SYNC_FULL` |
 
 A full-screen clear is one `FILL_RECTANGLE` instead of 76 800 uncached
@@ -187,8 +187,9 @@ wait loops terminate instead of hanging.
   optimized stream as text. Encoded-byte call/MMIO goldens live in
   `tcl/tools/enc_exec_test.tcl`.
 * **Shade+tex.** `rdpq.triangle_shade_tex` is Gouraud + affine ST (0x0E).
-  `rdpq.set_tri_z` then `rdpq.triangle_shade_tex_z` adds Z (0x0F). Same
-  s15.16 coefficients as `triangle_tex` / `triangle_shade`.
+  `rdpq.set_tri_z` then `rdpq.triangle_shade_tex_z` adds Z (0x0F). Fill+Z is
+  `rdpq.triangle_z` (0x09); tex+Z is `rdpq.triangle_tex_z` after `set_tri_z`
+  (0x0B). Same s15.16 coefficients as `triangle_tex` / `triangle_shade`.
 * **Exception paint.** `boot.S` copies an 8-byte trampoline to the four VR4300
   exception vectors and `jal`s `exception_paint`, which fills FB0/FB1/FB2 with
   RGBA5551 `0xF801` and programs the VI. `assert` / `__pak_panic` take the same

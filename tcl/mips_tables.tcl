@@ -51,9 +51,11 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_texture_rectangle \
     rdpq_texture_rectangle_scaled \
     rdpq_triangle \
+    rdpq_triangle_z \
     rdpq_triangle_shade \
     rdpq_triangle_shade_z \
     rdpq_triangle_tex \
+    rdpq_triangle_tex_z \
     rdpq_triangle_shade_tex \
     rdpq_triangle_shade_tex_z \
     rdpq_set_tri_z \
@@ -228,9 +230,11 @@ set ::pak::MIPS_API [dict create \
     {rdpq texture_rectangle} {rdpq_texture_rectangle} \
     {rdpq texture_rectangle_scaled} {rdpq_texture_rectangle_scaled} \
     {rdpq triangle} {rdpq_triangle} \
+    {rdpq triangle_z} {rdpq_triangle_z} \
     {rdpq triangle_shade} {rdpq_triangle_shade} \
     {rdpq triangle_shade_z} {rdpq_triangle_shade_z} \
     {rdpq triangle_tex} {rdpq_triangle_tex} \
+    {rdpq triangle_tex_z} {rdpq_triangle_tex_z} \
     {rdpq triangle_shade_tex} {rdpq_triangle_shade_tex} \
     {rdpq triangle_shade_tex_z} {rdpq_triangle_shade_tex_z} \
     {rdpq set_tri_z} {rdpq_set_tri_z} \

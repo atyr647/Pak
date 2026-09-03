@@ -27,7 +27,7 @@ the old pytest suite into `tests/corpus/`.
 | MIPS encoder | `n64enc.tcl` | `tcl/tools/n64enc_test.tcl` | 55 encodings |
 | Record optimizer + encoded exec | `optimize.tcl` | `tcl/tools/enc_exec_test.tcl` | call/MMIO goldens |
 | Array `&arr` / `&s.field` / method self | `mips_codegen.tcl` | `tcl/tools/array_addr_test.tcl` | place-addr, sb at base+i, g.player.init |
-| RDP stream (incl. 0x0E/0x0F) | `runtime.pk64` | `tcl/tools/rdp_test.tcl` | 240 words unopt=opt |
+| RDP stream (0x08–0x0F) | `runtime.pk64` | `tcl/tools/rdp_test.tcl` | 280 words unopt=opt |
 | Exception paint + crt0 vectors | `boot.S`, `runtime.pk64` | `tcl/tools/exception_test.tcl` | red-screen + 4 MiB ROM |
 | Audio PCM (AI) | `runtime.pk64` | `tcl/tools/audio_test.tcl` | DACRATE/LEN/kick |
 | Linker + ROM packer | `n64link.tcl`, `n64rom.tcl` | `tcl/tools/n64link_test.tcl` | 44 assertions |

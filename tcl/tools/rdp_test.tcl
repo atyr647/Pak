@@ -102,6 +102,12 @@ set EXPECTED {
     00640000 FFFF2493
     000A0000 00006000
     000A0000 00090000
+    09000168 00500028
+    00640000 FFFF2493
+    000A0000 00006000
+    000A0000 00090000
+    00000000 00000000
+    00640064 00000000
     35101000 00094250
     0A0000C0 00400040
     00300000 FFFF0000
@@ -192,6 +198,20 @@ set EXPECTED {
     00000000 00000000
     0000001F 00004000
     00FA00FA 00000000
+    0B0000C0 00400040
+    00300000 FFFF0000
+    00100000 00000000
+    00100000 00000000
+    00000000 7FFF0000
+    00200000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000020 00000000
+    00000020 00000000
+    00000000 00000000
+    00000000 00000000
+    0000001F 00004000
+    00FA00FA 00000000
     27000000 00000000
     28000000 00000000
     26000000 00000000
@@ -225,6 +245,12 @@ set NOTES {
     "                  XL / DxLDy   (lower minor edge)"
     "                  XH / DxHDy   (major edge)"
     "                  XM / DxMDy   (upper minor edge)"
+    "TRIANGLE_Z        0x09 fill+Z, same edges as TRIANGLE"
+    "                  XL / DxLDy"
+    "                  XH / DxHDy"
+    "                  XM / DxMDy"
+    "                  Z / dZdx integer then fractional"
+    "                  dZde / dZdy integer then fractional"
     "SET_TILE          clamp+mask (cms/cmt=2, mask 5/5)"
     "TRI_TEX           0x0A affine ST, tile 0, Y=16/16/48"
     "                  XL / DxLDy"
@@ -309,6 +335,20 @@ set NOTES {
     "                  dSdx / dTdx integer"
     "                  S/T/W fractional"
     "                  dSdx / dTdx fractional"
+    "                  dSde / dTde integer"
+    "                  dSdy / dTdy integer"
+    "                  dSde / dTde fractional"
+    "                  dSdy / dTdy fractional"
+    "                  Z / dZdx integer then fractional"
+    "                  dZde / dZdy integer then fractional"
+    "TRI_TEX_Z         0x0B affine ST + Z, tile 0, Y=16/16/48"
+    "                  XL / DxLDy"
+    "                  XH / DxHDy"
+    "                  XM / DxMDy"
+    "                  S/T/W integer halves (W=0x7FFF)"
+    "                  dSdx / dTdx / dWdx integer"
+    "                  S/T/W fractional halves"
+    "                  dSdx / dTdx / dWdx fractional"
     "                  dSde / dTde integer"
     "                  dSdy / dTdy integer"
     "                  dSde / dTde fractional"

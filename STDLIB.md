@@ -420,6 +420,8 @@ rejects a no.
 | `rdpq` | `triangle_shade_tex_z` | `rdpq_triangle_shade_tex_z` | yes | yes |
 | `rdpq` | `triangle_shade_z` | `rdpq_triangle_shade_z` | yes | yes |
 | `rdpq` | `triangle_tex` | `rdpq_triangle_tex` | yes | yes |
+| `rdpq` | `triangle_tex_z` | `rdpq_triangle_tex_z` | yes | yes |
+| `rdpq` | `triangle_z` | `rdpq_triangle_z` | yes | yes |
 | `rdpq_font` | `draw_text` | `rdpq_text_print` | yes | no |
 | `rdpq_font` | `free` | `rdpq_font_free` | yes | no |
 | `rdpq_font` | `load` | `rdpq_font_load` | yes | no |
@@ -582,7 +584,7 @@ rejects a no.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**323 functions** across the module surface; **85** exist on the standalone HAL.
+**325 functions** across the module surface; **87** exist on the standalone HAL.
 
 <!-- END GENERATED MODULE API -->
 
@@ -690,11 +692,13 @@ use n64.rdpq             -- #include <rdpq.h> + <rdpq_gfx.h>
 | `rdpq.sync_tile` | `()` | Sync RDP tile state |
 | `rdpq.sync_load` | `()` | Sync RDP texture load |
 | `rdpq.triangle` | `(x0,y0,x1,y1,x2,y2)` | Flat fill triangle (RDP 0x08) |
+| `rdpq.triangle_z` | `(x0,y0,z0, x1,y1,z1, x2,y2,z2)` | Fill + Z (RDP 0x09); z is 0..32767 |
 | `rdpq.triangle_tex` | `(tile, x0,y0,s0,t0, x1,y1,s1,t1, x2,y2,s2,t2)` | Affine textured triangle (RDP 0x0A TRI_TEX, s15.16 edges + ST + 1/w) |
+| `rdpq.triangle_tex_z` | `(tile, x0,y0,s0,t0, x1,..., x2,...)` | Affine ST + Z (RDP 0x0B); call `set_tri_z` first |
 | `rdpq.triangle_shade` | `(x0,y0,c0, x1,y1,c1, x2,y2,c2)` | Gouraud triangle (RDP 0x0C); colours RGBA8888 |
 | `rdpq.triangle_shade_z` | `(x0,y0,c0,z0, x1,y1,c1,z1, x2,y2,c2,z2)` | Gouraud + Z (RDP 0x0D); z is 0..32767 |
 | `rdpq.triangle_shade_tex` | `(tile, x0,y0,c0,s0,t0, x1,y1,c1,s1,t1, x2,y2,c2,s2,t2)` | Gouraud + affine ST (RDP 0x0E) |
-| `rdpq.set_tri_z` | `(z0, z1, z2)` | Vertex Z for the next `triangle_shade_tex_z` |
+| `rdpq.set_tri_z` | `(z0, z1, z2)` | Vertex Z for the next `triangle_tex_z` / `triangle_shade_tex_z` |
 | `rdpq.triangle_shade_tex_z` | `(tile, x0,y0,c0,s0,t0, x1,..., x2,...)` | Gouraud + ST + Z (RDP 0x0F); call `set_tri_z` first |
 | `rdpq.texture_rectangle` | `(...)` | Blit textured rect (see libdragon) |
 | `rdpq.texture_rectangle_scaled` | `(...)` | Scaled textured rect (see libdragon) |

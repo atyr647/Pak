@@ -414,7 +414,9 @@ static g_dl_off: u32 = 0        -- write cursor, bytes from DL_BASE
 
 -- RDP command opcodes.
 const RDP_TRI_FILL:        u32 = 0x08
+const RDP_TRI_FILL_Z:      u32 = 0x09
 const RDP_TRI_TEX:         u32 = 0x0A
+const RDP_TRI_TEX_Z:       u32 = 0x0B
 const RDP_TRI_SHADE:       u32 = 0x0C
 const RDP_TRI_SHADE_Z:     u32 = 0x0D
 const RDP_TRI_SHADE_TXTR:  u32 = 0x0E
@@ -848,6 +850,62 @@ fn rdpq_triangle(x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
     dl_cmd((xa * 65536) as u32, dxmdy as u32)
 }
 
+-- TRIANGLE_Z (0x09): the 0x08 edges plus a Z coefficient block. Z is
+-- 0..32767, same scale as triangle_shade_z.
+fn rdpq_triangle_z(x0: i32, y0: i32, z0: i32,
+                   x1: i32, y1: i32, z1: i32,
+                   x2: i32, y2: i32, z2: i32) {
+    let mut xa: i32 = x0
+    let mut ya: i32 = y0
+    let mut za: i32 = z0
+    let mut xb: i32 = x1
+    let mut yb: i32 = y1
+    let mut zb: i32 = z1
+    let mut xc: i32 = x2
+    let mut yc: i32 = y2
+    let mut zc: i32 = z2
+
+    if yb < ya {
+        let tx: i32 = xa; let ty: i32 = ya; let tz: i32 = za
+        xa = xb; ya = yb; za = zb
+        xb = tx; yb = ty; zb = tz
+    }
+    if yc < ya {
+        let tx: i32 = xa; let ty: i32 = ya; let tz: i32 = za
+        xa = xc; ya = yc; za = zc
+        xc = tx; yc = ty; zc = tz
+    }
+    if yc < yb {
+        let tx: i32 = xb; let ty: i32 = yb; let tz: i32 = zb
+        xb = xc; yb = yc; zb = zc
+        xc = tx; yc = ty; zc = tz
+    }
+    if ya == yc { return }
+
+    let mut lft: u32 = 0
+    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+
+    let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
+    let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
+    let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
+
+    dl_cmd((RDP_TRI_FILL_Z << 24) | (lft << 23) | to_fx102(yc),
+           (to_fx102(yb) << 16) | to_fx102(ya))
+    dl_cmd((xb * 65536) as u32, dxldy as u32)
+    dl_cmd((xa * 65536) as u32, dxhdy as u32)
+    dl_cmd((xa * 65536) as u32, dxmdy as u32)
+
+    let hx: i32 = xc - xa
+    let hy: i32 = yc - ya
+    let mx: i32 = xb - xa
+    let my: i32 = yb - ya
+    let nz: i32 = hx * my - hy * mx
+    let zs: i32 = za << 16
+    let dzdx: i32 = rdp_muldiv(0 - (hy * (zb - za) - my * (zc - za)), 65536, nz)
+    let dzdy: i32 = rdp_muldiv(0 - (mx * (zc - za) - hx * (zb - za)), 65536, nz)
+    rdp_z_coeffs(zs, dzdx, dzdy + rdp_muldiv(dzdx, hx, hy), dzdy)
+}
+
 -- a * m / d, toward-zero, without a 64-bit intermediate. Used for s15.16
 -- attribute slopes: rdp_muldiv(num, 65536, den) == (num << 16) / den.
 fn rdp_muldiv(a: i32, m: i32, d: i32) -> i32 {
@@ -1114,8 +1172,8 @@ fn rdpq_triangle_shade_z(x0: i32, y0: i32, c0: u32, z0: i32,
     rdp_tri_shade(RDP_TRI_SHADE_Z, x0, y0, c0, z0, x1, y1, c1, z1, x2, y2, c2, z2, 1)
 }
 
--- Z for TRI_SHADE_TXTR_Z. Scalars, not an array: `g_st_z[i] =` would load
--- the first word as a base (same lowering bug as &g_pif_buf).
+-- Z for TRI_TEX_Z / TRI_SHADE_TXTR_Z. Set before triangle_tex_z /
+-- triangle_shade_tex_z. Same 0..32767 scale as triangle_shade_z.
 static g_st_z0: i32 = 0
 static g_st_z1: i32 = 0
 static g_st_z2: i32 = 0
@@ -1298,6 +1356,92 @@ fn rdpq_triangle_shade_tex_z(tile: u32,
     let my: i32 = yb - ya
     let nz: i32 = hx * my - hy * mx
     rdp_shade_tex_coeffs(ca, cb, cc, sa, ta, sb, tb, sc, tc, hx, hy, mx, my, nz)
+    let zs: i32 = za << 16
+    let dzdx: i32 = rdp_muldiv(0 - (hy * (zb - za) - my * (zc - za)), 65536, nz)
+    let dzdy: i32 = rdp_muldiv(0 - (mx * (zc - za) - hx * (zb - za)), 65536, nz)
+    rdp_z_coeffs(zs, dzdx, dzdy + rdp_muldiv(dzdx, hx, hy), dzdy)
+}
+
+-- Affine TRI_TEX_Z (0x0B). Same ST as triangle_tex; Z from rdpq.set_tri_z.
+fn rdpq_triangle_tex_z(tile: u32,
+                       x0: i32, y0: i32, s0: i32, t0: i32,
+                       x1: i32, y1: i32, s1: i32, t1: i32,
+                       x2: i32, y2: i32, s2: i32, t2: i32) {
+    let mut xa: i32 = x0
+    let mut ya: i32 = y0
+    let mut sa: i32 = s0
+    let mut ta: i32 = t0
+    let mut za: i32 = g_st_z0
+    let mut xb: i32 = x1
+    let mut yb: i32 = y1
+    let mut sb: i32 = s1
+    let mut tb: i32 = t1
+    let mut zb: i32 = g_st_z1
+    let mut xc: i32 = x2
+    let mut yc: i32 = y2
+    let mut sc: i32 = s2
+    let mut tc: i32 = t2
+    let mut zc: i32 = g_st_z2
+
+    if yb < ya {
+        let tx: i32 = xa; let ty: i32 = ya; let ts: i32 = sa; let tt: i32 = ta; let tz: i32 = za
+        xa = xb; ya = yb; sa = sb; ta = tb; za = zb
+        xb = tx; yb = ty; sb = ts; tb = tt; zb = tz
+    }
+    if yc < ya {
+        let tx: i32 = xa; let ty: i32 = ya; let ts: i32 = sa; let tt: i32 = ta; let tz: i32 = za
+        xa = xc; ya = yc; sa = sc; ta = tc; za = zc
+        xc = tx; yc = ty; sc = ts; tc = tt; zc = tz
+    }
+    if yc < yb {
+        let tx: i32 = xb; let ty: i32 = yb; let ts: i32 = sb; let tt: i32 = tb; let tz: i32 = zb
+        xb = xc; yb = yc; sb = sc; tb = tc; zb = zc
+        xc = tx; yc = ty; sc = ts; tc = tt; zc = tz
+    }
+    if ya == yc { return }
+
+    let mut lft: u32 = 0
+    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+
+    let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
+    let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
+    let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
+
+    dl_cmd((RDP_TRI_TEX_Z << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx102(yc),
+           (to_fx102(yb) << 16) | to_fx102(ya))
+    dl_cmd((xb * 65536) as u32, dxldy as u32)
+    dl_cmd((xa * 65536) as u32, dxhdy as u32)
+    dl_cmd((xa * 65536) as u32, dxmdy as u32)
+
+    let ss0: i32 = sa * 32
+    let tt0: i32 = ta * 32
+    let ss1: i32 = sb * 32
+    let tt1: i32 = tb * 32
+    let ss2: i32 = sc * 32
+    let tt2: i32 = tc * 32
+    let hx: i32 = xc - xa
+    let hy: i32 = yc - ya
+    let mx: i32 = xb - xa
+    let my: i32 = yb - ya
+    let nz: i32 = hx * my - hy * mx
+    let dsdx: i32 = rdp_muldiv(0 - (hy * (ss1 - ss0) - my * (ss2 - ss0)), 65536, nz)
+    let dtdx: i32 = rdp_muldiv(0 - (hy * (tt1 - tt0) - my * (tt2 - tt0)), 65536, nz)
+    let dsdy: i32 = rdp_muldiv(0 - (mx * (ss2 - ss0) - hx * (ss1 - ss0)), 65536, nz)
+    let dtdy: i32 = rdp_muldiv(0 - (mx * (tt2 - tt0) - hx * (tt1 - tt0)), 65536, nz)
+    let dsde: i32 = dsdy + rdp_muldiv(dsdx, hx, hy)
+    let dtde: i32 = dtdy + rdp_muldiv(dtdx, hx, hy)
+    let sfix: i32 = ss0 * 65536
+    let tfix: i32 = tt0 * 65536
+    let wfix: i32 = 0x7FFF0000
+    rdp_tex_hi(sfix, tfix, wfix)
+    rdp_tex_hi(dsdx, dtdx, 0)
+    rdp_tex_lo(sfix, tfix, wfix)
+    rdp_tex_lo(dsdx, dtdx, 0)
+    rdp_tex_hi(dsde, dtde, 0)
+    rdp_tex_hi(dsdy, dtdy, 0)
+    rdp_tex_lo(dsde, dtde, 0)
+    rdp_tex_lo(dsdy, dtdy, 0)
+
     let zs: i32 = za << 16
     let dzdx: i32 = rdp_muldiv(0 - (hy * (zb - za) - my * (zc - za)), 65536, nz)
     let dzdy: i32 = rdp_muldiv(0 - (mx * (zc - za) - hx * (zb - za)), 65536, nz)

@@ -38,7 +38,7 @@ The HAL for the path that needs no external tools at all: no GCC, no `as`, no
 | Area | Status |
 |------|--------|
 | Video Interface | 320x240 16bpp, triple buffered, vblank wait, flip |
-| RDP | fills, copies, texturing, flat/Gouraud/tex/shade-tex triangles, Z, syncs — see `docs/toolchain-free-rom.md` |
+| RDP | fills, copies, texturing, flat/Gouraud/tex/shade-tex triangles, Z on every opcode 0x08–0x0F, syncs — see `docs/toolchain-free-rom.md` |
 | Controller | SI/PIF polling for port 0, held/pressed/released + stick |
 | PI DMA | cartridge to and from RDRAM, with the busy wait |
 | Timer | COP0 Count, `get_ticks`, frame delta in seconds |

@@ -45,9 +45,11 @@
 	.extern rdpq_texture_rectangle
 	.extern rdpq_texture_rectangle_scaled
 	.extern rdpq_triangle
+	.extern rdpq_triangle_z
 	.extern rdpq_triangle_shade
 	.extern rdpq_triangle_shade_z
 	.extern rdpq_triangle_tex
+	.extern rdpq_triangle_tex_z
 	.extern rdpq_triangle_shade_tex
 	.extern rdpq_triangle_shade_tex_z
 	.extern rdpq_set_tri_z
