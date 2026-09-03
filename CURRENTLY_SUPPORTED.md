@@ -161,7 +161,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Return path checking (W201) | ✅ Full | Warning, not error |
 | Naming convention checks (W001–W003) | ✅ Full | Suppressible |
 | Asset declaration scope | ✅ Full | Fixed — asset names registered in typechecker scope |
-| Generic type instantiation | ⚠️ Partial | Type params tracked; generic function bodies not checked (can't resolve types without instantiation) |
+| Generic type instantiation | ✅ Full | Type-arg count (E015); generic function bodies checked at each instantiation (E016 on field access after T is concrete) |
 | Trait implementation completeness | ✅ Full | Method existence (E601/E602) and parameter count (E603) checked |
 | Result/Option type checking | ⚠️ Partial | Constructors accepted; match types partially resolved |
 
@@ -207,6 +207,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Peephole optimization | ✅ Full | On instruction records; `objgen` / one-shot ROM encode the optimized stream |
 | Delay slot filling | ✅ Full | Same record passes |
 | CPU exception paint | ✅ Full | crt0 installs 0x80000000/80/100/180; default fills FB red (`0xF801`) |
+| EEPROM (SI/PIF ch4) | ✅ Full | `present` / `type_detect` / `read` / `write` / `init` on the standalone HAL |
 | `defer` | ✅ Full | |
 | `match` on enums | ✅ Full | |
 | Named-field variant construction (`Type.case { f: v }`) | ✅ Full | Stack-allocated with tag + payload stores |

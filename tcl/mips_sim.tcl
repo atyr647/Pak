@@ -1,16 +1,17 @@
 # tcl/mips_sim.tcl — minimal MIPS-I/III text-format simulator.
 #
 # Executes the instruction subset emitted by the Pak MIPS backend, captures
-# all halfword (sh) and word (sw) stores, and returns the result.
+# all byte (sb), halfword (sh) and word (sw) stores, and returns the result.
 # Registers are stored as unsigned 32-bit integers; sign is applied only where
 # the semantics require it (slt, div, sra, conditional branches).
 #
 # Public API:
-#   pak::mips_sim_run text ?start? ?limit?  ->  dict {mem_h mem_w insns}
+#   pak::mips_sim_run text ?start? ?limit? ?preset?  ->  dict {mem_b mem_h mem_w insns}
 #     text  — MIPS assembly text (.extern/.section/.globl etc. are skipped)
 #     start — label to begin execution at (default: "main")
 #     limit — instruction budget before forced halt (default: 20 000 000)
 #   Return dict keys:
+#     mem_b  — dict {byte_addr -> u8}   of all sb stores
 #     mem_h  — dict {byte_addr -> u16}  of all sh stores
 #     mem_w  — dict {byte_addr -> u32}  of all sw stores
 #     insns  — count of instructions dispatched
@@ -222,6 +223,7 @@ proc parse_asm {text} {
 # State is accessed via upvar 1 from run (local variables, no proc-call penalty):
 #   R   — array of 32 unsigned 32-bit registers
 #   HI LO — multiply/divide results
+#   mb  — dict byte_addr->u8   (sb stores)
 #   mh  — dict byte_addr->u16  (sh stores)
 #   mw  — dict byte_addr->u32  (sw stores)
 #
@@ -232,7 +234,7 @@ proc parse_asm {text} {
 #          "jmp:L"  → branch/jump taken; caller executes delay slot then jumps
 
 proc exec_insn {op args} {
-    upvar 1 R R  HI HI  LO LO  mh mh  mw mw  dsyms dsyms  mseq mseq  mseqi mseqi
+    upvar 1 R R  HI HI  LO LO  mb mb  mh mh  mw mw  dsyms dsyms  mseq mseq  mseqi mseqi
 
     switch -- $op {
         nop - sync { return "" }
@@ -408,7 +410,19 @@ proc exec_insn {op args} {
             lassign [lindex $args 1] off base
             dict set mh [expr {($R($base) + $off) & 0xFFFFFFFF}] [expr {$R([lindex $args 0]) & 0xFFFF}]
         }
-        sb { }
+        sb {
+            # Byte store. Merge into the containing word so lbu (which reads
+            # mem_w big-endian) sees the write, and keep mem_b so tests can
+            # assert PIF command bytes without reconstructing words.
+            lassign [lindex $args 1] off base
+            set addr [expr {($R($base) + $off) & 0xFFFFFFFF}]
+            set val  [expr {$R([lindex $args 0]) & 0xFF}]
+            dict set mb $addr $val
+            set w [expr {$addr & ~3}]
+            set shift [expr {(3 - ($addr & 3)) * 8}]
+            set cur [expr {[dict exists $mw $w] ? [dict get $mw $w] : 0}]
+            dict set mw $w [expr {($cur & ~(0xFF << $shift)) | ($val << $shift)}]
+        }
 
         lw {
             set n [lindex $args 0]
@@ -520,6 +534,7 @@ proc run {text {start "main"} {limit 20000000} {preset {}}} {
     set R(31) 0xFFFFFFFF            ;# $ra — invalid, so the outermost jr halts
     set HI 0;  set LO 0
     set mh [dict create]   ;# sh stores
+    set mb [dict create]   ;# sb stores
     # Seed memory with the data sections so a static's initialiser is readable,
     # then with any caller-supplied values. `preset` is how a test models MMIO
     # the program polls: without it a status register reads 0 forever and a
@@ -572,7 +587,7 @@ proc run {text {start "main"} {limit 20000000} {preset {}}} {
         }
     }
 
-    return [dict create mem_h $mh mem_w $mw insns $count]
+    return [dict create mem_b $mb mem_h $mh mem_w $mw insns $count]
 }
 
 } ;# namespace eval pak::mipsim

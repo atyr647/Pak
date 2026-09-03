@@ -306,11 +306,11 @@ rejects a no.
 | `dma` | `read` | `dma_read` | yes | yes |
 | `dma` | `wait` | `dma_wait` | yes | yes |
 | `dma` | `write` | `dma_write` | yes | yes |
-| `eeprom` | `init` | `eeprom_init` | yes | no |
-| `eeprom` | `present` | `eeprom_present` | yes | no |
-| `eeprom` | `read` | `eeprom_read` | yes | no |
-| `eeprom` | `type_detect` | `eeprom_type_detect` | yes | no |
-| `eeprom` | `write` | `eeprom_write` | yes | no |
+| `eeprom` | `init` | `eeprom_init` | yes | yes |
+| `eeprom` | `present` | `eeprom_present` | yes | yes |
+| `eeprom` | `read` | `eeprom_read` | yes | yes |
+| `eeprom` | `type_detect` | `eeprom_type_detect` | yes | yes |
+| `eeprom` | `write` | `eeprom_write` | yes | yes |
 | `exception` | `get_handler` | `exception_get_handler` | yes | yes |
 | `exception` | `set_handler` | `exception_set_handler` | yes | yes |
 | `flashram` | `erase_sector` | `flashram_erase_sector` | yes | no |
@@ -579,7 +579,7 @@ rejects a no.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**320 functions** across the module surface; **69** exist on the standalone HAL.
+**320 functions** across the module surface; **74** exist on the standalone HAL.
 
 <!-- END GENERATED MODULE API -->
 
@@ -1078,7 +1078,9 @@ use n64.eeprom           -- #include <eeprom.h>
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `eeprom.init` | `()` | Initialize EEPROM (`eeprom_init`) |
+| `eeprom.init` | `()` | Probe the cartridge EEPROM (`eeprom_init`) |
+| `eeprom.present` | `() -> i32` | 1 if 4K or 16K EEPROM is on the cart |
+| `eeprom.type_detect` | `() -> i32` | 0 = none, 1 = 4K (64 blocks), 2 = 16K (256 blocks) |
 | `eeprom.read` | `(block: i32, dst: *u8)` | Read an 8-byte block |
 | `eeprom.write` | `(block: i32, src: *u8)` | Write an 8-byte block |
 
@@ -1086,10 +1088,8 @@ use n64.eeprom           -- #include <eeprom.h>
 - Each block = exactly **8 bytes**. `dst`/`src` must point to at least 8 bytes.
 - EEPROM 4K = 64 blocks (512 B); EEPROM 16K = 256 blocks (2048 B).
 - Writes are slow (~15 ms/block) — only write when save data changes.
-- Note: only `init`/`read`/`write` are lowered. There is **no** `eeprom.present`
-  or `eeprom.type_detect` in `MODULE_API` — to detect presence, use
-  `backup.type()` (the generic backup detector) or declare the libdragon
-  `eeprom_present`/`eeprom_total_blocks` via `extern "C"`.
+- Always call `eeprom.present()` before read/write. On the standalone HAL this
+  is a real SI/PIF Joybus identify (channel 4); there is no libdragon fallback.
 - See `N64_HARDWARE.md` → EEPROM for the save/load pattern.
 
 ---
@@ -1512,7 +1512,6 @@ These are emitted by the compiler. Do not call them in Pak source:
 - No `io` / `os` / `file` module — no general file I/O in the Pak stdlib.
 - No `collections` module — use the built-in generic containers.
 - No `network` / threading / concurrency modules.
-- No `eeprom.present` / `eeprom.type_detect` (use `backup.type`).
 
 If a module or function is not in the generated index (and not in
 `tcl/module_api.tcl`), it does not exist — do not invent it. `pak check`

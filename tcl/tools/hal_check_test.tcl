@@ -77,7 +77,13 @@ set ast [parse_src "use n64.eeprom
 entry { eeprom.present() }
 "]
 set diags [pak::semantic_check $ast "t.pk64" mips]
-ok "eeprom.present is E010 on mips" [has_code $diags E010] [codes $diags]
+ok "eeprom.present accepted on mips" [expr {[llength $diags] == 0}] $diags
+
+set ast [parse_src "use n64.eeprom
+entry { eeprom.init(); eeprom.type_detect(); eeprom.read(0, 0 as *u8); eeprom.write(0, 0 as *u8) }
+"]
+set diags [pak::semantic_check $ast "t.pk64" mips]
+ok "eeprom init/type/read/write accepted on mips" [expr {[llength $diags] == 0}] $diags
 
 set ast [parse_src "use n64.sprite
 entry { sprite.load(\"a.sprite\") }
@@ -106,6 +112,10 @@ ok "rdpq_triangle_shade_z is in the HAL" [pak::mips_hal_symbol rdpq_triangle_sha
 ok "rdpq_clear_z is in the HAL" [pak::mips_hal_symbol rdpq_clear_z]
 ok "exception_paint is in the HAL" [pak::mips_hal_symbol exception_paint]
 ok "exception_set_handler is in the HAL" [pak::mips_hal_symbol exception_set_handler]
+ok "eeprom_present is in the HAL" [pak::mips_hal_symbol eeprom_present]
+ok "eeprom_read is in the HAL" [pak::mips_hal_symbol eeprom_read]
+ok "eeprom_write is in the HAL" [pak::mips_hal_symbol eeprom_write]
+ok "eeprom_init is in the HAL" [pak::mips_hal_symbol eeprom_init]
 
 set ast [parse_src "use n64.exception
 entry { exception.set_handler(0 as *u8) }

@@ -25,10 +25,11 @@ No GCC, no `as`, no `ld`, no `objcopy`, no `n64tool`.
 ## The runtime is Pak + a tiny hand-written crt0
 
 * **`runtime/standalone/runtime.pk64`** — the HAL written entirely in Pak:
-  display and framebuffer setup, SI controller polling, `memset`/`memcpy`, and
-  a real RDP driver. Free functions emit bare symbol names (`display_init`,
-  `rdpq_fill_rectangle`, …) matching the calls the codegen lowers game code
-  into. MMIO is done with `(0xA4400000 as *volatile u32)` writes; framebuffers
+  display and framebuffer setup, SI controller polling, EEPROM via SI/PIF
+  Joybus channel 4, PI DMA, `memset`/`memcpy`, and a real RDP driver. Free
+  functions emit bare symbol names (`display_init`, `rdpq_fill_rectangle`,
+  `eeprom_present`, …) matching the calls the codegen lowers game code into.
+  MMIO is done with `(0xA4400000 as *volatile u32)` writes; framebuffers
   live in uncached KSEG1 RDRAM so CPU writes are immediately visible to the
   Video Interface.
 * **`runtime/standalone/boot.S`** — the crt0. It needs CP0 access

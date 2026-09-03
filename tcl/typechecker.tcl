@@ -72,6 +72,14 @@ proc pak::type_str {typ} {
     }
 }
 
+# Concrete types that cannot have fields. Used by E016 after a generic is
+# instantiated; type-param names and `auto` are not in this set.
+set ::pak::TC_PRIMITIVES [dict create \
+    i8 1 i16 1 i32 1 i64 1 u8 1 u16 1 u32 1 u64 1 \
+    f32 1 f64 1 bool 1 void 1 never 1 byte 1 \
+    str 1 Str 1 CStr 1 fix16 1 \
+]
+
 # ── pass 1: declaration environment ────────────────────────────────────────────
 oo::class create pak::TypeEnv {
     variable structs enums variants fns traits trait_impls enum_cases variant_cases
@@ -214,7 +222,7 @@ oo::class create pak::Scope {
 
 # ── pass 2: the type checker ───────────────────────────────────────────────────
 oo::class create pak::TypeChecker {
-    variable env filename no_style errors scope current_fn aligned_vars cache_written
+    variable env filename no_style errors scope current_fn aligned_vars cache_written type_subst inst_checked
 
     constructor {env_ {fname ""} {nostyle 0}} {
         set env $env_
@@ -225,6 +233,8 @@ oo::class create pak::TypeChecker {
         set current_fn ""
         set aligned_vars [dict create]
         set cache_written [dict create]
+        set type_subst [dict create]
+        set inst_checked [dict create]
     }
     destructor { $scope destroy }
 
@@ -359,7 +369,7 @@ oo::class create pak::TypeChecker {
         set current_fn $fn
         $scope push
         foreach p [pak::items [pak::nfield $fn params]] {
-            $scope declare [pak::fval $p name] [pak::nfield $p type]
+            $scope declare [pak::fval $p name] [my subst_type [pak::nfield $p type]]
             if {[pak::has_annotation $p "@dma_safe"] || [pak::has_annotation $p "@aligned(16)"]} {
                 dict set aligned_vars [pak::fval $p name] 1
             }
@@ -544,6 +554,7 @@ oo::class create pak::TypeChecker {
         set typ [pak::nfield $s type]
         if {[pak::isnil $typ] && ![pak::isnil $val]} { set typ [my infer_type $val] }
         if {[pak::isnil $typ]} { set typ [pak::N TypeName name auto] }
+        set typ [my subst_type $typ]
         set name [pak::fval $s name]
         $scope declare $name $typ
         foreach a [pak::annlist $s] {
@@ -601,6 +612,7 @@ oo::class create pak::TypeChecker {
             Call {
                 foreach a [pak::items [pak::nfield $expr args]] { my check_expr $a }
                 my check_call_arity $expr
+                my check_generic_inst $expr
                 set func [pak::nfield $expr func]
                 if {[pak::kindof $func] eq "DotAccess" && [pak::kindof [pak::nfield $func obj]] eq "Ident"} {
                     set mod [pak::fval [pak::nfield $func obj] name]
@@ -700,12 +712,21 @@ oo::class create pak::TypeChecker {
     method check_field_access {obj_ident field node} {
         set typ [$scope lookup [pak::fval $obj_ident name]]
         set struct_name [my unwrap_type_name $typ]
-        if {$struct_name ne "" && [$env has_struct $struct_name]} {
+        if {$struct_name eq ""} return
+        if {[$env has_struct $struct_name]} {
             set fields [$env struct_fields $struct_name]
             if {$fields ne "" && ![dict exists $fields $field]} {
                 my err E011 "struct '$struct_name' has no field '$field'" $node \
                     "Available fields: [join [dict keys $fields] {, }]"
             }
+            return
+        }
+        # After a generic is instantiated, T is a concrete type. Field access
+        # on a primitive (or any non-struct) is E016; unresolved params (T,
+        # auto) stay silent because they have no layout yet.
+        if {[dict exists $::pak::TC_PRIMITIVES $struct_name]} {
+            my err E016 "type '$struct_name' has no field '$field'" $node \
+                "Instantiate with a struct that has field '$field'"
         }
     }
 
@@ -731,6 +752,145 @@ oo::class create pak::TypeChecker {
         if {$n_args != $n_params} {
             my err E012 "function '$name' takes $n_params argument(s), got $n_args" $call \
                 "Expected: ${name}($psig)"
+        }
+    }
+
+    # ── generic instantiation (E015/E016) ─────────────────────────────────────
+    # Type-arg count is checked whenever the call writes them down. The body is
+    # re-checked with T substituted once every type arg is known (explicit or
+    # inferred from the value arguments). Unresolved instantiations stay
+    # silent — same as before this check existed.
+    method check_generic_inst {call} {
+        set func [pak::nfield $call func]
+        if {[pak::kindof $func] ne "Ident"} return
+        set name [pak::fval $func name]
+        if {![$env has_fn $name]} return
+        set fndecl [$env get_fn $name]
+        set tps [pak::items [pak::nfield $fndecl type_params]]
+        if {[llength $tps] == 0} return
+
+        set targs [pak::items [pak::nfield $call type_args]]
+        if {[llength $targs] == 0} {
+            set targs [pak::items [pak::nfield $func type_args]]
+        }
+        if {[llength $targs] > 0 && [llength $targs] != [llength $tps]} {
+            set names {}
+            foreach tp $tps { lappend names [pak::sval $tp] }
+            my err E015 "function '$name' takes [llength $tps] type argument(s), got [llength $targs]" $call \
+                "Expected: ${name}<[join $names {, }]>(...)"
+            return
+        }
+        if {[llength $targs] == 0} {
+            set targs [my infer_call_type_args $fndecl [pak::items [pak::nfield $call args]]]
+        }
+        if {[llength $targs] != [llength $tps]} return
+
+        set key [list $name]
+        foreach ta $targs { lappend key [pak::type_str $ta] }
+        if {[dict exists $inst_checked $key]} return
+        dict set inst_checked $key 1
+
+        set subst [dict create]
+        for {set i 0} {$i < [llength $tps]} {incr i} {
+            dict set subst [pak::sval [lindex $tps $i]] [lindex $targs $i]
+        }
+        my check_instantiated_fn $fndecl $subst
+    }
+
+    method infer_call_type_args {fn_decl call_args} {
+        set tps [pak::items [pak::nfield $fn_decl type_params]]
+        set tpnames {}
+        foreach tp $tps { lappend tpnames [pak::sval $tp] }
+        set inferred [dict create]
+        set params [pak::items [pak::nfield $fn_decl params]]
+        set n [expr {min([llength $params], [llength $call_args])}]
+        for {set i 0} {$i < $n} {incr i} {
+            my collect_tp_infer [pak::nfield [lindex $params $i] type] \
+                [lindex $call_args $i] $tpnames inferred
+        }
+        set result {}
+        foreach tpn $tpnames {
+            if {![dict exists $inferred $tpn]} { return {} }
+            lappend result [dict get $inferred $tpn]
+        }
+        return $result
+    }
+
+    method collect_tp_infer {param_type arg_expr tpnames inferredVar} {
+        upvar 1 $inferredVar inferred
+        switch -- [pak::kindof $param_type] {
+            TypeName {
+                set pn [pak::fval $param_type name]
+                if {$pn in $tpnames && ![dict exists $inferred $pn]} {
+                    set t [my infer_type $arg_expr]
+                    if {![pak::isnil $t]} { dict set inferred $pn $t }
+                }
+            }
+            TypePointer {
+                my collect_tp_infer [pak::nfield $param_type inner] $arg_expr $tpnames inferred
+            }
+            TypeGeneric {
+                foreach sub [pak::items [pak::nfield $param_type args]] {
+                    my collect_tp_infer $sub $arg_expr $tpnames inferred
+                }
+            }
+        }
+    }
+
+    method check_instantiated_fn {fn subst} {
+        if {[pak::isnil [pak::nfield $fn body]]} return
+        set old_subst $type_subst
+        set old_fn $current_fn
+        set old_scope $scope
+        set type_subst $subst
+        set current_fn $fn
+        # A fresh scope: the generic body must not see the caller's locals.
+        set scope [pak::Scope new]
+        foreach p [pak::items [pak::nfield $fn params]] {
+            $scope declare [pak::fval $p name] [my subst_type [pak::nfield $p type]]
+            if {[pak::has_annotation $p "@dma_safe"] || [pak::has_annotation $p "@aligned(16)"]} {
+                dict set aligned_vars [pak::fval $p name] 1
+            }
+        }
+        my check_block_stmts [pak::items [pak::nfield [pak::nfield $fn body] stmts]]
+        $scope destroy
+        set scope $old_scope
+        set current_fn $old_fn
+        set type_subst $old_subst
+    }
+
+    method subst_type {typ} {
+        if {[pak::isnil $typ] || $typ eq ""} { return $typ }
+        switch -- [pak::kindof $typ] {
+            TypeName - TypeParam {
+                set n [pak::fval $typ name]
+                if {[dict exists $type_subst $n]} { return [dict get $type_subst $n] }
+                return $typ
+            }
+            TypePointer {
+                return [pak::N TypePointer \
+                    inner [my subst_type [pak::nfield $typ inner]] \
+                    nullable [pak::fval $typ nullable] \
+                    mutable [pak::fval $typ mutable]]
+            }
+            TypeSlice {
+                return [pak::N TypeSlice \
+                    inner [my subst_type [pak::nfield $typ inner]] \
+                    mutable [pak::fval $typ mutable]]
+            }
+            TypeArray {
+                return [pak::N TypeArray \
+                    inner [my subst_type [pak::nfield $typ inner]] \
+                    size [pak::nfield $typ size]]
+            }
+            TypeGeneric {
+                set newargs {}
+                foreach a [pak::items [pak::nfield $typ args]] {
+                    lappend newargs [my subst_type $a]
+                }
+                return [pak::N TypeGeneric name [pak::fval $typ name] args $newargs]
+            }
+            default { return $typ }
         }
     }
 
@@ -885,6 +1045,7 @@ oo::class create pak::TypeChecker {
     }
 
     method unwrap_type_name {typ} {
+        set typ [my subst_type $typ]
         switch -- [pak::kindof $typ] {
             TypeName    { return [pak::fval $typ name] }
             TypePointer { return [my unwrap_type_name [pak::nfield $typ inner]] }

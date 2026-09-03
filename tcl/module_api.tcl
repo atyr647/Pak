@@ -114,6 +114,11 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     dma_wait 1 \
     dma_read 1 \
     dma_write 1 \
+    eeprom_init 1 \
+    eeprom_present 1 \
+    eeprom_type_detect 1 \
+    eeprom_read 1 \
+    eeprom_write 1 \
     memset 1 \
     memcpy 1 \
     memcmp 1 \

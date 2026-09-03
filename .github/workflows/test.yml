@@ -123,6 +123,12 @@ jobs:
       - name: Exception paint (sim + vector trampoline + 4 MiB ROM)
         run: tclsh tcl/tools/exception_test.tcl
 
+      - name: EEPROM SI/PIF + PI DMA goldens
+        run: tclsh tcl/tools/eeprom_test.tcl
+
+      - name: Generic instantiation checking (E015/E016)
+        run: tclsh tcl/tools/generic_inst_test.tcl
+
       - name: HAL contract (MODULE_API + standalone E010)
         run: tclsh tcl/tools/hal_check_test.tcl
 

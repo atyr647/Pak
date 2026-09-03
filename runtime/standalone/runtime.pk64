@@ -155,6 +155,40 @@ const PIF_RAM_PHYS:      u32 = 0x1FC007C0
 
 -- PIF command buffer: 64 bytes, 16-byte aligned so DMA is valid (E202).
 static g_pif_buf: [64]u8 @aligned(16)
+-- Address of g_pif_buf, filled by pif_addr via `la`. Taking `&g_pif_buf` in
+-- Pak currently loads the first word instead of the address, so SI DMA and
+-- byte pokes go through this helper.
+static g_pif_addr: u32 = 0
+
+fn pif_addr() -> u32 {
+    asm {
+        "la $t0, g_pif_buf"
+        "la $t1, g_pif_addr"
+        "sw $t0, 0($t1)"
+    }
+    return g_pif_addr
+}
+
+-- Byte poke/peek through a u32 address. `*volatile u8` locals whose value
+-- is a function argument actually emit `sb`/`lbu`; address-of-array does not.
+fn poke8(addr: u32, val: u32) {
+    let p: *volatile u8 = addr as *volatile u8
+    *p = val as u8
+}
+
+fn peek8(addr: u32) -> u32 {
+    let p: *volatile u8 = addr as *volatile u8
+    return (*p) as u32
+}
+
+fn pif_zero() {
+    let b: u32 = pif_addr()
+    let mut i: i32 = 0
+    while i < 64 {
+        poke8(b + i as u32, 0)
+        i = i + 1
+    }
+}
 
 -- Button + controller state for port 0.
 struct ButtonState {
@@ -220,6 +254,21 @@ fn si_wait() {
     }
 }
 
+-- Write g_pif_buf to PIF RAM, run the transaction, read the 64-byte response
+-- back. Caller has already filled the command bytes. EEPROM and the joypad
+-- both talk Joybus over the SI; they share this path and g_pif_buf.
+fn si_exec() {
+    let b: u32 = pif_addr()
+    data_cache_hit_writeback(b as *u8, 64)
+    let phys: u32 = b & 0x1FFFFFFF
+    let p_dram: *volatile u32 = SI_DRAM_ADDR      as *volatile u32; *p_dram = phys
+    let p_wr:   *volatile u32 = SI_PIF_ADDR_WR64B as *volatile u32; *p_wr   = PIF_RAM_PHYS
+    si_wait()
+    let p_rd: *volatile u32 = SI_PIF_ADDR_RD64B as *volatile u32; *p_rd = PIF_RAM_PHYS
+    si_wait()
+    data_cache_hit_invalidate(b as *u8, 64)
+}
+
 -- Initialise the ControllerState pointer fields for port 0.
 -- Uses *u32 index (element size = 4, which is correct for pointer-sized fields).
 fn joypad_init() {
@@ -230,42 +279,24 @@ fn joypad_init() {
 }
 
 fn joypad_poll() {
-    -- Build PIF command buffer in g_pif_buf via volatile byte pointers.
-    -- Byte 0: tx_len=1, byte 1: rx_len=4, byte 2: cmd=0x01 (read controller).
+    -- Build PIF command buffer in g_pif_buf via poke8 (real `sb` to the
+    -- buffer, not the stack). Byte 0: tx=1, byte 1: rx=4, byte 2: cmd=0x01.
     -- Byte 7: 0xFE (end channels). Byte 63: 0x01 (execute PIF).
-    let b: u32 = &g_pif_buf as u32
-    let p0:  *volatile u8 = b        as *volatile u8; *p0  = 0x01 as u8
-    let p1:  *volatile u8 = (b + 1)  as *volatile u8; *p1  = 0x04 as u8
-    let p2:  *volatile u8 = (b + 2)  as *volatile u8; *p2  = 0x01 as u8
-    let p7:  *volatile u8 = (b + 7)  as *volatile u8; *p7  = 0xFE as u8
-    let p63: *volatile u8 = (b + 63) as *volatile u8; *p63 = 0x01 as u8
+    let b: u32 = pif_addr()
+    poke8(b + 0, 0x01)
+    poke8(b + 1, 0x04)
+    poke8(b + 2, 0x01)
+    poke8(b + 7, 0xFE)
+    poke8(b + 63, 0x01)
 
-    -- Flush command to memory before SI DMA reads it.
-    data_cache_hit_writeback(&g_pif_buf as *u8, 64)
-
-    -- SI DMA: CPU → PIF RAM (send command).
-    let phys: u32 = b & 0x1FFFFFFF
-    let p_dram: *volatile u32 = SI_DRAM_ADDR      as *volatile u32; *p_dram = phys
-    let p_wr:   *volatile u32 = SI_PIF_ADDR_WR64B as *volatile u32; *p_wr   = PIF_RAM_PHYS
-    si_wait()
-
-    -- SI DMA: PIF RAM → CPU (read response).
-    let p_rd: *volatile u32 = SI_PIF_ADDR_RD64B as *volatile u32; *p_rd = PIF_RAM_PHYS
-    si_wait()
-
-    -- Invalidate D-cache so CPU reads the fresh DMA result.
-    data_cache_hit_invalidate(&g_pif_buf as *u8, 64)
+    si_exec()
 
     -- Response: bytes 3=buttons_hi, 4=buttons_lo, 5=stick_x, 6=stick_y.
-    let rb3: *volatile u8 = (b + 3) as *volatile u8
-    let rb4: *volatile u8 = (b + 4) as *volatile u8
-    let rb5: *volatile u8 = (b + 5) as *volatile u8
-    let rb6: *volatile u8 = (b + 6) as *volatile u8
-    let bhi: u32 = (*rb3) as u32
-    let blo: u32 = (*rb4) as u32
+    let bhi: u32 = peek8(b + 3)
+    let blo: u32 = peek8(b + 4)
     let cur: u32 = (bhi << 8) | blo
-    let sx:  i32 = (*rb5) as i32
-    let sy:  i32 = (*rb6) as i32
+    let sx:  i32 = peek8(b + 5) as i32
+    let sy:  i32 = peek8(b + 6) as i32
 
     -- Read previous held state per-button (each field = one bool byte, 0 or 1).
     let hb: u32 = &g_held_0 as u32
@@ -1206,6 +1237,98 @@ fn dma_write(src: *u8, cart: u32, len: i32) {
     vi_write(PI_CART_ADDR, cart)
     vi_write(PI_RD_LEN, (len - 1) as u32)
     dma_wait()
+}
+
+-- ── EEPROM (SI / PIF Joybus channel 4) ──────────────────────────────────────
+-- Cartridge EEPROM is not on the PI. Identify / read / write go through the
+-- same SI DMA as the controllers, with channels 0–3 skipped (0x00) and
+-- channel 4 holding the command. Byte 63 of PIF RAM is 0x01 to run; 0xFE
+-- ends the channel list.
+--
+-- Identify (cmd 0x00) replies 00 80 00 (4 Kbit) or 00 C0 00 (16 Kbit).
+-- Read    (cmd 0x04 + block) replies 8 data bytes.
+-- Write   (cmd 0x05 + block + 8 data) replies 1 status byte.
+-- There is no EEPROM in the simulator, so present() is 0 unless PIF RAM
+-- actually replies. Command bytes and SI MMIO are still the real sequence.
+const EEPROM_NONE: i32 = 0
+const EEPROM_4K:   i32 = 1
+const EEPROM_16K:  i32 = 2
+
+static g_eeprom_probed: i32 = 0
+static g_eeprom_type:   i32 = 0
+
+fn eeprom_probe() -> i32 {
+    if g_eeprom_probed != 0 { return g_eeprom_type }
+    pif_zero()
+    let b: u32 = pif_addr()
+    -- skip ch0–3 (already 0); ch4 identify: tx=1 rx=3 cmd=0x00
+    poke8(b + 4, 0x01)
+    poke8(b + 5, 0x03)
+    poke8(b + 10, 0xFE)
+    poke8(b + 63, 0x01)
+    si_exec()
+    let r0: i32 = peek8(b + 7) as i32
+    let r1: i32 = peek8(b + 8) as i32
+    let r2: i32 = peek8(b + 9) as i32
+    let t: i32 = 0
+    if r0 == 0 and r2 == 0 {
+        if r1 == 0x80 { t = EEPROM_4K }
+        if r1 == 0xC0 { t = EEPROM_16K }
+    }
+    g_eeprom_type = t
+    g_eeprom_probed = 1
+    return t
+}
+
+fn eeprom_init() {
+    g_eeprom_probed = 0
+    g_eeprom_type = 0
+    eeprom_probe()
+}
+
+fn eeprom_present() -> i32 {
+    if eeprom_probe() == 0 { return 0 }
+    return 1
+}
+
+fn eeprom_type_detect() -> i32 {
+    return eeprom_probe()
+}
+
+fn eeprom_read(block: i32, dst: *u8) {
+    pif_zero()
+    let b: u32 = pif_addr()
+    poke8(b + 4, 0x02)
+    poke8(b + 5, 0x08)
+    poke8(b + 6, 0x04)
+    poke8(b + 7, block)
+    poke8(b + 16, 0xFE)
+    poke8(b + 63, 0x01)
+    si_exec()
+    let d: u32 = dst as u32
+    let mut i: i32 = 0
+    while i < 8 {
+        poke8(d + i as u32, peek8(b + (8 + i) as u32))
+        i = i + 1
+    }
+}
+
+fn eeprom_write(block: i32, src: *u8) {
+    pif_zero()
+    let b: u32 = pif_addr()
+    poke8(b + 4, 0x0A)
+    poke8(b + 5, 0x01)
+    poke8(b + 6, 0x05)
+    poke8(b + 7, block)
+    let s: u32 = src as u32
+    let mut i: i32 = 0
+    while i < 8 {
+        poke8(b + (8 + i) as u32, peek8(s + i as u32))
+        i = i + 1
+    }
+    poke8(b + 17, 0xFE)
+    poke8(b + 63, 0x01)
+    si_exec()
 }
 
 -- ── Heap (bump allocator) ───────────────────────────────────────────────────

@@ -242,6 +242,7 @@ set ::pak::MIPS_API [dict create \
     {cache writeback} {data_cache_hit_writeback} \
     {cache invalidate} {data_cache_hit_invalidate} \
     {cache writeback_inv} {data_cache_hit_writeback_invalidate} \
+    {eeprom init} {eeprom_init} \
     {eeprom present} {eeprom_present} \
     {eeprom type_detect} {eeprom_type_detect} \
     {eeprom read} {eeprom_read} \

@@ -1091,6 +1091,8 @@ DMA safety rules (enforced by typechecker):
 
 - **E201**: Buffer passed to DMA must have `data_cache_hit_writeback` called first.
 - **E202**: Buffer passed to DMA must be `@aligned(16)`.
+- **E015**: Explicit type-argument count on a generic call must match the function.
+- **E016**: After a generic is instantiated, field access on a non-struct (e.g. `i32`) is an error.
 
 ---
 
