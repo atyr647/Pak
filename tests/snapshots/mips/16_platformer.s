@@ -2123,36 +2123,49 @@ update_playing:
     addiu $fp, $sp, 320
     sw $a0, 136($sp)
     sw $a1, 140($sp)
-    lw $a0, 140($sp)
+    lw $t8, 136($sp)
+    move $a0, $t8
+    lw $a1, 140($sp)
     sw $t9, 96($sp)
-    jal player_handle_input
-    nop
-    lw $t9, 96($sp)
-    move $t9, $v0
-    sw $t9, 96($sp)
-    jal player_physics
-    nop
-    lw $t9, 96($sp)
-    move $t9, $v0
-    sw $t9, 96($sp)
-    jal player_resolve_collisions
-    nop
-    lw $t9, 96($sp)
-    move $t9, $v0
-    sw $t9, 96($sp)
-    jal player_update_state
-    nop
-    lw $t9, 96($sp)
-    move $t9, $v0
-    sw $t9, 96($sp)
-    jal player_collect_pickups
+    jal Player_handle_input
     nop
     lw $t9, 96($sp)
     move $t9, $v0
     lw $t8, 136($sp)
-    lw $a0, 0($t8)
+    move $a0, $t8
     sw $t9, 96($sp)
-    jal camera_follow
+    jal Player_physics
+    nop
+    lw $t9, 96($sp)
+    move $t9, $v0
+    lw $t8, 136($sp)
+    move $a0, $t8
+    sw $t9, 96($sp)
+    jal Player_resolve_collisions
+    nop
+    lw $t9, 96($sp)
+    move $t9, $v0
+    lw $t8, 136($sp)
+    move $a0, $t8
+    sw $t9, 96($sp)
+    jal Player_update_state
+    nop
+    lw $t9, 96($sp)
+    move $t9, $v0
+    lw $t8, 136($sp)
+    move $a0, $t8
+    sw $t9, 96($sp)
+    jal Player_collect_pickups
+    nop
+    lw $t9, 96($sp)
+    move $t9, $v0
+    lw $t8, 136($sp)
+    addiu $t8, $t8, 36
+    move $a0, $t8
+    lw $t8, 136($sp)
+    lw $a1, 0($t8)
+    sw $t9, 96($sp)
+    jal Camera_follow
     nop
     lw $t9, 96($sp)
     move $t9, $v0
@@ -2273,13 +2286,18 @@ update_gameover:
     sltu $t9, $zero, $t6
     beqz $t9, .Lif_end_109
     nop
+    lw $t8, 136($sp)
+    move $a0, $t8
     sw $t9, 96($sp)
-    jal player_init
+    jal Player_init
     nop
     lw $t9, 96($sp)
     move $t9, $v0
+    lw $t8, 136($sp)
+    addiu $t8, $t8, 36
+    move $a0, $t8
     sw $t9, 96($sp)
-    jal camera_init
+    jal Camera_init
     nop
     lw $t9, 96($sp)
     move $t9, $v0
@@ -2817,13 +2835,18 @@ main:
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    addiu $t8, $sp, 136
+    move $a0, $t8
     sw $t9, 96($sp)
-    jal player_init
+    jal Player_init
     nop
     lw $t9, 96($sp)
     move $t9, $v0
+    addiu $t8, $sp, 136
+    addiu $t8, $t8, 36
+    move $a0, $t8
     sw $t9, 96($sp)
-    jal camera_init
+    jal Camera_init
     nop
     lw $t9, 96($sp)
     move $t9, $v0

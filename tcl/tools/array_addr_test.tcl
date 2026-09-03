@@ -220,7 +220,55 @@ check_eq "nested ptr field x" [word_hex $mw [expr {$DATA + 4}]] 00007E57
 check_eq "nested ptr field y" [word_hex $mw [expr {$DATA + 8}]] 0000ABCD
 check_eq "loaded nested x" [word_hex $mw $DATA] 00007E57
 
+# ── method self: value, pointer, nested field ───────────────────────────────
+# ptr.init() used to pass &ptr (address of the pointer slot). g.player.init()
+# used to spill a copy of player's first word.
+
+set src5 {
+struct Point {
+    x: i32
+    y: i32
+}
+impl Point {
+    fn init(self: *Point, x: i32, y: i32) {
+        self.x = x
+        self.y = y
+    }
+}
+struct Game {
+    player: Point
+}
+static p: Point = undefined
+static q: Point = undefined
+static g: Game = undefined
+static sum_p: i32 = 0
+static sum_q: i32 = 0
+static sum_g: i32 = 0
+
+entry {
+    p.init(3, 7)
+    let ptr: *Point = &q
+    ptr.init(4, 6)
+    g.player.init(1, 2)
+    sum_p = p.x + p.y
+    sum_q = q.x + q.y
+    sum_g = g.player.x + g.player.y
+}
+}
+set lx [pak::Lexer new $src5]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set DATA 0x80300000
+# .data: sum_p, sum_q, sum_g. .bss: p, q, g.
+check_eq "value receiver p.init sum" [word_hex $mw $DATA] 0000000A
+check_eq "pointer receiver ptr.init sum" [word_hex $mw [expr {$DATA + 4}]] 0000000A
+check_eq "nested field g.player.init sum" [word_hex $mw [expr {$DATA + 8}]] 00000003
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }
+
 

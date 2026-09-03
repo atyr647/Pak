@@ -1143,6 +1143,8 @@ update_playing:
     sltu $t9, $zero, $t6
     beqz $t9, .Lif_end_48
     nop
+    lw $t8, 136($sp)
+    move $a0, $t8
     lw $t7, 144($sp)
     mtc1 $t7, $f12
     cvt.s.w $f12, $f12
@@ -1152,7 +1154,7 @@ update_playing:
     subu $t7, $zero, $t6
     mul.s $f12, $f14, $f12
     sw $t9, 96($sp)
-    jal cam_rotate
+    jal Camera_rotate
     nop
     lw $t9, 96($sp)
     move $t9, $v0
@@ -1170,6 +1172,8 @@ update_playing:
     lw $t7, 0($t7)
     mul.s $f12, $f14, $f12
     swc1 $f12, 152($sp)
+    lw $t8, 136($sp)
+    move $a0, $t8
     lw $t7, 136($sp)
     lwc1 $f12, 12($t7)
     mov.s $f14, $f12
@@ -1182,7 +1186,7 @@ update_playing:
     lwc1 $f12, 152($sp)
     mul.s $f12, $f14, $f12
     sw $t9, 96($sp)
-    jal cam_try_move
+    jal Camera_try_move
     nop
     lw $t9, 96($sp)
     move $t9, $v0
@@ -1201,6 +1205,8 @@ update_playing:
     lw $t7, 0($t7)
     mul.s $f12, $f14, $f12
     swc1 $f12, 156($sp)
+    lw $t8, 136($sp)
+    move $a0, $t8
     lw $t7, 136($sp)
     lwc1 $f12, 12($t7)
     mov.s $f14, $f12
@@ -1213,7 +1219,7 @@ update_playing:
     lwc1 $f12, 156($sp)
     mul.s $f12, $f14, $f12
     sw $t9, 96($sp)
-    jal cam_try_move
+    jal Camera_try_move
     nop
     lw $t9, 96($sp)
     move $t9, $v0
@@ -1223,6 +1229,8 @@ update_playing:
     lb $t9, 8($t8)
     beqz $t9, .Lif_end_51
     nop
+    lw $t8, 136($sp)
+    move $a0, $t8
     lw $t7, 136($sp)
     lwc1 $f12, 20($t7)
     mov.s $f14, $f12
@@ -1239,7 +1247,7 @@ update_playing:
     subu $t7, $zero, $t6
     mul.s $f12, $f14, $f12
     sw $t9, 96($sp)
-    jal cam_try_move
+    jal Camera_try_move
     nop
     lw $t9, 96($sp)
     move $t9, $v0
@@ -1249,6 +1257,8 @@ update_playing:
     lb $t9, 9($t8)
     beqz $t9, .Lif_end_52
     nop
+    lw $t8, 136($sp)
+    move $a0, $t8
     lw $t7, 136($sp)
     lwc1 $f12, 20($t7)
     mov.s $f14, $f12
@@ -1263,7 +1273,7 @@ update_playing:
     lw $t7, 0($t7)
     mul.s $f12, $f14, $f12
     sw $t9, 96($sp)
-    jal cam_try_move
+    jal Camera_try_move
     nop
     lw $t9, 96($sp)
     move $t9, $v0
@@ -1273,11 +1283,13 @@ update_playing:
     lb $t9, 7($t8)
     beqz $t9, .Lif_end_53
     nop
+    lw $t8, 136($sp)
+    move $a0, $t8
     la $t8, ROT_SPEED
     lw $t8, 0($t8)
-    subu $a0, $zero, $t8
+    subu $a1, $zero, $t8
     sw $t9, 96($sp)
-    jal cam_rotate
+    jal Camera_rotate
     nop
     lw $t9, 96($sp)
     move $t9, $v0
@@ -1287,10 +1299,12 @@ update_playing:
     lb $t9, 6($t8)
     beqz $t9, .Lif_end_54
     nop
-    la $a0, ROT_SPEED
-    lw $a0, 0($a0)
+    lw $t8, 136($sp)
+    move $a0, $t8
+    la $a1, ROT_SPEED
+    lw $a1, 0($a1)
     sw $t9, 96($sp)
-    jal cam_rotate
+    jal Camera_rotate
     nop
     lw $t9, 96($sp)
     move $t9, $v0
@@ -1300,6 +1314,8 @@ update_playing:
     lb $t9, 4($t8)
     beqz $t9, .Lif_end_55
     nop
+    lw $t8, 136($sp)
+    move $a0, $t8
     lw $t7, 136($sp)
     lwc1 $f12, 12($t7)
     mov.s $f14, $f12
@@ -1314,7 +1330,7 @@ update_playing:
     lw $t7, 0($t7)
     mul.s $f12, $f14, $f12
     sw $t9, 96($sp)
-    jal cam_try_move
+    jal Camera_try_move
     nop
     lw $t9, 96($sp)
     move $t9, $v0
@@ -1324,6 +1340,8 @@ update_playing:
     lb $t9, 5($t8)
     beqz $t9, .Lif_end_56
     nop
+    lw $t8, 136($sp)
+    move $a0, $t8
     lw $t6, 136($sp)
     lwc1 $f12, 12($t6)
     neg.s $f12, $f12
@@ -1340,7 +1358,7 @@ update_playing:
     lw $t7, 0($t7)
     mul.s $f12, $f14, $f12
     sw $t9, 96($sp)
-    jal cam_try_move
+    jal Camera_try_move
     nop
     lw $t9, 96($sp)
     move $t9, $v0

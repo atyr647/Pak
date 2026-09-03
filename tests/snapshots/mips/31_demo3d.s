@@ -1141,7 +1141,7 @@ render_cube:
     j .Lfor_i_37
     nop
 .Lif_end_40:
-    addiu $t4, $sp, 136
+    lw $t4, 136($sp)
     move $a0, $t4
     lw $a1, 296($sp)
     sw $t9, 96($sp)
@@ -1398,8 +1398,10 @@ render_stars:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
+    la $t8, gs
+    move $a0, $t8
     sw $t9, 96($sp)
-    jal stars_slice
+    jal _slice
     nop
     lw $t9, 96($sp)
     move $t9, $v0
@@ -1569,13 +1571,19 @@ update:
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
     sw $a0, 136($sp)
+    la $t8, gs
+    addiu $t8, $t8, 772
+    move $a0, $t8
     sw $t9, 96($sp)
-    jal cube_a_spin
+    jal Cube_spin
     nop
     lw $t9, 96($sp)
     move $t9, $v0
+    la $t8, gs
+    addiu $t8, $t8, 816
+    move $a0, $t8
     sw $t9, 96($sp)
-    jal cube_b_spin
+    jal Cube_spin
     nop
     lw $t9, 96($sp)
     move $t9, $v0
@@ -1708,6 +1716,8 @@ init_scene:
     slt $t9, $t8, $t7
     beqz $t9, .Lwhile_x_69
     nop
+    la $t8, gs
+    move $a0, $t8
     sw $zero, 140($sp)
     sw $zero, 144($sp)
     sw $zero, 148($sp)
@@ -1745,9 +1755,9 @@ init_scene:
     lw $t8, 100($sp)
     move $t8, $v0
     swc1 $f12, 148($sp)
-    addiu $a0, $sp, 140
+    addiu $a1, $sp, 140
     sw $t9, 96($sp)
-    jal stars_push
+    jal _push
     nop
     lw $t9, 96($sp)
     move $t9, $v0

@@ -3325,11 +3325,18 @@ oo::class create pak::MipsCodegen {
     method emit_call {expr dst} {
         set func [pak::nfield $expr func]
 
-        # module call: n64.mod.fn(args) — func = DotAccess(DotAccess, fn)
+        # Three-level `n64.mod.fn(args)` is a module API call. The same
+        # DotAccess(DotAccess, fn) shape is also `g.player.init(args)` —
+        # a method on a field — which must not go through MODULE_API.
         if {[pak::kindof $func] eq "DotAccess" && [pak::kindof [pak::nfield $func obj]] eq "DotAccess"} {
-            set mod [pak::fval [pak::nfield $func obj] field]
-            set fn [pak::fval $func field]
-            my emit_module_call $mod $fn [pak::nfield $expr args] $dst
+            set inner [pak::nfield $func obj]
+            set inner_obj [pak::nfield $inner obj]
+            if {[pak::kindof $inner_obj] eq "Ident" && [pak::fval $inner_obj name] eq "n64"} {
+                my emit_module_call [pak::fval $inner field] [pak::fval $func field] \
+                    [pak::nfield $expr args] $dst
+                return
+            }
+            my emit_method_call $func [pak::nfield $expr args] $dst
             return
         }
         # DotAccess(Ident, field) — module call, variant ctor, or method call
@@ -3558,60 +3565,40 @@ oo::class create pak::MipsCodegen {
         set loop_result [dict get $s loop_result]
     }
 
-    method emit_method_call {access args_seq dst} {
-        # Determine type name from the variable's declared type node, then
-        # from an embedded _type_name in its layout, then fall back to
-        # capitalizing the variable name (last resort only).
-        set type_name ""
-        set obj [pak::nfield $access obj]
-        if {[pak::kindof $obj] eq "Ident"} {
-            set var_name [pak::fval $obj name]
-            # Primary: use the stored type node (set by declare_local via LetDecl/params)
-            set tn [my lookup_type_node $var_name]
-            if {$tn ne "" && ![pak::isnil $tn]} {
-                if {[pak::kindof $tn] eq "TypeName"} {
-                    set type_name [pak::fval $tn name]
-                } elseif {[pak::kindof $tn] eq "TypePointer"} {
-                    set inner [pak::nfield $tn inner]
-                    if {![pak::isnil $inner] && [pak::kindof $inner] eq "TypeName"} {
-                        set type_name [pak::fval $inner name]
-                    }
-                }
-            }
-            # Secondary: layout-embedded _type_name
-            if {$type_name eq ""} {
-                set local [my lookup_local $var_name]
-                if {$local ne ""} {
-                    set layout [lindex $local 1]
-                    if {[dict exists $layout _type_name]} {
-                        set type_name [dict get $layout _type_name]
-                    }
-                }
-            }
-            # Tertiary: capitalize variable name (best-effort for single-char names)
-            if {$type_name eq ""} {
-                set type_name "[string toupper [string index $var_name 0]][string range $var_name 1 end]"
-            }
+    method type_name_of {expr} {
+        set tn [my unwrap_type [my expr_type $expr]]
+        if {$tn ne "" && ![pak::isnil $tn] && [pak::kindof $tn] eq "TypePointer"} {
+            set tn [my unwrap_type [pak::nfield $tn inner]]
         }
+        if {$tn ne "" && ![pak::isnil $tn] && [pak::kindof $tn] eq "TypeName"} {
+            return [pak::fval $tn name]
+        }
+        if {[pak::kindof $expr] eq "Ident"} {
+            set var_name [pak::fval $expr name]
+            set local [my lookup_local $var_name]
+            if {$local ne ""} {
+                set layout [lindex $local 1]
+                if {[dict exists $layout _type_name]} {
+                    return [dict get $layout _type_name]
+                }
+            }
+            return "[string toupper [string index $var_name 0]][string range $var_name 1 end]"
+        }
+        return ""
+    }
+
+    method emit_method_call {access args_seq dst} {
+        set obj [pak::nfield $access obj]
+        set type_name [my type_name_of $obj]
         set mangled "${type_name}_[pak::fval $access field]"
 
-        # Compute &self as $a0
+        # Pointer receiver: pass the pointer. Value: pass the object's address.
+        # `ptr.init()` where ptr is *Point used to pass &ptr (the slot).
         set self_ptr [$ra alloc_temp]
-        if {[pak::kindof $obj] eq "Ident"} {
-            set local [my lookup_local [pak::fval $obj name]]
-            if {$local ne ""} {
-                $em addiu $self_ptr {$sp} [lindex $local 0]
-            } else {
-                $em la $self_ptr [pak::fval $obj name]
-            }
+        if {[my type_is_ptr [my expr_type $obj]]} {
+            my emit_expr $obj $self_ptr
         } else {
-            set tmp [$ra alloc_temp]
-            my emit_expr $obj $tmp
-            set tmp_layout [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]
-            set off [my declare_local __self $tmp_layout]
-            $em sw $tmp $off {$sp}
-            $ra free_temp $tmp
-            $em addiu $self_ptr {$sp} $off
+            my emit_place_addr $obj $self_ptr
         }
         $em move {$a0} $self_ptr
         $ra free_temp $self_ptr
