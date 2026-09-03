@@ -792,6 +792,7 @@ proc pak::enc::parse_directive {line} {
             return [list [list d section $base]]
         }
         .globl - .global { return [list [list d globl [lindex $rest 0]]] }
+        .extern { return [list [list d extern [lindex $rest 0]]] }
         .type {
             # .type NAME, @function
             set nm [string trimright [lindex $rest 0] ,]

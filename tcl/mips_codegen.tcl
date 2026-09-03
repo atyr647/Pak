@@ -1040,9 +1040,8 @@ oo::class create pak::MipsCodegen {
     }
 
     # Structured record stream for the in-process binary encoder. Must be called
-    # after `generate`. The records mirror the (unoptimized) text output; the
-    # peephole/scheduler passes run only on text, so the encoded binary is
-    # correct but not delay-slot-optimized (see tcl/n64enc.tcl).
+    # after `generate`. Records are the IR: objgen / one-shot ROM run
+    # pak::optimize_records on this stream before encode. Text is a debug dump.
     method getrecords {} { return [$em getrecords] }
 
     method emit_externs {} {

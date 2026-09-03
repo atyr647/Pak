@@ -11,6 +11,7 @@ source to machine code.
 .pk64  (game + runtime/standalone/runtime.pk64)      boot.S (hand-written crt0)
   → Tcl MIPS codegen (tcl/mips_codegen.tcl)     → Tcl asm front-end
       structured RECORD stream                       (tcl/n64enc.tcl parse_asm)
+  → Tcl optimizer (tcl/optimize.tcl) on records
   → Tcl binary encoder (tcl/n64enc.tcl) ───────────────┘
       records → machine-code words + relocations → .pakobj object file
   → Tcl flat linker (tcl/n64link.tcl)
@@ -62,9 +63,10 @@ emitted item:
 | label | `{label main}` |
 | directive | `{d section .text}`, `{d word 0x10}`, `{d asciiz {Hello}}` |
 
-The text output (`pak explain --backend mips`, snapshots) is byte-for-byte
-unchanged; records are purely additive. The encoder consumes records, so there
-is a single source of truth and no fragile operand-string parsing.
+The unoptimized text dump (`mips_generate`, snapshots) is unchanged; records
+are the IR. The encoder consumes records after `pak::optimize_records`, so
+there is a single source of truth and no fragile operand-string parsing.
+`pak explain --backend mips` dumps that same optimized stream as text.
 
 ## Commands
 
@@ -174,10 +176,11 @@ wait loops terminate instead of hanging.
 ## Current limitations
 
 * **Optimization.** The peephole/scheduler/delay-slot passes in
-  `tcl/optimize.tcl` operate on assembly *text*, not records. The encoded binary
-  is therefore correct but **not** delay-slot-optimized (the codegen emits
-  explicit `nop`s in delay slots, which are valid under `.set noreorder`).
-  Porting the optimizer to operate on records is a follow-up.
+  `tcl/optimize.tcl` operate on instruction records. `pak objgen` and
+  `pak build --backend mips -o game.z64` run them before encode, so the
+  binary is delay-slot-filled. `pak explain --backend mips` dumps the same
+  optimized stream as text. Encoded-byte call/MMIO goldens live in
+  `tcl/tools/enc_exec_test.tcl`.
 * **No shade+tex.** `rdpq.triangle_tex` is affine ST only (0x0A). Combining
   Gouraud with texture (0x0E / 0x0F) is a follow-up.
 * **FPU encodings.** COP1 ops (`add.s`/`sub.s`/`mul.s`/`div.s`, the

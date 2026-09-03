@@ -204,8 +204,8 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Function calls (o32 ABI) | ✅ Full | |
 | N64 API calls via `jal` | ✅ Full | All modules |
 | Register allocation | ✅ Full | Linear-scan with stack spilling: 18 GPRs ($t0–$t9, $s0–$s7) + 8 pre-reserved spill slots per frame = 26 simultaneous live values. Named variables mapped to callee-saved $s regs. |
-| Peephole optimization | ✅ Full | |
-| Delay slot filling | ✅ Full | |
+| Peephole optimization | ✅ Full | On instruction records; `objgen` / one-shot ROM encode the optimized stream |
+| Delay slot filling | ✅ Full | Same record passes |
 | `defer` | ✅ Full | |
 | `match` on enums | ✅ Full | |
 | Named-field variant construction (`Type.case { f: v }`) | ✅ Full | Stack-allocated with tag + payload stores |

@@ -117,6 +117,9 @@ jobs:
       - name: MIPS binary encoder (golden encodings)
         run: tclsh tcl/tools/n64enc_test.tcl
 
+      - name: Encoded exec goldens (optimizer on records, calls + MMIO)
+        run: tclsh tcl/tools/enc_exec_test.tcl
+
       - name: Flat linker + ROM packer
         run: tclsh tcl/tools/n64link_test.tcl
 

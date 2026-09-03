@@ -325,7 +325,8 @@ proc pak::cli_build_mips {parsed root build_dir verbose} {
         lassign $pr pf prog
         set rel [pak::_relto $pf $root]
         set s_file [file join $build_dir [file rootname $rel].s]
-        set asm [pak::optimize_asm [pak::mips_generate $prog]]
+        set recs [pak::optimize_records [pak::mips_generate_records $prog]]
+        set asm [pak::records_to_asm $recs]
         pak::cli_write $s_file $asm
         set srel [pak::_relto $s_file $root]
         lappend s_rel $srel
@@ -352,7 +353,7 @@ proc pak::cli_build_mips_rom {parsed root out opts config project_name rom_title
     puts "  asmobj runtime/standalone/boot.S -> build/boot.pakobj"
     set rt_prog [pak::cli_parse_file $rt_pk]
     if {$rt_prog eq ""} { exit 1 }
-    pak::enc::write_object [pak::mips_generate_records $rt_prog] $rt_obj
+    pak::enc::write_object [pak::optimize_records [pak::mips_generate_records $rt_prog]] $rt_obj
     puts "  objgen runtime/standalone/runtime.pk64 -> build/runtime.pakobj"
 
     set objs [list $boot_obj $rt_obj]
@@ -363,7 +364,7 @@ proc pak::cli_build_mips_rom {parsed root out opts config project_name rom_title
         if {[string match *runtime/standalone* [string map {\\ /} $rel]]} continue
         set obj [file join $build_dir [file rootname $rel].pakobj]
         file mkdir [file dirname $obj]
-        pak::enc::write_object [pak::mips_generate_records $prog] $obj
+        pak::enc::write_object [pak::optimize_records [pak::mips_generate_records $prog]] $obj
         lappend objs $obj
         puts "  objgen $rel -> [pak::_relto $obj $root]"
     }
@@ -566,7 +567,7 @@ proc pak::cmd_explain {opts} {
     if {$backend eq "mips"} {
         set prog [pak::cli_parse_file $pak_file]
         if {$prog eq ""} { exit 1 }
-        puts [pak::optimize_asm [pak::mips_generate $prog]]
+        puts [pak::records_to_asm [pak::optimize_records [pak::mips_generate_records $prog]]]
     } else {
         set prog [pak::cli_parse_file $pak_file]
         if {$prog eq ""} { exit 1 }
@@ -581,7 +582,7 @@ proc pak::cmd_objgen {opts} {
     if {$out eq ""} { set out "[file rootname $pak_file].pakobj" }
     set prog [pak::cli_parse_file $pak_file]
     if {$prog eq ""} { exit 1 }
-    set recs [pak::mips_generate_records $prog]
+    set recs [pak::optimize_records [pak::mips_generate_records $prog]]
     pak::enc::write_object $recs $out
     puts "Wrote $out"
 }

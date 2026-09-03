@@ -138,7 +138,7 @@ The Tcl backend contains a complete MIPS pipeline with no external dependencies:
 
 - **`tcl/mips_codegen.tcl`** — AST → VR4300 MIPS-III assembly (o32 ABI, with
   linear-scan register allocation and delay-slot scheduling)
-- **`tcl/optimize.tcl`** — peephole + basic-block optimizer over the assembly
+- **`tcl/optimize.tcl`** — peephole + basic-block optimizer over instruction records
 - **`tcl/n64enc.tcl`** — self-contained MIPS encoder; turns the assembly stream
   into a relocatable binary object without calling any assembler binary
 - **`tcl/n64link.tcl`** — flat linker: merges `.pakobj` files into an RDRAM
@@ -251,7 +251,7 @@ every feature tagged `[IMPLEMENTED]`, `[PARTIAL]`, or `[PLANNED]`.
 tcl/              Primary compiler implementation (Tcl): lexer, parser,
                   typechecker, C codegen, MIPS backend — this is what `pak` runs
   mips_codegen.tcl    AST → VR4300 MIPS-III assembly (o32, linear-scan regalloc)
-  optimize.tcl        Peephole + basic-block optimizer
+  optimize.tcl        Peephole + basic-block optimizer (instruction records)
   n64enc.tcl          Self-contained MIPS encoder → relocatable binary object
   n64asm.tcl          Self-contained MIPS assembler (validates against binutils)
   n64rom.tcl          Bootable .z64 ROM builder (pure Tcl, no external tools)
