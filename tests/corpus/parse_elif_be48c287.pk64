@@ -1,0 +1,5 @@
+fn f(x: i32) -> void {
+    if x == 1 { }
+    elif x == 2 { }
+    else { }
+}

@@ -1,0 +1,6 @@
+fn fallible() -> Result(i32, i32) {
+    return ok(1)
+}
+fn caller() -> void {
+    fallible() catch { return }
+}

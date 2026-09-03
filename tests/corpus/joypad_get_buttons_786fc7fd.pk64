@@ -1,0 +1,2 @@
+use n64.joypad
+entry { joypad.poll() }

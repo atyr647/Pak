@@ -1,0 +1,4 @@
+use n64.display
+entry {
+    display.init(0, 2, 3, 0, 1)
+}

@@ -1,0 +1,2 @@
+enum E: u8 { bad }
+fn compute() -> Result(i32, E) { return ok(1) }

@@ -1,0 +1,2 @@
+@aligned(16)
+struct AlignedBuf { data: [64]u8 }

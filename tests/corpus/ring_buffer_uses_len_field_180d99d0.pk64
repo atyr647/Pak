@@ -1,0 +1,5 @@
+entry {
+    let mut rb: RingBuffer(i32, 8) = RingBuffer.init()
+    rb.push(1)
+    let n = rb.len()
+}

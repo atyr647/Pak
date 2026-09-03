@@ -1,4 +1,4 @@
-# tcl/parser.tcl — Pak parser, Tcl port of pak/parser.py (incremental).
+# tcl/parser.tcl — Pak parser: tokens → AST.
 #
 # Builds the tagged-value AST from tcl/ast.tcl. Validated for structural parity
 # against the Python parser via tcl/tools/ast_parity.sh. Constructs not yet
@@ -75,7 +75,23 @@ oo::class create pak::Parser {
         return [pak::N Program decls $decls]
     }
 
-    method parse_top_level {} {
+    # ── source positions ──────────────────────────────────────────────────────
+    # The three rule levels below bracket their body with the position of the
+    # token they start on, so pak::N stamps each node with the start of the
+    # construct it belongs to rather than wherever the parse happened to end.
+    method at_token {body} {
+        set t [my peek]
+        pak::pos_push [dict get $t line] [dict get $t col]
+        set rc [catch {uplevel 1 $body} result options]
+        pak::pos_pop
+        return -options $options $result
+    }
+
+    method parse_top_level {} { return [my at_token {my parse_top_level_inner}] }
+    method parse_stmt {}      { return [my at_token {my parse_stmt_inner}] }
+    method parse_primary {}   { return [my at_token {my parse_primary_inner}] }
+
+    method parse_top_level_inner {} {
         set anns {}
         set cfg ""
         while {[my check ANNOTATION]} {
@@ -603,7 +619,7 @@ oo::class create pak::Parser {
         return [pak::N Block stmts $stmts]
     }
 
-    method parse_stmt {} {
+    method parse_stmt_inner {} {
         set anns [my anns]
         set t [my ptype]
         switch -- $t {
@@ -619,8 +635,10 @@ oo::class create pak::Parser {
             BREAK    {
                 my advance
                 set bval [pak::Nil]
-                # break value only if next token is on the same source line
-                if {![my check RBRACE] && ![my check EOF] && ![my _newline_before]} {
+                # break value only if next token is on the same source line,
+                # and `break;` is a bare break, not a break of `;`
+                if {![my check RBRACE] && ![my check EOF] && ![my check SEMICOLON] \
+                        && ![my _newline_before]} {
                     set bval [my parse_expr]
                 }
                 return [pak::N Break value $bval]
@@ -979,7 +997,7 @@ oo::class create pak::Parser {
         return $expr
     }
 
-    method parse_primary {} {
+    method parse_primary_inner {} {
         set t [my ptype]
         switch -- $t {
             INT {
@@ -1269,6 +1287,9 @@ oo::class create pak::Parser {
 }
 
 proc pak::parse_tokens {tokens} {
+    pak::pos_reset
     set p [pak::Parser new $tokens]
-    return [$p parse]
+    set rc [catch {$p parse} result options]
+    pak::pos_reset
+    return -options $options $result
 }

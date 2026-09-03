@@ -24,6 +24,24 @@
 	.extern rdpq_sync_tile
 	.extern rdpq_sync_load
 	.extern rdpq_set_scissor
+	.extern rdpq_set_color_image
+	.extern rdpq_set_z_image
+	.extern rdpq_set_other_modes_raw
+	.extern rdpq_set_combiner_raw
+	.extern rdpq_set_fill_color
+	.extern rdpq_set_blend_color
+	.extern rdpq_set_fog_color
+	.extern rdpq_set_env_color
+	.extern rdpq_set_prim_color
+	.extern rdpq_set_texture_image
+	.extern rdpq_set_tile
+	.extern rdpq_set_tile_size
+	.extern rdpq_load_tile
+	.extern rdpq_load_block
+	.extern rdpq_load_tlut
+	.extern rdpq_texture_rectangle
+	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_triangle
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -150,21 +168,21 @@
 	.globl add
 	.type add, @function
 add:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    sw $a1, 140($sp)
+    lw $t9, 136($sp)
+    lw $t8, 140($sp)
     addu $v0, $t9, $t8
     j .Ladd_ret_0
     nop
 .Ladd_ret_0:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size add, . - add
@@ -173,16 +191,16 @@ add:
 	.globl max
 	.type max, @function
 max:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    swc1 $f12, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    swc1 $f12, 136($sp)
     mov.s $f12, $f14
-    swc1 $f12, 100($sp)
-    lwc1 $f12, 96($sp)
+    swc1 $f12, 140($sp)
+    lwc1 $f12, 136($sp)
     mov.s $f14, $f12
-    lwc1 $f12, 100($sp)
+    lwc1 $f12, 140($sp)
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_3
@@ -191,17 +209,17 @@ max:
 .Lfgt_3:
     beqz $t9, .Lif_end_2
     nop
-    lwc1 $f12, 96($sp)
+    lwc1 $f12, 136($sp)
     j .Lmax_ret_1
     nop
 .Lif_end_2:
-    lwc1 $f12, 100($sp)
+    lwc1 $f12, 140($sp)
     j .Lmax_ret_1
     nop
 .Lmax_ret_1:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size max, . - max
@@ -210,18 +228,18 @@ max:
 	.globl clamp
 	.type clamp, @function
 clamp:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    swc1 $f12, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    swc1 $f12, 136($sp)
     mov.s $f12, $f14
-    swc1 $f12, 100($sp)
+    swc1 $f12, 140($sp)
     lwc1 $f12, 8($fp)
-    swc1 $f12, 104($sp)
-    lwc1 $f12, 96($sp)
+    swc1 $f12, 144($sp)
+    lwc1 $f12, 136($sp)
     mov.s $f14, $f12
-    lwc1 $f12, 100($sp)
+    lwc1 $f12, 140($sp)
     c.lt.s $f14, $f12
     li $t9, 0
     bc1f .Lflt_6
@@ -230,13 +248,13 @@ clamp:
 .Lflt_6:
     beqz $t9, .Lif_end_5
     nop
-    lwc1 $f12, 100($sp)
+    lwc1 $f12, 140($sp)
     j .Lclamp_ret_4
     nop
 .Lif_end_5:
-    lwc1 $f12, 96($sp)
+    lwc1 $f12, 136($sp)
     mov.s $f14, $f12
-    lwc1 $f12, 104($sp)
+    lwc1 $f12, 144($sp)
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_8
@@ -245,17 +263,17 @@ clamp:
 .Lfgt_8:
     beqz $t9, .Lif_end_7
     nop
-    lwc1 $f12, 104($sp)
+    lwc1 $f12, 144($sp)
     j .Lclamp_ret_4
     nop
 .Lif_end_7:
-    lwc1 $f12, 96($sp)
+    lwc1 $f12, 136($sp)
     j .Lclamp_ret_4
     nop
 .Lclamp_ret_4:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size clamp, . - clamp
@@ -264,19 +282,19 @@ clamp:
 	.globl reset
 	.type reset, @function
 reset:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
     li $t8, 0
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     sw $t8, 0($t7)
     move $t9, $t8
 .Lreset_ret_9:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size reset, . - reset
@@ -285,22 +303,22 @@ reset:
 	.globl increment
 	.type increment, @function
 increment:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    lw $t6, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t6, 136($sp)
     lw $t7, 0($t6)
     li $t6, 1
     addu $t8, $t7, $t6
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     sw $t8, 0($t7)
     move $t9, $t8
 .Lincrement_ret_10:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size increment, . - increment
@@ -309,14 +327,18 @@ increment:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
     li $a1, 4
     li $a0, 3
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal add
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, result_sink
     sw $t8, 0($t7)
@@ -326,10 +348,12 @@ main:
     mov.s $f14, $f12
     la $t8, .Lf321
     lwc1 $f12, 0($t8)
+    sw $t9, 96($sp)
     jal max
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
+    sw $t9, 136($sp)
     la $t8, .Lf322
     lwc1 $f12, 0($t8)
     swc1 $f12, 8($sp)
@@ -338,34 +362,40 @@ main:
     mov.s $f14, $f12
     la $t8, .Lf324
     lwc1 $f12, 0($t8)
+    sw $t9, 96($sp)
     jal clamp
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 100($sp)
+    sw $t9, 140($sp)
     li $t9, 5
-    sw $t9, 104($sp)
-    addiu $a0, $sp, 104
+    sw $t9, 144($sp)
+    addiu $a0, $sp, 144
+    sw $t9, 96($sp)
     jal increment
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
-    addiu $a0, $sp, 104
+    addiu $a0, $sp, 144
+    sw $t9, 96($sp)
     jal reset
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
-    lw $t6, 104($sp)
-    lw $t4, 96($sp)
+    lw $t6, 144($sp)
+    lw $t4, 136($sp)
     move $t5, $t4
     addu $t7, $t6, $t5
-    lw $t5, 100($sp)
+    lw $t5, 140($sp)
     move $t6, $t5
     addu $t8, $t7, $t6
     la $t7, result_sink
     sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_11:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size main, . - main

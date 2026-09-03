@@ -1,0 +1,6 @@
+struct Player { x: f32  y: f32 }
+impl Player {
+    fn move_right(self: *Player, speed: f32) -> void {
+        self.x = self.x + speed
+    }
+}

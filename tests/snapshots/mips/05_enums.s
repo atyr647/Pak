@@ -24,6 +24,24 @@
 	.extern rdpq_sync_tile
 	.extern rdpq_sync_load
 	.extern rdpq_set_scissor
+	.extern rdpq_set_color_image
+	.extern rdpq_set_z_image
+	.extern rdpq_set_other_modes_raw
+	.extern rdpq_set_combiner_raw
+	.extern rdpq_set_fill_color
+	.extern rdpq_set_blend_color
+	.extern rdpq_set_fog_color
+	.extern rdpq_set_env_color
+	.extern rdpq_set_prim_color
+	.extern rdpq_set_texture_image
+	.extern rdpq_set_tile
+	.extern rdpq_set_tile_size
+	.extern rdpq_load_tile
+	.extern rdpq_load_block
+	.extern rdpq_load_tlut
+	.extern rdpq_texture_rectangle
+	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_triangle
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -150,12 +168,12 @@
 	.globl opposite
 	.type opposite, @function
 opposite:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    lw $t9, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
     li $t8, 0
     bne $t9, $t8, .Larm_skip_3
     nop
@@ -194,9 +212,9 @@ opposite:
 .Larm_skip_9:
 .Lmatch_end_1:
 .Lopposite_ret_0:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size opposite, . - opposite
@@ -205,15 +223,15 @@ opposite:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
     li $t9, 0
-    sw $t9, 96($sp)
+    sw $t9, 136($sp)
     li $t9, 0
-    sw $t9, 100($sp)
-    lw $t9, 96($sp)
+    sw $t9, 140($sp)
+    lw $t9, 136($sp)
     li $t8, 0
     bne $t9, $t8, .Larm_skip_13
     nop
@@ -255,7 +273,7 @@ main:
     nop
 .Larm_skip_19:
 .Lmatch_end_11:
-    lw $t9, 100($sp)
+    lw $t9, 140($sp)
     li $t8, 0
     bne $t9, $t8, .Larm_skip_22
     nop
@@ -274,11 +292,13 @@ main:
     nop
 .Lmatch_end_20:
     li $a0, 2
+    sw $t9, 96($sp)
     jal opposite
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 104($sp)
-    lw $t9, 104($sp)
+    sw $t9, 144($sp)
+    lw $t9, 144($sp)
     li $t8, 3
     bne $t9, $t8, .Larm_skip_27
     nop
@@ -297,9 +317,9 @@ main:
     nop
 .Lmatch_end_25:
 .Lmain_ret_10:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size main, . - main

@@ -1,0 +1,3 @@
+entry {
+    comptime_assert(1 == 1, "ok")
+}

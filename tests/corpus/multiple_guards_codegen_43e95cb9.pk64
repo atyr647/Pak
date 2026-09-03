@@ -1,0 +1,12 @@
+variant Score {
+    value(i32)
+    empty
+}
+fn classify(s: Score) -> i32 {
+    match s {
+        .value(x) if x > 100 => { return 3 }
+        .value(x) if x > 50  => { return 2 }
+        .value(x)            => { return 1 }
+        .empty               => { return 0 }
+    }
+}

@@ -1,0 +1,6 @@
+struct Model { data: i32 }
+fn take(m: *Model) {}
+fn test_move(m: *Model) {
+    let m2 = m
+    take(m)
+}

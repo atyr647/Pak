@@ -1,0 +1,5 @@
+struct Flags {
+    ready: u32 : 1
+    mode: u32 : 3
+    value: u32 : 28
+}

@@ -1,5 +1,5 @@
 # tcl/makefile_gen.tcl — generate a libdragon-compatible Makefile.
-# Byte-exact Tcl port of pak/makefile_gen.py. Pure string templating; no AST.
+# Pure string templating; no AST involved.
 
 namespace eval pak {}
 if {[info exists ::pak::_makefile_gen_loaded]} { return }

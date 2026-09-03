@@ -1,0 +1,2 @@
+@uncached
+static frame: [8192]byte = undefined

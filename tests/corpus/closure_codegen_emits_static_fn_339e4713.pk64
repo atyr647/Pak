@@ -1,0 +1,6 @@
+fn apply(f: fn(i32) -> i32, x: i32) -> i32 {
+    return f(x)
+}
+entry {
+    let r = apply(fn(x: i32) -> i32 { return x * 2 }, 5)
+}

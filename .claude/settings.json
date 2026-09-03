@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 tools/pak_hook.py"
+            "command": "tclsh tools/pak_hook.tcl"
           }
         ]
       }

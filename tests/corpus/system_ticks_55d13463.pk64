@@ -1,0 +1,2 @@
+use n64.system;
+fn f() -> u32 { return system.ticks(); }

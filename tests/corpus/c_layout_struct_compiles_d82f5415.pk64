@@ -1,0 +1,5 @@
+@c_layout
+struct Header {
+    magic: u32
+    version: u16
+}

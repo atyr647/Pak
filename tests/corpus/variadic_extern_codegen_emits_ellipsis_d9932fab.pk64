@@ -1,0 +1,7 @@
+extern "C" {
+    fn rdpq_text_printf(x: i32, y: i32, font: i32, fmt: *c_char, ...) -> i32
+}
+entry {
+    rdpq_text_printf(10, 20, 1, "score %d", 42)
+    rdpq_text_printf(10, 40, 1, "ready")
+}

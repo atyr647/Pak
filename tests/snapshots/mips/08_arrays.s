@@ -24,6 +24,24 @@
 	.extern rdpq_sync_tile
 	.extern rdpq_sync_load
 	.extern rdpq_set_scissor
+	.extern rdpq_set_color_image
+	.extern rdpq_set_z_image
+	.extern rdpq_set_other_modes_raw
+	.extern rdpq_set_combiner_raw
+	.extern rdpq_set_fill_color
+	.extern rdpq_set_blend_color
+	.extern rdpq_set_fog_color
+	.extern rdpq_set_env_color
+	.extern rdpq_set_prim_color
+	.extern rdpq_set_texture_image
+	.extern rdpq_set_tile
+	.extern rdpq_set_tile_size
+	.extern rdpq_load_tile
+	.extern rdpq_load_block
+	.extern rdpq_load_tlut
+	.extern rdpq_texture_rectangle
+	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_triangle
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -150,44 +168,44 @@
 	.globl sum_array
 	.type sum_array, @function
 sum_array:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    sw $a1, 140($sp)
     li $t9, 0
-    sw $t9, 104($sp)
+    sw $t9, 144($sp)
     li $t9, 0
-    sw $t9, 108($sp)
-    lw $t8, 100($sp)
+    sw $t9, 148($sp)
+    lw $t8, 140($sp)
 .Lfor_h_1:
-    lw $t7, 108($sp)
+    lw $t7, 148($sp)
     bge $t7, $t8, .Lfor_x_3
     nop
-    lw $t4, 96($sp)
-    lw $t3, 108($sp)
+    lw $t4, 136($sp)
+    lw $t3, 148($sp)
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lw $t5, 0($t4)
-    lw $t4, 104($sp)
+    lw $t4, 144($sp)
     addu $t5, $t4, $t5
-    sw $t5, 104($sp)
+    sw $t5, 144($sp)
     move $t6, $t5
 .Lfor_i_2:
-    lw $t7, 108($sp)
+    lw $t7, 148($sp)
     addiu $t7, $t7, 1
-    sw $t7, 108($sp)
+    sw $t7, 148($sp)
     j .Lfor_h_1
     nop
 .Lfor_x_3:
-    lw $v0, 104($sp)
+    lw $v0, 144($sp)
     j .Lsum_array_ret_0
     nop
 .Lsum_array_ret_0:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size sum_array, . - sum_array
@@ -196,38 +214,38 @@ sum_array:
 	.globl fill
 	.type fill, @function
 fill:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
-    sw $a2, 104($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    sw $a1, 140($sp)
+    sw $a2, 144($sp)
     li $t9, 0
-    sw $t9, 108($sp)
-    lw $t8, 100($sp)
+    sw $t9, 148($sp)
+    lw $t8, 140($sp)
 .Lfor_h_5:
-    lw $t7, 108($sp)
+    lw $t7, 148($sp)
     bge $t7, $t8, .Lfor_x_7
     nop
-    lw $t5, 104($sp)
-    lw $t4, 96($sp)
-    lw $t3, 108($sp)
+    lw $t5, 144($sp)
+    lw $t4, 136($sp)
+    lw $t3, 148($sp)
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     sw $t5, 0($t4)
     move $t6, $t5
 .Lfor_i_6:
-    lw $t7, 108($sp)
+    lw $t7, 148($sp)
     addiu $t7, $t7, 1
-    sw $t7, 108($sp)
+    sw $t7, 148($sp)
     j .Lfor_h_5
     nop
 .Lfor_x_7:
 .Lfill_ret_4:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size fill, . - fill
@@ -236,30 +254,30 @@ fill:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
     move $t9, $zero
-    sw $t9, 96($sp)
+    sw $t9, 136($sp)
     move $t9, $zero
-    sw $t9, 128($sp)
+    sw $t9, 168($sp)
     li $t8, 100
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 200
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 1
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 50
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 2
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
@@ -267,18 +285,20 @@ main:
     move $t9, $t8
     li $a2, 0
     li $a1, 8
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     lw $t8, 0($t7)
-    sw $t8, 192($sp)
-    addiu $a0, $sp, 192
+    sw $t8, 232($sp)
+    addiu $a0, $sp, 232
+    sw $t9, 96($sp)
     jal fill
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
     li $t8, 5
-    lw $t7, 128($sp)
+    lw $t7, 168($sp)
     li $t4, 3
     li $t3, 8
     mul $t5, $t4, $t3
@@ -288,7 +308,7 @@ main:
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t6, 128($sp)
+    lw $t6, 168($sp)
     li $t3, 3
     li $t2, 8
     mul $t4, $t3, $t2
@@ -302,37 +322,41 @@ main:
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 10
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 20
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     li $t6, 1
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
     li $a1, 8
-    lw $t6, 96($sp)
+    lw $t6, 136($sp)
     li $t5, 0
     sll $t5, $t5, 2
     addu $t6, $t6, $t5
     lw $t7, 0($t6)
-    sw $t7, 196($sp)
-    addiu $a0, $sp, 196
+    sw $t7, 236($sp)
+    addiu $a0, $sp, 236
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal sum_array
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_8:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size main, . - main

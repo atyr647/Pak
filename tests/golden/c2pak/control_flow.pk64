@@ -1,0 +1,57 @@
+-- Transpiled from C by pak convert
+
+fn gcd(a: i32, b: i32) -> i32 {
+    while b != 0 {
+        let temp: i32 = b
+        b = a % b
+        a = temp
+    }
+    return a
+}
+
+fn bubble_sort(arr: []mut i32) {
+    for i in 0..(n - 1) {
+        for j in 0..(n - i - 1) {
+            if arr[j] > arr[j + 1] {
+                let tmp: i32 = arr[j]
+                arr[j] = arr[j + 1]
+                arr[j + 1] = tmp
+            }
+        }
+    }
+}
+
+fn abs_val(x: i32) -> i32 {
+    if x < 0 { return -x }
+    return x
+}
+
+fn factorial(n: i32) -> i32 {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
+
+fn count_down(n: i32) {
+    while n > 0 {
+        n -= 1
+    }
+}
+
+fn sum_array(data: []mut i32) -> i32 {
+    let total: i32 = 0
+    for i in 0..count {
+        total += data[i]
+    }
+    return total
+}
+
+fn direction_test(dir: i32) {
+    match dir {
+        0 => {}
+        1 => {}
+        2 => {}
+        _ => {}
+    }
+}

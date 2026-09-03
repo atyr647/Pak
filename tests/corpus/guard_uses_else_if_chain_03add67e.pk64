@@ -1,0 +1,13 @@
+variant Opt {
+    some(i32)
+    none
+}
+fn f(v: Opt) -> i32 {
+    match v {
+        .some(x) if x > 10 => { return 2 }
+        .some(x) if x > 0  => { return 1 }
+        .some(x) => { return 0 }
+        .none => { return -1 }
+    }
+}
+entry {}

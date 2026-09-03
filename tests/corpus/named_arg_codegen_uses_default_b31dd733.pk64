@@ -1,0 +1,5 @@
+fn setup(x: i32 = 0, y: i32 = 0, z: i32 = 1) {
+}
+fn f() {
+    setup(z: 5)
+}

@@ -1,0 +1,32 @@
+#!/bin/sh
+# pak — the Pak compiler driver.
+#
+# The compiler is written in Tcl and needs no build step: this wrapper just
+# resolves its own location and hands the arguments to tcl/cli.tcl. Put this
+# directory on PATH (or symlink this file into one that already is) and `pak`
+# works from anywhere.
+#
+# Requires: tclsh 8.6+ with tcllib (Debian/Ubuntu: apt-get install tcl tcllib).
+
+set -e
+
+# Resolve symlinks so `ln -s .../bin/pak /usr/local/bin/pak` still finds the repo.
+script=$0
+while [ -L "$script" ]; do
+    link=$(readlink "$script")
+    case $link in
+        /*) script=$link ;;
+        *)  script=$(dirname "$script")/$link ;;
+    esac
+done
+here=$(cd "$(dirname "$script")" && pwd)
+root=$(cd "$here/.." && pwd)
+
+if ! command -v tclsh >/dev/null 2>&1; then
+    echo "pak: tclsh not found. Install Tcl and tcllib:" >&2
+    echo "     Debian/Ubuntu  apt-get install tcl tcllib" >&2
+    echo "     macOS          brew install tcl-tk" >&2
+    exit 127
+fi
+
+exec tclsh "$root/tcl/cli.tcl" "$@"

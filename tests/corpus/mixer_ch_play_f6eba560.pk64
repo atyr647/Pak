@@ -1,0 +1,2 @@
+use n64.mixer;
+fn f() -> void { mixer.ch_play(0, snd); }

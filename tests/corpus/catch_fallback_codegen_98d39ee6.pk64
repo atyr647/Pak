@@ -1,0 +1,6 @@
+enum E: u8 { bad }
+fn might_fail() -> Result(i32, E) { return ok(1) }
+fn use_it() -> i32 {
+    let x = might_fail() catch { 99 }
+    return x
+}

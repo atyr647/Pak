@@ -1,0 +1,3 @@
+fn cast_it(x: i32) -> f32 {
+    return x.as_f32()
+}

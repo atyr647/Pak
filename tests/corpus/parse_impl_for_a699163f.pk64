@@ -1,0 +1,11 @@
+struct Sprite {
+    x: i32
+}
+trait Drawable {
+    fn draw(self: *Self, x: i32, y: i32) -> void
+}
+impl Sprite for Drawable {
+    fn draw(self: *Sprite, x: i32, y: i32) -> void {
+        return
+    }
+}

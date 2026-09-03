@@ -1,0 +1,5 @@
+struct Counter { val: i32 }
+impl Counter {
+    fn inc(self: *Counter) { self.val = self.val + 1 }
+    fn get(self: *Counter) -> i32 { return self.val }
+}

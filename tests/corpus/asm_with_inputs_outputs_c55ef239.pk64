@@ -1,0 +1,4 @@
+fn get_count(val: i32) -> i32 {
+    asm { "move $2, $4" : "=r"(val) : "r"(val) }
+    return val
+}

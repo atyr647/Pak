@@ -1,0 +1,1 @@
+(E105 error "n64.display.get() expects 0 argument(s), got 3" "Check the libdragon docs for the correct signature")

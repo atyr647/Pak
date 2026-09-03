@@ -1,0 +1,2 @@
+use n64.rumble;
+entry {}

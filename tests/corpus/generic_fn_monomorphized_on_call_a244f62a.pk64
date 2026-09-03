@@ -1,0 +1,2 @@
+fn id<T>(x: T) -> T { return x }
+entry { let v: i32 = id(42) }

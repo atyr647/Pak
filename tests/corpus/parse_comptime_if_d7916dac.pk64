@@ -1,0 +1,1 @@
+comptime if (N64) { fn foo() -> void {} }

@@ -1,0 +1,7 @@
+fn early_exit(cond: bool) -> i32 {
+    defer { let _d: i32 = 99 }
+    if cond {
+        return 0
+    }
+    return 1
+}

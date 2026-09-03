@@ -1,0 +1,3 @@
+fn f(s: Str) -> void {
+    let n = s.len()
+}

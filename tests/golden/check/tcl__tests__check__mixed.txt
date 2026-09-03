@@ -1,0 +1,4 @@
+(E104 error "Unknown module 'n64.bogus'" "Known n64 modules: arena, audio, backup, cache, controller, cpak, debug, disk, display, dma, eeprom, exception, flashram, joypad, math, mem, mixer, mouse, rdpq, rdpq_font, rdpq_mode, rdpq_tex, rsp, rtc, rumble, sprite, sram, std, str, surface, system, timer, tpak, vi, vru, wav64, xm64")
+(E107 error "Duplicate top-level name 'dup'" "First defined at line 3")
+(W103 warning "Unknown @cfg feature 'NOPE'" "Known features: c_backend, debug, mips, mips_backend, n64, release, tiny3d")
+(W101 warning "Unreachable statement" "This code can never execute — it follows a return, break, or continue")

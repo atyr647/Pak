@@ -1,9 +1,9 @@
 # tcl/optimize.tcl — MIPS peephole optimizer, scheduler, delay-slot filler.
-# Byte-exact Tcl port of pak/mips/optimize.py. Operates on assembly TEXT
+# Operates on assembly TEXT
 # (a post-processing pass over MipsCodegen output), not a structured IR.
 #
 # Four passes, in order: peephole, VR4300 scheduling, delay-slot filling,
-# dead-label elimination. See pak/mips/optimize.py for the rationale.
+# dead-label elimination.
 
 namespace eval pak::opt {}
 if {[info exists ::pak::_optimize_loaded]} { return }
@@ -258,6 +258,13 @@ proc pak::opt::fill_delay_slots {lines} {
 }
 
 # ── VR4300 instruction scheduling ────────────────────────────────────────────
+# Memory operations the scheduler has to reason about. It only tracks register
+# dependencies, so anything touching memory needs a blunt rule instead.
+set ::pak::opt::MEM_OPS   {lw lh lb lhu lbu lwc1 ldc1 ld sw sh sb swc1 sdc1 sd}
+set ::pak::opt::STORE_OPS {sw sh sb swc1 sdc1 sd}
+# Instructions that order memory and must not be crossed.
+set ::pak::opt::BARRIER_OPS {sync cache}
+
 proc pak::opt::is_independent {line_a line_b} {
     set pa [parse_line $line_a]
     set pb [parse_line $line_b]
@@ -265,6 +272,16 @@ proc pak::opt::is_independent {line_a line_b} {
     lassign $pa op_a operands_a
     lassign $pb op_b operands_b
     if {[is_branch_or_jump $op_b] || [in $op_b {nop sync syscall mult multu div divu mflo mfhi}]} {
+        return 0
+    }
+    # Memory ordering. The scheduler compares registers only, so it cannot tell
+    # that `lw $a0, 156($sp)` reads what `sw $t9, 156($sp)` just wrote, and it
+    # has no idea that a store may be MMIO whose position is the whole point.
+    # Stores therefore never move, and no memory access crosses a store or a
+    # barrier.
+    if {[in $op_b $::pak::opt::STORE_OPS]} { return 0 }
+    if {[in $op_b $::pak::opt::MEM_OPS] \
+            && ([in $op_a $::pak::opt::STORE_OPS] || [in $op_a $::pak::opt::BARRIER_OPS])} {
         return 0
     }
     set reads_a [regs_read $op_a $operands_a]

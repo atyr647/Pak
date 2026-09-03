@@ -1,0 +1,3 @@
+fn f(a: Allocator) -> void {
+    let p = alloc(i32, 16 using a)
+}

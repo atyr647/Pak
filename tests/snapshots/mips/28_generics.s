@@ -24,6 +24,24 @@
 	.extern rdpq_sync_tile
 	.extern rdpq_sync_load
 	.extern rdpq_set_scissor
+	.extern rdpq_set_color_image
+	.extern rdpq_set_z_image
+	.extern rdpq_set_other_modes_raw
+	.extern rdpq_set_combiner_raw
+	.extern rdpq_set_fill_color
+	.extern rdpq_set_blend_color
+	.extern rdpq_set_fog_color
+	.extern rdpq_set_env_color
+	.extern rdpq_set_prim_color
+	.extern rdpq_set_texture_image
+	.extern rdpq_set_tile
+	.extern rdpq_set_tile_size
+	.extern rdpq_load_tile
+	.extern rdpq_load_block
+	.extern rdpq_load_tlut
+	.extern rdpq_texture_rectangle
+	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_triangle
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -150,22 +168,22 @@
 	.globl Pair_sum_i32
 	.type Pair_sum_i32, @function
 Pair_sum_i32:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    lw $t8, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t8, 136($sp)
     lw $t9, 0($t8)
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     lw $t8, 0($t7)
     addu $v0, $t9, $t8
     j .LPair_sum_i32_ret_0
     nop
 .LPair_sum_i32_ret_0:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size Pair_sum_i32, . - Pair_sum_i32
@@ -174,19 +192,19 @@ Pair_sum_i32:
 	.globl Pair_get_first
 	.type Pair_get_first, @function
 Pair_get_first:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    lw $t9, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
     lw $v0, 0($t9)
     j .LPair_get_first_ret_1
     nop
 .LPair_get_first_ret_1:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size Pair_get_first, . - Pair_get_first
@@ -195,19 +213,19 @@ Pair_get_first:
 	.globl Pair_get_second
 	.type Pair_get_second, @function
 Pair_get_second:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    lw $t9, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
     lw $v0, 0($t9)
     j .LPair_get_second_ret_2
     nop
 .LPair_get_second_ret_2:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size Pair_get_second, . - Pair_get_second
@@ -216,34 +234,48 @@ Pair_get_second:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
     li $a0, 42
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal identity
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
     la $t7, .Lf320
     lwc1 $f12, 0($t7)
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal identity
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_f
     swc1 $f12, 0($t7)
     move $t9, $t8
     li $a0, 1
+    sw $t9, 96($sp)
     jal identity
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
+    sw $t9, 136($sp)
     li $a1, 7
     li $a0, 3
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal max_of
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_i
     sw $t8, 0($t7)
@@ -253,97 +285,125 @@ main:
     mov.s $f14, $f12
     la $t7, .Lf322
     lwc1 $f12, 0($t7)
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal max_of
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_f
     swc1 $f12, 0($t7)
     move $t9, $t8
     li $a1, 50
     li $a0, 100
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal max_of
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
     li $a1, 2
     li $a0, 1
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal swap_first
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    sw $zero, 108($sp)
-    sw $zero, 112($sp)
+    sw $zero, 148($sp)
+    sw $zero, 152($sp)
     li $t7, 10
-    sw $t7, 108($sp)
+    sw $t7, 148($sp)
     li $t7, 32
-    sw $t7, 112($sp)
-    addiu $t9, $sp, 108
-    addiu $t8, $sp, 100
+    sw $t7, 152($sp)
+    addiu $t9, $sp, 148
+    addiu $t8, $sp, 140
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t7, 100($sp)
+    lw $t7, 140($sp)
     lw $t8, 0($t7)
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 100($sp)
+    lw $t7, 140($sp)
     lw $t8, 4($t7)
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    addiu $t7, $sp, 100
+    addiu $t7, $sp, 140
     move $a0, $t7
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal P_sum_i32
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    addiu $t7, $sp, 100
+    addiu $t7, $sp, 140
     move $a0, $t7
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal P_get_first
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    sw $zero, 124($sp)
-    sw $zero, 128($sp)
+    sw $zero, 164($sp)
+    sw $zero, 168($sp)
     la $t6, .Lf322
     lwc1 $f12, 0($t6)
-    swc1 $f12, 124($sp)
+    swc1 $f12, 164($sp)
     la $t6, .Lf321
     lwc1 $f12, 0($t6)
-    swc1 $f12, 128($sp)
-    addiu $t9, $sp, 124
-    addiu $t8, $sp, 116
+    swc1 $f12, 168($sp)
+    addiu $t9, $sp, 164
+    addiu $t8, $sp, 156
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t7, 116($sp)
+    lw $t7, 156($sp)
     lwc1 $f12, 0($t7)
     la $t7, sink_f
     swc1 $f12, 0($t7)
     move $t9, $t8
-    addiu $t7, $sp, 116
+    addiu $t7, $sp, 156
     move $a0, $t7
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Fp_sum_i32
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_f
     swc1 $f12, 0($t7)
     move $t9, $t8
-    addiu $t7, $sp, 116
+    addiu $t7, $sp, 156
     move $a0, $t7
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Fp_get_second
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_f
     swc1 $f12, 0($t7)
@@ -353,55 +413,59 @@ main:
 	.globl identity__i32
 	.type identity__i32, @function
 identity__i32:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    lw $v0, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $v0, 136($sp)
     j .Lidentity__i32_ret_4
     nop
 .Lidentity__i32_ret_4:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size identity__i32, . - identity__i32
     li $a0, 99
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal identity__i32
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    sw $zero, 140($sp)
-    sw $zero, 144($sp)
+    sw $zero, 180($sp)
+    sw $zero, 184($sp)
     li $t7, 1
-    sw $t7, 140($sp)
+    sw $t7, 180($sp)
     la $t6, .Lf323
     lwc1 $f12, 0($t6)
-    swc1 $f12, 144($sp)
-    addiu $t9, $sp, 140
-    addiu $t8, $sp, 132
+    swc1 $f12, 184($sp)
+    addiu $t9, $sp, 180
+    addiu $t8, $sp, 172
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t7, 132($sp)
+    lw $t7, 172($sp)
     lw $t8, 0($t7)
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 132($sp)
+    lw $t7, 172($sp)
     lwc1 $f12, 4($t7)
     la $t7, sink_f
     swc1 $f12, 0($t7)
     move $t9, $t8
 .Lmain_ret_3:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size main, . - main

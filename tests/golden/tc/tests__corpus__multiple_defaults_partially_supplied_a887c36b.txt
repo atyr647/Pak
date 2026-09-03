@@ -1,0 +1,1 @@
+(E012 error "function 'foo' takes 3 argument(s), got 2" "Expected: foo(a: i32, b: i32, c: i32)")

@@ -1,0 +1,6 @@
+fn greet(x: i32, y: i32 = 99) -> i32 {
+    return x + y
+}
+entry {
+    let r = greet(1)
+}

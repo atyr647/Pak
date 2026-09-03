@@ -1,0 +1,2 @@
+use n64.rtc;
+fn f() -> void { rtc.get(t); }

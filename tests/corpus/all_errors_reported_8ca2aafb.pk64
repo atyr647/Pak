@@ -1,0 +1,5 @@
+use n64.nonexistent
+fn foo() { }
+fn foo() { }
+const BAD: i32 = foo()
+entry { }

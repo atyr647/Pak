@@ -1,0 +1,6 @@
+struct Vec { x: f32  y: f32 }
+impl Vec {
+    fn length_sq(self: *Vec) -> f32 {
+        return self.x * self.x + self.y * self.y
+    }
+}

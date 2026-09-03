@@ -24,6 +24,24 @@
 	.extern rdpq_sync_tile
 	.extern rdpq_sync_load
 	.extern rdpq_set_scissor
+	.extern rdpq_set_color_image
+	.extern rdpq_set_z_image
+	.extern rdpq_set_other_modes_raw
+	.extern rdpq_set_combiner_raw
+	.extern rdpq_set_fill_color
+	.extern rdpq_set_blend_color
+	.extern rdpq_set_fog_color
+	.extern rdpq_set_env_color
+	.extern rdpq_set_prim_color
+	.extern rdpq_set_texture_image
+	.extern rdpq_set_tile
+	.extern rdpq_set_tile_size
+	.extern rdpq_load_tile
+	.extern rdpq_load_block
+	.extern rdpq_load_tlut
+	.extern rdpq_texture_rectangle
+	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_triangle
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -153,68 +171,86 @@
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
     li $t8, 0
     sw $t8, 16($sp)
     li $a3, 0
     li $a2, 2
     li $a1, 0
     li $a0, 0
+    sw $t9, 96($sp)
     jal display_init
     nop
-    move $t9, $v0
-    jal rdpq_init
-    nop
-    move $t9, $v0
-.Lloop_h_1:
-    jal display_get
-    nop
+    lw $t9, 96($sp)
     move $t9, $v0
     sw $t9, 96($sp)
-    lw $a0, 96($sp)
+    jal rdpq_init
+    nop
+    lw $t9, 96($sp)
+    move $t9, $v0
+.Lloop_h_1:
+    sw $t9, 96($sp)
+    jal display_get
+    nop
+    lw $t9, 96($sp)
+    move $t9, $v0
+    sw $t9, 136($sp)
+    lw $a0, 136($sp)
+    sw $t9, 96($sp)
     jal rdpq_attach_clear
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
+    sw $t9, 96($sp)
     jal rdpq_set_mode_copy
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 0
     li $a2, 0
     li $a1, 0
     la $a0, bg_sprite
     lw $a0, 0($a0)
+    sw $t9, 96($sp)
     jal rdpq_sprite_blit
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 0
     li $a2, 120
     li $a1, 160
     la $a0, player_sprite
     lw $a0, 0($a0)
+    sw $t9, 96($sp)
     jal rdpq_sprite_blit
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 0
     li $a2, 80
     li $a1, 100
     la $a0, enemy_sprite
     lw $a0, 0($a0)
+    sw $t9, 96($sp)
     jal rdpq_sprite_blit
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
+    sw $t9, 96($sp)
     jal rdpq_detach_show
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
     j .Lloop_h_1
     nop
 .Lloop_x_2:
 .Lmain_ret_0:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size main, . - main

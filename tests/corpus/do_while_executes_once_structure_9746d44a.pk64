@@ -1,0 +1,6 @@
+fn f() -> void {
+    let mut i: i32 = 0;
+    do {
+        i = i + 1;
+    } while i < 0;
+}

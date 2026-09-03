@@ -1,0 +1,2 @@
+(W201 warning "non-void function 'shape_area' may not return a value on all paths" "Ensure all code paths return a value")
+(W201 warning "non-void function 'dir_to_int' may not return a value on all paths" "Ensure all code paths return a value")

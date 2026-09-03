@@ -1,0 +1,10 @@
+trait Shape {
+               fn area(self: *Self) -> f32
+           }
+           struct Rect { w: f32
+h: f32 }
+           impl Rect for Shape {
+               fn area(self: *Rect) -> f32 {
+                   return self.w * self.h
+               }
+           }

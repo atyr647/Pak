@@ -1,0 +1,1 @@
+static hw_reg: volatile u32 = undefined

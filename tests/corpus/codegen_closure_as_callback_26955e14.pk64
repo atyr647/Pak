@@ -1,0 +1,3 @@
+fn f() -> void {
+    let cb: *void = fn(a: f32, b: f32) -> f32 { return a + b }
+}

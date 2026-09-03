@@ -1,0 +1,6 @@
+struct Box<T> { value: T }
+static r: i32 = 0
+entry {
+    let mut b = Box<i32> { value: 42 }
+    r = b.value
+}

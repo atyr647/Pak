@@ -1,0 +1,5 @@
+fn id<T>(x: T) -> T { return x }
+entry {
+    let a: i32 = id(1)
+    let b: f32 = id(1.0)
+}

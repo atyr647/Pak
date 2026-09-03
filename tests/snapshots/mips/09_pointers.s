@@ -24,6 +24,24 @@
 	.extern rdpq_sync_tile
 	.extern rdpq_sync_load
 	.extern rdpq_set_scissor
+	.extern rdpq_set_color_image
+	.extern rdpq_set_z_image
+	.extern rdpq_set_other_modes_raw
+	.extern rdpq_set_combiner_raw
+	.extern rdpq_set_fill_color
+	.extern rdpq_set_blend_color
+	.extern rdpq_set_fog_color
+	.extern rdpq_set_env_color
+	.extern rdpq_set_prim_color
+	.extern rdpq_set_texture_image
+	.extern rdpq_set_tile
+	.extern rdpq_set_tile_size
+	.extern rdpq_load_tile
+	.extern rdpq_load_block
+	.extern rdpq_load_tlut
+	.extern rdpq_texture_rectangle
+	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_triangle
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -150,22 +168,22 @@
 	.globl double_value
 	.type double_value, @function
 double_value:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    lw $t6, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t6, 136($sp)
     lw $t7, 0($t6)
     li $t6, 2
     mul $t8, $t7, $t6
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     sw $t8, 0($t7)
     move $t9, $t8
 .Ldouble_value_ret_0:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size double_value, . - double_value
@@ -174,52 +192,54 @@ double_value:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
     li $t9, 10
+    sw $t9, 136($sp)
+    addiu $t9, $sp, 136
+    sw $t9, 140($sp)
+    lw $a0, 140($sp)
     sw $t9, 96($sp)
-    addiu $t9, $sp, 96
-    sw $t9, 100($sp)
-    lw $a0, 100($sp)
     jal double_value
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
-    lw $t7, 100($sp)
+    lw $t7, 140($sp)
     lw $t8, 0($t7)
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
     li $t8, 99
-    lw $t7, 100($sp)
+    lw $t7, 140($sp)
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t8, 96($sp)
+    lw $t8, 136($sp)
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
     move $t9, $zero
-    sw $t9, 104($sp)
-    addiu $t9, $sp, 96
-    sw $t9, 108($sp)
-    lw $t8, 104($sp)
+    sw $t9, 144($sp)
+    addiu $t9, $sp, 136
+    sw $t9, 148($sp)
+    lw $t8, 144($sp)
     move $t7, $zero
     sne $t9, $t8, $t7
     beqz $t9, .Lif_end_2
     nop
-    lw $t7, 104($sp)
+    lw $t7, 144($sp)
     lw $t8, 0($t7)
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
 .Lif_end_2:
-    lw $t8, 108($sp)
+    lw $t8, 148($sp)
     move $t7, $zero
     sne $t9, $t8, $t7
     beqz $t9, .Lif_end_3
     nop
-    lw $t7, 108($sp)
+    lw $t7, 148($sp)
     lw $t8, 0($t7)
     la $t7, sink
     sw $t8, 0($t7)
@@ -228,19 +248,23 @@ main:
     li $a0, 1
     li $t8, 64
     mul $a0, $a0, $t8
+    sw $t9, 96($sp)
     jal __pak_alloc
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 112($sp)
-    lw $t8, 112($sp)
+    sw $t9, 152($sp)
+    lw $t8, 152($sp)
     move $a0, $t8
+    sw $t9, 96($sp)
     jal __pak_free
     nop
+    lw $t9, 96($sp)
     move $t9, $zero
 .Lmain_ret_1:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size main, . - main

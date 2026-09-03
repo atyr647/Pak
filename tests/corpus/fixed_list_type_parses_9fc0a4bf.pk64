@@ -1,0 +1,4 @@
+struct Enemy { x: f32 }
+entry {
+    let enemies: FixedList(Enemy, 32) = FixedList.init()
+}

@@ -24,6 +24,24 @@
 	.extern rdpq_sync_tile
 	.extern rdpq_sync_load
 	.extern rdpq_set_scissor
+	.extern rdpq_set_color_image
+	.extern rdpq_set_z_image
+	.extern rdpq_set_other_modes_raw
+	.extern rdpq_set_combiner_raw
+	.extern rdpq_set_fill_color
+	.extern rdpq_set_blend_color
+	.extern rdpq_set_fog_color
+	.extern rdpq_set_env_color
+	.extern rdpq_set_prim_color
+	.extern rdpq_set_texture_image
+	.extern rdpq_set_tile
+	.extern rdpq_set_tile_size
+	.extern rdpq_load_tile
+	.extern rdpq_load_block
+	.extern rdpq_load_tlut
+	.extern rdpq_texture_rectangle
+	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_triangle
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -150,52 +168,52 @@
 	.globl sum_scanline
 	.type sum_scanline, @function
 sum_scanline:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $s7, 244($sp)
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
-    sw $a2, 104($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $s7, 308($sp)
+    sw $a0, 136($sp)
+    sw $a1, 140($sp)
+    sw $a2, 144($sp)
     li $t9, 0
-    sw $t9, 108($sp)
+    sw $t9, 148($sp)
     li $t9, 0
-    sw $t9, 112($sp)
-    lw $t8, 104($sp)
+    sw $t9, 152($sp)
+    lw $t8, 144($sp)
 .Lfor_h_1:
-    lw $t7, 112($sp)
+    lw $t7, 152($sp)
     bge $t7, $t8, .Lfor_x_3
     nop
-    lw $t3, 96($sp)
-    lw $t0, 100($sp)
-    lw $s7, 104($sp)
+    lw $t3, 136($sp)
+    lw $t0, 140($sp)
+    lw $s7, 144($sp)
     mul $t1, $t0, $s7
-    lw $t0, 112($sp)
+    lw $t0, 152($sp)
     addu $t2, $t1, $t0
     sll $t2, $t2, 2
     addu $t3, $t3, $t2
     lw $t4, 0($t3)
     move $t5, $t4
-    lw $t4, 108($sp)
+    lw $t4, 148($sp)
     addu $t5, $t4, $t5
-    sw $t5, 108($sp)
+    sw $t5, 148($sp)
     move $t6, $t5
 .Lfor_i_2:
-    lw $t7, 112($sp)
+    lw $t7, 152($sp)
     addiu $t7, $t7, 1
-    sw $t7, 112($sp)
+    sw $t7, 152($sp)
     j .Lfor_h_1
     nop
 .Lfor_x_3:
-    lw $v0, 108($sp)
+    lw $v0, 148($sp)
     j .Lsum_scanline_ret_0
     nop
 .Lsum_scanline_ret_0:
-    lw $s7, 244($sp)
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $s7, 308($sp)
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size sum_scanline, . - sum_scanline
@@ -204,27 +222,35 @@ sum_scanline:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    addiu $a0, $sp, 160
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    addiu $a0, $sp, 200
     move $a1, $zero
     li $a2, 64
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal memset
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     li $t7, 43981
-    sw $t7, 160($sp)
+    sw $t7, 200($sp)
     move $t7, $zero
-    sw $t7, 164($sp)
-    addiu $t9, $sp, 160
-    addiu $t8, $sp, 96
+    sw $t7, 204($sp)
+    addiu $t9, $sp, 200
+    addiu $t8, $sp, 136
     move $a0, $t8
     move $a1, $t9
     li $a2, 64
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal memcpy
     nop
-    lw $t6, 96($sp)
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t6, 136($sp)
     lw $t7, 0($t6)
     andi $t8, $t7, 255
     la $t7, dma_out
@@ -234,21 +260,29 @@ main:
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
-    addiu $a0, $sp, 480
+    addiu $a0, $sp, 520
     move $a1, $zero
     li $a2, 256
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal memset
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t7, $zero
-    sw $t7, 480($sp)
-    addiu $t9, $sp, 480
-    addiu $t8, $sp, 224
+    sw $t7, 520($sp)
+    addiu $t9, $sp, 520
+    addiu $t8, $sp, 264
     move $a0, $t8
     move $a1, $t9
     li $a2, 256
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal memcpy
     nop
-    lw $t4, 224($sp)
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t4, 264($sp)
     lw $t6, 0($t4)
     li $t5, 0
     sll $t5, $t5, 2
@@ -266,18 +300,22 @@ main:
     sll $t5, $t5, 2
     addu $t6, $t6, $t5
     lw $t7, 0($t6)
-    sw $t7, 736($sp)
-    addiu $a0, $sp, 736
+    sw $t7, 776($sp)
+    addiu $a0, $sp, 776
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal sum_scanline
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_4:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size main, . - main

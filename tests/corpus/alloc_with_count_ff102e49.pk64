@@ -1,0 +1,1 @@
+fn f() { let arr: *f32 = alloc(f32, 64) }

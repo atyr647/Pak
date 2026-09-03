@@ -1,0 +1,6 @@
+fn max_val<T>(a: T, b: T) -> T {
+    return a
+}
+entry {
+    let m: i32 = max_val(3, 7)
+}

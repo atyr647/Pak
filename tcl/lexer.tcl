@@ -1,4 +1,4 @@
-# tcl/lexer.tcl — Pak lexer, Tcl port of pak/lexer.py
+# tcl/lexer.tcl — Pak lexer.
 #
 # Produces a token stream identical to the Python lexer. Each token is a dict:
 #   {type <TYPENAME> value <string> line <int> col <int>}
@@ -10,7 +10,7 @@ namespace eval pak {}
 if {[info exists ::pak::_lexer_loaded]} { return }
 set ::pak::_lexer_loaded 1
 
-# keyword text → token type name (mirrors pak/lexer.py KEYWORDS)
+# keyword text → token type name
 set ::pak::KEYWORDS {
     use USE        asset ASSET     from FROM       entry ENTRY
     struct STRUCT  enum ENUM       variant VARIANT fn FN

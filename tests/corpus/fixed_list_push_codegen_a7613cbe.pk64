@@ -1,0 +1,6 @@
+struct Item { v: i32 }
+entry {
+    let mut list: FixedList(Item, 10) = FixedList.init()
+    let e = Item { v: 42 }
+    list.push(e)
+}

@@ -24,6 +24,24 @@
 	.extern rdpq_sync_tile
 	.extern rdpq_sync_load
 	.extern rdpq_set_scissor
+	.extern rdpq_set_color_image
+	.extern rdpq_set_z_image
+	.extern rdpq_set_other_modes_raw
+	.extern rdpq_set_combiner_raw
+	.extern rdpq_set_fill_color
+	.extern rdpq_set_blend_color
+	.extern rdpq_set_fog_color
+	.extern rdpq_set_env_color
+	.extern rdpq_set_prim_color
+	.extern rdpq_set_texture_image
+	.extern rdpq_set_tile
+	.extern rdpq_set_tile_size
+	.extern rdpq_load_tile
+	.extern rdpq_load_block
+	.extern rdpq_load_tlut
+	.extern rdpq_texture_rectangle
+	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_triangle
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -150,25 +168,25 @@
 	.globl Sprite_draw
 	.type Sprite_draw, @function
 Sprite_draw:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    sw $a1, 100($sp)
-    sw $a2, 104($sp)
-    lw $t8, 100($sp)
-    lw $t7, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    sw $a1, 140($sp)
+    sw $a2, 144($sp)
+    lw $t8, 140($sp)
+    lw $t7, 136($sp)
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t8, 104($sp)
-    lw $t7, 96($sp)
+    lw $t8, 144($sp)
+    lw $t7, 136($sp)
     sw $t8, 4($t7)
     move $t9, $t8
 .LSprite_draw_ret_0:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size Sprite_draw, . - Sprite_draw
@@ -177,19 +195,19 @@ Sprite_draw:
 	.globl Sprite_get_width
 	.type Sprite_get_width, @function
 Sprite_get_width:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    lw $t9, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
     lw $v0, 8($t9)
     j .LSprite_get_width_ret_1
     nop
 .LSprite_get_width_ret_1:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size Sprite_get_width, . - Sprite_get_width
@@ -198,19 +216,19 @@ Sprite_get_width:
 	.globl Sprite_get_height
 	.type Sprite_get_height, @function
 Sprite_get_height:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    lw $t9, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
     lw $v0, 12($t9)
     j .LSprite_get_height_ret_2
     nop
 .LSprite_get_height_ret_2:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size Sprite_get_height, . - Sprite_get_height
@@ -219,27 +237,27 @@ Sprite_get_height:
 	.globl Enemy_update
 	.type Enemy_update, @function
 Enemy_update:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    swc1 $f12, 100($sp)
-    lw $t6, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    swc1 $f12, 140($sp)
+    lw $t6, 136($sp)
     lwc1 $f12, 8($t6)
     mov.s $f14, $f12
-    lwc1 $f12, 100($sp)
+    lwc1 $f12, 140($sp)
     mul.s $f12, $f14, $f12
-    lw $t6, 96($sp)
+    lw $t6, 136($sp)
     lw $t7, 0($t6)
     addu $t8, $t7, $t8
-    lw $t7, 96($sp)
+    lw $t7, 136($sp)
     sw $t8, 0($t7)
     move $t9, $t8
 .LEnemy_update_ret_3:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size Enemy_update, . - Enemy_update
@@ -248,24 +266,24 @@ Enemy_update:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $zero, 112($sp)
-    sw $zero, 116($sp)
-    sw $zero, 120($sp)
-    sw $zero, 124($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $zero, 152($sp)
+    sw $zero, 156($sp)
+    sw $zero, 160($sp)
+    sw $zero, 164($sp)
     li $t7, 0
-    sw $t7, 112($sp)
+    sw $t7, 152($sp)
     li $t7, 0
-    sw $t7, 116($sp)
+    sw $t7, 156($sp)
     li $t7, 16
-    sw $t7, 120($sp)
+    sw $t7, 160($sp)
     li $t7, 16
-    sw $t7, 124($sp)
-    addiu $t9, $sp, 112
-    addiu $t8, $sp, 96
+    sw $t7, 164($sp)
+    addiu $t9, $sp, 152
+    addiu $t8, $sp, 136
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
@@ -274,58 +292,66 @@ main:
     sw $t7, 8($t8)
     lw $t7, 12($t9)
     sw $t7, 12($t8)
-    addiu $t8, $sp, 96
+    addiu $t8, $sp, 136
     move $a0, $t8
     li $a2, 20
     li $a1, 10
+    sw $t9, 96($sp)
     jal Sprite_draw
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
-    addiu $t7, $sp, 96
+    addiu $t7, $sp, 136
     move $a0, $t7
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Sprite_get_width
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    sw $zero, 140($sp)
-    sw $zero, 144($sp)
-    sw $zero, 148($sp)
+    sw $zero, 180($sp)
+    sw $zero, 184($sp)
+    sw $zero, 188($sp)
     la $t6, .Lf320
     lwc1 $f12, 0($t6)
-    swc1 $f12, 140($sp)
+    swc1 $f12, 180($sp)
     la $t6, .Lf320
     lwc1 $f12, 0($t6)
-    swc1 $f12, 144($sp)
+    swc1 $f12, 184($sp)
     la $t6, .Lf321
     lwc1 $f12, 0($t6)
-    swc1 $f12, 148($sp)
-    addiu $t9, $sp, 140
-    addiu $t8, $sp, 128
+    swc1 $f12, 188($sp)
+    addiu $t9, $sp, 180
+    addiu $t8, $sp, 168
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
     lw $t7, 8($t9)
     sw $t7, 8($t8)
-    addiu $t8, $sp, 128
+    addiu $t8, $sp, 168
     move $a0, $t8
     la $t8, .Lf322
     lwc1 $f12, 0($t8)
+    sw $t9, 96($sp)
     jal Enemy_update
     nop
+    lw $t9, 96($sp)
     move $t9, $v0
-    lw $t6, 128($sp)
+    lw $t6, 168($sp)
     lwc1 $f12, 0($t6)
     move $t8, $t7
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_4:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size main, . - main

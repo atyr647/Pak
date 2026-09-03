@@ -1,0 +1,48 @@
+-- Transpiled from C by pak convert
+
+variant Entity {
+    player { pos: Vec2, hp: i32, mp: i32 },
+    enemy { pos: Vec2, hp: i32, ai_state: u8 },
+    coin { pos: Vec2, value: i32 },
+    none(Vec2),
+}
+
+struct Vec2 { x: f32, y: f32 }
+
+enum EntityType {
+    player,
+    enemy,
+    coin,
+    none,
+}
+
+struct Entity {
+    type: EntityType,
+    pos: Vec2,
+    _f1: _AnonUnion,
+}
+
+impl Entity {
+    fn update(self: *mut Entity) {
+        match e.type {
+            .player => { e.player.hp -= 1 }
+            .enemy => { e.enemy.ai_state = 1 }
+            .coin => {}
+            .none => {}
+        }
+    }
+
+    fn is_alive(self: *mut Entity) -> i32 {
+        match e.type {
+            .player => {
+                return self.player.hp > 0
+            }
+            .enemy => {
+                return self.enemy.hp > 0
+            }
+            _ => {
+                return 0
+            }
+        }
+    }
+}

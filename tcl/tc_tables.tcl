@@ -1,5 +1,6 @@
-# GENERATED from pak/typechecker.py by tcl/tools/gen_tc_tables.py — DO NOT EDIT.
-# Regenerate: python3 tcl/tools/gen_tc_tables.py
+# tcl/tc_tables.tcl — lookup tables for the typechecker: module namespaces,
+# DMA functions and allocating calls.
+# Generated once from a second implementation; now hand-maintained source.
 namespace eval pak {}
 # Include guard (reachable via multiple consumers; see ast.tcl).
 if {[info exists ::pak::_tc_tables_loaded]} { return }

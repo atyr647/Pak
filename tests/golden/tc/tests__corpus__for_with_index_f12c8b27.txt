@@ -1,0 +1,1 @@
+(E010 error "unknown name 'arr'" "declare it with 'let arr = ...'")

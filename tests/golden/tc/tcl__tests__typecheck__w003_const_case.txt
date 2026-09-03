@@ -1,0 +1,1 @@
+(W003 warning "constant 'lower_const' should be UPPER_SNAKE_CASE" "Rename to 'LOWER_CONST'")

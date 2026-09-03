@@ -1,0 +1,7 @@
+fn f() {
+    comptime if (RELEASE) {
+        let a: i32 = 1
+    } else {
+        let a: i32 = 0
+    }
+}

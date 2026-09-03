@@ -1,0 +1,4 @@
+fn do_dma() {
+    @uncached
+    let tmp: [1024]byte = undefined
+}

@@ -9,7 +9,7 @@
 #   {bool 0|1}                             a boolean
 #   {nil}                                  None
 #
-# serialize produces output identical to tcl/tools/ast_dump.py.
+# serialize produces the canonical AST dump format (see tools/ast_dump.tcl).
 
 namespace eval pak {}
 
@@ -18,7 +18,7 @@ namespace eval pak {}
 if {[info exists ::pak::_ast_loaded]} { return }
 set ::pak::_ast_loaded 1
 
-# Node schema mirrors pak/ast.py (generated). struct::record holds the field
+# Node schema lives in ast_schema.tcl. struct::record holds the field
 # set per kind; pak::N validates construction and pak::nfield validates reads,
 # turning stringly-typed field-name slips into immediate, located errors.
 package require struct::record
@@ -29,9 +29,38 @@ foreach _r [struct::record show records] {
 }
 unset -nocomplain _r
 
+# ── source positions ─────────────────────────────────────────────────────────
+# Nodes carry their position out of band, as a fourth element of the node value:
+#   {node Kind {field val ...} {line col}}
+# Keeping it out of the field dict means the schema, pak::nfield and the AST
+# dump format are all untouched, so a node's structure stays exactly what it
+# was while diagnostics gain a real location.
+#
+# The parser pushes the position of the token starting each rule onto this
+# stack; pak::N stamps whatever is innermost. Nodes synthesized outside parsing
+# (by the checker, typechecker or codegen) get 0 0, which formats as no
+# location rather than a wrong one.
+set ::pak::POS_STACK {}
+
+proc pak::pos_push {line col} { lappend ::pak::POS_STACK [list $line $col] }
+proc pak::pos_pop  {} { set ::pak::POS_STACK [lrange $::pak::POS_STACK 0 end-1] }
+proc pak::pos_reset {} { set ::pak::POS_STACK {} }
+proc pak::pos_cur {} {
+    if {[llength $::pak::POS_STACK] == 0} { return {0 0} }
+    return [lindex $::pak::POS_STACK end]
+}
+
+# Position of a node as a {line col} pair; {0 0} when unknown.
+proc pak::nodepos {node} {
+    if {[lindex $node 0] ne "node" || [llength $node] < 4} { return {0 0} }
+    return [lindex $node 3]
+}
+proc pak::nodeline {node} { return [lindex [pak::nodepos $node] 0] }
+proc pak::nodecol  {node} { return [lindex [pak::nodepos $node] 1] }
+
 # Construct an AST node. Scalar field values are auto-wrapped per the field's
-# kind in ::pak::FKIND, so call sites read like the Python parser
-# (`name $x` rather than `name [pak::Lit $x]`). Kinds with kind `n` are passed
+# kind in ::pak::FKIND, so call sites read like ordinary attribute access
+# (`name $x` rather than `name [pak::Lit $x]`). Fields of kind `n` are passed
 # through unchanged and must already be tagged values (a node, seq, lit, or nil).
 proc pak::N {kind args} {
     if {![dict exists $::pak::SCHEMA $kind]} {
@@ -47,10 +76,10 @@ proc pak::N {kind args} {
     foreach {f v} $args {
         dict set fields $f [pak::wrap [dict get $kinds $f] $v]
     }
-    return [list node $kind $fields]
+    return [list node $kind $fields [pak::pos_cur]]
 }
 
-# Wrap a raw field value according to its kind (see gen_schema.py header).
+# Wrap a raw field value according to its kind (see ast_schema.tcl header).
 proc pak::wrap {k v} {
     switch -- $k {
         s - i   { return [list lit $v] }

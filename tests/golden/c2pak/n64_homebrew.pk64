@@ -1,0 +1,16 @@
+-- Transpiled from C by pak convert
+
+use n64.display
+use n64.joypad
+use n64.rdpq
+
+entry {
+    display.init(RESOLUTION_320x240, DEPTH_16_BPP, 3, GAMMA_NONE, FILTERS_RESAMPLE)
+    rdpq.init()
+    loop {
+        joypad.poll()
+        let disp: *mut surface_t = display.get()
+        rdpq.attach_clear(disp, none)
+        rdpq.detach_show()
+    }
+}

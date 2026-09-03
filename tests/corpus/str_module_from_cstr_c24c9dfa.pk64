@@ -1,0 +1,2 @@
+use pak.str
+entry { let s = str.from_cstr("hi") }

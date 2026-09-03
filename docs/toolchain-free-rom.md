@@ -8,14 +8,14 @@ source to machine code.
 ## Pipeline
 
 ```
-.pk64  (game + pak/runtime/runtime.pk64)      boot.S (hand-written crt0)
+.pk64  (game + runtime/standalone/runtime.pk64)      boot.S (hand-written crt0)
   → Tcl MIPS codegen (tcl/mips_codegen.tcl)     → Tcl asm front-end
       structured RECORD stream                       (tcl/n64enc.tcl parse_asm)
   → Tcl binary encoder (tcl/n64enc.tcl) ───────────────┘
       records → machine-code words + relocations → .pakobj object file
-  → Python flat linker (pak/tools/n64_link.py)
+  → Tcl flat linker (tcl/n64link.tcl)
       .pakobj(s) → laid-out flat RDRAM image, relocations patched
-  → ROM packer (pak/tools/rompack.py)
+  → Tcl ROM packer (tcl/n64rom.tcl)
       flat image → .z64 (IPL3 stub + header + CIC-6102 CRC)
 ```
 
@@ -23,13 +23,14 @@ No GCC, no `as`, no `ld`, no `objcopy`, no `n64tool`.
 
 ## The runtime is Pak + a tiny hand-written crt0
 
-* **`pak/runtime/runtime.pk64`** — the HAL (display, framebuffers, software
-  `rdpq` fill, `memset`/`memcpy`) written entirely in Pak. Free functions emit
-  bare symbol names (`display_init`, `rdpq_fill_rectangle`, …) matching the
-  calls the codegen lowers game code into. MMIO is done with
-  `(0xA4400000 as *volatile u32)` writes; framebuffers live in uncached KSEG1
-  RDRAM so CPU writes are immediately visible to the Video Interface.
-* **`pak/runtime/boot.S`** — the crt0 (~12 instructions). It needs CP0 access
+* **`runtime/standalone/runtime.pk64`** — the HAL written entirely in Pak:
+  display and framebuffer setup, SI controller polling, `memset`/`memcpy`, and
+  a real RDP driver. Free functions emit bare symbol names (`display_init`,
+  `rdpq_fill_rectangle`, …) matching the calls the codegen lowers game code
+  into. MMIO is done with `(0xA4400000 as *volatile u32)` writes; framebuffers
+  live in uncached KSEG1 RDRAM so CPU writes are immediately visible to the
+  Video Interface.
+* **`runtime/standalone/boot.S`** — the crt0 (~12 instructions). It needs CP0 access
   (`mfc0`/`mtc0`) which Pak cannot express, so it stays hand-written assembly
   and is assembled by the encoder's `.s` front-end (`pak asmobj`). The linker
   supplies `__bss_start`/`__bss_end` so boot can zero `.bss`, and boot's
@@ -39,11 +40,10 @@ A full ROM is three objects linked in order — **boot first** so `_start` lands
 at `0x80000400`:
 
 ```sh
-pak asmobj pak/runtime/boot.S        -o boot.pakobj      # crt0
-pak objgen pak/runtime/runtime.pk64  -o runtime.pakobj   # HAL
-pak objgen game.pk64                 -o game.pakobj      # the game
-python -m pak.tools.n64_link boot.pakobj runtime.pakobj game.pakobj \
-    -o game.z64 --name GAME
+pak asmobj runtime/standalone/boot.S        -o boot.pakobj      # crt0
+pak objgen runtime/standalone/runtime.pk64  -o runtime.pakobj   # HAL
+pak objgen game.pk64             -o game.pakobj      # the game
+pak link boot.pakobj runtime.pakobj game.pakobj -o game.z64 --name GAME
 ```
 
 ## Why records instead of re-parsing assembly text
@@ -67,13 +67,13 @@ is a single source of truth and no fragile operand-string parsing.
 
 ```sh
 # .pk64 → relocatable object
-tclsh tcl/cli.tcl objgen game.pk64 -o game.pakobj
+pak objgen game.pk64 -o game.pakobj
 
 # object(s) → .z64
-python -m pak.tools.n64_link game.pakobj runtime.pakobj -o game.z64 --name GAME
+pak link boot.pakobj runtime.pakobj game.pakobj -o game.z64 --name GAME
 
 # or dump just the flat binary image
-python -m pak.tools.n64_link game.pakobj -o game.bin --emit-bin game.bin
+pak link boot.pakobj runtime.pakobj game.pakobj --emit-bin game.bin
 ```
 
 ## Object file format (`.pakobj`)
@@ -102,13 +102,55 @@ data 48656c6c 6f000000
 The encoder resolves PC-relative branches (`beq`/`bne` family) locally; absolute
 references (`la`, `j`/`jal`, `.word sym`) become relocations the linker patches.
 
-## Memory layout (matches `pak/runtime/n64.ld`)
+## Memory layout (matches `runtime/standalone/n64.ld`)
 
 * Base `0x80000400` (after the IPL3 stack reservation).
 * Section order: `.text` → align16 `.rodata` → align8 `.data` → align8 `.bss`.
 * `.bss` reserves address space but is not stored in the ROM image (boot.S
   zero-fills it at startup). `R_MIPS_HI16`/`LO16` use the standard `+0x8000`
   carry correction.
+
+## The RDP does the drawing
+
+Nothing is rasterized on the CPU. `rdpq_*` builds a display list of 64-bit RDP
+commands in uncached RDRAM at `0xA0271000` and hands it to the Display
+Processor by writing `DPC_START`/`DPC_END`, then polls `DPC_STATUS` until the
+pipe, command and DMA engines are all idle. Uncached KSEG1 means a CPU write
+lands in RDRAM immediately, so the DP reads exactly what was written with no
+cache-writeback step to get wrong.
+
+What the runtime drives:
+
+| Area | Commands |
+|------|----------|
+| Render target | `SET_COLOR_IMAGE`, `SET_Z_IMAGE`, `SET_SCISSOR` |
+| Modes | `SET_OTHER_MODES` (FILL / COPY / 1-cycle), `SET_COMBINE` |
+| Colour registers | fill, blend, fog, env, prim |
+| Fills | `FILL_RECTANGLE` in FILL cycle — four bytes per cycle |
+| Texturing | `SET_TEXTURE_IMAGE`, `SET_TILE`, `SET_TILE_SIZE`, `LOAD_TILE`, `LOAD_BLOCK`, `LOAD_TLUT`, `TEXTURE_RECTANGLE` |
+| Geometry | `TRIANGLE` (flat, edge coefficients in s15.16) |
+| Sync | `SYNC_PIPE`, `SYNC_TILE`, `SYNC_LOAD`, `SYNC_FULL` |
+
+A full-screen clear is one `FILL_RECTANGLE` instead of 76 800 uncached
+halfword stores.
+
+## How the hardware path is verified
+
+There is no N64 and no emulator in CI, so `tcl/tools/rdp_test.tcl` proves the
+encodings the only way that means anything: it compiles the runtime together
+with a driver program, **executes the resulting MIPS** in `tcl/mips_sim.tcl`,
+and reads the display list the runtime built out of simulated RDRAM. Every
+command word is compared against the RDP command reference, and the DP kick
+(`DPC_START`/`DPC_END`/`DPC_STATUS`) and the VI flip are checked too.
+
+It runs the whole pipeline — codegen, register allocation, the optimizer — so
+a miscompile shows up as a wrong command word rather than as a
+plausible-looking instruction stream. The optimized and unoptimized builds are
+both run and must agree.
+
+The simulator models the two registers the runtime spins on (`DPC_STATUS` and
+`VI_V_CURRENT`) via a preset that can return a sequence of values, so hardware
+wait loops terminate instead of hanging.
 
 ## Current limitations
 
@@ -117,5 +159,13 @@ references (`la`, `j`/`jal`, `.word sym`) become relocations the linker patches.
   is therefore correct but **not** delay-slot-optimized (the codegen emits
   explicit `nop`s in delay slots, which are valid under `.set noreorder`).
   Porting the optimizer to operate on records is a follow-up.
-* **FPU encodings.** COP1 ops (`add.s`, `cvt.*`, `mtc1`/`mfc1`) are encoded
-  best-effort and not yet golden-verified.
+* **Triangles are flat.** `rdpq.triangle` emits the edge-only command (0x08).
+  Gouraud shading, texture coordinates and Z-buffering need the shade, texture
+  and depth coefficient blocks, which are not generated yet.
+* **Tiles are unmasked.** `rdpq.set_tile` leaves the mask and shift fields
+  zero, which is wrap-with-no-mirroring. Power-of-two clamping and mirroring
+  need those fields exposed.
+* **FPU encodings.** COP1 ops (`add.s`/`sub.s`/`mul.s`/`div.s`, the
+  `mov`/`neg`/`abs`/`sqrt` unary group, `cvt.*`, the `c.<cond>.s` compare
+  family, `bc1t`/`bc1f`, `mtc1`/`mfc1`) all have golden encodings in
+  `tcl/tools/n64enc_test.tcl`.

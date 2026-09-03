@@ -1,0 +1,2 @@
+module math
+fn sq(x: i32) -> i32 { return x * x }

@@ -1,0 +1,1 @@
+static reg: volatile u32 = undefined

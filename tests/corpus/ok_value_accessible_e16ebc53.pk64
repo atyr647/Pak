@@ -1,0 +1,5 @@
+enum E: u8 { bad }
+fn get() -> Result(i32, E) { return ok(99) }
+entry {
+    let x = get() catch { 0 }
+}

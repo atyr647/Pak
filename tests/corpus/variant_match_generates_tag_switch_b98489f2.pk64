@@ -1,0 +1,10 @@
+variant Shape {
+    circle(f32)
+    square(f32)
+}
+fn area(s: Shape) -> f32 {
+    match s {
+        .circle => { return 1.0 }
+        .square => { return 2.0 }
+    }
+}

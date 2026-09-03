@@ -1,0 +1,3 @@
+struct Pair<T> { first: T
+second: T }
+           entry { let p: Pair<i32> = Pair<i32> { first: 1, second: 2 } }

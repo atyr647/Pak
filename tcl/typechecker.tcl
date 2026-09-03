@@ -228,14 +228,18 @@ oo::class create pak::TypeChecker {
     }
     destructor { $scope destroy }
 
+    # `node` supplies the location: pak::nodepos returns the position of the
+    # token the construct started on, or {0 0} for a synthesized node.
     method err {code msg node {hint ""}} {
+        lassign [pak::nodepos $node] line col
         lappend errors [dict create code $code message $msg hint $hint \
-            line 0 col 0 filename $filename severity error]
+            line $line col $col filename $filename severity error]
     }
     method warn {code msg node {hint ""}} {
         if {$no_style} return
+        lassign [pak::nodepos $node] line col
         lappend errors [dict create code $code message $msg hint $hint \
-            line 0 col 0 filename $filename severity warning]
+            line $line col $col filename $filename severity warning]
     }
 
     method check {decls} {

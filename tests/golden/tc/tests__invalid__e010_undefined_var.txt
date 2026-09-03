@@ -1,0 +1,1 @@
+(E010 error "unknown name 'undefined_var'" "declare it with 'let undefined_var = ...'")

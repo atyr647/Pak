@@ -1,0 +1,5 @@
+use n64.mem
+@no_alloc
+fn bad_fn() {
+    let p = mem.alloc(64)
+}

@@ -1,0 +1,5 @@
+struct Item { v: i32 }
+entry {
+    let mut pool: Pool(Item, 4) = Pool.init()
+    let p: *Item = pool.acquire()
+}

@@ -1,0 +1,5 @@
+comptime if (N64) {
+    fn platform() -> void {}
+} else {
+    fn platform() -> void {}
+}

@@ -1,0 +1,15 @@
+-- Transpiled from C by pak convert
+
+fn load_data(path: *mut i8, out: *mut i32) -> i32 {
+    let buf: *mut i8 = 0 as *mut i8
+    let result: i32 = 0
+    defer {
+        buf = 0 as *mut i8
+    }
+    buf = 0 as *mut i8
+    if !buf {
+    }
+    *out = 42
+    result = 1
+    return result
+}

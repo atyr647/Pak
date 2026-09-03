@@ -1,0 +1,1 @@
+(E301 error "non-exhaustive match on 'Dir'" "Add missing cases: .left, .right, or add a default: _ => {}")

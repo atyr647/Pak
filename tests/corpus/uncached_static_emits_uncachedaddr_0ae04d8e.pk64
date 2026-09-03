@@ -1,0 +1,2 @@
+@uncached
+static dma_buf: [4096]byte = undefined

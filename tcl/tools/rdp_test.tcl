@@ -1,0 +1,201 @@
+#!/usr/bin/env tclsh
+# tcl/tools/rdp_test.tcl — assert the standalone runtime emits correct RDP
+# commands, by running its own generated MIPS code.
+#
+# There is no N64 and no emulator here, so the check is done the only way that
+# proves anything: compile runtime/standalone/runtime.pk64 together with a
+# driver, execute the result in tcl/mips_sim.tcl, and read the display list the
+# runtime built out of simulated RDRAM. Every word is compared against the
+# encoding in the RDP command reference.
+#
+# This runs the whole path — codegen, register allocation, the optimizer — so a
+# miscompile shows up as a wrong command word, not as a plausible-looking
+# instruction stream.
+
+set HERE [file dirname [file normalize [info script]]]
+set REPO [file normalize [file join $HERE .. ..]]
+cd $REPO
+source [file join $REPO tcl mips_sim.tcl]
+
+set RUNTIME  runtime/standalone/runtime.pk64
+set DRIVER   tcl/tests/rdp/commands.pk64
+set DL_BASE  [expr {0xA0271000}]
+
+set ::pass 0
+set ::fail 0
+
+# A register the program wrote, as hex; "<unwritten>" if it never was.
+proc reg_hex {mem addr} {
+    if {![dict exists $mem $addr]} { return "<unwritten>" }
+    return [format %08X [dict get $mem $addr]]
+}
+
+proc ok {name got want} {
+    if {$got eq $want} {
+        incr ::pass; puts "ok    $name = $got"
+    } else {
+        incr ::fail; puts "FAIL  $name\n        got:  $got\n        want: $want"
+    }
+}
+
+# Build one source out of the runtime and the driver, lower it to MIPS, run it,
+# and return the words the run left in memory.
+proc run_driver {optimize} {
+    global RUNTIME DRIVER
+    set fh [open $RUNTIME r]; set rt [read $fh]; close $fh
+    set fh [open $DRIVER r];  set dr [read $fh]; close $fh
+    set combined [file join [file dirname [info script]] .. .. .rdp_combined.pk64]
+    set fh [open $combined w]; puts -nonewline $fh "$rt\n$dr"; close $fh
+
+    if {$optimize} {
+        set asm [exec [info nameofexecutable] tcl/cli.tcl explain --backend mips $combined]
+    } else {
+        set asm [exec [info nameofexecutable] tcl/tools/mips_dump.tcl $combined]
+    }
+    file delete $combined
+    # Model the two registers the runtime spins on: the DP reports idle, and
+    # the VI reports a line past the active region, so vi_wait_vblank returns.
+    set preset [dict create 0xA410000C 0 0xA4400010 {0x1E0 0x000}]
+    set r [pak::mips_sim_run $asm main 20000000 $preset]
+    return [dict get $r mem_w]
+}
+
+# The display list as a flat list of words, in the order the runtime wrote them.
+proc dl_words {mem} {
+    global DL_BASE
+    set out {}
+    for {set i 0} {$i < 512} {incr i} {
+        set a [expr {$DL_BASE + $i * 4}]
+        if {![dict exists $mem $a]} break
+        lappend out [format %08X [dict get $mem $a]]
+    }
+    return $out
+}
+
+# ── expected command stream ──────────────────────────────────────────────────
+# Derived by hand from the RDP command encodings; see the comments for the
+# field breakdown of each.
+set EXPECTED {
+    3F10013F 00200000
+    2D000000 005003C0
+    27000000 00000000
+    2F300000 00000000
+    37000000 F801F801
+    364FC3BC 00000000
+    360BC0FC 00040080
+    2D020020 004E03A0
+    27000000 00000000
+    2F200000 00000001
+    3D10001F 00300000
+    35101000 00000000
+    34000000 0007C07C
+    32000000 0007C07C
+    2420C144 001900C8
+    00000000 10000400
+    27000000 00000000
+    2F000000 00506040
+    3C887F10 88FCF279
+    3A000000 112233FF
+    39000000 445566FF
+    08000168 00500028
+    00640000 FFFF2493
+    000A0000 00006000
+    000A0000 00090000
+    27000000 00000000
+    28000000 00000000
+    26000000 00000000
+    29000000 00000000
+}
+
+set NOTES {
+    "SET_COLOR_IMAGE   RGBA/16bpp, width 320, fb at 0x00200000"
+    "SET_SCISSOR       (0,0)-(320,240) in 10.2"
+    "SYNC_PIPE         before the mode change"
+    "SET_OTHER_MODES   cycle_type = FILL (3)"
+    "SET_FILL_COLOR    0xFF0000FF -> RGBA5551 0xF801, twice"
+    "FILL_RECTANGLE    (0,0)-(320,240), inclusive corner 319/239"
+    "FILL_RECTANGLE    (16,32)-(48,64)"
+    "SET_SCISSOR       (8,8)-(312,232)"
+    "SYNC_PIPE         before the mode change"
+    "SET_OTHER_MODES   cycle_type = COPY (2), alpha_compare_en"
+    "SET_TEXTURE_IMAGE RGBA/16bpp, width 32, at 0x00300000"
+    "SET_TILE          tile 0, RGBA/16bpp, line 8, tmem 0"
+    "LOAD_TILE         tile 0, (0,0)-(32,32)"
+    "SET_TILE_SIZE     tile 0, (0,0)-(32,32)"
+    "TEXTURE_RECTANGLE tile 0, (100,50)-(132,82)"
+    "                  s/t = 0, dsdx = 4 texels/cycle, dtdy = 1"
+    "SYNC_PIPE         before the mode change"
+    "SET_OTHER_MODES   cycle_type = 1CYCLE, alpha blending"
+    "SET_COMBINE       texel passthrough"
+    "SET_PRIM_COLOR    0x112233FF"
+    "SET_BLEND_COLOR   0x445566FF"
+    "TRIANGLE          sorted (10,10) (100,20) (40,90); YL/YM/YH"
+    "                  XL / DxLDy   (lower minor edge)"
+    "                  XH / DxHDy   (major edge)"
+    "                  XM / DxMDy   (upper minor edge)"
+    "SYNC_PIPE"
+    "SYNC_TILE"
+    "SYNC_LOAD"
+    "SYNC_FULL         emitted by detach_show"
+}
+
+proc check_stream {label mem} {
+    global EXPECTED NOTES DL_BASE
+    set got [dl_words $mem]
+    set want {}
+    foreach w $EXPECTED { lappend want $w }
+    if {[llength $got] != [llength $want]} {
+        incr ::fail
+        puts "FAIL  $label: display list has [llength $got] words, expected [llength $want]"
+        puts "        got:  $got"
+        return
+    }
+    set bad 0
+    for {set i 0} {$i < [llength $want]} {incr i} {
+        if {[lindex $got $i] ne [lindex $want $i]} {
+            incr bad
+            set note [lindex $NOTES [expr {$i / 2}]]
+            puts "FAIL  $label +[format %03d [expr {$i*4}]] ($note)"
+            puts "        got:  [lindex $got $i]"
+            puts "        want: [lindex $want $i]"
+        }
+    }
+    if {$bad == 0} {
+        incr ::pass
+        puts "ok    $label: all [llength $want] command words match"
+    } else {
+        incr ::fail
+    }
+}
+
+puts "== RDP command stream (unoptimized) =="
+set mem_plain [run_driver 0]
+check_stream "unoptimized" $mem_plain
+
+puts ""
+puts "== RDP command stream (optimized) =="
+# The optimizer reorders instructions and fills delay slots. It must not change
+# what the RDP sees; a divergence here is a miscompile.
+set mem_opt [run_driver 1]
+check_stream "optimized" $mem_opt
+
+puts ""
+puts "== DP kick =="
+# detach_show hands the list to the DP: physical start/end addresses, and the
+# XBUS/freeze/flush clear bits so it reads RDRAM rather than RSP DMEM.
+set dpc_start  [expr {0xA4100000}]
+set dpc_end    [expr {0xA4100004}]
+set dpc_status [expr {0xA410000C}]
+set dl_len [expr {4 * [llength $EXPECTED]}]
+ok "DPC_START" [reg_hex $mem_plain $dpc_start] [format %08X 0x00271000]
+ok "DPC_END"   [reg_hex $mem_plain $dpc_end]   [format %08X [expr {0x00271000 + $dl_len}]]
+ok "DPC_STATUS clears xbus/freeze/flush" [reg_hex $mem_plain $dpc_status] 00000015
+
+puts ""
+puts "== VI flip =="
+# detach_show points the Video Interface at the buffer that was just drawn.
+ok "VI_ORIGIN" [reg_hex $mem_plain [expr {0xA4400004}]] 00200000
+
+puts ""
+puts "PASS=$::pass  FAIL=$::fail"
+if {$::fail > 0} { exit 1 }

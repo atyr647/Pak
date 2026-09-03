@@ -1,0 +1,4 @@
+union RegPair {
+    full: u32
+    half: u16
+}

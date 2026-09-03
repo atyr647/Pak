@@ -1,0 +1,937 @@
+-- pak/runtime/runtime.pk64 — N64 runtime HAL, written entirely in Pak.
+--
+-- Replaces the C runtime (vi.c, pak_hal.c) so a ROM can be built with no
+-- external MIPS toolchain: this file is compiled by the Pak MIPS backend,
+-- assembled by tcl/n64enc.tcl, and linked by pak/tools/n64_link.py.
+--
+-- Free functions emit bare symbol names (display_init, rdpq_fill_rectangle,
+-- memset, ...) matching the calls the codegen lowers game code into.
+--
+-- Framebuffers live in uncached RDRAM (KSEG1, 0xA02.....) so CPU writes are
+-- immediately visible to the Video Interface with no cache writeback.
+
+-- ── VI registers (uncached MMIO) ──────────────────────────────────────────
+const VI_CTRL: u32      = 0xA4400000
+const VI_ORIGIN: u32    = 0xA4400004
+const VI_WIDTH: u32     = 0xA4400008
+const VI_V_INTR: u32    = 0xA440000C
+const VI_V_CURRENT: u32 = 0xA4400010
+const VI_BURST: u32     = 0xA4400014
+const VI_V_SYNC: u32    = 0xA4400018
+const VI_H_SYNC: u32    = 0xA440001C
+const VI_LEAP: u32      = 0xA4400020
+const VI_H_START: u32   = 0xA4400024
+const VI_V_START: u32   = 0xA4400028
+const VI_V_BURST: u32   = 0xA440002C
+const VI_X_SCALE: u32   = 0xA4400030
+const VI_Y_SCALE: u32   = 0xA4400034
+
+const VI_CTRL_BLANK: u32 = 0x00000000
+const VI_CTRL_16BPP: u32 = 0x00003202   -- 16bpp RGBA5551, AA off, non-interlaced
+
+-- ── Framebuffers (uncached KSEG1; phys = addr & 0x00FFFFFF) ────────────────
+-- 320 x 240 x 2 bytes = 153600 (0x25800) bytes each.
+const SCREEN_W: i32  = 320
+const SCREEN_H: i32  = 240
+const FB_PIXELS: i32 = 76800            -- 320 * 240
+const FB0: u32 = 0xA0200000
+const FB1: u32 = 0xA0225800
+const FB2: u32 = 0xA024B000
+const NUM_BUFS: i32 = 3
+
+static g_draw: i32       = 1
+static g_shown: i32      = 0
+
+-- ── MMIO helpers ───────────────────────────────────────────────────────────
+fn vi_write(reg: u32, val: u32) {
+    let p: *volatile u32 = reg as *volatile u32
+    *p = val
+}
+
+fn vi_read(reg: u32) -> u32 {
+    let p: *volatile u32 = reg as *volatile u32
+    return *p
+}
+
+fn fb_addr(idx: i32) -> u32 {
+    if idx == 0 { return FB0 }
+    if idx == 1 { return FB1 }
+    return FB2
+}
+
+-- RGBA8888 -> RGBA5551 (matches the C runtime's color32_to_16).
+fn color32_to_16(c: u32) -> u16 {
+    let r5: u32 = (c >> 27) & 0x1F
+    let g5: u32 = (c >> 19) & 0x1F
+    let b5: u32 = (c >> 11) & 0x1F
+    return ((r5 << 11) | (g5 << 6) | (b5 << 1) | 1) as u16
+}
+
+fn fb_fill(base: u32, px: u16) {
+    let mut i: i32 = 0
+    while i < FB_PIXELS {
+        let p: *volatile u16 = (base + (i * 2) as u32) as *volatile u16
+        *p = px
+        i = i + 1
+    }
+}
+
+-- ── VI core ────────────────────────────────────────────────────────────────
+fn vi_init() {
+    vi_write(VI_CTRL,    VI_CTRL_BLANK)
+    vi_write(VI_ORIGIN,  FB0 & 0x00FFFFFF)
+    vi_write(VI_WIDTH,   SCREEN_W as u32)
+    vi_write(VI_V_INTR,  0x00000200)
+    vi_write(VI_V_CURRENT, 0x00000000)
+    vi_write(VI_BURST,   0x03E52239)
+    vi_write(VI_V_SYNC,  0x0000020D)
+    vi_write(VI_H_SYNC,  0x00000C15)
+    vi_write(VI_LEAP,    0x0C150C15)
+    vi_write(VI_H_START, 0x006C02EC)
+    vi_write(VI_V_START, 0x002501FF)
+    vi_write(VI_V_BURST, 0x000E0204)
+    vi_write(VI_X_SCALE, 0x00000200)
+    vi_write(VI_Y_SCALE, 0x00000400)
+    vi_write(VI_CTRL,    VI_CTRL_16BPP)
+
+    -- Clear all buffers to black.
+    fb_fill(FB0, 0x0000 as u16)
+    fb_fill(FB1, 0x0000 as u16)
+    fb_fill(FB2, 0x0000 as u16)
+}
+
+fn vi_wait_vblank() {
+    -- Wait until past the active region (line >= 480), then for the new frame.
+    loop {
+        let line: u32 = vi_read(VI_V_CURRENT) & 0x3FF
+        if line >= 0x1E0 { break }
+    }
+    loop {
+        let line: u32 = vi_read(VI_V_CURRENT) & 0x3FF
+        if line < 0x1E0 { break }
+    }
+}
+
+fn vi_show(fb: u32) {
+    vi_wait_vblank()
+    vi_write(VI_ORIGIN, fb & 0x00FFFFFF)
+    -- Advance the draw index, skipping the buffer now on screen.
+    if fb == FB0 { g_shown = 0 }
+    elif fb == FB1 { g_shown = 1 }
+    else { g_shown = 2 }
+    g_draw = (g_shown + 1) % NUM_BUFS
+}
+
+-- ── display API (called by generated game code) ────────────────────────────
+fn display_init(res: i32, bpp: i32, bufs: i32, gamma: i32, filters: i32) {
+    vi_init()
+}
+
+fn display_get() -> u32 {
+    return fb_addr(g_draw)
+}
+
+fn display_show(fb: u32) {
+    vi_show(fb)
+}
+
+fn display_close() {
+}
+
+-- ── SI (Serial Interface) controller ─────────────────────────────────────────
+const SI_DRAM_ADDR:      u32 = 0xA4800000
+const SI_PIF_ADDR_RD64B: u32 = 0xA4800004
+const SI_STATUS:         u32 = 0xA480000C
+const SI_PIF_ADDR_WR64B: u32 = 0xA4800010
+const PIF_RAM_PHYS:      u32 = 0x1FC007C0
+
+-- PIF command buffer: 64 bytes, 16-byte aligned so DMA is valid (E202).
+static g_pif_buf: [64]u8 @aligned(16)
+
+-- Button + controller state for port 0.
+struct ButtonState {
+    a:      bool
+    b:      bool
+    z:      bool
+    start:  bool
+    up:     bool
+    down:   bool
+    left:   bool
+    right:  bool
+    l:      bool
+    r:      bool
+    c_up:   bool
+    c_down: bool
+    c_left: bool
+    c_right: bool
+}
+
+struct ControllerState {
+    held:     *ButtonState
+    pressed:  *ButtonState
+    released: *ButtonState
+    stick_x:  i32
+    stick_y:  i32
+}
+
+static g_held_0:     ButtonState
+static g_pressed_0:  ButtonState
+static g_released_0: ButtonState
+static g_cs_0:       ControllerState
+
+-- D-cache helpers — inline asm uses $a0/$a1 directly (avoids the parameter
+-- save/load offset bug; prologue does not clobber argument registers).
+fn data_cache_hit_writeback(ptr: *u8, sz: i32) {
+    asm {
+        ".Ldcwb_1:"
+        "cache 0x19, 0($a0)"
+        "addiu $a0, $a0, 16"
+        "addiu $a1, $a1, -16"
+        "bgtz $a1, .Ldcwb_1"
+        "nop"
+        "sync"
+    }
+}
+
+fn data_cache_hit_invalidate(ptr: *u8, sz: i32) {
+    asm {
+        ".Ldciv_1:"
+        "cache 0x14, 0($a0)"
+        "addiu $a0, $a0, 16"
+        "addiu $a1, $a1, -16"
+        "bgtz $a1, .Ldciv_1"
+        "nop"
+    }
+}
+
+fn si_wait() {
+    loop {
+        let p: *volatile u32 = SI_STATUS as *volatile u32
+        let v: u32 = *p
+        if (v & 3) == 0 { break }
+    }
+}
+
+-- Initialise the ControllerState pointer fields for port 0.
+-- Uses *u32 index (element size = 4, which is correct for pointer-sized fields).
+fn joypad_init() {
+    let cs0: *u32 = &g_cs_0 as *u32
+    cs0[0] = (&g_held_0    as u32)
+    cs0[1] = (&g_pressed_0 as u32)
+    cs0[2] = (&g_released_0 as u32)
+}
+
+fn joypad_poll() {
+    -- Build PIF command buffer in g_pif_buf via volatile byte pointers.
+    -- Byte 0: tx_len=1, byte 1: rx_len=4, byte 2: cmd=0x01 (read controller).
+    -- Byte 7: 0xFE (end channels). Byte 63: 0x01 (execute PIF).
+    let b: u32 = &g_pif_buf as u32
+    let p0:  *volatile u8 = b        as *volatile u8; *p0  = 0x01 as u8
+    let p1:  *volatile u8 = (b + 1)  as *volatile u8; *p1  = 0x04 as u8
+    let p2:  *volatile u8 = (b + 2)  as *volatile u8; *p2  = 0x01 as u8
+    let p7:  *volatile u8 = (b + 7)  as *volatile u8; *p7  = 0xFE as u8
+    let p63: *volatile u8 = (b + 63) as *volatile u8; *p63 = 0x01 as u8
+
+    -- Flush command to memory before SI DMA reads it.
+    data_cache_hit_writeback(&g_pif_buf as *u8, 64)
+
+    -- SI DMA: CPU → PIF RAM (send command).
+    let phys: u32 = b & 0x1FFFFFFF
+    let p_dram: *volatile u32 = SI_DRAM_ADDR      as *volatile u32; *p_dram = phys
+    let p_wr:   *volatile u32 = SI_PIF_ADDR_WR64B as *volatile u32; *p_wr   = PIF_RAM_PHYS
+    si_wait()
+
+    -- SI DMA: PIF RAM → CPU (read response).
+    let p_rd: *volatile u32 = SI_PIF_ADDR_RD64B as *volatile u32; *p_rd = PIF_RAM_PHYS
+    si_wait()
+
+    -- Invalidate D-cache so CPU reads the fresh DMA result.
+    data_cache_hit_invalidate(&g_pif_buf as *u8, 64)
+
+    -- Response: bytes 3=buttons_hi, 4=buttons_lo, 5=stick_x, 6=stick_y.
+    let rb3: *volatile u8 = (b + 3) as *volatile u8
+    let rb4: *volatile u8 = (b + 4) as *volatile u8
+    let rb5: *volatile u8 = (b + 5) as *volatile u8
+    let rb6: *volatile u8 = (b + 6) as *volatile u8
+    let bhi: u32 = (*rb3) as u32
+    let blo: u32 = (*rb4) as u32
+    let cur: u32 = (bhi << 8) | blo
+    let sx:  i32 = (*rb5) as i32
+    let sy:  i32 = (*rb6) as i32
+
+    -- Read previous held state per-button (each field = one bool byte, 0 or 1).
+    let hb: u32 = &g_held_0 as u32
+    let prev_a:     u32 = (*((hb + 0)  as *volatile u8)) as u32
+    let prev_b:     u32 = (*((hb + 1)  as *volatile u8)) as u32
+    let prev_z:     u32 = (*((hb + 2)  as *volatile u8)) as u32
+    let prev_start: u32 = (*((hb + 3)  as *volatile u8)) as u32
+    let prev_up:    u32 = (*((hb + 4)  as *volatile u8)) as u32
+    let prev_down:  u32 = (*((hb + 5)  as *volatile u8)) as u32
+    let prev_left:  u32 = (*((hb + 6)  as *volatile u8)) as u32
+    let prev_right: u32 = (*((hb + 7)  as *volatile u8)) as u32
+    let prev_l:     u32 = (*((hb + 8)  as *volatile u8)) as u32
+    let prev_r:     u32 = (*((hb + 9)  as *volatile u8)) as u32
+    let prev_cup:   u32 = (*((hb + 10) as *volatile u8)) as u32
+    let prev_cdn:   u32 = (*((hb + 11) as *volatile u8)) as u32
+    let prev_clt:   u32 = (*((hb + 12) as *volatile u8)) as u32
+    let prev_crt:   u32 = (*((hb + 13) as *volatile u8)) as u32
+
+    -- Extract current button states as 0/1 values.
+    let cur_a:     u32 = ((cur & 0x8000) != 0) as u32
+    let cur_b:     u32 = ((cur & 0x4000) != 0) as u32
+    let cur_z:     u32 = ((cur & 0x2000) != 0) as u32
+    let cur_start: u32 = ((cur & 0x1000) != 0) as u32
+    let cur_up:    u32 = ((cur & 0x0800) != 0) as u32
+    let cur_down:  u32 = ((cur & 0x0400) != 0) as u32
+    let cur_left:  u32 = ((cur & 0x0200) != 0) as u32
+    let cur_right: u32 = ((cur & 0x0100) != 0) as u32
+    let cur_l:     u32 = ((cur & 0x0020) != 0) as u32
+    let cur_r:     u32 = ((cur & 0x0010) != 0) as u32
+    let cur_cup:   u32 = ((cur & 0x0008) != 0) as u32
+    let cur_cdn:   u32 = ((cur & 0x0004) != 0) as u32
+    let cur_clt:   u32 = ((cur & 0x0002) != 0) as u32
+    let cur_crt:   u32 = ((cur & 0x0001) != 0) as u32
+
+    -- Write g_held_0.
+    *((hb + 0)  as *volatile u8) = cur_a     as u8
+    *((hb + 1)  as *volatile u8) = cur_b     as u8
+    *((hb + 2)  as *volatile u8) = cur_z     as u8
+    *((hb + 3)  as *volatile u8) = cur_start as u8
+    *((hb + 4)  as *volatile u8) = cur_up    as u8
+    *((hb + 5)  as *volatile u8) = cur_down  as u8
+    *((hb + 6)  as *volatile u8) = cur_left  as u8
+    *((hb + 7)  as *volatile u8) = cur_right as u8
+    *((hb + 8)  as *volatile u8) = cur_l     as u8
+    *((hb + 9)  as *volatile u8) = cur_r     as u8
+    *((hb + 10) as *volatile u8) = cur_cup   as u8
+    *((hb + 11) as *volatile u8) = cur_cdn   as u8
+    *((hb + 12) as *volatile u8) = cur_clt   as u8
+    *((hb + 13) as *volatile u8) = cur_crt   as u8
+
+    -- Write g_pressed_0: pressed = (cur=1) & (prev=0) = cur & (1-prev).
+    -- For single-bit 0/1 values this is equivalent to cur & ~prev.
+    let pb: u32 = &g_pressed_0 as u32
+    *((pb + 0)  as *volatile u8) = (cur_a     & (1 - prev_a))     as u8
+    *((pb + 1)  as *volatile u8) = (cur_b     & (1 - prev_b))     as u8
+    *((pb + 2)  as *volatile u8) = (cur_z     & (1 - prev_z))     as u8
+    *((pb + 3)  as *volatile u8) = (cur_start & (1 - prev_start)) as u8
+    *((pb + 4)  as *volatile u8) = (cur_up    & (1 - prev_up))    as u8
+    *((pb + 5)  as *volatile u8) = (cur_down  & (1 - prev_down))  as u8
+    *((pb + 6)  as *volatile u8) = (cur_left  & (1 - prev_left))  as u8
+    *((pb + 7)  as *volatile u8) = (cur_right & (1 - prev_right)) as u8
+    *((pb + 8)  as *volatile u8) = (cur_l     & (1 - prev_l))     as u8
+    *((pb + 9)  as *volatile u8) = (cur_r     & (1 - prev_r))     as u8
+    *((pb + 10) as *volatile u8) = (cur_cup   & (1 - prev_cup))   as u8
+    *((pb + 11) as *volatile u8) = (cur_cdn   & (1 - prev_cdn))   as u8
+    *((pb + 12) as *volatile u8) = (cur_clt   & (1 - prev_clt))   as u8
+    *((pb + 13) as *volatile u8) = (cur_crt   & (1 - prev_crt))   as u8
+
+    -- Write g_released_0: released = (cur=0) & (prev=1) = (1-cur) & prev.
+    let rbase: u32 = &g_released_0 as u32
+    *((rbase + 0)  as *volatile u8) = ((1 - cur_a)     & prev_a)     as u8
+    *((rbase + 1)  as *volatile u8) = ((1 - cur_b)     & prev_b)     as u8
+    *((rbase + 2)  as *volatile u8) = ((1 - cur_z)     & prev_z)     as u8
+    *((rbase + 3)  as *volatile u8) = ((1 - cur_start) & prev_start) as u8
+    *((rbase + 4)  as *volatile u8) = ((1 - cur_up)    & prev_up)    as u8
+    *((rbase + 5)  as *volatile u8) = ((1 - cur_down)  & prev_down)  as u8
+    *((rbase + 6)  as *volatile u8) = ((1 - cur_left)  & prev_left)  as u8
+    *((rbase + 7)  as *volatile u8) = ((1 - cur_right) & prev_right) as u8
+    *((rbase + 8)  as *volatile u8) = ((1 - cur_l)     & prev_l)     as u8
+    *((rbase + 9)  as *volatile u8) = ((1 - cur_r)     & prev_r)     as u8
+    *((rbase + 10) as *volatile u8) = ((1 - cur_cup)   & prev_cup)   as u8
+    *((rbase + 11) as *volatile u8) = ((1 - cur_cdn)   & prev_cdn)   as u8
+    *((rbase + 12) as *volatile u8) = ((1 - cur_clt)   & prev_clt)   as u8
+    *((rbase + 13) as *volatile u8) = ((1 - cur_crt)   & prev_crt)   as u8
+
+    -- Update stick axes in g_cs_0 at offsets 12 and 16.
+    let cs_base: u32 = &g_cs_0 as u32
+    let p_sx: *volatile i32 = (cs_base + 12) as *volatile i32; *p_sx = sx
+    let p_sy: *volatile i32 = (cs_base + 16) as *volatile i32; *p_sy = sy
+}
+
+fn joypad_get_status(port: i32) -> *ControllerState {
+    return &g_cs_0 as *ControllerState
+}
+
+-- ── RDP (Display Processor) ─────────────────────────────────────────────────
+-- Commands are built into a display list in uncached RDRAM and handed to the
+-- DP by writing DPC_START/DPC_END. The CPU never touches pixels: fills, copies,
+-- textured rectangles and triangles are all done by the rasterizer.
+--
+-- The list lives in KSEG1 so a CPU write lands in RDRAM immediately and the DP
+-- reads exactly what was written, with no cache writeback step to get wrong.
+
+const DPC_START:   u32 = 0xA4100000
+const DPC_END:     u32 = 0xA4100004
+const DPC_CURRENT: u32 = 0xA4100008
+const DPC_STATUS:  u32 = 0xA410000C
+
+-- DPC_STATUS write bits (clear/set pairs).
+const DPC_CLR_XBUS:  u32 = 0x0001
+const DPC_CLR_FREEZE: u32 = 0x0004
+const DPC_CLR_FLUSH: u32 = 0x0010
+
+-- DPC_STATUS read bits.
+const DPC_PIPE_BUSY: u32 = 0x0020
+const DPC_CMD_BUSY:  u32 = 0x0040
+const DPC_DMA_BUSY:  u32 = 0x0100
+
+-- Display list: 8 KiB (1024 commands) of uncached RDRAM just past FB2.
+const DL_BASE:  u32 = 0xA0271000
+const DL_PHYS:  u32 = 0x00271000
+const DL_BYTES: u32 = 8192
+
+static g_dl_off: u32 = 0        -- write cursor, bytes from DL_BASE
+
+-- RDP command opcodes.
+const RDP_TRI_FILL:        u32 = 0x08
+const RDP_TEXTURE_RECT:    u32 = 0x24
+const RDP_SYNC_LOAD:       u32 = 0x26
+const RDP_SYNC_PIPE:       u32 = 0x27
+const RDP_SYNC_TILE:       u32 = 0x28
+const RDP_SYNC_FULL:       u32 = 0x29
+const RDP_SET_SCISSOR:     u32 = 0x2D
+const RDP_SET_OTHER_MODES: u32 = 0x2F
+const RDP_LOAD_TLUT:       u32 = 0x30
+const RDP_SET_TILE_SIZE:   u32 = 0x32
+const RDP_LOAD_BLOCK:      u32 = 0x33
+const RDP_LOAD_TILE:       u32 = 0x34
+const RDP_SET_TILE:        u32 = 0x35
+const RDP_FILL_RECT:       u32 = 0x36
+const RDP_SET_FILL_COLOR:  u32 = 0x37
+const RDP_SET_FOG_COLOR:   u32 = 0x38
+const RDP_SET_BLEND_COLOR: u32 = 0x39
+const RDP_SET_PRIM_COLOR:  u32 = 0x3A
+const RDP_SET_ENV_COLOR:   u32 = 0x3B
+const RDP_SET_COMBINE:     u32 = 0x3C
+const RDP_SET_TEX_IMAGE:   u32 = 0x3D
+const RDP_SET_Z_IMAGE:     u32 = 0x3E
+const RDP_SET_COLOR_IMAGE: u32 = 0x3F
+
+-- Cycle types, as they sit in SET_OTHER_MODES bits 53:52 (w0 bits 21:20).
+const CYCLE_1CYCLE: u32 = 0
+const CYCLE_2CYCLE: u32 = 1
+const CYCLE_COPY:   u32 = 2
+const CYCLE_FILL:   u32 = 3
+
+static g_current_fb: u32 = 0
+static g_fill_color: u16 = 0xFFFF
+
+-- ── display list plumbing ──────────────────────────────────────────────────
+
+fn dl_reset() {
+    g_dl_off = 0
+}
+
+-- Hand the pending commands to the DP and wait for it to drain. The DP reads
+-- physical addresses, so the KSEG1 alias is masked off.
+fn dl_submit() {
+    if g_dl_off == 0 { return }
+    let len: u32 = g_dl_off
+    g_dl_off = 0
+
+    -- Take the DP out of XBUS mode (it reads RDRAM, not RSP DMEM) and make
+    -- sure it is neither frozen nor flushing before pointing it at the list.
+    vi_write(DPC_STATUS, DPC_CLR_XBUS | DPC_CLR_FREEZE | DPC_CLR_FLUSH)
+    vi_write(DPC_START, DL_PHYS)
+    vi_write(DPC_END, DL_PHYS + len)
+
+    loop {
+        let st: u32 = vi_read(DPC_STATUS)
+        if (st & (DPC_PIPE_BUSY | DPC_CMD_BUSY | DPC_DMA_BUSY)) == 0 { break }
+    }
+}
+
+-- Append one 64-bit command. A full buffer is submitted first, which is safe
+-- because every command is self-contained once the DP has seen it.
+fn dl_cmd(w0: u32, w1: u32) {
+    if g_dl_off + 8 > DL_BYTES { dl_submit() }
+    let p0: *volatile u32 = (DL_BASE + g_dl_off) as *volatile u32
+    *p0 = w0
+    let p1: *volatile u32 = (DL_BASE + g_dl_off + 4) as *volatile u32
+    *p1 = w1
+    g_dl_off = g_dl_off + 8
+}
+
+fn dl_word(w: u32) {
+    if g_dl_off + 4 > DL_BYTES { dl_submit() }
+    let p: *volatile u32 = (DL_BASE + g_dl_off) as *volatile u32
+    *p = w
+    g_dl_off = g_dl_off + 4
+}
+
+-- Screen coordinate -> the RDP's 10.2 fixed point, clamped to the 12-bit field.
+fn to_fx102(v: i32) -> u32 {
+    let mut x: i32 = v
+    if x < 0 { x = 0 }
+    if x > 1023 { x = 1023 }
+    return (x * 4) as u32
+}
+
+-- ── surface + mode state ───────────────────────────────────────────────────
+
+fn rdpq_init() {
+    dl_reset()
+    vi_write(DPC_STATUS, DPC_CLR_XBUS | DPC_CLR_FREEZE | DPC_CLR_FLUSH)
+}
+
+fn rdpq_close() {
+    dl_submit()
+}
+
+-- SET_COLOR_IMAGE: format (RGBA=0), size (16bpp=2), width-1, physical address.
+fn rdpq_set_color_image(addr: u32, fmt: u32, size: u32, width: i32) {
+    let wm1: u32 = (width - 1) as u32 & 0x3FF
+    let w0: u32 = (RDP_SET_COLOR_IMAGE << 24) | (fmt << 21) | (size << 19) | wm1
+    dl_cmd(w0, addr & 0x00FFFFFF)
+}
+
+fn rdpq_set_z_image(addr: u32) {
+    dl_cmd(RDP_SET_Z_IMAGE << 24, addr & 0x00FFFFFF)
+}
+
+fn rdpq_set_scissor(x0: i32, y0: i32, x1: i32, y1: i32) {
+    let w0: u32 = (RDP_SET_SCISSOR << 24) | (to_fx102(x0) << 12) | to_fx102(y0)
+    let w1: u32 = (to_fx102(x1) << 12) | to_fx102(y1)
+    dl_cmd(w0, w1)
+}
+
+fn rdpq_set_other_modes_raw(hi: u32, lo: u32) {
+    dl_cmd((RDP_SET_OTHER_MODES << 24) | (hi & 0x00FFFFFF), lo)
+}
+
+fn rdpq_set_combiner_raw(hi: u32, lo: u32) {
+    dl_cmd((RDP_SET_COMBINE << 24) | (hi & 0x00FFFFFF), lo)
+}
+
+fn rdpq_attach(fb: u32) {
+    g_current_fb = fb
+    rdpq_set_color_image(fb, 0, 2, SCREEN_W)
+    rdpq_set_scissor(0, 0, SCREEN_W, SCREEN_H)
+}
+
+fn rdpq_attach_clear(fb: u32, color: u32) {
+    rdpq_attach(fb)
+    rdpq_set_mode_fill(color)
+    rdpq_fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+}
+
+fn rdpq_detach() {
+    dl_cmd(RDP_SYNC_FULL << 24, 0)
+    dl_submit()
+    g_current_fb = 0
+}
+
+fn rdpq_detach_show() {
+    let fb: u32 = g_current_fb
+    rdpq_detach()
+    if fb != 0 {
+        vi_show(fb)
+    }
+}
+
+-- ── render modes ───────────────────────────────────────────────────────────
+
+-- FILL cycle: the rasterizer writes the fill colour straight out, four bytes
+-- (two 16bpp pixels) per cycle. This is what makes a clear cost microseconds
+-- instead of a CPU loop over 76 800 uncached halfword stores.
+fn rdpq_set_mode_fill(color: u32) {
+    dl_cmd(RDP_SYNC_PIPE << 24, 0)
+    rdpq_set_other_modes_raw(CYCLE_FILL << 20, 0)
+    rdpq_set_fill_color(color)
+}
+
+-- COPY cycle: four texels per cycle, no filtering or blending. The fast path
+-- for opaque sprite blits.
+fn rdpq_set_mode_copy() {
+    dl_cmd(RDP_SYNC_PIPE << 24, 0)
+    -- alpha_compare_en (bit 0) so fully transparent texels are dropped.
+    rdpq_set_other_modes_raw(CYCLE_COPY << 20, 0x00000001)
+}
+
+-- 1-cycle mode with the combiner passing the texel straight through and the
+-- blender doing source-alpha over the framebuffer.
+--
+-- Blender: (P * A + M * B) / (A + B) with P = combined colour (0),
+-- A = combined alpha (0), M = memory colour (1), B = 1-A (0). The pair of
+-- fields is set for both blender cycles because 1-cycle mode still reads the
+-- second cycle's mux on some paths.
+fn rdpq_set_mode_standard() {
+    dl_cmd(RDP_SYNC_PIPE << 24, 0)
+    let blend: u32 = (1 << 22) | (1 << 20)
+    -- force_blend (14) | alpha_cvg_select (13) | image_read_en (6)
+    rdpq_set_other_modes_raw(CYCLE_1CYCLE << 20, blend | 0x00006040)
+    -- Combiner (A-B)*C+D with A=B=C=0 and D=TEX0, for colour and alpha, in
+    -- both cycles: sub_A=0, sub_B=0, mul=0, add=TEX0.
+    rdpq_set_combiner_raw(0x00887F10, 0x88FCF279)
+}
+
+-- ── colour registers ───────────────────────────────────────────────────────
+
+fn rdpq_set_fill_color(color: u32) {
+    let px: u32 = color32_to_16(color) as u32
+    g_fill_color = px as u16
+    -- In 16bpp fill mode the 32-bit register supplies two adjacent pixels.
+    dl_cmd(RDP_SET_FILL_COLOR << 24, (px << 16) | px)
+}
+
+fn rdpq_set_blend_color(color: u32) {
+    dl_cmd(RDP_SET_BLEND_COLOR << 24, color)
+}
+
+fn rdpq_set_fog_color(color: u32) {
+    dl_cmd(RDP_SET_FOG_COLOR << 24, color)
+}
+
+fn rdpq_set_env_color(color: u32) {
+    dl_cmd(RDP_SET_ENV_COLOR << 24, color)
+}
+
+fn rdpq_set_prim_color(color: u32) {
+    dl_cmd(RDP_SET_PRIM_COLOR << 24, color)
+}
+
+-- ── primitives ─────────────────────────────────────────────────────────────
+
+-- FILL_RECTANGLE takes an inclusive rectangle; the API bounds are exclusive,
+-- so the lower-right corner is pulled in by one pixel.
+fn rdpq_fill_rectangle(x0: i32, y0: i32, x1: i32, y1: i32) {
+    if x1 <= x0 { return }
+    if y1 <= y0 { return }
+    let w0: u32 = (RDP_FILL_RECT << 24) | (to_fx102(x1 - 1) << 12) | to_fx102(y1 - 1)
+    let w1: u32 = (to_fx102(x0) << 12) | to_fx102(y0)
+    dl_cmd(w0, w1)
+}
+
+-- ── texturing ──────────────────────────────────────────────────────────────
+
+fn rdpq_set_texture_image(addr: u32, fmt: u32, size: u32, width: i32) {
+    let wm1: u32 = (width - 1) as u32 & 0x3FF
+    let w0: u32 = (RDP_SET_TEX_IMAGE << 24) | (fmt << 21) | (size << 19) | wm1
+    dl_cmd(w0, addr & 0x00FFFFFF)
+}
+
+-- SET_TILE describes one of the eight tile descriptors: where in TMEM the
+-- texels live, how wide a line is, and how the S/T axes wrap.
+fn rdpq_set_tile(tile: u32, fmt: u32, size: u32, line: u32, tmem_addr: u32, palette: u32) {
+    let lt: u32 = ((line & 0x1FF) << 9) | (tmem_addr & 0x1FF)
+    let w0: u32 = (RDP_SET_TILE << 24) | (fmt << 21) | (size << 19) | lt
+    let w1: u32 = ((tile & 7) << 24) | ((palette & 0xF) << 20)
+    dl_cmd(w0, w1)
+}
+
+fn rdpq_set_tile_size(tile: u32, s0: i32, t0: i32, s1: i32, t1: i32) {
+    let w0: u32 = (RDP_SET_TILE_SIZE << 24) | (to_fx102(s0) << 12) | to_fx102(t0)
+    let w1: u32 = ((tile & 7) << 24) | (to_fx102(s1 - 1) << 12) | to_fx102(t1 - 1)
+    dl_cmd(w0, w1)
+}
+
+fn rdpq_load_tile(tile: u32, s0: i32, t0: i32, s1: i32, t1: i32) {
+    let w0: u32 = (RDP_LOAD_TILE << 24) | (to_fx102(s0) << 12) | to_fx102(t0)
+    let w1: u32 = ((tile & 7) << 24) | (to_fx102(s1 - 1) << 12) | to_fx102(t1 - 1)
+    dl_cmd(w0, w1)
+}
+
+fn rdpq_load_block(tile: u32, s0: u32, t0: u32, texels: u32, dxt: u32) {
+    let w0: u32 = (RDP_LOAD_BLOCK << 24) | ((s0 & 0xFFF) << 12) | (t0 & 0xFFF)
+    let w1: u32 = ((tile & 7) << 24) | (((texels - 1) & 0xFFF) << 12) | (dxt & 0xFFF)
+    dl_cmd(w0, w1)
+}
+
+fn rdpq_load_tlut(tile: u32, first: u32, count: u32) {
+    let w0: u32 = (RDP_LOAD_TLUT << 24) | ((first * 4) << 12)
+    let w1: u32 = ((tile & 7) << 24) | (((first + count - 1) * 4) << 12)
+    dl_cmd(w0, w1)
+}
+
+-- TEXTURE_RECTANGLE is four words: the rectangle, then the texture coordinate
+-- at its top-left plus the per-pixel S and T steps, both s10.5.
+fn rdpq_texture_rectangle_scaled(tile: u32, x0: i32, y0: i32, x1: i32, y1: i32,
+                                 s: i32, t: i32, dsdx: i32, dtdy: i32) {
+    if x1 <= x0 { return }
+    if y1 <= y0 { return }
+    let w0: u32 = (RDP_TEXTURE_RECT << 24) | (to_fx102(x1 - 1) << 12) | to_fx102(y1 - 1)
+    let w1: u32 = ((tile & 7) << 24) | (to_fx102(x0) << 12) | to_fx102(y0)
+    dl_cmd(w0, w1)
+    let w2: u32 = (((s * 32) as u32 & 0xFFFF) << 16) | ((t * 32) as u32 & 0xFFFF)
+    let w3: u32 = ((dsdx as u32 & 0xFFFF) << 16) | (dtdy as u32 & 0xFFFF)
+    dl_cmd(w2, w3)
+}
+
+-- 1:1 blit: one texel per pixel. In COPY cycle the S step is four texels per
+-- cycle, which the RDP expects as 4<<10 rather than 1<<10.
+fn rdpq_texture_rectangle(tile: u32, x0: i32, y0: i32, x1: i32, y1: i32, s: i32, t: i32) {
+    rdpq_texture_rectangle_scaled(tile, x0, y0, x1, y1, s, t, 4096, 1024)
+}
+
+-- ── triangles ──────────────────────────────────────────────────────────────
+
+-- Flat (edge-only) triangle. The RDP wants the three vertices sorted by Y and
+-- described as three edges: the "major" edge spanning top to bottom, and the
+-- two "minor" edges that meet at the middle vertex.
+--
+-- X positions and slopes are s15.16; Y positions are 11.2.
+fn rdp_edge_slope(dx: i32, dy: i32) -> i32 {
+    if dy == 0 { return 0 }
+    return (dx * 65536) / dy
+}
+
+fn rdpq_triangle(x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
+    -- Sort the three vertices by Y (ya <= yb <= yc).
+    let mut xa: i32 = x0
+    let mut ya: i32 = y0
+    let mut xb: i32 = x1
+    let mut yb: i32 = y1
+    let mut xc: i32 = x2
+    let mut yc: i32 = y2
+
+    if yb < ya {
+        let tx: i32 = xa; let ty: i32 = ya
+        xa = xb; ya = yb; xb = tx; yb = ty
+    }
+    if yc < ya {
+        let tx: i32 = xa; let ty: i32 = ya
+        xa = xc; ya = yc; xc = tx; yc = ty
+    }
+    if yc < yb {
+        let tx: i32 = xb; let ty: i32 = yb
+        xb = xc; yb = yc; xc = tx; yc = ty
+    }
+
+    -- Degenerate: no vertical extent, nothing to rasterize.
+    if ya == yc { return }
+
+    -- Which side the major edge falls on. Comparing the two cross-product
+    -- terms avoids forming the product's sign separately.
+    let mut lft: u32 = 0
+    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+
+    -- Major edge spans the full height; the minor edges meet at the middle.
+    let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
+    let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
+    let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
+
+    let w0: u32 = (RDP_TRI_FILL << 24) | (lft << 23) | to_fx102(yc)
+    let w1: u32 = (to_fx102(yb) << 16) | to_fx102(ya)
+    dl_cmd(w0, w1)
+    dl_cmd((xb * 65536) as u32, dxldy as u32)
+    dl_cmd((xa * 65536) as u32, dxhdy as u32)
+    dl_cmd((xa * 65536) as u32, dxmdy as u32)
+}
+
+-- ── syncs ──────────────────────────────────────────────────────────────────
+
+-- SYNC_FULL is the only sync that also drains the pipe, so it submits.
+fn rdpq_sync_full() {
+    dl_cmd(RDP_SYNC_FULL << 24, 0)
+    dl_submit()
+}
+
+fn rdpq_sync_pipe() {
+    dl_cmd(RDP_SYNC_PIPE << 24, 0)
+}
+
+fn rdpq_sync_tile() {
+    dl_cmd(RDP_SYNC_TILE << 24, 0)
+}
+
+fn rdpq_sync_load() {
+    dl_cmd(RDP_SYNC_LOAD << 24, 0)
+}
+
+-- ── libc-style memory helpers (no libc in the standalone build) ─────────────
+fn memset(dst: *u8, val: i32, n: i32) -> *u8 {
+    let b: u8 = (val & 0xFF) as u8
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = b
+        i = i + 1
+    }
+    return dst
+}
+
+fn memcpy(dst: *u8, src: *u8, n: i32) -> *u8 {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = src[i]
+        i = i + 1
+    }
+    return dst
+}
+
+-- ── Timer (COP0 Count) ──────────────────────────────────────────────────────
+-- The VR4300's Count register increments at half the CPU clock: 93.75 MHz / 2.
+-- Reading it needs `mfc0`, which Pak cannot express, so the asm block parks the
+-- value in a static and the function returns that.
+const TICKS_PER_SECOND: u32 = 46875000
+
+static g_ticks_tmp: u32 = 0
+static g_last_ticks: u32 = 0
+
+fn timer_init() {
+    -- Count runs from reset; nothing to set up. Seed the delta baseline.
+    g_last_ticks = get_ticks()
+}
+
+fn get_ticks() -> u32 {
+    asm {
+        "mfc0 $t0, $9"
+        "la $t1, g_ticks_tmp"
+        "sw $t0, 0($t1)"
+    }
+    return g_ticks_tmp
+}
+
+-- Seconds since the previous call. Count wraps every ~91 s; unsigned
+-- subtraction gives the right delta across the wrap.
+fn _pak_delta_time() -> f32 {
+    let now: u32 = get_ticks()
+    let delta: u32 = now - g_last_ticks
+    g_last_ticks = now
+    return (delta as f32) / (TICKS_PER_SECOND as f32)
+}
+
+-- ── PI DMA (cartridge <-> RDRAM) ────────────────────────────────────────────
+const PI_DRAM_ADDR: u32 = 0xA4600000
+const PI_CART_ADDR: u32 = 0xA4600004
+const PI_RD_LEN:    u32 = 0xA4600008
+const PI_WR_LEN:    u32 = 0xA460000C
+const PI_STATUS:    u32 = 0xA4600010
+
+const PI_STATUS_DMA_BUSY: u32 = 0x01
+const PI_STATUS_IO_BUSY:  u32 = 0x02
+const PI_STATUS_CLR_INTR: u32 = 0x02
+
+fn dma_wait() {
+    loop {
+        let st: u32 = vi_read(PI_STATUS)
+        if (st & (PI_STATUS_DMA_BUSY | PI_STATUS_IO_BUSY)) == 0 { break }
+    }
+}
+
+fn data_cache_hit_writeback_invalidate(ptr: *u8, sz: i32) {
+    data_cache_hit_writeback(ptr, sz)
+    data_cache_hit_invalidate(ptr, sz)
+}
+
+-- Cartridge -> RDRAM. PI_WR_LEN is the one that writes *to* RDRAM; the length
+-- register takes one less than the byte count. The caller is responsible for
+-- cache maintenance around this (the checker enforces it: E201/E202).
+fn dma_read(dst: *u8, cart: u32, len: i32) {
+    dma_wait()
+    vi_write(PI_STATUS, PI_STATUS_CLR_INTR)
+    vi_write(PI_DRAM_ADDR, (dst as u32) & 0x00FFFFFF)
+    vi_write(PI_CART_ADDR, cart)
+    vi_write(PI_WR_LEN, (len - 1) as u32)
+    dma_wait()
+}
+
+-- RDRAM -> cartridge (SRAM / FlashRAM carts). PI_RD_LEN reads *from* RDRAM.
+fn dma_write(src: *u8, cart: u32, len: i32) {
+    dma_wait()
+    vi_write(PI_STATUS, PI_STATUS_CLR_INTR)
+    vi_write(PI_DRAM_ADDR, (src as u32) & 0x00FFFFFF)
+    vi_write(PI_CART_ADDR, cart)
+    vi_write(PI_RD_LEN, (len - 1) as u32)
+    dma_wait()
+}
+
+-- ── Heap (bump allocator) ───────────────────────────────────────────────────
+-- Cached RDRAM above the framebuffers and the display list, below the stack.
+-- Freeing is a no-op: a game that needs reuse should use an arena.
+const HEAP_BASE:  u32 = 0x80280000
+const HEAP_LIMIT: u32 = 0x803C0000
+
+static g_heap_ptr: u32 = 0
+
+fn __pak_alloc(size: i32) -> *u8 {
+    if g_heap_ptr == 0 { g_heap_ptr = HEAP_BASE }
+    let aligned: u32 = ((size as u32) + 7) & 0xFFFFFFF8
+    if g_heap_ptr + aligned > HEAP_LIMIT { return 0 as *u8 }
+    let p: u32 = g_heap_ptr
+    g_heap_ptr = g_heap_ptr + aligned
+    return p as *u8
+}
+
+fn __pak_free(p: *u8) {
+}
+
+-- ── Fixed point ─────────────────────────────────────────────────────────────
+-- fix16.16 divide: (a << 16) / b, with the shift done in 64-bit-free steps so
+-- the intermediate does not overflow for the usual operand ranges.
+fn __pak_fix16_div(a: i32, b: i32) -> i32 {
+    if b == 0 { return 0 }
+    return (a * 65536) / b
+}
+
+fn __pak_panic() {
+    loop { }
+}
+
+fn assert(cond: i32) {
+    if cond == 0 { __pak_panic() }
+}
+
+-- No ISViewer on a bare cartridge; debug output is a no-op rather than a
+-- link error.
+fn debugf(fmt: *u8) {
+}
+
+-- ── libc-style string helpers ───────────────────────────────────────────────
+fn strlen(s: *u8) -> i32 {
+    let mut i: i32 = 0
+    while s[i] != 0 as u8 {
+        i = i + 1
+    }
+    return i
+}
+
+fn strcmp(a: *u8, b: *u8) -> i32 {
+    let mut i: i32 = 0
+    loop {
+        let ca: u8 = a[i]
+        let cb: u8 = b[i]
+        if ca != cb { return (ca as i32) - (cb as i32) }
+        if ca == 0 as u8 { return 0 }
+        i = i + 1
+    }
+}
+
+fn strncmp(a: *u8, b: *u8, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        let ca: u8 = a[i]
+        let cb: u8 = b[i]
+        if ca != cb { return (ca as i32) - (cb as i32) }
+        if ca == 0 as u8 { return 0 }
+        i = i + 1
+    }
+    return 0
+}
+
+fn memcmp(a: *u8, b: *u8, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        if a[i] != b[i] { return (a[i] as i32) - (b[i] as i32) }
+        i = i + 1
+    }
+    return 0
+}
+
+fn strstr(hay: *u8, needle: *u8) -> *u8 {
+    let nlen: i32 = strlen(needle)
+    if nlen == 0 { return hay }
+    let hlen: i32 = strlen(hay)
+    let mut i: i32 = 0
+    while i + nlen <= hlen {
+        let mut j: i32 = 0
+        let mut same: i32 = 1
+        while j < nlen {
+            if hay[i + j] != needle[j] { same = 0; break }
+            j = j + 1
+        }
+        if same == 1 { return (hay as u32 + i as u32) as *u8 }
+        i = i + 1
+    }
+    return 0 as *u8
+}

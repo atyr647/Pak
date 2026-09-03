@@ -1,0 +1,1 @@
+fn f() -> Result(i32, i32) { return ok(42) }

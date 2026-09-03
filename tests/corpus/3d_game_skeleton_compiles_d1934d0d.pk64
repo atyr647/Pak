@@ -1,0 +1,45 @@
+use t3d.core
+use t3d.model
+use n64.display
+use n64.rdpq
+
+const MAX_ENEMIES: i32 = 32
+
+struct Enemy {
+    pos: Vec3
+    health: i32
+    active: bool
+}
+
+fn spawn_enemy(pool: *FixedList(Enemy, MAX_ENEMIES), x: f32, z: f32) {
+    let e = Enemy {
+        pos: Vec3 { v: [x, 0.0, z] }
+        health: 3
+        active: true
+    }
+    pool.push(e)
+}
+
+fn update_enemies(pool: *FixedList(Enemy, MAX_ENEMIES), dt: f32) {
+    for i, e in pool.items() {
+        e.pos = e.pos.add(Vec3 { v: [0.0, 0.0, dt] })
+    }
+}
+
+entry {
+    t3d.init()
+    display.init(RESOLUTION_320x240, DEPTH_16_BPP, 2, GAMMA_NONE, FILTERS_RESAMPLE)
+
+    let enemies: FixedList(Enemy, MAX_ENEMIES) = FixedList.init()
+    spawn_enemy(&enemies, 10.0, 5.0)
+
+    loop {
+        let disp = display.get()
+        rdpq.attach_clear(disp, none)
+        t3d.frame_start()
+
+        update_enemies(&enemies, 0.016)
+
+        rdpq.detach_show()
+    }
+}

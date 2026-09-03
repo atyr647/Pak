@@ -1,40 +1,54 @@
-# Tcl Port Status
+# Compiler Implementation Status
 
-The Tcl implementation under `tcl/` is a byte-exact port of the Python
-reference compiler under `pak/`. Parity is enforced by per-stage harnesses in
-`tcl/tools/` (each compares the Tcl output against the Python "oracle"); the
-gate is **zero MISMATCH**.
+The compiler under `tcl/` is the implementation. It previously ran alongside a
+Python reference under `pak/`, with per-stage harnesses comparing the two on
+every push. That reference has been removed; its verified output is frozen in
+`tests/golden/` and is now what the Tcl compiler is checked against.
 
-## Parity gates (all green)
+## Regression gates (all green)
 
-| Stage | Tcl source | Harness | Status |
-|-------|-----------|---------|--------|
-| Lexer | `lexer.tcl` | `lex_parity.sh` | PASS 61 |
-| Parser (AST) | `parser.tcl` | `ast_parity.sh` | MATCH 61 |
-| Typechecker | `typechecker.tcl` | `tc_parity.sh` | MATCH 80 |
-| Checker | `checker.tcl` | `check_parity.sh` | MATCH 71 |
-| C codegen | `codegen.tcl` | `cg_parity.sh` | MATCH 22 canonical / 43 corpus |
-| MIPS codegen | `mips_codegen.tcl` | `mips_parity.sh` | MATCH 22 canonical / 18 corpus |
-| MIPS optimizer | `optimize.tcl` | `opt_parity.sh` | MATCH 22 |
-| Header generator | `headergen.tcl` | `header_dump.{tcl,py}` | MATCH |
-| Makefile generator | `makefile_gen.tcl` | `makefile_parity.sh` | MATCH (4 scenarios) |
-| PakFS archive | `pakfs.tcl` | `pakfs_parity.sh` | MATCH (3 scenarios) |
-| CLI driver | `cli.tcl` | `cli_parity.sh` | MATCH (12 surfaces) |
-| C→Pak transpiler | `c2pak.tcl`, `c2pak/` | `c2pak_parity.sh` | MATCH 8 |
+Run everything with `tclsh tcl/tools/golden_test.tcl`, or one stage at a time
+by naming it. The corpus is every `.pk64` under `examples/`, `ai/`, `tests/`
+and `tcl/tests/` — 588 files, including the 485 source snippets lifted out of
+the old pytest suite into `tests/corpus/`.
 
-Every Python module in the toolchain has a parity-verified Tcl port.
-`c2pak` parity uses the Python transpiler (which wraps `pycparser`) as its
-oracle; the Tcl side has its own C front-end and matches the final `.pk64`
-text byte-for-byte on the corpus.
+| Stage | Source | Golden | Coverage |
+|-------|--------|--------|----------|
+| Lexer | `lexer.tcl` | `tests/golden/lex.sha256` | 588 |
+| Parser (AST) | `parser.tcl` | `tests/golden/ast.sha256` | 588 |
+| C codegen | `codegen.tcl` | `tests/golden/cg.sha256` | 588 |
+| MIPS codegen | `mips_codegen.tcl` | `tests/golden/mips.sha256` | 588 |
+| Checker | `checker.tcl` | `tests/golden/check/` | 588 |
+| Typechecker | `typechecker.tcl` | `tests/golden/tc/` | 588 |
+| Header generator | `headergen.tcl` | `tests/golden/header/` | 32 canonical |
+| C→Pak transpiler | `c2pak.tcl` | `tests/golden/c2pak/` | 8 |
+| Makefile generator | `makefile_gen.tcl` | `tests/golden/makefile.txt` | 4 scenarios |
+| PakFS archive | `pakfs.tcl` | `tests/golden/pakfs.txt` | 3 scenarios |
+| MIPS encoder | `n64enc.tcl` | `tcl/tools/n64enc_test.tcl` | 55 encodings |
+| Linker + ROM packer | `n64link.tcl`, `n64rom.tcl` | `tcl/tools/n64link_test.tcl` | 44 assertions |
 
-## Known boundary: source positions
+Token and AST dumps run to megabytes across the corpus, so those stages are
+gated by hash; diagnostics are stored in full because they are worth reading in
+a diff. Human-readable per-example C and MIPS also live in `tests/snapshots/`.
 
-The Tcl AST schema is generated **without `line`/`col` fields** (see the
-header in `tcl/ast_schema.tcl`: "structural parity first; position parity
-validated separately later"). Consequently the parser/typechecker/checker
-gates compare structure and diagnostics but not source positions, and the
-`pak check` CLI command matches Python on diagnostic **text and codes** but
-emits `:0:0` for the `--> file:line:col` location line. Threading real
-positions through the lexer → every parser node → the diagnostic sites is a
-separate cross-cutting change that the existing harnesses intentionally
-exclude; it is the one remaining deferred item.
+The `mips` stage is a self-snapshot: the Python MIPS backend was retired before
+that port finished, so its goldens pin the current output rather than comparing
+against an oracle. Every valid file in the corpus now lowers to assembly; the
+only `UNPORTED` markers left are the 43 deliberately-invalid snippets, which
+fail to parse. A construct the backend cannot lower would show up here as a
+golden change rather than slipping through unnoticed.
+
+## Source positions
+
+Nodes carry their position out of band, as a fourth element of the node value
+(`{node Kind {fields...} {line col}}`), rather than as schema fields. The
+parser brackets three rule levels -- `parse_top_level`, `parse_stmt` and
+`parse_primary` -- with the position of the token they start on, and `pak::N`
+stamps whatever is innermost, so every node gets the start of the construct it
+belongs to rather than wherever the parse happened to end.
+
+Keeping it out of the field dict means the schema, `pak::nfield` and the AST
+dump format are untouched: a node's structure is exactly what it was, and the
+`ast` goldens did not move when positions were added. Nodes synthesized outside
+parsing (by the checker, typechecker or codegen) get `{0 0}`, which the CLI
+renders as no location rather than a wrong one.

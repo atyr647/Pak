@@ -1,0 +1,4 @@
+const MAX: i32 = 100
+fn clamp_score(s: i32) -> i32 {
+    return s.clamp(0, MAX)
+}

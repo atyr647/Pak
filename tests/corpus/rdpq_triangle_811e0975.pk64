@@ -1,0 +1,2 @@
+use n64.rdpq
+entry { rdpq.triangle(NULL, NULL, 0, 1, 0.0, NULL, NULL, NULL) }

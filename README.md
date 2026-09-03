@@ -71,14 +71,21 @@ Everything you write maps to predictable C or MIPS assembly. Run
 ```bash
 git clone https://github.com/kodevadam/Pak.git
 cd Pak
-pip install -e ".[dev]"
+export PATH="$PWD/bin:$PATH"
 pak --version          # pak 0.1.0
 ```
 
-The CLI entry point is Python (≥ 3.11), but all compilation subcommands delegate
-to the **Tcl backend** (`tclsh tcl/cli.tcl`). Only `pak convert` (the C→Pak
-transpiler) stays in Python because it depends on pycparser. You will need both
-Python and `tclsh` installed.
+There is no build step. The compiler is written in Tcl, and `bin/pak` is a
+thin wrapper that hands your arguments to `tcl/cli.tcl`. The only requirement
+is **tclsh 8.6+ with tcllib**:
+
+```bash
+sudo apt-get install tcl tcllib     # Debian / Ubuntu
+brew install tcl-tk                 # macOS
+```
+
+To make `pak` permanent, add `bin/` to your shell profile's `PATH`, or symlink
+it: `ln -s "$PWD/bin/pak" /usr/local/bin/pak`.
 
 ### Your first ROM
 
@@ -111,7 +118,8 @@ you need a libdragon toolchain (Path A below) **or** nothing at all (Path B).
     Path A         │           │ Path B
     + libdragon    │           │ in-compiler:
     + make ──▶.z64 │           │  n64enc.tcl  ──▶ object
-                              │  n64rom.tcl  ──▶ .z64
+                               │  n64link.tcl ──▶ image
+                               │  n64rom.tcl  ──▶ .z64
 ```
 
 **Path A — libdragon (full-featured).**
@@ -133,25 +141,28 @@ The Tcl backend contains a complete MIPS pipeline with no external dependencies:
 - **`tcl/optimize.tcl`** — peephole + basic-block optimizer over the assembly
 - **`tcl/n64enc.tcl`** — self-contained MIPS encoder; turns the assembly stream
   into a relocatable binary object without calling any assembler binary
+- **`tcl/n64link.tcl`** — flat linker: merges `.pakobj` files into an RDRAM
+  image laid out like `runtime/standalone/n64.ld` and patches the relocations
 - **`tcl/n64rom.tcl`** — builds a bootable `.z64` (ROM header, IPL3 embedding,
-  CRC1/CRC2) entirely in Tcl via `binary format`
+  CIC-NUS-6102 CRC1/CRC2) entirely in Tcl via `binary format`
 
-The result: `pak objgen src/main.pk64` produces a `.pakobj` relocatable object
-straight from source. No `mips-n64-gcc`, no `binutils`, no cross-compiler of
-any kind.
+The result is a `.z64` straight from source. No `mips-n64-gcc`, no `binutils`,
+no cross-compiler of any kind.
 
 ```bash
-# Path B — inspect the MIPS output
+# Inspect the MIPS output
 pak explain --backend mips src/main.pk64
 
-# Path B — compile to a .pakobj (relocatable binary, no external tools)
-pak objgen src/main.pk64 -o main.pakobj
+# Compile each part to a relocatable object, then link a bootable ROM.
+# The boot object goes first so _start lands at the base address.
+pak asmobj runtime/standalone/boot.S       -o boot.pakobj
+pak objgen runtime/standalone/runtime.pk64 -o runtime.pakobj
+pak objgen src/main.pk64                   -o main.pakobj
+pak link boot.pakobj runtime.pakobj main.pakobj -o game.z64 --name "MY GAME"
 ```
 
-> **Legacy standalone path:** `pak/tools/n64_build.sh` is the original C-based
-> standalone route (`.pk64` → C → `mips-n64-gcc` → `mips-n64-objcopy` →
-> `rompack.py` → `.z64`). It still works if you have `mips-n64-gcc` installed,
-> but the in-compiler Tcl pipeline (Path B above) supersedes it.
+See **[docs/toolchain-free-rom.md](docs/toolchain-free-rom.md)** for the object
+format, the memory layout, and what the runtime does.
 
 ---
 
@@ -247,23 +258,24 @@ tcl/              Primary compiler implementation (Tcl): lexer, parser,
   codegen.tcl         C code generator
   typechecker.tcl     Type checker + semantic analysis
   checker.tcl         Lint + error diagnostics
-pak/              Reference compiler implementation (Python): same stages, kept
-                  at byte-for-byte parity with the Tcl primary; also hosts the
-                  c2pak transpiler (Python-only, needs pycparser)
-pak/runtime/      Legacy bare-metal N64 runtime + libdragon shim (used by the
-                  old n64_build.sh C-based standalone path)
-pak/tools/        rompack.py + n64_build.sh (legacy standalone pipeline,
-                  requires mips-n64-gcc; superseded by the in-Tcl pipeline)
-examples/canonical/  29 gold-standard, known-correct reference programs
+  n64link.tcl         Flat linker: .pakobj files → RDRAM image, relocs patched
+  c2pak.tcl           C → Pak transpiler (pak convert)
+bin/pak           The CLI entry point: a shell wrapper around tcl/cli.tcl
+runtime/          C runtime for the libdragon backend (containers, math, RNG, PakFS)
+runtime/standalone/  Toolchain-free runtime: the HAL in Pak + a hand-written crt0
+examples/canonical/  32 gold-standard, known-correct reference programs
 examples/         51 example programs total (games, std-lib middleware, baremetal)
-tests/            728 unit + integration + snapshot tests
-runtime/          Shared C runtime headers (containers, math, RNG, PakFS)
+tests/corpus/     588-file source corpus the golden suite compiles
+tests/golden/     Pinned output of every compiler stage across that corpus
+tests/snapshots/  Human-readable generated C and MIPS per canonical example
 ```
 
-Pak ships **two independent compiler implementations** — a Tcl primary and a
-Python reference — held in lockstep by parity harnesses in CI. Every lexer
-token, parser AST, checker diagnostic, and chunk of generated C/MIPS is
-cross-verified between the two on every push: 75/75 AST, 29/29 C, 29/29 MIPS.
+The compiler is a single implementation in Tcl, with no build step and no
+dependency beyond `tclsh` and `tcllib`. It is held in place by the **golden
+suite**: `tests/golden/` pins the output of every stage — tokens, AST,
+generated C, MIPS assembly, checker and typechecker diagnostics, module
+headers, transpiler output, Makefile and PakFS layout — across all 588 corpus
+files. Any change in compiler behaviour surfaces there.
 
 ---
 
@@ -285,19 +297,27 @@ cross-verified between the two on every push: 75/75 AST, 29/29 C, 29/29 MIPS.
 ## Development
 
 ```bash
-pytest tests/                       # run the full suite (728 tests)
-pak check examples/canonical/*.pk64 # all must pass
+bash tools/audit.sh                       # everything, with a verdict
+bash tools/audit.sh --fast                # skip the slow golden stages
+
+tclsh tcl/tools/golden_test.tcl           # every stage over the whole corpus
+tclsh tcl/tools/golden_test.tcl check tc  # just the diagnostics
+VERBOSE=1 tclsh tcl/tools/golden_test.tcl # print the diff on a mismatch
+REGEN=1 tclsh tcl/tools/golden_test.tcl   # re-bless the goldens (read them first)
+
+tclsh tcl/tools/n64enc_test.tcl           # MIPS instruction encodings
+tclsh tcl/tools/n64link_test.tcl          # linker + ROM packer
+bash  tcl/tools/lint.sh                   # nagelfar static lint
+
+pak check examples/canonical/*.pk64       # all must pass
 pak explain examples/canonical/01_hello.pk64
 pak explain --backend mips examples/canonical/01_hello.pk64
-# Parity gates (Tcl vs Python):
-bash tcl/tools/ast_parity.sh        # 75/75 AST
-bash tcl/tools/cg_parity.sh         # 29/29 C codegen
-bash tcl/tools/mips_parity.sh       # 29/29 MIPS
 ```
 
-CI (GitHub Actions) runs on every push: the Python test suite across 3.11/3.12,
-canonical-example validation, "invalid programs must fail" checks, golden
-`pak explain` snapshots, and the full Tcl-vs-Python parity gate.
+CI (GitHub Actions) runs on every push: the golden suite over the whole corpus,
+canonical-example validation, "invalid programs must fail" checks, the
+`pak explain` snapshots, the binary back end (encoder, linker, objgen for every
+canonical example, and a full source-to-`.z64` build), and nagelfar lint.
 
 ---
 

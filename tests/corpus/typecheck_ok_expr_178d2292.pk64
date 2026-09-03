@@ -1,0 +1,4 @@
+enum Err: u8 { bad }
+fn f() -> Result(i32, Err) {
+    return ok(1)
+}

@@ -1,0 +1,1 @@
+entry { let s = "no braces here" }

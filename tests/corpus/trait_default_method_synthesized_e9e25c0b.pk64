@@ -1,0 +1,8 @@
+trait Greeter {
+    fn name(self: *Self) -> i32
+    fn greet(self: *Self) -> i32 { return self.name() + 100 }
+}
+struct Bot { id: i32 }
+impl Bot for Greeter {
+    fn name(self: *Bot) -> i32 { return self.id }
+}

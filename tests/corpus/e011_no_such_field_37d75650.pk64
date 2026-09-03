@@ -1,0 +1,2 @@
+struct Pos { x: i32, y: i32 }
+fn f(p: Pos) -> i32 { return p.z; }

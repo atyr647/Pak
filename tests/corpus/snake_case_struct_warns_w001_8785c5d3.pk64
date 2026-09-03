@@ -1,0 +1,1 @@
+struct player_state { x: f32 }

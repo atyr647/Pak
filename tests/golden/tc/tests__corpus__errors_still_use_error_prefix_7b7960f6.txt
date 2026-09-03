@@ -1,0 +1,1 @@
+(E010 error "unknown name 'unknown_var'" "declare it with 'let unknown_var = ...'")

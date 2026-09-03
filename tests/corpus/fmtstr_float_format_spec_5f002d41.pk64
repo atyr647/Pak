@@ -1,0 +1,3 @@
+fn show(x: f32) -> *c_char {
+    return "x={x}"
+}

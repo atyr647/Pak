@@ -1,0 +1,3 @@
+fn f(p: *i32) -> i32 {
+    return *p
+}

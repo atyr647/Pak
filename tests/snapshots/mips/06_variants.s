@@ -24,6 +24,24 @@
 	.extern rdpq_sync_tile
 	.extern rdpq_sync_load
 	.extern rdpq_set_scissor
+	.extern rdpq_set_color_image
+	.extern rdpq_set_z_image
+	.extern rdpq_set_other_modes_raw
+	.extern rdpq_set_combiner_raw
+	.extern rdpq_set_fill_color
+	.extern rdpq_set_blend_color
+	.extern rdpq_set_fog_color
+	.extern rdpq_set_env_color
+	.extern rdpq_set_prim_color
+	.extern rdpq_set_texture_image
+	.extern rdpq_set_tile
+	.extern rdpq_set_tile_size
+	.extern rdpq_load_tile
+	.extern rdpq_load_block
+	.extern rdpq_load_tlut
+	.extern rdpq_texture_rectangle
+	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_triangle
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -150,21 +168,21 @@
 	.globl area
 	.type area, @function
 area:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $a0, 96($sp)
-    lw $t9, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
     lbu $t8, 0($t9)
     li $t7, 0
     bne $t8, $t7, .Larm_skip_3
     nop
     lwc1 $f12, 4($t9)
-    swc1 $f12, 108($sp)
-    lwc1 $f12, 108($sp)
+    swc1 $f12, 148($sp)
+    lwc1 $f12, 148($sp)
     mov.s $f14, $f12
-    lwc1 $f12, 108($sp)
+    lwc1 $f12, 148($sp)
     mul.s $f12, $f14, $f12
     mov.s $f14, $f12
     la $t6, .Lf320
@@ -180,12 +198,12 @@ area:
     bne $t8, $t7, .Larm_skip_5
     nop
     lwc1 $f12, 4($t9)
-    swc1 $f12, 112($sp)
+    swc1 $f12, 152($sp)
     lwc1 $f12, 8($t9)
-    swc1 $f12, 116($sp)
-    lwc1 $f12, 112($sp)
+    swc1 $f12, 156($sp)
+    lwc1 $f12, 152($sp)
     mov.s $f14, $f12
-    lwc1 $f12, 116($sp)
+    lwc1 $f12, 156($sp)
     mul.s $f12, $f14, $f12
     j .Larea_ret_0
     nop
@@ -204,9 +222,9 @@ area:
 .Larm_skip_7:
 .Lmatch_end_1:
 .Larea_ret_0:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size area, . - area
@@ -215,12 +233,12 @@ area:
 	.globl entity_id
 	.type entity_id, @function
 entity_id:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sb $a0, 96($sp)
-    lb $t9, 96($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sb $a0, 136($sp)
+    lb $t9, 136($sp)
     li $t8, 0
     bne $t9, $t8, .Larm_skip_11
     nop
@@ -259,9 +277,9 @@ entity_id:
 .Larm_skip_17:
 .Lmatch_end_9:
 .Lentity_id_ret_8:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size entity_id, . - entity_id
@@ -270,84 +288,100 @@ entity_id:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -256
-    sw $ra, 252($sp)
-    sw $fp, 248($sp)
-    addiu $fp, $sp, 256
-    sw $zero, 96($sp)
-    sw $zero, 100($sp)
-    sw $zero, 104($sp)
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $zero, 136($sp)
+    sw $zero, 140($sp)
+    sw $zero, 144($sp)
     li $t7, 0
-    sb $t7, 96($sp)
+    sb $t7, 136($sp)
     la $t6, .Lf322
     lwc1 $f12, 0($t6)
-    swc1 $f12, 100($sp)
-    addiu $a0, $sp, 96
+    swc1 $f12, 140($sp)
+    addiu $a0, $sp, 136
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal area
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink
     swc1 $f12, 0($t7)
     move $t9, $t8
-    sw $zero, 108($sp)
-    sw $zero, 112($sp)
-    sw $zero, 116($sp)
+    sw $zero, 148($sp)
+    sw $zero, 152($sp)
+    sw $zero, 156($sp)
     li $t7, 1
-    sb $t7, 108($sp)
+    sb $t7, 148($sp)
     la $t6, .Lf323
     lwc1 $f12, 0($t6)
-    swc1 $f12, 112($sp)
+    swc1 $f12, 152($sp)
     la $t6, .Lf324
     lwc1 $f12, 0($t6)
-    swc1 $f12, 116($sp)
-    addiu $a0, $sp, 108
+    swc1 $f12, 156($sp)
+    addiu $a0, $sp, 148
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal area
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink
     swc1 $f12, 0($t7)
     move $t9, $t8
-    sw $zero, 120($sp)
-    sw $zero, 124($sp)
-    sw $zero, 128($sp)
+    sw $zero, 160($sp)
+    sw $zero, 164($sp)
+    sw $zero, 168($sp)
     li $t7, 2
-    sb $t7, 120($sp)
-    addiu $a0, $sp, 120
+    sb $t7, 160($sp)
+    addiu $a0, $sp, 160
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal area
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink
     swc1 $f12, 0($t7)
     move $t9, $t8
-    sw $zero, 132($sp)
+    sw $zero, 172($sp)
     li $t7, 1
-    sb $t7, 132($sp)
-    addiu $a0, $sp, 132
+    sb $t7, 172($sp)
+    addiu $a0, $sp, 172
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal entity_id
     nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    sw $zero, 140($sp)
-    sw $zero, 144($sp)
-    sw $zero, 148($sp)
+    sw $zero, 180($sp)
+    sw $zero, 184($sp)
+    sw $zero, 188($sp)
     li $t8, 1
-    sb $t8, 140($sp)
+    sb $t8, 180($sp)
     li $t8, 100
-    sw $t8, 144($sp)
+    sw $t8, 184($sp)
     li $t8, 200
-    sw $t8, 148($sp)
-    addiu $t9, $sp, 140
-    sw $t9, 136($sp)
-    lw $t9, 136($sp)
+    sw $t8, 188($sp)
+    addiu $t9, $sp, 180
+    sw $t9, 176($sp)
+    lw $t9, 176($sp)
     lbu $t8, 0($t9)
     li $t7, 0
     bne $t8, $t7, .Larm_skip_21
     nop
     lbu $t8, 1($t9)
-    sb $t8, 152($sp)
-    lbu $t6, 152($sp)
+    sb $t8, 192($sp)
+    lbu $t6, 192($sp)
     move $t7, $t6
     la $t6, sink_i
     sw $t7, 0($t6)
@@ -360,11 +394,11 @@ main:
     bne $t8, $t7, .Larm_skip_23
     nop
     lw $t8, 4($t9)
-    sw $t8, 156($sp)
+    sw $t8, 196($sp)
     lw $t8, 8($t9)
-    sw $t8, 160($sp)
-    lw $t6, 156($sp)
-    lw $t5, 160($sp)
+    sw $t8, 200($sp)
+    lw $t6, 196($sp)
+    lw $t5, 200($sp)
     addu $t7, $t6, $t5
     la $t6, sink_i
     sw $t7, 0($t6)
@@ -384,18 +418,18 @@ main:
     nop
 .Larm_skip_25:
 .Lmatch_end_19:
-    sw $zero, 168($sp)
-    sw $zero, 172($sp)
-    sw $zero, 176($sp)
+    sw $zero, 208($sp)
+    sw $zero, 212($sp)
+    sw $zero, 216($sp)
     li $t8, 0
-    sb $t8, 168($sp)
+    sb $t8, 208($sp)
     li $t8, 42
-    sw $t8, 172($sp)
+    sw $t8, 212($sp)
     li $t8, 80
-    sb $t8, 176($sp)
-    addiu $t9, $sp, 168
-    sw $t9, 164($sp)
-    lw $t9, 164($sp)
+    sb $t8, 216($sp)
+    addiu $t9, $sp, 208
+    sw $t9, 204($sp)
+    lw $t9, 204($sp)
     li $t8, 0
     bne $t9, $t8, .Larm_skip_28
     nop
@@ -428,9 +462,9 @@ main:
 .Larm_skip_32:
 .Lmatch_end_26:
 .Lmain_ret_18:
-    lw $fp, 248($sp)
-    lw $ra, 252($sp)
-    addiu $sp, $sp, 256
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
     jr $ra
     nop
 	.size main, . - main

@@ -1,0 +1,4 @@
+fn f() -> void {
+    let a = heap_allocator()
+    let p = alloc(i32 using a)
+}

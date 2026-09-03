@@ -1,0 +1,4 @@
+union ColorBytes {
+    packed: u32
+    rgba: u32
+}

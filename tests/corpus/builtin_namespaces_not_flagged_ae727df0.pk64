@@ -1,0 +1,4 @@
+module main
+use n64.display
+use t3d.core
+entry { }

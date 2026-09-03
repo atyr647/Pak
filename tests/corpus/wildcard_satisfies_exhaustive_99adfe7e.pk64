@@ -1,0 +1,7 @@
+enum Dir { up, down, left, right }
+fn handle(d: Dir) {
+    match d {
+        .up => {}
+        _   => {}
+    }
+}

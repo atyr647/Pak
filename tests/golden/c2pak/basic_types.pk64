@@ -1,0 +1,40 @@
+-- Transpiled from C by pak convert
+
+struct Vec2 { x: f32, y: f32 }
+
+struct Vec3 { x: f32, y: f32, z: f32 }
+
+enum Direction {
+    up,
+    down,
+    left,
+    right,
+}
+
+enum State {
+    idle,
+    active,
+    dead,
+}
+
+struct Player {
+    pos: Vec2,
+    hp: i32,
+    level: u8,
+    facing: Direction,
+    state: State,
+}
+
+fn vec2_add(a: Vec2, b: Vec2) -> Vec2 {
+    let result: Vec2 = undefined
+    result.x = a.x + b.x
+    result.y = a.y + b.y
+    return result
+}
+
+entry {
+    let pos: Vec2 = Vec2 { x: 1.0, y: 2.0 }
+    let vel: Vec2 = Vec2 { x: 0.5, y: -0.3 }
+    let new_pos: Vec2 = vec2_add(pos, vel)
+    return 0
+}

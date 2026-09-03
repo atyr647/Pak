@@ -1,0 +1,3 @@
+fn f(s: CStr) -> void {
+    let result = s.starts_with("hello")
+}

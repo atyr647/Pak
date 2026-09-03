@@ -1,0 +1,4 @@
+entry {
+    let mut fl: FixedList(i32, 4) = FixedList.init()
+    let n = fl.len()
+}

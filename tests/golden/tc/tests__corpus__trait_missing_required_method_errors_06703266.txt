@@ -1,0 +1,1 @@
+(E602 error "impl of trait 'Greeter' for 'Bot' is missing method 'name'" "Implement 'name', or give it a default body in trait 'Greeter'")

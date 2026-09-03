@@ -1,0 +1,3 @@
+@cfg(debug)
+fn hot_path() { }
+entry { }

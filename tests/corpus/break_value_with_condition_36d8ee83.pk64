@@ -1,0 +1,10 @@
+entry {
+    let mut i: i32 = 0
+    let result: i32 = loop {
+        if i >= 5 {
+            break i
+        }
+        i = i + 1
+        break 0
+    }
+}

@@ -1,0 +1,6 @@
+struct Obj { val: i32 }
+impl Obj {
+    fn get(self: *Obj) -> i32 {
+        return self.val
+    }
+}

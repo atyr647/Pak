@@ -1,0 +1,5 @@
+fn f(cond: bool) -> void {
+    if cond {
+        let x: i32 = 1;
+    }
+}

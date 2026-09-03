@@ -1,0 +1,12 @@
+entry {
+    let mut fl: FixedList(i32, 4) = FixedList.init()
+    let a = fl.is_empty()
+    let mut rb: RingBuffer(i32, 4) = RingBuffer.init()
+    let b = rb.is_empty()
+    let mut fm: FixedMap(i32, i32, 4) = FixedMap.init()
+    let c = fm.is_empty()
+    let mut p: Pool(i32, 4) = Pool.init()
+    let d = p.is_empty()
+    let mut v: Vec(i32) = Vec.init()
+    let e = v.is_empty()
+}

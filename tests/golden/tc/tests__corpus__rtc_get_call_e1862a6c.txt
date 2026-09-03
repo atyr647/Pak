@@ -1,0 +1,1 @@
+(E010 error "unknown name 't'" "declare it with 'let t = ...'")

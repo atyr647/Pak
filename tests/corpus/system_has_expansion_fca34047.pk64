@@ -1,0 +1,2 @@
+use n64.system;
+fn f() -> bool { return system.has_expansion(); }

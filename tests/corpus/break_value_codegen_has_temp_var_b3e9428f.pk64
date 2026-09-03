@@ -1,0 +1,4 @@
+fn f() -> i32 {
+    let r: i32 = loop { break 99 }
+    return r
+}

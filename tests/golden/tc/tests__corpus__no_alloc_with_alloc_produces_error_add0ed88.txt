@@ -1,0 +1,1 @@
+(E501 error "'bad_fn' is marked @no_alloc but calls 'mem.alloc' which allocates heap memory" "Remove the allocation or remove the @no_alloc annotation")

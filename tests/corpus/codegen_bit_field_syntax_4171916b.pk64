@@ -1,0 +1,4 @@
+struct Reg {
+    enable: u32 : 1
+    mode: u32 : 4
+}

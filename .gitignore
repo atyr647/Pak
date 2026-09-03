@@ -1,8 +1,14 @@
-__pycache__/
-*.pyc
-*.pyo
-*.egg-info/
-dist/
+# Build output
 build/
-.eggs/
+dist/
+*.o
+*.elf
+*.z64
+*.pakobj
+*.bin
+
+# Editor / OS
+.DS_Store
+*.swp
+
 .claude/worktrees/

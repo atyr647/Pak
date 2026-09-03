@@ -1,0 +1,1 @@
+(W002 warning "function 'BadName' should be snake_case" "Rename to 'bad_name'")

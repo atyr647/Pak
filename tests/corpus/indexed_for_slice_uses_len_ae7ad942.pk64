@@ -1,0 +1,1 @@
+fn f(items: []i32) { for i, x in items { } }

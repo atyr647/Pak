@@ -1,0 +1,1 @@
+(E012 error "function 'zero_or' takes 1 argument(s), got 0" "Expected: zero_or(x: i32)")

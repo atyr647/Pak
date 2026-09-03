@@ -1,0 +1,3 @@
+(E010 error "unknown name 'q1'" "declare it with 'let q1 = ...'")
+(E010 error "unknown name 'q2'" "declare it with 'let q2 = ...'")
+(E010 error "unknown name 'q3'" "declare it with 'let q3 = ...'")

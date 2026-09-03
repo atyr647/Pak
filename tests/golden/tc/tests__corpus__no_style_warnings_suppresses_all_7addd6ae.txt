@@ -1,0 +1,2 @@
+(W001 warning "type 'bad_name' should be PascalCase" "Rename to 'BadName'")
+(W003 warning "constant 'lower' should be UPPER_SNAKE_CASE" "Rename to 'LOWER'")
