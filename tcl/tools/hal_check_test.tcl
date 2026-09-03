@@ -175,6 +175,15 @@ entry {
 set diags [pak::semantic_check $ast "t.pk64" mips]
 ok "triangle_z / triangle_tex_z accepted on mips" [expr {[llength $diags] == 0}] $diags
 
+set ast [parse_src "use n64.rdpq
+entry {
+    rdpq.load_block(0, 0, 0, 512, 0x100)
+    rdpq.load_tlut(0, 0, 16)
+}
+"]
+set diags [pak::semantic_check $ast "t.pk64" mips]
+ok "load_block / load_tlut accepted on mips" [expr {[llength $diags] == 0}] $diags
+
 set ast [parse_src "entry { n64.rdpq.set_texture_image(0x80001000, 0, 2, 32) }
 "]
 set diags [pak::semantic_check $ast "t.pk64" mips]

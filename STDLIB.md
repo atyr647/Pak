@@ -713,7 +713,8 @@ use n64.rdpq             -- #include <rdpq.h> + <rdpq_gfx.h>
 | `rdpq.set_tile_mask` | `(..., cms, cmt, mask_s, mask_t)` | SET_TILE with GBI wrap/mirror/clamp and mask |
 | `rdpq.set_tile_size` | `(...)` | Set tile size (see libdragon) |
 | `rdpq.load_tile` | `(...)` | Load texels into TMEM (see libdragon) |
-| `rdpq.load_tlut` | `(...)` | Load palette LUT (see libdragon) |
+| `rdpq.load_block` | `(tile, s0, t0, texels, dxt)` | Load a TMEM block (RDP 0x33; SH = texels-1) |
+| `rdpq.load_tlut` | `(tile, first, count)` | Load palette LUT (RDP 0x30; colour index in 10.2×4) |
 | `rdpq.set_combiner_raw` | `(comb: u64)` | Raw color combiner |
 | `rdpq.set_other_modes_raw` | `(modes: u64)` | Raw other-modes word |
 | `rdpq.flush` | `()` | Flush rspq queue (`rspq_flush`) |

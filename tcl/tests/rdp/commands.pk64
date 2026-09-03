@@ -13,6 +13,8 @@ entry {
     rdpq.set_tile(0, 0, 2, 8, 0, 0)
     rdpq.load_tile(0, 0, 0, 32, 32)
     rdpq.set_tile_size(0, 0, 0, 32, 32)
+    rdpq.load_block(0, 0, 0, 512, 0x100)
+    rdpq.load_tlut(0, 0, 16)
     rdpq.texture_rectangle(0, 100, 50, 132, 82, 0, 0)
     rdpq.set_mode_standard()
     rdpq.set_prim_color(0x1122_33FF)

@@ -91,6 +91,8 @@ set EXPECTED {
     35101000 00000000
     34000000 0007C07C
     32000000 0007C07C
+    33000000 001FF100
+    30000000 0003C000
     2420C144 001900C8
     00000000 10000400
     27000000 00000000
@@ -234,6 +236,8 @@ set NOTES {
     "SET_TILE          tile 0, RGBA/16bpp, line 8, tmem 0"
     "LOAD_TILE         tile 0, (0,0)-(32,32)"
     "SET_TILE_SIZE     tile 0, (0,0)-(32,32)"
+    "LOAD_BLOCK        0x33 tile 0, 512 texels, dxt 0x100"
+    "LOAD_TLUT         0x30 tile 0, colours 0..15 (10.2 * 4)"
     "TEXTURE_RECTANGLE tile 0, (100,50)-(132,82)"
     "                  s/t = 0, dsdx = 4 texels/cycle, dtdy = 1"
     "SYNC_PIPE         before the mode change"

@@ -89,6 +89,9 @@ set ::pak::API_ARITY [dict create \
     {rdpq set_tile} {6 6} \
     {rdpq set_tile_mask} {10 10} \
     {rdpq set_texture_image} {4 4} \
+    {rdpq load_tile} {5 5} \
+    {rdpq load_block} {5 5} \
+    {rdpq load_tlut} {3 3} \
     {rdpq triangle} {6 6} \
     {rdpq triangle_z} {9 9} \
     {rdpq triangle_shade} {9 9} \
