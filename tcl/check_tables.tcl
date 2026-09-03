@@ -76,11 +76,15 @@ set ::pak::API_ARITY [dict create \
     {rdpq detach_show} {0 0} \
     {rdpq fill_rectangle} {4 4} \
     {rdpq init} {0 0} \
+    {rdpq clear_z} {0 0} \
+    {rdpq set_mode_standard_z} {0 0} \
     {rdpq set_scissor} {4 4} \
     {rdpq set_tile} {6 6} \
     {rdpq set_tile_mask} {10 10} \
     {rdpq set_texture_image} {4 4} \
     {rdpq triangle} {6 6} \
+    {rdpq triangle_shade} {9 9} \
+    {rdpq triangle_shade_z} {12 12} \
     {rdpq triangle_tex} {13 13} \
     {rdpq sync_full} {0 0} \
     {rdpq sync_pipe} {0 0} \

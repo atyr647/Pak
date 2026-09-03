@@ -22,8 +22,10 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_detach \
     rdpq_detach_show \
     rdpq_set_mode_standard \
+    rdpq_set_mode_standard_z \
     rdpq_set_mode_copy \
     rdpq_set_mode_fill \
+    rdpq_clear_z \
     rdpq_fill_rectangle \
     rdpq_sync_full \
     rdpq_sync_pipe \
@@ -49,6 +51,8 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_texture_rectangle \
     rdpq_texture_rectangle_scaled \
     rdpq_triangle \
+    rdpq_triangle_shade \
+    rdpq_triangle_shade_z \
     rdpq_triangle_tex \
     sprite_load \
     rdpq_sprite_blit \
@@ -187,8 +191,10 @@ set ::pak::MIPS_API [dict create \
     {rdpq detach} {rdpq_detach} \
     {rdpq detach_show} {rdpq_detach_show} \
     {rdpq set_mode_standard} {rdpq_set_mode_standard} \
+    {rdpq set_mode_standard_z} {rdpq_set_mode_standard_z} \
     {rdpq set_mode_copy} {rdpq_set_mode_copy} \
     {rdpq set_mode_fill} {rdpq_set_mode_fill} \
+    {rdpq clear_z} {rdpq_clear_z} \
     {rdpq fill_rectangle} {rdpq_fill_rectangle} \
     {rdpq sync_full} {rdpq_sync_full} \
     {rdpq sync_pipe} {rdpq_sync_pipe} \
@@ -214,6 +220,8 @@ set ::pak::MIPS_API [dict create \
     {rdpq texture_rectangle} {rdpq_texture_rectangle} \
     {rdpq texture_rectangle_scaled} {rdpq_texture_rectangle_scaled} \
     {rdpq triangle} {rdpq_triangle} \
+    {rdpq triangle_shade} {rdpq_triangle_shade} \
+    {rdpq triangle_shade_z} {rdpq_triangle_shade_z} \
     {rdpq triangle_tex} {rdpq_triangle_tex} \
     {sprite load} {sprite_load} \
     {sprite blit} {rdpq_sprite_blit} \

@@ -1142,7 +1142,10 @@ oo::class create pak::MipsCodegen {
         # slots; $sp+96..135 = 10 call-save slots, one per caller-saved temp;
         # $sp+136+ = local variables.  Keeping the spill and call-save areas
         # above the O32 outgoing-arg area prevents marshal_args from clobbering
-        # either.
+        # either.  $fp/$ra (and used callee-saved GPRs) sit at the top of the
+        # frame.  The default size is 320 bytes so existing functions keep their
+        # instruction stream; if locals would overlap that save area the frame
+        # grows (8-byte aligned) and the prologue immediates are patched.
         set spill_base 64
         set ra [pak::RegAlloc new [self] $spill_base]
         set scopes {}
@@ -1168,8 +1171,10 @@ oo::class create pak::MipsCodegen {
         }
         set frame_size 320
         set prologue_start [$em len]
+        set prologue_rec_start [llength [$em getrecords]]
         my emit_prologue_placeholder $frame_size
         set prologue_end [$em len]
+        set prologue_rec_end [llength [$em getrecords]]
         # Store params to frame AFTER prologue.
         # o32 ABI: 1st float in $f12, 2nd float in $f14, 3rd+ at $fp+(N*4)
         # (fp = old_sp = callee's frame top; caller put extra floats in its
@@ -1201,6 +1206,9 @@ oo::class create pak::MipsCodegen {
         my emit_block $body
         # Emit outer-scope (param) defers before patching prologue
         foreach d [my pop_scope] { my emit_stmt $d }
+        set frame_size [my frame_size_for_locals $next_local [$ra used_callee_gprs]]
+        my patch_frame_size $frame_size $prologue_start $prologue_end \
+            $prologue_rec_start $prologue_rec_end
         my patch_prologue $frame_size $prologue_start $prologue_end
         $em label $ret_label
         my emit_epilogue $frame_size
@@ -1257,6 +1265,58 @@ oo::class create pak::MipsCodegen {
         $em jalr $reg
         $em nop
         my emit_call_restores $live
+    }
+
+    # Default frame is 320 bytes. Grow (8-byte aligned) when locals would
+    # overlap $fp/$ra and any callee-saved GPRs parked at the top.
+    method frame_size_for_locals {local_top callee} {
+        set save_bytes [expr {8 + 4 * [llength $callee]}]
+        set need [expr {($local_top + $save_bytes + 7) & ~7}]
+        if {$need < 320} { return 320 }
+        return $need
+    }
+
+    # Prologue is emitted before the body, so a grown frame has to rewrite the
+    # addiu/sw immediates. Functions that fit in 320 bytes are left untouched
+    # so their instruction stream (and the mips goldens) stay identical.
+    method patch_frame_size {frame_size pstart pend rstart rend} {
+        if {$frame_size == 320} return
+        set ra_off [expr {$frame_size - 4}]
+        set fp_off [expr {$frame_size - 8}]
+        set buf [$em buf]
+        for {set idx $pstart} {$idx < $pend} {incr idx} {
+            switch -exact -- [string trim [lindex $buf $idx]] {
+                "addiu \$sp, \$sp, -320" {
+                    lset buf $idx "    addiu \$sp, \$sp, -$frame_size"
+                }
+                "sw \$ra, 316(\$sp)" {
+                    lset buf $idx "    sw \$ra, ${ra_off}(\$sp)"
+                }
+                "sw \$fp, 312(\$sp)" {
+                    lset buf $idx "    sw \$fp, ${fp_off}(\$sp)"
+                }
+                "addiu \$fp, \$sp, 320" {
+                    lset buf $idx "    addiu \$fp, \$sp, $frame_size"
+                }
+            }
+        }
+        $em setbuf $buf
+        set recs [$em getrecords]
+        for {set idx $rstart} {$idx < $rend} {incr idx} {
+            set r [lindex $recs $idx]
+            if {[lindex $r 0] ne "i"} continue
+            set op [lindex $r 1]
+            if {$op eq "addiu" && [lindex $r 2] eq {$sp} && [lindex $r 3] eq {$sp} && [lindex $r 4] == -320} {
+                lset recs $idx [list i addiu {$sp} {$sp} -$frame_size]
+            } elseif {$op eq "sw" && [lindex $r 2] eq {$ra} && [lindex $r 3] eq {316($sp)}} {
+                lset recs $idx [list i sw {$ra} "${ra_off}(\$sp)"]
+            } elseif {$op eq "sw" && [lindex $r 2] eq {$fp} && [lindex $r 3] eq {312($sp)}} {
+                lset recs $idx [list i sw {$fp} "${fp_off}(\$sp)"]
+            } elseif {$op eq "addiu" && [lindex $r 2] eq {$fp} && [lindex $r 3] eq {$sp} && [lindex $r 4] == 320} {
+                lset recs $idx [list i addiu {$fp} {$sp} $frame_size]
+            }
+        }
+        $em setrecords $recs
     }
 
     method emit_prologue_placeholder {frame_size} {

@@ -9,12 +9,12 @@
  *   0x80200000  FB0  320×240×16bpp   (KSEG1 0xA0200000)  0x25800 bytes
  *   0x80225800  FB1                  (KSEG1 0xA0225800)
  *   0x8024B000  FB2  ends 0x80270800 (KSEG1 0xA024B000)
- *   0x80271000  RDP display list, 8 KB (KSEG1 0xA0271000)
- *   0x80280000  bump heap
+ *   0x80271000  Z buffer 320×240×16-bit (KSEG1 0xA0271000)  0x25800 bytes
+ *   0x80297000  RDP display list, 8 KB (KSEG1 0xA0297000)
+ *   0x802A0000  bump heap
  *   0x803C0000  heap limit
  *   0x80400000  stack top (grows down)
  *
- * A full Z buffer is not reserved yet (TRI_TEX is affine; 0x0E + Z is later).
  * Cart image is padded to 4/8/16/32/64 MiB by tcl/n64rom.tcl; FZ crashes on a
  * 2.9 MB ROM.
  *

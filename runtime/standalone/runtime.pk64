@@ -37,6 +37,7 @@ const FB_PIXELS: i32 = 76800            -- 320 * 240
 const FB0: u32 = 0xA0200000
 const FB1: u32 = 0xA0225800
 const FB2: u32 = 0xA024B000
+const ZB:  u32 = 0xA0271000        -- 320×240×16-bit Z, after FB2
 const NUM_BUFS: i32 = 3
 
 static g_draw: i32       = 1
@@ -376,15 +377,17 @@ const DPC_PIPE_BUSY: u32 = 0x0020
 const DPC_CMD_BUSY:  u32 = 0x0040
 const DPC_DMA_BUSY:  u32 = 0x0100
 
--- Display list: 8 KiB (1024 commands) of uncached RDRAM just past FB2.
-const DL_BASE:  u32 = 0xA0271000
-const DL_PHYS:  u32 = 0x00271000
+-- Display list: 8 KiB of uncached RDRAM just past the Z buffer.
+const DL_BASE:  u32 = 0xA0297000
+const DL_PHYS:  u32 = 0x00297000
 const DL_BYTES: u32 = 8192
 
 static g_dl_off: u32 = 0        -- write cursor, bytes from DL_BASE
 
 -- RDP command opcodes.
 const RDP_TRI_FILL:        u32 = 0x08
+const RDP_TRI_SHADE:       u32 = 0x0C
+const RDP_TRI_SHADE_Z:     u32 = 0x0D
 const RDP_TRI_TEX:         u32 = 0x0A
 const RDP_TEXTURE_RECT:    u32 = 0x24
 const RDP_SYNC_LOAD:       u32 = 0x26
@@ -514,6 +517,7 @@ fn rdpq_set_combiner_raw(hi: u32, lo: u32) {
 fn rdpq_attach(fb: u32) {
     g_current_fb = fb
     rdpq_set_color_image(fb, 0, 2, SCREEN_W)
+    rdpq_set_z_image(ZB)
     rdpq_set_scissor(0, 0, SCREEN_W, SCREEN_H)
 }
 
@@ -563,14 +567,39 @@ fn rdpq_set_mode_copy() {
 -- A = combined alpha (0), M = memory colour (1), B = 1-A (0). The pair of
 -- fields is set for both blender cycles because 1-cycle mode still reads the
 -- second cycle's mux on some paths.
-fn rdpq_set_mode_standard() {
+--
+-- zbuf: SET_OTHER_MODES z_compare_en (bit 4) + z_update_en (bit 5).
+fn rdp_set_mode_1cycle(zbuf: i32) {
     dl_cmd(RDP_SYNC_PIPE << 24, 0)
     let blend: u32 = (1 << 22) | (1 << 20)
-    -- force_blend (14) | alpha_cvg_select (13) | image_read_en (6)
-    rdpq_set_other_modes_raw(CYCLE_1CYCLE << 20, blend | 0x00006040)
+    let mut lo: u32 = blend | 0x00006040
+    if zbuf != 0 { lo = lo | 0x30 }
+    rdpq_set_other_modes_raw(CYCLE_1CYCLE << 20, lo)
     -- Combiner (A-B)*C+D with A=B=C=0 and D=TEX0, for colour and alpha, in
     -- both cycles: sub_A=0, sub_B=0, mul=0, add=TEX0.
     rdpq_set_combiner_raw(0x00887F10, 0x88FCF279)
+}
+
+fn rdpq_set_mode_standard() {
+    rdp_set_mode_1cycle(0)
+}
+
+fn rdpq_set_mode_standard_z() {
+    rdp_set_mode_1cycle(1)
+}
+
+-- Fill the reserved Z buffer with 0xFFFC (libdragon's max 16-bit Z) by
+-- briefly pointing SET_COLOR_IMAGE at it. Restores the colour target after.
+fn rdpq_clear_z() {
+    let fb: u32 = g_current_fb
+    rdpq_set_color_image(ZB, 0, 2, SCREEN_W)
+    dl_cmd(RDP_SYNC_PIPE << 24, 0)
+    rdpq_set_other_modes_raw(CYCLE_FILL << 20, 0)
+    dl_cmd(RDP_SET_FILL_COLOR << 24, 0xFFFCFFFC)
+    rdpq_fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+    if fb != 0 {
+        rdpq_set_color_image(fb, 0, 2, SCREEN_W)
+    }
 }
 
 -- ── colour registers ───────────────────────────────────────────────────────
@@ -907,6 +936,154 @@ fn rdpq_triangle_tex(tile: u32,
     rdp_tex_lo(dsdy, dtdy, 0)
 }
 
+-- Pack one RGBA s15.16 quadruplet as the RDP shade block wants it: integer
+-- halves, then (later) fractional halves. See n64brew TRI_SHADE layout.
+fn rdp_rgba_hi(r: i32, g: i32, b: i32, a: i32) {
+    let ru: u32 = r as u32
+    let gu: u32 = g as u32
+    let bu: u32 = b as u32
+    let au: u32 = a as u32
+    dl_cmd((ru & 0xFFFF0000) | ((gu >> 16) & 0xFFFF),
+           (bu & 0xFFFF0000) | ((au >> 16) & 0xFFFF))
+}
+
+fn rdp_rgba_lo(r: i32, g: i32, b: i32, a: i32) {
+    let ru: u32 = r as u32
+    let gu: u32 = g as u32
+    let bu: u32 = b as u32
+    let au: u32 = a as u32
+    dl_cmd((ru << 16) | (gu & 0xFFFF), (bu << 16) | (au & 0xFFFF))
+}
+
+fn rdp_ch(c: u32, sh: u32) -> i32 {
+    return (((c >> sh) & 0xFF) as i32) << 16
+}
+
+-- Z coefficients: two 64-bit words, integer then fractional halves of
+-- (Z, dZdX) and (dZdE, dZdY). libdragon writes 4 uint32; the RDP splits
+-- each s15.16 the same way shade/tex do.
+fn rdp_z_coeffs(z: i32, dzdx: i32, dzde: i32, dzdy: i32) {
+    let zu: u32 = z as u32
+    let dx: u32 = dzdx as u32
+    let de: u32 = dzde as u32
+    let dy: u32 = dzdy as u32
+    dl_cmd((zu & 0xFFFF0000) | ((dx >> 16) & 0xFFFF), (zu << 16) | (dx & 0xFFFF))
+    dl_cmd((de & 0xFFFF0000) | ((dy >> 16) & 0xFFFF), (de << 16) | (dy & 0xFFFF))
+}
+
+-- Gouraud TRI_SHADE (0x0C) or TRI_SHADE_Z (0x0D). Colours are RGBA8888;
+-- Z is 0..32767 (15-bit, matching libdragon's 0x7FFF scale).
+fn rdp_tri_shade(opcode: u32,
+                 x0: i32, y0: i32, c0: u32, z0: i32,
+                 x1: i32, y1: i32, c1: u32, z1: i32,
+                 x2: i32, y2: i32, c2: u32, z2: i32,
+                 do_z: i32) {
+    let mut xa: i32 = x0
+    let mut ya: i32 = y0
+    let mut ca: u32 = c0
+    let mut za: i32 = z0
+    let mut xb: i32 = x1
+    let mut yb: i32 = y1
+    let mut cb: u32 = c1
+    let mut zb: i32 = z1
+    let mut xc: i32 = x2
+    let mut yc: i32 = y2
+    let mut cc: u32 = c2
+    let mut zc: i32 = z2
+
+    if yb < ya {
+        let tx: i32 = xa; let ty: i32 = ya; let tc: u32 = ca; let tz: i32 = za
+        xa = xb; ya = yb; ca = cb; za = zb
+        xb = tx; yb = ty; cb = tc; zb = tz
+    }
+    if yc < ya {
+        let tx: i32 = xa; let ty: i32 = ya; let tc: u32 = ca; let tz: i32 = za
+        xa = xc; ya = yc; ca = cc; za = zc
+        xc = tx; yc = ty; cc = tc; zc = tz
+    }
+    if yc < yb {
+        let tx: i32 = xb; let ty: i32 = yb; let tc: u32 = cb; let tz: i32 = zb
+        xb = xc; yb = yc; cb = cc; zb = zc
+        xc = tx; yc = ty; cc = tc; zc = tz
+    }
+    if ya == yc { return }
+
+    let mut lft: u32 = 0
+    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+
+    let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
+    let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
+    let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
+
+    let w0: u32 = (opcode << 24) | (lft << 23) | to_fx102(yc)
+    let w1: u32 = (to_fx102(yb) << 16) | to_fx102(ya)
+    dl_cmd(w0, w1)
+    dl_cmd((xb * 65536) as u32, dxldy as u32)
+    dl_cmd((xa * 65536) as u32, dxhdy as u32)
+    dl_cmd((xa * 65536) as u32, dxmdy as u32)
+
+    let ra: i32 = rdp_ch(ca, 24)
+    let ga: i32 = rdp_ch(ca, 16)
+    let ba: i32 = rdp_ch(ca, 8)
+    let aa: i32 = rdp_ch(ca, 0)
+    let rb: i32 = rdp_ch(cb, 24)
+    let gb: i32 = rdp_ch(cb, 16)
+    let bb: i32 = rdp_ch(cb, 8)
+    let ab: i32 = rdp_ch(cb, 0)
+    let rc: i32 = rdp_ch(cc, 24)
+    let gc: i32 = rdp_ch(cc, 16)
+    let bc: i32 = rdp_ch(cc, 8)
+    let ac: i32 = rdp_ch(cc, 0)
+
+    let hx: i32 = xc - xa
+    let hy: i32 = yc - ya
+    let mx: i32 = xb - xa
+    let my: i32 = yb - ya
+    let nz: i32 = hx * my - hy * mx
+
+    let drdx: i32 = rdp_muldiv(0 - (hy * (rb - ra) - my * (rc - ra)), 65536, nz)
+    let dgdx: i32 = rdp_muldiv(0 - (hy * (gb - ga) - my * (gc - ga)), 65536, nz)
+    let dbdx: i32 = rdp_muldiv(0 - (hy * (bb - ba) - my * (bc - ba)), 65536, nz)
+    let dadx: i32 = rdp_muldiv(0 - (hy * (ab - aa) - my * (ac - aa)), 65536, nz)
+    let drdy: i32 = rdp_muldiv(0 - (mx * (rc - ra) - hx * (rb - ra)), 65536, nz)
+    let dgdy: i32 = rdp_muldiv(0 - (mx * (gc - ga) - hx * (gb - ga)), 65536, nz)
+    let dbdy: i32 = rdp_muldiv(0 - (mx * (bc - ba) - hx * (bb - ba)), 65536, nz)
+    let dady: i32 = rdp_muldiv(0 - (mx * (ac - aa) - hx * (ab - aa)), 65536, nz)
+    let drde: i32 = drdy + rdp_muldiv(drdx, hx, hy)
+    let dgde: i32 = dgdy + rdp_muldiv(dgdx, hx, hy)
+    let dbde: i32 = dbdy + rdp_muldiv(dbdx, hx, hy)
+    let dade: i32 = dady + rdp_muldiv(dadx, hx, hy)
+
+    rdp_rgba_hi(ra, ga, ba, aa)
+    rdp_rgba_hi(drdx, dgdx, dbdx, dadx)
+    rdp_rgba_lo(ra, ga, ba, aa)
+    rdp_rgba_lo(drdx, dgdx, dbdx, dadx)
+    rdp_rgba_hi(drde, dgde, dbde, dade)
+    rdp_rgba_hi(drdy, dgdy, dbdy, dady)
+    rdp_rgba_lo(drde, dgde, dbde, dade)
+    rdp_rgba_lo(drdy, dgdy, dbdy, dady)
+
+    if do_z != 0 {
+        let zs: i32 = za << 16
+        let dzdx: i32 = rdp_muldiv(0 - (hy * (zb - za) - my * (zc - za)), 65536, nz)
+        let dzdy: i32 = rdp_muldiv(0 - (mx * (zc - za) - hx * (zb - za)), 65536, nz)
+        let dzde: i32 = dzdy + rdp_muldiv(dzdx, hx, hy)
+        rdp_z_coeffs(zs, dzdx, dzde, dzdy)
+    }
+}
+
+fn rdpq_triangle_shade(x0: i32, y0: i32, c0: u32,
+                       x1: i32, y1: i32, c1: u32,
+                       x2: i32, y2: i32, c2: u32) {
+    rdp_tri_shade(RDP_TRI_SHADE, x0, y0, c0, 0, x1, y1, c1, 0, x2, y2, c2, 0, 0)
+}
+
+fn rdpq_triangle_shade_z(x0: i32, y0: i32, c0: u32, z0: i32,
+                         x1: i32, y1: i32, c1: u32, z1: i32,
+                         x2: i32, y2: i32, c2: u32, z2: i32) {
+    rdp_tri_shade(RDP_TRI_SHADE_Z, x0, y0, c0, z0, x1, y1, c1, z1, x2, y2, c2, z2, 1)
+}
+
 -- ── syncs ──────────────────────────────────────────────────────────────────
 
 -- SYNC_FULL is the only sync that also drains the pipe, so it submits.
@@ -1025,9 +1202,9 @@ fn dma_write(src: *u8, cart: u32, len: i32) {
 }
 
 -- ── Heap (bump allocator) ───────────────────────────────────────────────────
--- Cached RDRAM above the framebuffers and the display list, below the stack.
+-- Cached RDRAM above the framebuffers, Z buffer and the display list, below the stack.
 -- Freeing is a no-op: a game that needs reuse should use an arena.
-const HEAP_BASE:  u32 = 0x80280000
+const HEAP_BASE:  u32 = 0x802A0000
 const HEAP_LIMIT: u32 = 0x803C0000
 
 static g_heap_ptr: u32 = 0

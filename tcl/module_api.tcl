@@ -83,6 +83,8 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     rdpq_set_mode_fill 1 \
     rdpq_set_mode_copy 1 \
     rdpq_set_mode_standard 1 \
+    rdpq_set_mode_standard_z 1 \
+    rdpq_clear_z 1 \
     rdpq_set_fill_color 1 \
     rdpq_set_blend_color 1 \
     rdpq_set_fog_color 1 \
@@ -99,6 +101,8 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     rdpq_texture_rectangle 1 \
     rdpq_texture_rectangle_scaled 1 \
     rdpq_triangle 1 \
+    rdpq_triangle_shade 1 \
+    rdpq_triangle_shade_z 1 \
     rdpq_triangle_tex 1 \
     rdpq_sync_full 1 \
     rdpq_sync_pipe 1 \

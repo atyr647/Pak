@@ -88,6 +88,7 @@ set ::pak::CG_API [dict create \
     {rdpq block_free} {rdpq_block_free} \
     {rdpq block_run} {rdpq_block_run} \
     {rdpq call} {rdpq_call} \
+    {rdpq clear_z} {rdpq_clear_z} \
     {rdpq close} {rdpq_close} \
     {rdpq detach} {rdpq_detach} \
     {rdpq detach_show} {rdpq_detach_show} \
@@ -105,6 +106,7 @@ set ::pak::CG_API [dict create \
     {rdpq set_mode_copy} {rdpq_set_mode_copy} \
     {rdpq set_mode_fill} {rdpq_set_mode_fill} \
     {rdpq set_mode_standard} {rdpq_set_mode_standard} \
+    {rdpq set_mode_standard_z} {rdpq_set_mode_standard_z} \
     {rdpq set_other_modes_raw} {rdpq_set_other_modes_raw} \
     {rdpq set_prim_color} {rdpq_set_prim_color} \
     {rdpq set_scissor} {rdpq_set_scissor} \
@@ -119,6 +121,8 @@ set ::pak::CG_API [dict create \
     {rdpq texture_rectangle} {rdpq_texture_rectangle} \
     {rdpq texture_rectangle_scaled} {rdpq_texture_rectangle_scaled} \
     {rdpq triangle} {rdpq_triangle} \
+    {rdpq triangle_shade} {rdpq_triangle_shade} \
+    {rdpq triangle_shade_z} {rdpq_triangle_shade_z} \
     {rdpq triangle_tex} {rdpq_triangle_tex} \
     {rdpq_font draw_text} {rdpq_text_print} \
     {rdpq_font free} {rdpq_font_free} \

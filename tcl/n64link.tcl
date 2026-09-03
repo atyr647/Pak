@@ -35,21 +35,23 @@ set ::pak::LINK_BASE_ADDR 0x80000400
 
 # Standalone RDRAM map (cached KSEG0). Uncached KSEG1 is these | 0xA0000000.
 # Layout, low to high:
-#   .text / .rodata / .data / .bss | 64-byte gap | FB0 FB1 FB2 | (Z later) | DL | heap | stack
-# Framebuffers, the RDP display list, heap and stack are NOT relocatable: the
+#   .text / .rodata / .data / .bss | 64-byte gap | FB0 FB1 FB2 | Z | DL | heap | stack
+# Framebuffers, Z, the RDP display list, heap and stack are NOT relocatable: the
 # runtime hard-codes the same numbers. The linker refuses to place a section
 # that would collide with them.
 set ::pak::MEM_GAP           64
 set ::pak::MEM_FB0           0x80200000
 set ::pak::MEM_FB_SIZE       0x25800          ;# 320 * 240 * 2
 set ::pak::MEM_FB_COUNT      3
-set ::pak::MEM_DL_BASE       0x80271000
+set ::pak::MEM_ZB            0x80271000
+set ::pak::MEM_ZB_SIZE       0x25800
+set ::pak::MEM_DL_BASE       0x80297000
 set ::pak::MEM_DL_SIZE       8192
-set ::pak::MEM_HEAP_BASE     0x80280000
+set ::pak::MEM_HEAP_BASE     0x802A0000
 set ::pak::MEM_HEAP_LIMIT    0x803C0000
 set ::pak::MEM_STACK_TOP     0x80400000
-# FB2 ends at 0x80270800; 64-byte gap then DL at 0x80271000 (matches runtime).
-# A full 320×240 Z buffer is not reserved yet (TRI_TEX, week 2).
+# FB2 ends at 0x80270800; 64-byte gap then Z at 0x80271000 (matches runtime).
+# Z is 320×240×16-bit (0x25800), then DL at 0x80297000.
 
 # Fixed section order, and the alignment applied BEFORE each section is placed
 # (matching n64.ld's ALIGN directives). .text starts at the already-16-aligned
@@ -308,6 +310,8 @@ proc pak::link_parsed_objects {objects {entry _start}} {
     set fb2 [expr {$fb1 + $::pak::MEM_FB_SIZE}]
     foreach {name value} [list \
             __fb0 $fb0 __fb1 $fb1 __fb2 $fb2 \
+            __zb $::pak::MEM_ZB \
+            __zb_end [expr {$::pak::MEM_ZB + $::pak::MEM_ZB_SIZE}] \
             __dl_base $::pak::MEM_DL_BASE \
             __dl_end  [expr {$::pak::MEM_DL_BASE + $::pak::MEM_DL_SIZE}] \
             __heap_start $::pak::MEM_HEAP_BASE \

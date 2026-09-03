@@ -209,8 +209,9 @@ puts "== memory-map symbols =="
 ok "__fb0"        [format %#010x [dict get $r symbols __fb0]]        0x80200000
 ok "__fb1"        [format %#010x [dict get $r symbols __fb1]]        0x80225800
 ok "__fb2"        [format %#010x [dict get $r symbols __fb2]]        0x8024b000
-ok "__dl_base"    [format %#010x [dict get $r symbols __dl_base]]    0x80271000
-ok "__heap_start" [format %#010x [dict get $r symbols __heap_start]] 0x80280000
+ok "__zb"         [format %#010x [dict get $r symbols __zb]]         0x80271000
+ok "__dl_base"    [format %#010x [dict get $r symbols __dl_base]]    0x80297000
+ok "__heap_start" [format %#010x [dict get $r symbols __heap_start]] 0x802a0000
 ok "__stack_top"  [format %#010x [dict get $r symbols __stack_top]]  0x80400000
 
 puts "== overlap: .data that grows into FB0 is a link error =="

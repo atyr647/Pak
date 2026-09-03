@@ -115,14 +115,15 @@ framebuffers and the display list).
 | `.text` / `.rodata` / `.data` / `.bss` | `0x80000400` | grows up; **must stay 64 bytes below FB0** |
 | 64-byte gap | | linker error on overlap |
 | FB0 / FB1 / FB2 | `0x80200000` / `0x80225800` / `0x8024B000` | 320×240×16bpp each (`0x25800`) |
-| RDP display list | `0x80271000` | 8 KB |
-| bump heap | `0x80280000`–`0x803C0000` | |
+| Z buffer | `0x80271000` | 320×240×16-bit (`0x25800`) |
+| RDP display list | `0x80297000` | 8 KB |
+| bump heap | `0x802A0000`–`0x803C0000` | |
 | stack top | `0x80400000` | grows down |
 
-A full Z buffer is not reserved yet. Cart images are padded to 4/8/16/32/64 MiB
+Cart images are padded to 4/8/16/32/64 MiB
 (`pak link --size 4`, default 4); a 2.9 MB `.z64` crashes on flashcarts.
 
-The linker exports `__fb0`, `__fb1`, `__fb2`, `__dl_base`, `__heap_start`,
+The linker exports `__fb0`, `__fb1`, `__fb2`, `__zb`, `__dl_base`, `__heap_start`,
 `__heap_end`, `__stack_top` so a program can read the map instead of
 hard-coding it. `.bss` still reserves address space but is not stored in the
 ROM image (boot.S zero-fills it at startup). `R_MIPS_HI16`/`LO16` use the
@@ -131,7 +132,7 @@ standard `+0x8000` carry correction.
 ## The RDP does the drawing
 
 Nothing is rasterized on the CPU. `rdpq_*` builds a display list of 64-bit RDP
-commands in uncached RDRAM at `0xA0271000` and hands it to the Display
+commands in uncached RDRAM at `0xA0297000` and hands it to the Display
 Processor by writing `DPC_START`/`DPC_END`, then polls `DPC_STATUS` until the
 pipe, command and DMA engines are all idle. Uncached KSEG1 means a CPU write
 lands in RDRAM immediately, so the DP reads exactly what was written with no
@@ -146,7 +147,7 @@ What the runtime drives:
 | Colour registers | fill, blend, fog, env, prim |
 | Fills | `FILL_RECTANGLE` in FILL cycle — four bytes per cycle |
 | Texturing | `SET_TEXTURE_IMAGE` (writeback of KSEG0 sources), `SET_TILE` / `SET_TILE` clamp+mirror+mask, `SET_TILE_SIZE`, `LOAD_TILE`, `LOAD_BLOCK`, `LOAD_TLUT`, `TEXTURE_RECTANGLE` |
-| Geometry | `TRIANGLE` (0x08 flat fill) and `TRI_TEX` (0x0A, s15.16 edges + ST + 1/w). Shade+Z (0x0C/0x0E) not yet. |
+| Geometry | `TRIANGLE` (0x08), `TRI_TEX` (0x0A), `TRI_SHADE` (0x0C), `TRI_SHADE_Z` (0x0D). Edges s15.16; shade RGBA s15.16; Z 15.16 of 0..32767. |
 | Sync | `SYNC_PIPE`, `SYNC_TILE`, `SYNC_LOAD`, `SYNC_FULL` |
 
 A full-screen clear is one `FILL_RECTANGLE` instead of 76 800 uncached
@@ -177,12 +178,8 @@ wait loops terminate instead of hanging.
   is therefore correct but **not** delay-slot-optimized (the codegen emits
   explicit `nop`s in delay slots, which are valid under `.set noreorder`).
   Porting the optimizer to operate on records is a follow-up.
-* **Triangles are flat.** `rdpq.triangle` emits the edge-only command (0x08).
-  Gouraud shading, texture coordinates and Z-buffering need the shade, texture
-  and depth coefficient blocks, which are not generated yet.
-* **Tiles are unmasked.** `rdpq.set_tile` leaves the mask and shift fields
-  zero, which is wrap-with-no-mirroring. Power-of-two clamping and mirroring
-  need those fields exposed.
+* **No shade+tex.** `rdpq.triangle_tex` is affine ST only (0x0A). Combining
+  Gouraud with texture (0x0E / 0x0F) is a follow-up.
 * **FPU encodings.** COP1 ops (`add.s`/`sub.s`/`mul.s`/`div.s`, the
   `mov`/`neg`/`abs`/`sqrt` unary group, `cvt.*`, the `c.<cond>.s` compare
   family, `bc1t`/`bc1f`, `mtc1`/`mfc1`) all have golden encodings in

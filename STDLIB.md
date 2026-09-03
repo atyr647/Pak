@@ -379,6 +379,7 @@ rejects a no.
 | `rdpq` | `block_free` | `rdpq_block_free` | yes | no |
 | `rdpq` | `block_run` | `rdpq_block_run` | yes | no |
 | `rdpq` | `call` | `rdpq_call` | yes | no |
+| `rdpq` | `clear_z` | `rdpq_clear_z` | yes | yes |
 | `rdpq` | `close` | `rdpq_close` | yes | yes |
 | `rdpq` | `detach` | `rdpq_detach` | yes | yes |
 | `rdpq` | `detach_show` | `rdpq_detach_show` | yes | yes |
@@ -397,6 +398,7 @@ rejects a no.
 | `rdpq` | `set_mode_copy` | `rdpq_set_mode_copy` | yes | yes |
 | `rdpq` | `set_mode_fill` | `rdpq_set_mode_fill` | yes | yes |
 | `rdpq` | `set_mode_standard` | `rdpq_set_mode_standard` | yes | yes |
+| `rdpq` | `set_mode_standard_z` | `rdpq_set_mode_standard_z` | yes | yes |
 | `rdpq` | `set_other_modes_raw` | `rdpq_set_other_modes_raw` | yes | yes |
 | `rdpq` | `set_prim_color` | `rdpq_set_prim_color` | yes | yes |
 | `rdpq` | `set_scissor` | `rdpq_set_scissor` | yes | yes |
@@ -412,6 +414,8 @@ rejects a no.
 | `rdpq` | `texture_rectangle` | `rdpq_texture_rectangle` | yes | yes |
 | `rdpq` | `texture_rectangle_scaled` | `rdpq_texture_rectangle_scaled` | yes | yes |
 | `rdpq` | `triangle` | `rdpq_triangle` | yes | yes |
+| `rdpq` | `triangle_shade` | `rdpq_triangle_shade` | yes | yes |
+| `rdpq` | `triangle_shade_z` | `rdpq_triangle_shade_z` | yes | yes |
 | `rdpq` | `triangle_tex` | `rdpq_triangle_tex` | yes | yes |
 | `rdpq_font` | `draw_text` | `rdpq_text_print` | yes | no |
 | `rdpq_font` | `free` | `rdpq_font_free` | yes | no |
@@ -575,7 +579,7 @@ rejects a no.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**316 functions** across the module surface; **63** exist on the standalone HAL.
+**320 functions** across the module surface; **67** exist on the standalone HAL.
 
 <!-- END GENERATED MODULE API -->
 
@@ -672,8 +676,10 @@ use n64.rdpq             -- #include <rdpq.h> + <rdpq_gfx.h>
 | `rdpq.detach` | `()` | Detach current surface |
 | `rdpq.detach_show` | `()` | Detach and show surface (flip) |
 | `rdpq.set_mode_standard` | `()` | Standard rendering mode |
+| `rdpq.set_mode_standard_z` | `()` | 1-cycle + z_compare_en + z_update_en |
 | `rdpq.set_mode_copy` | `()` | Fast copy rendering mode |
 | `rdpq.set_mode_fill` | `(color: u32)` | Fill mode with color |
+| `rdpq.clear_z` | `()` | Fill the reserved Z buffer with 0xFFFC |
 | `rdpq.fill_rectangle` | `(x0, y0, x1, y1: i32)` | Draw filled rectangle |
 | `rdpq.set_scissor` | `(x0, y0, x1, y1: i32)` | Set scissor rectangle |
 | `rdpq.sync_full` | `()` | Wait for RDP to finish all commands |
@@ -682,6 +688,8 @@ use n64.rdpq             -- #include <rdpq.h> + <rdpq_gfx.h>
 | `rdpq.sync_load` | `()` | Sync RDP texture load |
 | `rdpq.triangle` | `(x0,y0,x1,y1,x2,y2)` | Flat fill triangle (RDP 0x08) |
 | `rdpq.triangle_tex` | `(tile, x0,y0,s0,t0, x1,y1,s1,t1, x2,y2,s2,t2)` | Affine textured triangle (RDP 0x0A TRI_TEX, s15.16 edges + ST + 1/w) |
+| `rdpq.triangle_shade` | `(x0,y0,c0, x1,y1,c1, x2,y2,c2)` | Gouraud triangle (RDP 0x0C); colours RGBA8888 |
+| `rdpq.triangle_shade_z` | `(x0,y0,c0,z0, x1,y1,c1,z1, x2,y2,c2,z2)` | Gouraud + Z (RDP 0x0D); z is 0..32767 |
 | `rdpq.texture_rectangle` | `(...)` | Blit textured rect (see libdragon) |
 | `rdpq.texture_rectangle_scaled` | `(...)` | Scaled textured rect (see libdragon) |
 | `rdpq.set_blend_color` | `(color: u32)` | Blend color register |
