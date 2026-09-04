@@ -42,6 +42,9 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_set_env_color \
     rdpq_set_prim_color \
     rdpq_set_prim_depth \
+    rdpq_set_key_r \
+    rdpq_set_key_gb \
+    rdpq_set_convert \
     rdpq_set_texture_image \
     rdpq_set_tile \
     rdpq_set_tile_mask \
@@ -223,6 +226,9 @@ set ::pak::MIPS_API [dict create \
     {rdpq set_env_color} {rdpq_set_env_color} \
     {rdpq set_prim_color} {rdpq_set_prim_color} \
     {rdpq set_prim_depth} {rdpq_set_prim_depth} \
+    {rdpq set_key_r} {rdpq_set_key_r} \
+    {rdpq set_key_gb} {rdpq_set_key_gb} \
+    {rdpq set_convert} {rdpq_set_convert} \
     {rdpq set_texture_image} {rdpq_set_texture_image} \
     {rdpq set_tile} {rdpq_set_tile} \
     {rdpq set_tile_mask} {rdpq_set_tile_mask} \

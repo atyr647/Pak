@@ -94,7 +94,11 @@ set ::pak::API_ARITY [dict create \
     {rdpq load_tlut} {3 3} \
     {rdpq texture_rectangle} {7 7} \
     {rdpq texture_rectangle_flip} {7 7} \
+    {rdpq texture_rectangle_scaled} {9 9} \
     {rdpq set_prim_depth} {2 2} \
+    {rdpq set_key_r} {3 3} \
+    {rdpq set_key_gb} {6 6} \
+    {rdpq set_convert} {6 6} \
     {rdpq triangle} {6 6} \
     {rdpq triangle_z} {9 9} \
     {rdpq triangle_shade} {9 9} \

@@ -151,9 +151,9 @@ What the runtime drives:
 |------|----------|
 | Render target | `SET_COLOR_IMAGE`, `SET_Z_IMAGE`, `SET_SCISSOR` |
 | Modes | `SET_OTHER_MODES` (FILL / COPY / 1-cycle), `SET_COMBINE` |
-| Colour registers | fill, blend, fog, env, prim, prim depth |
+| Colour registers | fill, blend, fog, env, prim, prim depth, chroma-key R/GB (0x2B/0x2A), YUV convert (0x2C) |
 | Fills | `FILL_RECTANGLE` in FILL cycle — four bytes per cycle |
-| Texturing | `SET_TEXTURE_IMAGE` (writeback of KSEG0 sources), `SET_TILE` / `SET_TILE` clamp+mirror+mask, `SET_TILE_SIZE`, `LOAD_TILE`, `LOAD_BLOCK` (0x33, SH=texels-1), `LOAD_TLUT` (0x30, colour index in 10.2×4), `TEXTURE_RECTANGLE`, `TEXTURE_RECTANGLE_FLIP` (0x25) |
+| Texturing | `SET_TEXTURE_IMAGE` (writeback of KSEG0 sources), `SET_TILE` / `SET_TILE` clamp+mirror+mask, `SET_TILE_SIZE`, `LOAD_TILE`, `LOAD_BLOCK` (0x33, SH=texels-1), `LOAD_TLUT` (0x30, colour index in 10.2×4), `TEXTURE_RECTANGLE` / scaled dsdx, `TEXTURE_RECTANGLE_FLIP` (0x25) |
 | Geometry | `TRIANGLE` (0x08), `TRIANGLE_Z` (0x09), `TRI_TEX` (0x0A), `TRI_TEX_Z` (0x0B), `TRI_SHADE` (0x0C), `TRI_SHADE_Z` (0x0D), `TRI_SHADE_TXTR` (0x0E), `TRI_SHADE_TXTR_Z` (0x0F). Edges s15.16; shade RGBA s15.16; Z 15.16 of 0..32767. |
 | Sync | `SYNC_PIPE`, `SYNC_TILE`, `SYNC_LOAD`, `SYNC_FULL` |
 

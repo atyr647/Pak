@@ -392,9 +392,12 @@ rejects a no.
 | `rdpq` | `set_blend_color` | `rdpq_set_blend_color` | yes | yes |
 | `rdpq` | `set_color_image` | `rdpq_set_color_image` | yes | yes |
 | `rdpq` | `set_combiner_raw` | `rdpq_set_combiner_raw` | yes | yes |
+| `rdpq` | `set_convert` | `rdpq_set_convert` | yes | yes |
 | `rdpq` | `set_env_color` | `rdpq_set_env_color` | yes | yes |
 | `rdpq` | `set_fill_color` | `rdpq_set_fill_color` | yes | yes |
 | `rdpq` | `set_fog_color` | `rdpq_set_fog_color` | yes | yes |
+| `rdpq` | `set_key_gb` | `rdpq_set_key_gb` | yes | yes |
+| `rdpq` | `set_key_r` | `rdpq_set_key_r` | yes | yes |
 | `rdpq` | `set_mode_copy` | `rdpq_set_mode_copy` | yes | yes |
 | `rdpq` | `set_mode_fill` | `rdpq_set_mode_fill` | yes | yes |
 | `rdpq` | `set_mode_standard` | `rdpq_set_mode_standard` | yes | yes |
@@ -586,7 +589,7 @@ rejects a no.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**327 functions** across the module surface; **89** exist on the standalone HAL.
+**330 functions** across the module surface; **92** exist on the standalone HAL.
 
 <!-- END GENERATED MODULE API -->
 
@@ -704,13 +707,16 @@ use n64.rdpq             -- #include <rdpq.h> + <rdpq_gfx.h>
 | `rdpq.triangle_shade_tex_z` | `(tile, x0,y0,c0,s0,t0, x1,..., x2,...)` | Gouraud + ST + Z (RDP 0x0F); call `set_tri_z` first |
 | `rdpq.texture_rectangle` | `(...)` | Blit textured rect (see libdragon) |
 | `rdpq.texture_rectangle_flip` | `(tile, x0,y0,x1,y1,s,t)` | Y-flipped blit (RDP 0x25 TEXTURE_RECTANGLE_FLIP) |
-| `rdpq.texture_rectangle_scaled` | `(...)` | Scaled textured rect (see libdragon) |
+| `rdpq.texture_rectangle_scaled` | `(tile, x0,y0,x1,y1,s,t,dsdx,dtdy)` | Scaled blit (RDP 0x24, s5.10 dsdx/dtdy) |
 | `rdpq.set_blend_color` | `(color: u32)` | Blend color register |
 | `rdpq.set_fog_color` | `(color: u32)` | Fog color register |
 | `rdpq.set_fill_color` | `(color: u32)` | Fill color register |
 | `rdpq.set_env_color` | `(color: u32)` | Environment color register |
 | `rdpq.set_prim_color` | `(color: u32)` | Primitive color register |
 | `rdpq.set_prim_depth` | `(z: u32, dz: u32)` | Primitive Z / delta-Z (RDP 0x2E) |
+| `rdpq.set_key_r` | `(width, center, scale)` | Chroma-key red (RDP 0x2B) |
+| `rdpq.set_key_gb` | `(wg, wb, cg, sg, cb, sb)` | Chroma-key green/blue (RDP 0x2A) |
+| `rdpq.set_convert` | `(k0..k5)` | YUV-to-RGB coefficients (RDP 0x2C, 9-bit) |
 | `rdpq.set_z_image` | `(surface: *surface_t)` | Set Z-buffer image |
 | `rdpq.set_color_image` | `(surface: *surface_t)` | Set color render target |
 | `rdpq.set_tile` | `(tile, fmt, size, line, tmem, palette)` | Tile descriptor, wrap (mask 0) |

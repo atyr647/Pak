@@ -132,6 +132,9 @@ ok "rdpq_set_tri_z is in the HAL" [pak::mips_hal_symbol rdpq_set_tri_z]
 ok "rdpq_clear_z is in the HAL" [pak::mips_hal_symbol rdpq_clear_z]
 ok "rdpq_set_prim_depth is in the HAL" [pak::mips_hal_symbol rdpq_set_prim_depth]
 ok "rdpq_texture_rectangle_flip is in the HAL" [pak::mips_hal_symbol rdpq_texture_rectangle_flip]
+ok "rdpq_set_key_r is in the HAL" [pak::mips_hal_symbol rdpq_set_key_r]
+ok "rdpq_set_key_gb is in the HAL" [pak::mips_hal_symbol rdpq_set_key_gb]
+ok "rdpq_set_convert is in the HAL" [pak::mips_hal_symbol rdpq_set_convert]
 ok "exception_paint is in the HAL" [pak::mips_hal_symbol exception_paint]
 ok "exception_set_handler is in the HAL" [pak::mips_hal_symbol exception_set_handler]
 ok "eeprom_present is in the HAL" [pak::mips_hal_symbol eeprom_present]
@@ -194,6 +197,17 @@ entry {
 "]
 set diags [pak::semantic_check $ast "t.pk64" mips]
 ok "set_prim_depth / texture_rectangle_flip accepted on mips" [expr {[llength $diags] == 0}] $diags
+
+set ast [parse_src "use n64.rdpq
+entry {
+    rdpq.set_key_r(16, 128, 4)
+    rdpq.set_key_gb(16, 16, 128, 4, 128, 4)
+    rdpq.set_convert(175, 0 - 43, 0 - 89, 222, 114, 42)
+    rdpq.texture_rectangle_scaled(0, 0, 0, 64, 32, 0, 0, 512, 1024)
+}
+"]
+set diags [pak::semantic_check $ast "t.pk64" mips]
+ok "key / convert / texrect_scaled accepted on mips" [expr {[llength $diags] == 0}] $diags
 
 set ast [parse_src "entry { n64.rdpq.set_texture_image(0x80001000, 0, 2, 32) }
 "]

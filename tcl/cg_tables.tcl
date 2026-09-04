@@ -110,6 +110,9 @@ set ::pak::CG_API [dict create \
     {rdpq set_other_modes_raw} {rdpq_set_other_modes_raw} \
     {rdpq set_prim_color} {rdpq_set_prim_color} \
     {rdpq set_prim_depth} {rdpq_set_prim_depth} \
+    {rdpq set_key_r} {rdpq_set_key_r} \
+    {rdpq set_key_gb} {rdpq_set_key_gb} \
+    {rdpq set_convert} {rdpq_set_convert} \
     {rdpq set_scissor} {rdpq_set_scissor} \
     {rdpq set_tile} {rdpq_set_tile} \
     {rdpq set_tile_mask} {rdpq_set_tile_mask} \

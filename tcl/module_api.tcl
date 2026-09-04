@@ -91,6 +91,9 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     rdpq_set_env_color 1 \
     rdpq_set_prim_color 1 \
     rdpq_set_prim_depth 1 \
+    rdpq_set_key_r 1 \
+    rdpq_set_key_gb 1 \
+    rdpq_set_convert 1 \
     rdpq_fill_rectangle 1 \
     rdpq_set_texture_image 1 \
     rdpq_set_tile 1 \

@@ -213,6 +213,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Fill+Z / tex+Z triangles | ✅ Full | RDP 0x09 `rdpq.triangle_z`; 0x0B `rdpq.triangle_tex_z` after `set_tri_z` |
 | LOAD_BLOCK / LOAD_TLUT | ✅ Full | RDP 0x33 / 0x30; executed in `rdp_test.tcl` |
 | Tex-rect flip / prim depth / fog+env | ✅ Full | RDP 0x25 / 0x2E / 0x38 / 0x3B |
+| Chroma key / YUV convert / scaled texrect | ✅ Full | RDP 0x2A/0x2B/0x2C; 0x24 with custom dsdx |
 | Array address / u8 index | ✅ Full | `&arr` is `la`; `[N]u8` stores `sb` at base+i (not scale-4 `sw`) |
 | `&s.field` / value-struct fields | ✅ Full | Place address of the object, not a spilled copy of the first word |
 | Method `self` (value, `*T`, `obj.field.m()`) | ✅ Full | Pointer receivers pass the pointer; `g.player.init()` is not a module call |

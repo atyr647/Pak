@@ -97,6 +97,8 @@ set EXPECTED {
     00000000 10000400
     2520C144 001900C8
     00000000 10000400
+    2428C144 001900C8
+    00000000 02000400
     27000000 00000000
     2F000000 00506040
     3C887F10 88FCF279
@@ -105,6 +107,9 @@ set EXPECTED {
     38000000 778899AA
     3B000000 BBCCDDFF
     2E000000 7FFF0000
+    2B000000 00108004
+    2A010010 80048004
+    2C15FD5D 3B78E42A
     08000168 00500028
     00640000 FFFF2493
     000A0000 00006000
@@ -247,6 +252,8 @@ set NOTES {
     "                  s/t = 0, dsdx = 4 texels/cycle, dtdy = 1"
     "TEXTURE_RECT_FLIP 0x25, same rect as TEXTURE_RECTANGLE"
     "                  s/t = 0, dsdx = 4 texels/cycle, dtdy = 1"
+    "TEXTURE_RECTANGLE 0x24 scaled (100,50)-(164,82)"
+    "                  s/t = 0, dsdx = 0.5 texel/pixel, dtdy = 1"
     "SYNC_PIPE         before the mode change"
     "SET_OTHER_MODES   cycle_type = 1CYCLE, alpha blending"
     "SET_COMBINE       texel passthrough"
@@ -255,6 +262,9 @@ set NOTES {
     "SET_FOG_COLOR     0x778899AA"
     "SET_ENV_COLOR     0xBBCCDDFF"
     "SET_PRIM_DEPTH    z=0x7FFF, dz=0"
+    "SET_KEY_R         0x2B width=16 center=128 scale=4"
+    "SET_KEY_GB        0x2A width 16/16, center 128, scale 4"
+    "SET_CONVERT       0x2C NTSC k0..k5 (175,-43,-89,222,114,42)"
     "TRIANGLE          sorted (10,10) (100,20) (40,90); YL/YM/YH"
     "                  XL / DxLDy   (lower minor edge)"
     "                  XH / DxHDy   (major edge)"

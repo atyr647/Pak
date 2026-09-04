@@ -36,6 +36,9 @@
 	.extern rdpq_set_env_color
 	.extern rdpq_set_prim_color
 	.extern rdpq_set_prim_depth
+	.extern rdpq_set_key_r
+	.extern rdpq_set_key_gb
+	.extern rdpq_set_convert
 	.extern rdpq_set_texture_image
 	.extern rdpq_set_tile
 	.extern rdpq_set_tile_mask

@@ -427,6 +427,9 @@ const RDP_SYNC_LOAD:       u32 = 0x26
 const RDP_SYNC_PIPE:       u32 = 0x27
 const RDP_SYNC_TILE:       u32 = 0x28
 const RDP_SYNC_FULL:       u32 = 0x29
+const RDP_SET_KEY_GB:      u32 = 0x2A
+const RDP_SET_KEY_R:       u32 = 0x2B
+const RDP_SET_CONVERT:     u32 = 0x2C
 const RDP_SET_SCISSOR:     u32 = 0x2D
 const RDP_SET_PRIM_DEPTH:  u32 = 0x2E
 const RDP_SET_OTHER_MODES: u32 = 0x2F
@@ -665,6 +668,38 @@ fn rdpq_set_prim_color(color: u32) {
 -- instead of the per-pixel interpolator. z/dz are 16-bit.
 fn rdpq_set_prim_depth(z: u32, dz: u32) {
     dl_cmd(RDP_SET_PRIM_DEPTH << 24, (z << 16) | (dz & 0xFFFF))
+}
+
+-- Chroma-key red channel. width is 12-bit; center and scale are 8-bit.
+fn rdpq_set_key_r(width: u32, center: u32, scale: u32) {
+    dl_cmd(RDP_SET_KEY_R << 24,
+           ((width & 0xFFF) << 16) | ((center & 0xFF) << 8) | (scale & 0xFF))
+}
+
+-- Chroma-key green and blue. Same layout as GBI gDPSetKeyGB.
+fn rdpq_set_key_gb(width_g: u32, width_b: u32,
+                   center_g: u32, scale_g: u32,
+                   center_b: u32, scale_b: u32) {
+    dl_cmd((RDP_SET_KEY_GB << 24) | ((width_g & 0xFFF) << 12) | (width_b & 0xFFF),
+           ((center_g & 0xFF) << 24) | ((scale_g & 0xFF) << 16)
+           | ((center_b & 0xFF) << 8) | (scale_b & 0xFF))
+}
+
+-- YUV-to-RGB convert coefficients. Each k is 9-bit two's complement
+-- (libultra NTSC: 175, -43, -89, 222, 114, 42).
+fn rdp_k9(v: i32) -> u32 {
+    return (v as u32) & 0x1FF
+}
+
+fn rdpq_set_convert(k0: i32, k1: i32, k2: i32, k3: i32, k4: i32, k5: i32) {
+    let a: u32 = rdp_k9(k0)
+    let b: u32 = rdp_k9(k1)
+    let c: u32 = rdp_k9(k2)
+    let d: u32 = rdp_k9(k3)
+    let e: u32 = rdp_k9(k4)
+    let f: u32 = rdp_k9(k5)
+    dl_cmd((RDP_SET_CONVERT << 24) | (a << 13) | (b << 4) | (c >> 5),
+           ((c & 0x1F) << 27) | (d << 18) | (e << 9) | f)
 }
 
 -- ── primitives ─────────────────────────────────────────────────────────────
