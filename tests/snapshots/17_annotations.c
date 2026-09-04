@@ -54,9 +54,9 @@ static int32_t debug_counters[16];
 static int32_t sink = 0;
 
 int main(void) {
-    __auto_type pkt = (DMAPacket){.header = 0xABCD, .data = /* undefined */};
+    __auto_type pkt = (DMAPacket){.header = 0xABCD};
     dma_out[0] = (uint8_t)pkt.header;
-    __auto_type cb = (CriticalBuffer){.data = /* undefined */};
+    __auto_type cb = (CriticalBuffer){0};
     sink = (int32_t)cb.data[0];
     sink = sum_scanline(&dma_out[0], 0, 320);
     return 0;

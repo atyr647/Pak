@@ -295,33 +295,33 @@ void update_playing(GameState * gs, joypad_status_t pad) {
     int32_t sx = (int32_t)pad.stick_x;
     int32_t sy = (int32_t)pad.stick_y;
     if ((sx > DEAD_ZONE) || (sx < -DEAD_ZONE)) {
-        gs->cam.rotate(((float)sx * -STICK_SCALE));
+        Camera_rotate(&gs->cam, ((float)sx * -STICK_SCALE));
     }
     if (sy > DEAD_ZONE) {
         float spd = ((float)sy * STICK_SCALE);
-        gs->cam.try_move((gs->cam.dir_x * spd), (gs->cam.dir_y * spd));
+        Camera_try_move(&gs->cam, (gs->cam.dir_x * spd), (gs->cam.dir_y * spd));
     }
     if (sy < -DEAD_ZONE) {
         float spd = ((float)sy * STICK_SCALE);
-        gs->cam.try_move((gs->cam.dir_x * spd), (gs->cam.dir_y * spd));
+        Camera_try_move(&gs->cam, (gs->cam.dir_x * spd), (gs->cam.dir_y * spd));
     }
     if (pad.held.l) {
-        gs->cam.try_move((gs->cam.plane_x * -MOVE_SPEED), (gs->cam.plane_y * -MOVE_SPEED));
+        Camera_try_move(&gs->cam, (gs->cam.plane_x * -MOVE_SPEED), (gs->cam.plane_y * -MOVE_SPEED));
     }
     if (pad.held.r) {
-        gs->cam.try_move((gs->cam.plane_x * MOVE_SPEED), (gs->cam.plane_y * MOVE_SPEED));
+        Camera_try_move(&gs->cam, (gs->cam.plane_x * MOVE_SPEED), (gs->cam.plane_y * MOVE_SPEED));
     }
     if (pad.held.right) {
-        gs->cam.rotate(-ROT_SPEED);
+        Camera_rotate(&gs->cam, -ROT_SPEED);
     }
     if (pad.held.left) {
-        gs->cam.rotate(ROT_SPEED);
+        Camera_rotate(&gs->cam, ROT_SPEED);
     }
     if (pad.held.up) {
-        gs->cam.try_move((gs->cam.dir_x * MOVE_SPEED), (gs->cam.dir_y * MOVE_SPEED));
+        Camera_try_move(&gs->cam, (gs->cam.dir_x * MOVE_SPEED), (gs->cam.dir_y * MOVE_SPEED));
     }
     if (pad.held.down) {
-        gs->cam.try_move((-gs->cam.dir_x * MOVE_SPEED), (-gs->cam.dir_y * MOVE_SPEED));
+        Camera_try_move(&gs->cam, (-gs->cam.dir_x * MOVE_SPEED), (-gs->cam.dir_y * MOVE_SPEED));
     }
     if (pad.pressed.start) {
         gs->phase = GamePhase_paused;

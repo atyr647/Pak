@@ -356,24 +356,36 @@ oo::class create pak::Codegen {
         return "void *"
     }
 
+    # A float literal in a fixed-point expression is scaled at compile time;
+    # anything else is generated normally.
+    method gen_fix_operand {e shift} {
+        if {$shift != 0 && [pak::kindof $e] eq "FloatLit"} {
+            set raw [pak::sval [pak::nfield $e value]]
+            return [expr {entier(double($raw) * (1 << $shift))}]
+        }
+        return [my gen_expr $e]
+    }
+
+    method type_struct_name {t} {
+        if {[pak::kindof $t] eq "TypeName"} { return [pak::fval $t name] }
+        if {[pak::kindof $t] eq "TypePointer" && [pak::kindof [pak::nfield $t inner]] eq "TypeName"} {
+            return [pak::fval [pak::nfield $t inner] name]
+        }
+        return ""
+    }
+
     method expr_type {e} {
         switch -- [pak::kindof $e] {
             Ident { return [my scope_get [pak::fval $e name]] }
             DotAccess {
-                set obj [pak::nfield $e obj]
-                if {[pak::kindof $obj] eq "Ident"} {
-                    set ot [my scope_get [pak::fval $obj name]]
-                    set sname ""
-                    if {[pak::kindof $ot] eq "TypeName"} {
-                        set sname [pak::fval $ot name]
-                    } elseif {[pak::kindof $ot] eq "TypePointer" && [pak::kindof [pak::nfield $ot inner]] eq "TypeName"} {
-                        set sname [pak::fval [pak::nfield $ot inner] name]
-                    }
-                    if {$sname ne "" && [dict exists $struct_fields $sname]} {
-                        set fields [dict get $struct_fields $sname]
-                        set fld [pak::fval $e field]
-                        if {[dict exists $fields $fld]} { return [dict get $fields $fld] }
-                    }
+                # Recurse, so gs.cam.pos_x resolves as far as the fields are
+                # known, not just one level from a bare identifier.
+                set ot [my expr_type [pak::nfield $e obj]]
+                set sname [my type_struct_name $ot]
+                if {$sname ne "" && [dict exists $struct_fields $sname]} {
+                    set fields [dict get $struct_fields $sname]
+                    set fld [pak::fval $e field]
+                    if {[dict exists $fields $fld]} { return [dict get $fields $fld] }
                 }
             }
         }
@@ -501,8 +513,17 @@ oo::class create pak::Codegen {
                 set parts {}
                 foreach pair [pak::items [pak::nfield $e fields]] {
                     set p [pak::items $pair]
+                    # `data: undefined` asks for no initializer for that field.
+                    # It was emitting `.data = ` with nothing after the `=`.
+                    # Omitting the designator is the C spelling; LANGUAGE.md
+                    # calls undefined "zero/undefined initialized", and an
+                    # omitted field in a designated initializer is zeroed.
+                    if {[pak::kindof [lindex $p 1]] eq "UndefinedLit"} continue
                     lappend parts ".[pak::sval [lindex $p 0]] = [my gen_expr [lindex $p 1]]"
                 }
+                # C99 has no empty initializer list, so an all-undefined
+                # literal zeroes the whole object rather than emitting `{}`.
+                if {[llength $parts] == 0} { return "($type_name){0}" }
                 return "($type_name){[join $parts {, }]}"
             }
             VariantLit {
@@ -525,11 +546,15 @@ oo::class create pak::Codegen {
                 return "$op[my gen_expr [pak::nfield $e operand]]"
             }
             BinaryOp {
-                set left [my gen_expr [pak::nfield $e left]]
-                set right [my gen_expr [pak::nfield $e right]]
                 set op [pak::fval $e op]
                 set shift [pak::cg_fixshift [my expr_type [pak::nfield $e left]]]
                 if {$shift == 0} { set shift [pak::cg_fixshift [my expr_type [pak::nfield $e right]]] }
+                # A float literal against a fixed-point operand is written in
+                # the same units as the operand: `self.vx * 0.8` means 0.8, not
+                # raw 0. Emitting the float left `((int64_t)vx * (0.8f)) >> 16`,
+                # which shifts a float. Scale the literal to match instead.
+                set left  [my gen_fix_operand [pak::nfield $e left] $shift]
+                set right [my gen_fix_operand [pak::nfield $e right] $shift]
                 if {$shift != 0 && $op eq "*"} {
                     return "(int32_t)(((int64_t)($left) * ($right)) >> $shift)"
                 }
@@ -1479,16 +1504,20 @@ oo::class create pak::Codegen {
             if {$r ne ""} { return $r }
         }
         # Method call: obj.method(args) → TypeName_method(&obj, args)
-        if {[pak::kindof $func] eq "DotAccess" && [pak::kindof [pak::nfield $func obj]] eq "Ident"} {
-            set obj_name [pak::fval [pak::nfield $func obj] name]
-            set method_name [pak::fval $func field]
-            set obj_type [my scope_get $obj_name]
-            set tname ""
-            if {[pak::kindof $obj_type] eq "TypeName"} {
-                set tname [pak::fval $obj_type name]
-            } elseif {[pak::kindof $obj_type] eq "TypePointer" && [pak::kindof [pak::nfield $obj_type inner]] eq "TypeName"} {
-                set tname [pak::fval [pak::nfield $obj_type inner] name]
+        # The receiver need not be a bare identifier: gs.cam.rotate(a) is a
+        # method on the Camera field, and used to fall through to member
+        # access on the struct because only Ident receivers were handled.
+        if {[pak::kindof $func] eq "DotAccess"} {
+            set obj_node [pak::nfield $func obj]
+            if {[pak::kindof $obj_node] eq "Ident"} {
+                set obj_name [pak::fval $obj_node name]
+                set obj_type [my scope_get $obj_name]
+            } else {
+                set obj_name [my gen_expr $obj_node]
+                set obj_type [my expr_type $obj_node]
             }
+            set method_name [pak::fval $func field]
+            set tname [my type_struct_name $obj_type]
             if {$tname ne "" && ![dict exists $method_registry $tname] && [dict exists $mono_struct_origin $tname]} {
                 my monomorphize_impl_methods $tname
             }

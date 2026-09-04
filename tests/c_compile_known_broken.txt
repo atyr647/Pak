@@ -6,7 +6,4 @@
 # so add one only with the bug it records written down.
 
 13_extern.pk64
-16_platformer.pk64
-17_annotations.pk64
-30_raycaster.pk64
 31_demo3d.pk64

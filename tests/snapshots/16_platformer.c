@@ -199,7 +199,7 @@ bool aabb_overlap(int32_t ax, int32_t ay, int32_t aw, int32_t ah, int32_t bx, in
 }
 
 int32_t check_platform_landing(int32_t px, int32_t py, int32_t pvy) {
-    if (pvy <= 0.0f) {
+    if (pvy <= 0) {
         return -1;
     }
     int32_t i = 0;
@@ -240,11 +240,11 @@ void Player_physics(Player * self) {
     }
     self->y += self->vy;
     self->x += self->vx;
-    self->vx = (int32_t)(((int64_t)(self->vx) * (0.8f)) >> 16);
-    if (self->x < 0.0f) {
+    self->vx = (int32_t)(((int64_t)(self->vx) * (52428)) >> 16);
+    if (self->x < 0) {
         self->x = 0.0f;
     }
-    if (self->x > 308.0f) {
+    if (self->x > 20185088) {
         self->x = 308.0f;
     }
 }
@@ -271,7 +271,7 @@ void Player_resolve_collisions(Player * self) {
             self->on_ground = false;
         }
     }
-    if (self->y > 280.0f) {
+    if (self->y > 18350080) {
         self->y = 180.0f;
         self->x = 40.0f;
         self->vy = 0.0f;
@@ -314,7 +314,7 @@ void Player_update_state(Player * self) {
         self->jump_timer -= 1;
     }
     if (!self->on_ground) {
-        if (self->vy < 0.0f) {
+        if (self->vy < 0) {
             self->state = PlayerState_jumping;
         }
         else {
@@ -324,7 +324,7 @@ void Player_update_state(Player * self) {
     else if (self->jump_timer > 0) {
         self->state = PlayerState_landing;
     }
-    else if ((self->vx > 0.2f) || (self->vx < -0.2f)) {
+    else if ((self->vx > 13107) || (self->vx < -0.2f)) {
         self->state = PlayerState_running;
     }
     else {
@@ -364,10 +364,10 @@ void Camera_init(Camera * self) {
 }
 
 void Camera_follow(Camera * self, int32_t player_x) {
-    int32_t target = (player_x - 120.0f);
+    int32_t target = (player_x - 7864320);
     __auto_type diff = (target - self->x);
     self->x += (diff * 0.1f);
-    if (self->x < 0.0f) {
+    if (self->x < 0) {
         self->x = 0.0f;
     }
     self->offset = (int32_t)self->x;
@@ -498,12 +498,12 @@ void draw_hud(GameState * gs) {
 }
 
 void update_playing(GameState * gs, joypad_status_t pad) {
-    gs->player.handle_input(pad);
-    gs->player.physics();
-    gs->player.resolve_collisions();
-    gs->player.update_state();
-    gs->player.collect_pickups();
-    gs->camera.follow(gs->player.x);
+    Player_handle_input(&gs->player, pad);
+    Player_physics(&gs->player);
+    Player_resolve_collisions(&gs->player);
+    Player_update_state(&gs->player);
+    Player_collect_pickups(&gs->player);
+    Camera_follow(&gs->camera, gs->player.x);
     if (pad.pressed.start) {
         gs->phase = GamePhase_paused;
     }
@@ -527,8 +527,8 @@ void update_paused(GameState * gs, joypad_status_t pad) {
 
 void update_gameover(GameState * gs, joypad_status_t pad) {
     if (pad.pressed.start || pad.pressed.a) {
-        gs->player.init();
-        gs->camera.init();
+        Player_init(&gs->player);
+        Camera_init(&gs->camera);
         gs->frame = 0;
         gs->coins_collected = 0;
         init_platforms();
@@ -642,8 +642,8 @@ int main(void) {
     joypad_init();
     timer_init();
     GameState gs; /* undefined */
-    gs.player.init();
-    gs.camera.init();
+    Player_init(&gs.player);
+    Camera_init(&gs.camera);
     gs.phase = GamePhase_title;
     gs.frame = 0;
     gs.coins_collected = 0;
