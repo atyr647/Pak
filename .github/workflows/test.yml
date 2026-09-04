@@ -184,6 +184,11 @@ jobs:
       - name: Canonical examples link into ROMs
         run: tclsh tcl/tools/link_test.tcl
 
+      # Linking proves every symbol resolves; this proves the code computes the
+      # right thing. Covers the constructs that used to fail at link.
+      - name: Standalone execution (consts, defer, monomorphs, FixedList)
+        run: tclsh tcl/tools/standalone_exec_test.tcl
+
       - name: Runtime builds toolchain-free (boot.S + runtime.pk64)
         run: |
           pak asmobj runtime/standalone/boot.S       -o /tmp/boot.pakobj
