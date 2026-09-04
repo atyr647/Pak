@@ -490,6 +490,12 @@ proc exec_insn {op args} {
             set v $R([lindex $args 0]); if {$v >= 0x80000000} { set v [expr {$v - 0x100000000}] }
             if {$v >= 0} { return "jmp:[lindex $args 1]" }
         }
+        bge {
+            # Pseudo: slt $at, s1, s2; beq $at, $0, lbl  — branch if s1 >= s2.
+            set a $R([lindex $args 0]); if {$a >= 0x80000000} { set a [expr {$a - 0x100000000}] }
+            set b $R([lindex $args 1]); if {$b >= 0x80000000} { set b [expr {$b - 0x100000000}] }
+            if {$a >= $b} { return "jmp:[lindex $args 2]" }
+        }
 
         la {
             set n [lindex $args 0]

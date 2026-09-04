@@ -203,7 +203,9 @@ wait loops terminate instead of hanging.
   `as` binds looser than unary `&`, so `&buf as u32` is the label, not a stack
   slot. `&s.field` and `p.x =` on a value struct use the object's address
   (pointer receivers still load the pointer). Method `self` follows the same
-  rule; `g.player.init()` is a method, not a module call. Goldens live in
+  rule; `g.player.init()` is a method, not a module call. `buf[i..j]` of
+  `[N]u8` is a fat pointer whose start is scaled by the element size, not
+  always ×4. Goldens live in
   `tcl/tools/array_addr_test.tcl`.
 * **FPU encodings.** COP1 ops (`add.s`/`sub.s`/`mul.s`/`div.s`, the
   `mov`/`neg`/`abs`/`sqrt` unary group, `cvt.*`, the `c.<cond>.s` compare

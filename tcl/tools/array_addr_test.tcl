@@ -267,6 +267,54 @@ check_eq "value receiver p.init sum" [word_hex $mw $DATA] 0000000A
 check_eq "pointer receiver ptr.init sum" [word_hex $mw [expr {$DATA + 4}]] 0000000A
 check_eq "nested field g.player.init sum" [word_hex $mw [expr {$DATA + 8}]] 00000003
 
+# ── &arr[i], *u8[i], and u8 slices ──────────────────────────────────────────
+# emit_slice used to sll the start by 2. Untyped `let s = buf[1..4]` used to
+# store the pair address as i32, so s[0] loaded the pointer instead of a byte.
+
+set src6 {
+static buf: [8]u8 = undefined
+static addr2: u32 = 0
+static p_sink: u32 = 0
+static sl_sink: u32 = 0
+static sl1_sink: u32 = 0
+static for_sum: u32 = 0
+
+entry {
+    buf[0] = 0xAA
+    buf[1] = 0xBB
+    buf[2] = 0xCC
+    buf[3] = 0xDD
+    addr2 = &buf[2] as u32
+    let p: *u8 = &buf
+    p[2] = 0xEE
+    p_sink = buf[2] as u32
+    let s = buf[1..4]
+    sl_sink = s[0] as u32
+    sl1_sink = s[1] as u32
+    let mut acc: u32 = 0
+    for b in s {
+        acc = acc + (b as u32)
+    }
+    for_sum = acc
+}
+}
+set lx [pak::Lexer new $src6]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set mb [dict get $run mem_b]
+set DATA 0x80300000
+# .data: addr2, p_sink, sl_sink, sl1_sink, for_sum. .bss: buf.
+set buf_addrs [lsort -integer [dict keys $mb]]
+set BUF [lindex $buf_addrs 0]
+check_eq {&buf[i] is buf+i} [word_hex $mw $DATA] [format %08X [expr {$BUF + 2}]]
+check_eq {*u8 p[i] store} [word_hex $mw [expr {$DATA + 4}]] 000000EE
+check_eq {u8 slice s[0] is buf[1]} [word_hex $mw [expr {$DATA + 8}]] 000000BB
+check_eq {u8 slice s[1] is buf[2] after p[i]} [word_hex $mw [expr {$DATA + 12}]] 000000EE
+check_eq {for b in s sums BB+EE+DD} [word_hex $mw [expr {$DATA + 16}]] 00000286
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

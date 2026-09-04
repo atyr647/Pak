@@ -1488,6 +1488,11 @@ oo::class create pak::MipsCodegen {
                         if {$vname ne "" && [dict exists $tenv_variant_decls $vname]} {
                             set tn [pak::N TypeName name $vname]
                         }
+                    } elseif {[pak::kindof $v] eq "SliceExpr"} {
+                        set tn [my slice_type_of [pak::nfield $v obj]]
+                        if {$tn ne "" && ![pak::isnil $tn]} {
+                            set layout [my mips_layout $tn]
+                        }
                     }
                 }
                 # `let _ = expr` evaluates for effect and declares nothing.
@@ -1811,14 +1816,28 @@ oo::class create pak::MipsCodegen {
         set idx_off [my declare_local __for_idx $ptr_layout]
 
         set slice_base [$ra alloc_temp]
-        my emit_expr $iterable $slice_base
-        $em sw $slice_base $ptr_off {$sp}
+        set tn [my unwrap_type [my expr_type $iterable]]
+        set is_slice [expr {$tn ne "" && ![pak::isnil $tn] && [pak::kindof $tn] eq "TypeSlice"}]
+        if {$is_slice} {
+            switch -- [pak::kindof $iterable] {
+                Ident - DotAccess - IndexAccess - Deref { my emit_place_addr $iterable $slice_base }
+                default { my emit_expr $iterable $slice_base }
+            }
+        } else {
+            my emit_expr $iterable $slice_base
+        }
+        set ptr_r [$ra alloc_temp]
+        $em lw $ptr_r 0 $slice_base
+        $em sw $ptr_r $ptr_off {$sp}
+        $ra free_temp $ptr_r
         set len_r [$ra alloc_temp]
         $em lw $len_r 4 $slice_base
         $em sw $len_r $len_off {$sp}
         $ra free_temp $len_r
         $ra free_temp $slice_base
         $em sw {$zero} $idx_off {$sp}
+
+        set elem [my resolve_elem_layout $iterable]
 
         # continue jumps to the increment label, not the header
         lappend loop_header $incr_l; lappend loop_exit $exit_l
@@ -1832,14 +1851,17 @@ oo::class create pak::MipsCodegen {
         $em bge $idx_r $len_r $exit_l
         $em nop
 
-        set binding_off [my declare_local [pak::fval $stmt binding] $ptr_layout]
+        set binding_off [my declare_local [pak::fval $stmt binding] $elem]
         set ptr_r [$ra alloc_temp]
         set elem_r [$ra alloc_temp]
+        set off_r [$ra alloc_temp]
         $em lw $ptr_r $ptr_off {$sp}
-        $em sll $elem_r $idx_r 2
-        $em addu $ptr_r $ptr_r $elem_r
-        $em lw $elem_r 0 $ptr_r
-        $em sw $elem_r $binding_off {$sp}
+        $em move $off_r $idx_r
+        my emit_scale_index $off_r $elem
+        $em addu $ptr_r $ptr_r $off_r
+        my emit_typed_load $elem_r 0 $ptr_r $elem
+        my store_to_sp $binding_off $elem_r $elem
+        $ra free_temp $off_r
         $ra free_temp $elem_r
         $ra free_temp $ptr_r
 
@@ -2570,12 +2592,18 @@ oo::class create pak::MipsCodegen {
     method emit_slice {expr dst} {
         set slice_off [my declare_local __slice [dict create size 8 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]]
         set base [$ra alloc_temp]
-        my emit_expr [pak::nfield $expr obj] $base
+        set obj [pak::nfield $expr obj]
+        set tn [my unwrap_type [my expr_type $obj]]
+        if {$tn ne "" && ![pak::isnil $tn] && [pak::kindof $tn] eq "TypeArray"} {
+            my emit_place_addr $obj $base
+        } else {
+            my emit_expr $obj $base
+        }
         set start [pak::nfield $expr start]
         if {![pak::isnil $start]} {
             set s [$ra alloc_temp]
             my emit_expr $start $s
-            $em sll $s $s 2
+            my emit_scale_index $s [my resolve_elem_layout $obj]
             $em addu $base $base $s
             $ra free_temp $s
         }
@@ -2715,6 +2743,7 @@ oo::class create pak::MipsCodegen {
                 }
                 return ""
             }
+            SliceExpr { return [my slice_type_of [pak::nfield $expr obj]] }
             DotAccess {
                 set fi [my resolve_field_info $expr]
                 if {$fi ne "" && [dict exists $fi type_node]} { return [dict get $fi type_node] }
@@ -2736,6 +2765,32 @@ oo::class create pak::MipsCodegen {
         }
         return 0
     }
+    method slice_type_of {obj} {
+        set inner [my unwrap_type [my expr_type $obj]]
+        if {$inner eq "" || [pak::isnil $inner]} { return "" }
+        switch -- [pak::kindof $inner] {
+            TypeArray - TypeSlice - TypePointer {
+                set inner [pak::nfield $inner inner]
+            }
+        }
+        if {$inner eq "" || [pak::isnil $inner]} { return "" }
+        return [pak::N TypeSlice inner $inner mutable 0]
+    }
+
+    method emit_scale_index {idx elem} {
+        switch -- [dict get $elem size] {
+            4 { $em sll $idx $idx 2 }
+            2 { $em sll $idx $idx 1 }
+            1 {}
+            default {
+                set sz [$ra alloc_temp]
+                $em li $sz [dict get $elem size]
+                $em mul $idx $idx $sz
+                $ra free_temp $sz
+            }
+        }
+    }
+
     method resolve_elem_layout {obj_expr} {
         set tn [my unwrap_type [my expr_type $obj_expr]]
         if {$tn ne "" && ![pak::isnil $tn]} {
@@ -2756,23 +2811,21 @@ oo::class create pak::MipsCodegen {
         set base [$ra alloc_temp]
         set idx [$ra alloc_temp]
         set tn [my unwrap_type [my expr_type $obj]]
+        set is_slice [expr {$tn ne "" && ![pak::isnil $tn] && [pak::kindof $tn] eq "TypeSlice"}]
         if {$tn ne "" && ![pak::isnil $tn] && [pak::kindof $tn] eq "TypeArray"} {
             my emit_place_addr $obj $base
+        } elseif {$is_slice} {
+            # Fat pointer {ptr@0, len@4}: take the pair's address, then load ptr.
+            switch -- [pak::kindof $obj] {
+                Ident - DotAccess - IndexAccess - Deref { my emit_place_addr $obj $base }
+                default { my emit_expr $obj $base }
+            }
+            $em lw $base 0 $base
         } else {
             my emit_expr $obj $base
         }
         my emit_expr $index $idx
-        switch -- [dict get $elem size] {
-            4 { $em sll $idx $idx 2 }
-            2 { $em sll $idx $idx 1 }
-            1 {}
-            default {
-                set sz [$ra alloc_temp]
-                $em li $sz [dict get $elem size]
-                $em mul $idx $idx $sz
-                $ra free_temp $sz
-            }
-        }
+        my emit_scale_index $idx $elem
         $em addu $base $base $idx
         return [list $base $idx $elem]
     }
