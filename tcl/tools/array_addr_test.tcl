@@ -353,6 +353,50 @@ set DATA 0x80300000
 check_eq {for x in [4]u8 sums 1+2+3+4} [word_hex $mw $DATA] 0000000A
 check_eq {for y in [4]i32 sums 10+20+30+40} [word_hex $mw [expr {$DATA + 4}]] 00000064
 
+# ── struct for-in copies the whole element; [N]T.len is N
+set src8 {
+struct Point {
+    x: i32
+    y: i32
+}
+static pts: [2]Point = undefined
+static psum: i32 = 0
+static ssum: i32 = 0
+static alen: u32 = 0
+static slen: u32 = 0
+
+entry {
+    pts[0].x = 1
+    pts[0].y = 10
+    pts[1].x = 2
+    pts[1].y = 20
+    let mut acc: i32 = 0
+    for p in pts {
+        acc = acc + p.x + p.y
+    }
+    psum = acc
+    let s = pts[0..2]
+    let mut sacc: i32 = 0
+    for q in s {
+        sacc = sacc + q.x + q.y
+    }
+    ssum = sacc
+    alen = pts.len as u32
+    slen = s.len as u32
+}
+}
+set lx [pak::Lexer new $src8]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set DATA 0x80300000
+check_eq {for p in [2]Point sums x+y} [word_hex $mw $DATA] 00000021
+check_eq {for q in []Point sums x+y} [word_hex $mw [expr {$DATA + 4}]] 00000021
+check_eq {[2]Point.len} [word_hex $mw [expr {$DATA + 8}]] 00000002
+check_eq {[]Point.len} [word_hex $mw [expr {$DATA + 12}]] 00000002
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

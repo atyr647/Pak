@@ -1857,6 +1857,14 @@ oo::class create pak::MipsCodegen {
         $em sw {$zero} $idx_off {$sp}
 
         set elem [my resolve_elem_layout $iterable]
+        set inner_tn ""
+        if {$tn ne "" && ![pak::isnil $tn]} {
+            switch -- [pak::kindof $tn] {
+                TypeArray - TypeSlice - TypePointer {
+                    set inner_tn [pak::nfield $tn inner]
+                }
+            }
+        }
 
         # continue jumps to the increment label, not the header
         lappend loop_header $incr_l; lappend loop_exit $exit_l
@@ -1870,18 +1878,31 @@ oo::class create pak::MipsCodegen {
         $em bge $idx_r $len_r $exit_l
         $em nop
 
-        set binding_off [my declare_local [pak::fval $stmt binding] $elem]
+        set binding_off [my declare_local [pak::fval $stmt binding] $elem $inner_tn]
         set ptr_r [$ra alloc_temp]
-        set elem_r [$ra alloc_temp]
         set off_r [$ra alloc_temp]
         $em lw $ptr_r $ptr_off {$sp}
         $em move $off_r $idx_r
         my emit_scale_index $off_r $elem
         $em addu $ptr_r $ptr_r $off_r
-        my emit_typed_load $elem_r 0 $ptr_r $elem
-        my store_to_sp $binding_off $elem_r $elem
+        set lsz [dict get $elem size]
+        set is_agg [expr {
+            ([dict exists $elem fields] && [dict size [dict get $elem fields]] > 0) ||
+            [dict exists $elem tag_size] ||
+            [dict exists $elem _container]
+        }]
+        if {$lsz > 4 && $is_agg} {
+            set dst_ptr [$ra alloc_temp]
+            $em addiu $dst_ptr {$sp} $binding_off
+            my emit_memcpy $dst_ptr $ptr_r $lsz
+            $ra free_temp $dst_ptr
+        } else {
+            set elem_r [$ra alloc_temp]
+            my emit_typed_load $elem_r 0 $ptr_r $elem
+            my store_to_sp $binding_off $elem_r $elem
+            $ra free_temp $elem_r
+        }
         $ra free_temp $off_r
-        $ra free_temp $elem_r
         $ra free_temp $ptr_r
 
         set idx [pak::nfield $stmt index]
@@ -2526,6 +2547,24 @@ oo::class create pak::MipsCodegen {
                     $em li $dst [dict get $cases $field_name]
                     return
                 }
+            }
+        }
+        set fname [pak::fval $expr field]
+        set obj_tn [my unwrap_type [my expr_type $obj]]
+        if {$fname eq "len" && $obj_tn ne "" && ![pak::isnil $obj_tn]} {
+            if {[pak::kindof $obj_tn] eq "TypeArray"} {
+                $em li $dst [my array_len $obj_tn]
+                return
+            }
+            if {[pak::kindof $obj_tn] eq "TypeSlice"} {
+                set base [$ra alloc_temp]
+                switch -- [pak::kindof $obj] {
+                    Ident - DotAccess - IndexAccess - Deref { my emit_place_addr $obj $base }
+                    default { my emit_expr $obj $base }
+                }
+                $em lw $dst 4 $base
+                $ra free_temp $base
+                return
             }
         }
         set base [$ra alloc_temp]

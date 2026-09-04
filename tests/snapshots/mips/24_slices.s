@@ -208,11 +208,11 @@ sum:
     bge $t9, $t8, .Lfeach_x_3
     nop
     lw $t7, 148($sp)
-    move $t5, $t9
-    sll $t5, $t5, 2
-    addu $t7, $t7, $t5
-    lw $t6, 0($t7)
-    sw $t6, 160($sp)
+    move $t6, $t9
+    sll $t6, $t6, 2
+    addu $t7, $t7, $t6
+    lw $t5, 0($t7)
+    sw $t5, 160($sp)
     lw $t6, 160($sp)
     lw $t5, 144($sp)
     addu $t6, $t5, $t6
@@ -264,11 +264,11 @@ find_max:
     bge $t9, $t8, .Lfeach_x_7
     nop
     lw $t7, 148($sp)
-    move $t5, $t9
-    sll $t5, $t5, 2
-    addu $t7, $t7, $t5
-    lw $t6, 0($t7)
-    sw $t6, 160($sp)
+    move $t6, $t9
+    sll $t6, $t6, 2
+    addu $t7, $t7, $t6
+    lw $t5, 0($t7)
+    sw $t5, 160($sp)
     lw $t6, 160($sp)
     lw $t5, 144($sp)
     sgt $t7, $t6, $t5
@@ -366,12 +366,15 @@ sum_x:
     bge $t9, $t8, .Lfeach_x_16
     nop
     lw $t7, 148($sp)
-    move $t5, $t9
-    li $t4, 8
-    mul $t5, $t5, $t4
-    addu $t7, $t7, $t5
-    lw $t6, 0($t7)
-    sw $t6, 160($sp)
+    move $t6, $t9
+    li $t5, 8
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    addiu $t5, $sp, 160
+    lw $t4, 0($t7)
+    sw $t4, 0($t5)
+    lw $t4, 4($t7)
+    sw $t4, 4($t5)
     addiu $t5, $sp, 160
     lw $t6, 0($t5)
     lw $t5, 144($sp)
