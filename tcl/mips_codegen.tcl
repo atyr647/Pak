@@ -1818,23 +1818,42 @@ oo::class create pak::MipsCodegen {
         set slice_base [$ra alloc_temp]
         set tn [my unwrap_type [my expr_type $iterable]]
         set is_slice [expr {$tn ne "" && ![pak::isnil $tn] && [pak::kindof $tn] eq "TypeSlice"}]
-        if {$is_slice} {
+        set is_array [expr {$tn ne "" && ![pak::isnil $tn] && [pak::kindof $tn] eq "TypeArray"}]
+        if {$is_array} {
+            # Fixed array: data pointer is the array itself, length is [N].
+            my emit_place_addr $iterable $slice_base
+            $em sw $slice_base $ptr_off {$sp}
+            set len_r [$ra alloc_temp]
+            $em li $len_r [my array_len $tn]
+            $em sw $len_r $len_off {$sp}
+            $ra free_temp $len_r
+            $ra free_temp $slice_base
+        } elseif {$is_slice} {
             switch -- [pak::kindof $iterable] {
                 Ident - DotAccess - IndexAccess - Deref { my emit_place_addr $iterable $slice_base }
                 default { my emit_expr $iterable $slice_base }
             }
+            set ptr_r [$ra alloc_temp]
+            $em lw $ptr_r 0 $slice_base
+            $em sw $ptr_r $ptr_off {$sp}
+            $ra free_temp $ptr_r
+            set len_r [$ra alloc_temp]
+            $em lw $len_r 4 $slice_base
+            $em sw $len_r $len_off {$sp}
+            $ra free_temp $len_r
+            $ra free_temp $slice_base
         } else {
             my emit_expr $iterable $slice_base
+            set ptr_r [$ra alloc_temp]
+            $em lw $ptr_r 0 $slice_base
+            $em sw $ptr_r $ptr_off {$sp}
+            $ra free_temp $ptr_r
+            set len_r [$ra alloc_temp]
+            $em lw $len_r 4 $slice_base
+            $em sw $len_r $len_off {$sp}
+            $ra free_temp $len_r
+            $ra free_temp $slice_base
         }
-        set ptr_r [$ra alloc_temp]
-        $em lw $ptr_r 0 $slice_base
-        $em sw $ptr_r $ptr_off {$sp}
-        $ra free_temp $ptr_r
-        set len_r [$ra alloc_temp]
-        $em lw $len_r 4 $slice_base
-        $em sw $len_r $len_off {$sp}
-        $ra free_temp $len_r
-        $ra free_temp $slice_base
         $em sw {$zero} $idx_off {$sp}
 
         set elem [my resolve_elem_layout $iterable]
@@ -2765,6 +2784,14 @@ oo::class create pak::MipsCodegen {
         }
         return 0
     }
+    method array_len {tn} {
+        set tn [my unwrap_type $tn]
+        if {$tn eq "" || [pak::isnil $tn] || [pak::kindof $tn] ne "TypeArray"} { return -1 }
+        set sz [pak::nfield $tn size]
+        if {$sz eq "" || [pak::isnil $sz] || [pak::kindof $sz] ne "IntLit"} { return -1 }
+        return [pak::fval $sz value]
+    }
+
     method slice_type_of {obj} {
         set inner [my unwrap_type [my expr_type $obj]]
         if {$inner eq "" || [pak::isnil $inner]} { return "" }

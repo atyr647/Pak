@@ -216,6 +216,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Chroma key / YUV convert / scaled texrect | ✅ Full | RDP 0x2A/0x2B/0x2C; 0x24 with custom dsdx |
 | Array address / u8 index | ✅ Full | `&arr` is `la`; `[N]u8` stores `sb` at base+i (not scale-4 `sw`) |
 | `&arr[i]` / `*u8[i]` / `[]u8` slices | ✅ Full | Slice start is elem-size, not always ×4; `for b in s` loads bytes |
+| `for x in [N]T` | ✅ Full | Length is `[N]`, not the first two words as a fat pointer |
 | `&s.field` / value-struct fields | ✅ Full | Place address of the object, not a spilled copy of the first word |
 | Method `self` (value, `*T`, `obj.field.m()`) | ✅ Full | Pointer receivers pass the pointer; `g.player.init()` is not a module call |
 | `defer` | ✅ Full | |

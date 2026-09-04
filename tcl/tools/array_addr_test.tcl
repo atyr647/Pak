@@ -315,6 +315,44 @@ check_eq {u8 slice s[0] is buf[1]} [word_hex $mw [expr {$DATA + 8}]] 000000BB
 check_eq {u8 slice s[1] is buf[2] after p[i]} [word_hex $mw [expr {$DATA + 12}]] 000000EE
 check_eq {for b in s sums BB+EE+DD} [word_hex $mw [expr {$DATA + 16}]] 00000286
 
+# ── for-in on a fixed array uses [N], not the first two words as a fat pointer
+set src7 {
+static bytes: [4]u8 = undefined
+static words: [4]i32 = undefined
+static bsum: u32 = 0
+static wsum: i32 = 0
+
+entry {
+    bytes[0] = 1
+    bytes[1] = 2
+    bytes[2] = 3
+    bytes[3] = 4
+    words[0] = 10
+    words[1] = 20
+    words[2] = 30
+    words[3] = 40
+    let mut acc: u32 = 0
+    for x in bytes {
+        acc = acc + (x as u32)
+    }
+    bsum = acc
+    let mut wacc: i32 = 0
+    for y in words {
+        wacc = wacc + y
+    }
+    wsum = wacc
+}
+}
+set lx [pak::Lexer new $src7]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set DATA 0x80300000
+check_eq {for x in [4]u8 sums 1+2+3+4} [word_hex $mw $DATA] 0000000A
+check_eq {for y in [4]i32 sums 10+20+30+40} [word_hex $mw [expr {$DATA + 4}]] 00000064
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }
