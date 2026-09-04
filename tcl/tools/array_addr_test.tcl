@@ -721,6 +721,55 @@ check_eq {match Some(7)} [static_hex $mw $syms c] 00000007
 check_eq {match none} [static_hex $mw $syms d] 00000009
 check_eq {get_ok() catch} [static_hex $mw $syms e] 00000005
 
+# ── generic monomorphize is a real function, not spliced into main
+set src16 {
+static a: i32 = 0
+static b: i32 = 0
+fn id<T>(x: T) -> T { return x }
+fn add<T>(x: T, y: T) -> T { return x + y }
+entry {
+    a = id(11)
+    b = add<i32>(3, 4)
+}
+}
+set lx [pak::Lexer new $src16]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set syms [dict get $run data_syms]
+check_eq {id(11) inferred} [static_hex $mw $syms a] 0000000B
+check_eq {add<i32>(3,4)} [static_hex $mw $syms b] 00000007
+
+# ── variant match loads the tag at the value's address, not the first word as a pointer
+set src17 {
+variant Shape { Circle(i32), Pair(i32, i32) }
+static a: i32 = 0
+static b: i32 = 0
+entry {
+    let s: Shape = Shape.Circle(4)
+    match s {
+        .Circle(r) => { a = r }
+        .Pair(x, y) => { a = x + y }
+    }
+    let t: Shape = Shape.Pair(3, 5)
+    match t {
+        .Circle(r) => { b = r }
+        .Pair(x, y) => { b = x + y }
+    }
+}
+}
+set lx [pak::Lexer new $src17]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set syms [dict get $run data_syms]
+check_eq {match Circle(4)} [static_hex $mw $syms a] 00000004
+check_eq {match Pair(3,5)} [static_hex $mw $syms b] 00000008
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

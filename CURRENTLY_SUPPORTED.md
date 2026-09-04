@@ -225,6 +225,8 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `Str.eq` / `contains` / `find` / `slice` | ✅ Full | Bounded memcmp on `{data, len}`, not `jal pak_str_eq` |
 | `[N]T.as_slice()` / `get_unchecked` | ✅ Full | Fat `{ptr, len}` pair; `get_unchecked(i)` is unscaled index |
 | `match .ok/.err` / `Some` / `none` / `catch` | ✅ Full | Result/Option sret; match bindings are arm-scoped |
+| `id<T>(x)` / `id(11)` | ✅ Full | Monomorphized as a real function after the caller, not spliced into it |
+| `match .Circle(r)` | ✅ Full | Variant values pass by address so the tag is `lbu` at the object, not a load of the first word |
 | `&s.field` / value-struct fields | ✅ Full | Place address of the object, not a spilled copy of the first word |
 | Method `self` (value, `*T`, `obj.field.m()`) | ✅ Full | Pointer receivers pass the pointer; `g.player.init()` is not a module call |
 | `defer` | ✅ Full | |

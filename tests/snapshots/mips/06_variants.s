@@ -193,8 +193,15 @@ area:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
+    move $t9, $a0
+    addiu $t8, $sp, 136
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
+    addiu $t9, $sp, 136
     lbu $t8, 0($t9)
     li $t7, 0
     bne $t8, $t7, .Larm_skip_3

@@ -462,7 +462,7 @@ oo::class create pak::MipsCodegen {
              loop_result sret_off sret_size \
              globals consts label_n fmtstr_counter \
              tenv_layouts tenv_enum_values tenv_variant_decls fn_decls \
-             generic_fns generic_structs mono_emitted type_nodes
+             generic_fns generic_structs mono_emitted mono_queue type_nodes
 
     constructor {} {
         set em [pak::Emitter new]
@@ -488,6 +488,7 @@ oo::class create pak::MipsCodegen {
         set generic_fns [dict create]
         set generic_structs [dict create]
         set mono_emitted [dict create]
+        set mono_queue {}
         set type_nodes [dict create]
         set fn_decls [dict create]
     }
@@ -1073,6 +1074,7 @@ oo::class create pak::MipsCodegen {
         my emit_externs
         $em blank
         foreach decl [pak::items [pak::nfield $program decls]] { my emit_top_decl $decl }
+        my flush_mono
         $pool emit_rodata $em
         $pool emit_data $em
         return [$em getvalue]
@@ -2971,6 +2973,10 @@ oo::class create pak::MipsCodegen {
         if {$expr eq "" || [pak::isnil $expr]} { return "" }
         switch -- [pak::kindof $expr] {
             Ident { return [my lookup_type_node [pak::fval $expr name]] }
+            IntLit    { return [pak::N TypeName name i32] }
+            BoolLit   { return [pak::N TypeName name bool] }
+            FloatLit  { return [pak::N TypeName name f32] }
+            StringLit { return [pak::N TypeName name CStr] }
             Cast  { return [pak::nfield $expr type] }
             Deref {
                 set inner [my unwrap_type [my expr_type [pak::nfield $expr expr]]]
@@ -3064,6 +3070,14 @@ oo::class create pak::MipsCodegen {
             TypeOption {
                 set lay [my mips_layout $tn]
                 return [expr {[dict get $lay size] > 4}]
+            }
+            TypeName {
+                if {[my type_is_struct_value $tn]} { return 1 }
+                set n [pak::fval $tn name]
+                if {![dict exists $tenv_layouts $n]} { return 0 }
+                set lay [dict get $tenv_layouts $n]
+                if {[dict exists $lay tag_size] && [dict get $lay size] > 4} { return 1 }
+                return 0
             }
             default { return [my type_is_struct_value $tn] }
         }
@@ -3838,8 +3852,13 @@ oo::class create pak::MipsCodegen {
             if {[llength $type_args] == 0} {
                 set type_args [pak::items [pak::nfield $func type_args]]
             }
-            if {[llength $type_args] > 0 && [dict exists $generic_fns $fname]} {
-                set fname [my monomorphize $fname $type_args]
+            if {[dict exists $generic_fns $fname]} {
+                if {[llength $type_args] == 0} {
+                    set type_args [my infer_generic_args $fname [pak::nfield $expr args]]
+                }
+                if {[llength $type_args] > 0} {
+                    set fname [my monomorphize $fname $type_args]
+                }
             }
             my emit_direct_call $fname [my resolve_named_args $fname [pak::nfield $expr args]] $dst
             return
@@ -3873,18 +3892,64 @@ oo::class create pak::MipsCodegen {
         set tps [pak::items [pak::nfield $template type_params]]
         set i 0
         foreach tp $tps {
+            set tpname $tp
+            if {[llength $tp] > 1} { set tpname [lindex $tp 1] }
             if {$i < [llength $type_args_items]} {
-                dict set subst [lindex $tp 1] [lindex $type_args_items $i]
+                dict set subst $tpname [lindex $type_args_items $i]
             }
             incr i
         }
         set spec_params [my subst_params [pak::nfield $template params] $subst]
         dict set mono_emitted $mangled 1
-        set saved [my save_fn_state]
-        my emit_fn $mangled $spec_params [pak::nfield $template body] \
-            [my subst_type [pak::nfield $template ret_type] $subst]
-        my restore_fn_state $saved
+        lappend mono_queue [list $mangled $spec_params [pak::nfield $template body] \
+            [my subst_type [pak::nfield $template ret_type] $subst]]
         return $mangled
+    }
+
+    method flush_mono {} {
+        while {[llength $mono_queue] > 0} {
+            set item [lindex $mono_queue 0]
+            set mono_queue [lrange $mono_queue 1 end]
+            lassign $item mangled params body ret
+            my emit_fn $mangled $params $body $ret
+        }
+    }
+
+    method infer_generic_args {fname args_seq} {
+        set template [dict get $generic_fns $fname]
+        set tps [pak::items [pak::nfield $template type_params]]
+        set tpnames {}
+        foreach tp $tps {
+            if {[llength $tp] > 1} {
+                lappend tpnames [lindex $tp 1]
+            } else {
+                lappend tpnames $tp
+            }
+        }
+        set subst [dict create]
+        set params [pak::items [pak::nfield $template params]]
+        set args [pak::items $args_seq]
+        set i 0
+        foreach p $params {
+            if {$i >= [llength $args]} break
+            set pt [pak::nfield $p type]
+            if {![pak::isnil $pt] && [pak::kindof $pt] eq "TypeName"} {
+                set pn [pak::fval $pt name]
+                if {$pn in $tpnames && ![dict exists $subst $pn]} {
+                    set at [my expr_type [lindex $args $i]]
+                    if {$at ne "" && ![pak::isnil $at]} {
+                        dict set subst $pn $at
+                    }
+                }
+            }
+            incr i
+        }
+        set out {}
+        foreach pn $tpnames {
+            if {![dict exists $subst $pn]} { return {} }
+            lappend out [dict get $subst $pn]
+        }
+        return $out
     }
 
     method subst_type {type_node subst} {

@@ -214,8 +214,9 @@ wait loops terminate instead of hanging.
   (len/eq/find/starts_with/ends_with/contains) are inlined so the ROM does not
   need libc; `str.from_cstr` builds a `{data, len}` Str. `Str.eq` / `contains` /
   `find` / `slice` are bounded memcmp on that pair. `[N]T.as_slice()` builds a
-  fat slice; `match .ok/.err` and `Some`/`none` lower Result/Option. Goldens live in
-  `tcl/tools/array_addr_test.tcl`.
+  fat slice; `match .ok/.err` and `Some`/`none` lower Result/Option. Generic
+  `id<T>` is emitted after the caller; variant match uses the value's address.
+  Goldens live in `tcl/tools/array_addr_test.tcl`.
 * **FPU encodings.** COP1 ops (`add.s`/`sub.s`/`mul.s`/`div.s`, the
   `mov`/`neg`/`abs`/`sqrt` unary group, `cvt.*`, the `c.<cond>.s` compare
   family, `bc1t`/`bc1f`, `mtc1`/`mfc1`) all have golden encodings in

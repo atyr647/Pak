@@ -239,7 +239,7 @@ main:
     sw $t9, 152($sp)
     la $t8, .Lf323
     lwc1 $f12, 0($t8)
-    sw $t9, 156($sp)
+    swc1 $f12, 156($sp)
     li $t8, 1
     la $t7, frame_count
     lw $t7, 0($t7)
@@ -261,12 +261,12 @@ main:
     lw $t8, 0($t8)
     sw $t8, 152($sp)
     move $t9, $t8
-    lw $t7, 156($sp)
+    lwc1 $f12, 156($sp)
     mov.s $f14, $f12
     la $t5, .Lf324
     lwc1 $f12, 0($t5)
     add.s $f12, $f14, $f12
-    sw $t8, 156($sp)
+    swc1 $f12, 156($sp)
     move $t9, $t8
     la $t8, .Lstr5
     sw $t8, 148($sp)

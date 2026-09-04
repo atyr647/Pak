@@ -262,7 +262,7 @@ main:
     li $a0, 42
     sw $t9, 96($sp)
     sw $t8, 100($sp)
-    jal identity
+    jal identity__i32
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
@@ -274,7 +274,7 @@ main:
     lwc1 $f12, 0($t7)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
-    jal identity
+    jal identity__f32
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
@@ -284,7 +284,7 @@ main:
     move $t9, $t8
     li $a0, 1
     sw $t9, 96($sp)
-    jal identity
+    jal identity__bool
     nop
     lw $t9, 96($sp)
     move $t9, $v0
@@ -293,7 +293,7 @@ main:
     li $a0, 3
     sw $t9, 96($sp)
     sw $t8, 100($sp)
-    jal max_of
+    jal max_of__i32
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
@@ -308,7 +308,7 @@ main:
     lwc1 $f12, 0($t7)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
-    jal max_of
+    jal max_of__f32
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
@@ -320,7 +320,7 @@ main:
     li $a0, 100
     sw $t9, 96($sp)
     sw $t8, 100($sp)
-    jal max_of
+    jal max_of__i32
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
@@ -332,7 +332,7 @@ main:
     li $a0, 1
     sw $t9, 96($sp)
     sw $t8, 100($sp)
-    jal swap_first
+    jal swap_first__i32
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
@@ -437,26 +437,6 @@ main:
     la $t7, sink_f
     swc1 $f12, 0($t7)
     move $t9, $t8
-
-	.section .text
-	.globl identity__i32
-	.type identity__i32, @function
-identity__i32:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $v0, 136($sp)
-    j .Lidentity__i32_ret_4
-    nop
-.Lidentity__i32_ret_4:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
-    jr $ra
-    nop
-	.size identity__i32, . - identity__i32
     li $a0, 99
     sw $t9, 96($sp)
     sw $t8, 100($sp)
@@ -498,6 +478,154 @@ identity__i32:
     jr $ra
     nop
 	.size main, . - main
+
+	.section .text
+	.globl identity__i32
+	.type identity__i32, @function
+identity__i32:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $v0, 136($sp)
+    j .Lidentity__i32_ret_4
+    nop
+.Lidentity__i32_ret_4:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size identity__i32, . - identity__i32
+
+	.section .text
+	.globl identity__f32
+	.type identity__f32, @function
+identity__f32:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    swc1 $f12, 136($sp)
+    lwc1 $f12, 136($sp)
+    j .Lidentity__f32_ret_5
+    nop
+.Lidentity__f32_ret_5:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size identity__f32, . - identity__f32
+
+	.section .text
+	.globl identity__bool
+	.type identity__bool, @function
+identity__bool:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sb $a0, 136($sp)
+    lbu $v0, 136($sp)
+    j .Lidentity__bool_ret_6
+    nop
+.Lidentity__bool_ret_6:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size identity__bool, . - identity__bool
+
+	.section .text
+	.globl max_of__i32
+	.type max_of__i32, @function
+max_of__i32:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    sw $a1, 140($sp)
+    lw $t8, 136($sp)
+    lw $t7, 140($sp)
+    sgt $t9, $t8, $t7
+    beqz $t9, .Lif_end_8
+    nop
+    lw $v0, 136($sp)
+    j .Lmax_of__i32_ret_7
+    nop
+.Lif_end_8:
+    lw $v0, 140($sp)
+    j .Lmax_of__i32_ret_7
+    nop
+.Lmax_of__i32_ret_7:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size max_of__i32, . - max_of__i32
+
+	.section .text
+	.globl max_of__f32
+	.type max_of__f32, @function
+max_of__f32:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    swc1 $f12, 136($sp)
+    mov.s $f12, $f14
+    swc1 $f12, 140($sp)
+    lwc1 $f12, 136($sp)
+    mov.s $f14, $f12
+    lwc1 $f12, 140($sp)
+    c.lt.s $f12, $f14
+    li $t9, 0
+    bc1f .Lfgt_11
+    nop
+    li $t9, 1
+.Lfgt_11:
+    beqz $t9, .Lif_end_10
+    nop
+    lwc1 $f12, 136($sp)
+    j .Lmax_of__f32_ret_9
+    nop
+.Lif_end_10:
+    lwc1 $f12, 140($sp)
+    j .Lmax_of__f32_ret_9
+    nop
+.Lmax_of__f32_ret_9:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size max_of__f32, . - max_of__f32
+
+	.section .text
+	.globl swap_first__i32
+	.type swap_first__i32, @function
+swap_first__i32:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    sw $a1, 140($sp)
+    lw $v0, 140($sp)
+    j .Lswap_first__i32_ret_12
+    nop
+.Lswap_first__i32_ret_12:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size swap_first__i32, . - swap_first__i32
 
 	.section .rodata
 	.align 2
