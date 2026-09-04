@@ -222,8 +222,7 @@ do_work:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    la $t8, buf
-    lw $t8, 0($t8)
+    lw $t8, 136($sp)
     move $t9, $zero
 .Ldo_work_ret_0:
     lw $fp, 312($sp)

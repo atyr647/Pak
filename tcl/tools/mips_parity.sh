@@ -14,8 +14,18 @@ SNAP_DIR="$REPO/tests/snapshots/mips"
 cd "$REPO"
 
 pass=0; fail=0; fail_files=""
+skipped=0
 while IFS= read -r f; do
     name=$(basename "$f" .pk64)
+    # Only examples the HAL contract accepts are standalone programs. Asking
+    # the MIPS backend to lower one that `pak check --backend mips` rejects is
+    # meaningless -- it refuses, correctly, and that refusal is not a
+    # regression. Same rule as tcl/tools/link_test.tcl, so the two agree.
+    if ! tclsh "$REPO/tcl/cli.tcl" check "$f" --backend mips >/dev/null 2>&1; then
+        skipped=$((skipped+1))
+        [ "${VERBOSE:-0}" = "1" ] && echo "SKIP (not standalone): $f"
+        continue
+    fi
     out="$(tclsh "$HERE/mips_dump.tcl" "$f" 2>/dev/null)"
     first=$(printf '%s' "$out" | head -1)
     if printf '%s' "$first" | grep -q '^UNPORTED\|^ERROR'; then
@@ -50,6 +60,6 @@ while IFS= read -r f; do
 done < <(find examples/canonical -name '*.pk64' | sort)
 
 total=$((pass+fail))
-echo "mips: PASS=$pass  FAIL=$fail  (of $total canonical)"
+echo "mips: PASS=$pass  FAIL=$fail  SKIP=$skipped (not standalone)  (of $((total+skipped)) canonical)"
 [ -n "$fail_files" ] && echo -e "FAILED:\n$(echo $fail_files | tr ' ' '\n')"
 [ "$fail" -eq 0 ]

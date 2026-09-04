@@ -219,8 +219,8 @@ main:
     la $t7, game_running
     sw $t8, 0($t7)
     move $t9, $t8
-    la $t7, PI
-    lw $t7, 0($t7)
+    la $t6, .Lf320
+    lwc1 $f12, 0($t6)
     andi $t8, $t7, 255
     la $t7, dma_buffer
     li $t6, 0
@@ -241,6 +241,11 @@ main:
     jr $ra
     nop
 	.size main, . - main
+
+	.section .rodata
+	.align 2
+.Lf320:
+	.word 1078530000
 
 	.section .data
 	.align 2

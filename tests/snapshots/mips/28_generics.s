@@ -186,72 +186,6 @@
 
 
 	.section .text
-	.globl Pair_sum_i32
-	.type Pair_sum_i32, @function
-Pair_sum_i32:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t8, 136($sp)
-    lw $t9, 0($t8)
-    lw $t7, 136($sp)
-    lw $t8, 4($t7)
-    addu $v0, $t9, $t8
-    j .LPair_sum_i32_ret_0
-    nop
-.LPair_sum_i32_ret_0:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
-    jr $ra
-    nop
-	.size Pair_sum_i32, . - Pair_sum_i32
-
-	.section .text
-	.globl Pair_get_first
-	.type Pair_get_first, @function
-Pair_get_first:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
-    lw $v0, 0($t9)
-    j .LPair_get_first_ret_1
-    nop
-.LPair_get_first_ret_1:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
-    jr $ra
-    nop
-	.size Pair_get_first, . - Pair_get_first
-
-	.section .text
-	.globl Pair_get_second
-	.type Pair_get_second, @function
-Pair_get_second:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
-    lw $v0, 4($t9)
-    j .LPair_get_second_ret_2
-    nop
-.LPair_get_second_ret_2:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
-    jr $ra
-    nop
-	.size Pair_get_second, . - Pair_get_second
-
-	.section .text
 	.globl main
 	.type main, @function
 main:
@@ -471,7 +405,7 @@ main:
     la $t7, sink_f
     swc1 $f12, 0($t7)
     move $t9, $t8
-.Lmain_ret_3:
+.Lmain_ret_0:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -489,9 +423,9 @@ identity__i32:
     addiu $fp, $sp, 320
     sw $a0, 136($sp)
     lw $v0, 136($sp)
-    j .Lidentity__i32_ret_4
+    j .Lidentity__i32_ret_1
     nop
-.Lidentity__i32_ret_4:
+.Lidentity__i32_ret_1:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -509,9 +443,9 @@ identity__f32:
     addiu $fp, $sp, 320
     swc1 $f12, 136($sp)
     lwc1 $f12, 136($sp)
-    j .Lidentity__f32_ret_5
+    j .Lidentity__f32_ret_2
     nop
-.Lidentity__f32_ret_5:
+.Lidentity__f32_ret_2:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -529,9 +463,9 @@ identity__bool:
     addiu $fp, $sp, 320
     sb $a0, 136($sp)
     lbu $v0, 136($sp)
-    j .Lidentity__bool_ret_6
+    j .Lidentity__bool_ret_3
     nop
-.Lidentity__bool_ret_6:
+.Lidentity__bool_ret_3:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -552,16 +486,16 @@ max_of__i32:
     lw $t8, 136($sp)
     lw $t7, 140($sp)
     sgt $t9, $t8, $t7
-    beqz $t9, .Lif_end_8
+    beqz $t9, .Lif_end_5
     nop
     lw $v0, 136($sp)
-    j .Lmax_of__i32_ret_7
+    j .Lmax_of__i32_ret_4
     nop
-.Lif_end_8:
+.Lif_end_5:
     lw $v0, 140($sp)
-    j .Lmax_of__i32_ret_7
+    j .Lmax_of__i32_ret_4
     nop
-.Lmax_of__i32_ret_7:
+.Lmax_of__i32_ret_4:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -585,20 +519,20 @@ max_of__f32:
     lwc1 $f12, 140($sp)
     c.lt.s $f12, $f14
     li $t9, 0
-    bc1f .Lfgt_11
+    bc1f .Lfgt_8
     nop
     li $t9, 1
-.Lfgt_11:
-    beqz $t9, .Lif_end_10
+.Lfgt_8:
+    beqz $t9, .Lif_end_7
     nop
     lwc1 $f12, 136($sp)
-    j .Lmax_of__f32_ret_9
+    j .Lmax_of__f32_ret_6
     nop
-.Lif_end_10:
+.Lif_end_7:
     lwc1 $f12, 140($sp)
-    j .Lmax_of__f32_ret_9
+    j .Lmax_of__f32_ret_6
     nop
-.Lmax_of__f32_ret_9:
+.Lmax_of__f32_ret_6:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -617,15 +551,213 @@ swap_first__i32:
     sw $a0, 136($sp)
     sw $a1, 140($sp)
     lw $v0, 140($sp)
-    j .Lswap_first__i32_ret_12
+    j .Lswap_first__i32_ret_9
     nop
-.Lswap_first__i32_ret_12:
+.Lswap_first__i32_ret_9:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
     jr $ra
     nop
 	.size swap_first__i32, . - swap_first__i32
+
+	.section .text
+	.globl Pair__i32_sum_i32
+	.type Pair__i32_sum_i32, @function
+Pair__i32_sum_i32:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t8, 136($sp)
+    lw $t9, 0($t8)
+    lw $t7, 136($sp)
+    lw $t8, 4($t7)
+    addu $v0, $t9, $t8
+    j .LPair__i32_sum_i32_ret_10
+    nop
+.LPair__i32_sum_i32_ret_10:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size Pair__i32_sum_i32, . - Pair__i32_sum_i32
+
+	.section .text
+	.globl Pair__i32_get_first
+	.type Pair__i32_get_first, @function
+Pair__i32_get_first:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
+    lw $v0, 0($t9)
+    j .LPair__i32_get_first_ret_11
+    nop
+.LPair__i32_get_first_ret_11:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size Pair__i32_get_first, . - Pair__i32_get_first
+
+	.section .text
+	.globl Pair__i32_get_second
+	.type Pair__i32_get_second, @function
+Pair__i32_get_second:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
+    lw $v0, 4($t9)
+    j .LPair__i32_get_second_ret_12
+    nop
+.LPair__i32_get_second_ret_12:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size Pair__i32_get_second, . - Pair__i32_get_second
+
+	.section .text
+	.globl Pair__f32_sum_i32
+	.type Pair__f32_sum_i32, @function
+Pair__f32_sum_i32:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t8, 136($sp)
+    lw $t9, 0($t8)
+    lw $t7, 136($sp)
+    lw $t8, 4($t7)
+    addu $v0, $t9, $t8
+    j .LPair__f32_sum_i32_ret_13
+    nop
+.LPair__f32_sum_i32_ret_13:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size Pair__f32_sum_i32, . - Pair__f32_sum_i32
+
+	.section .text
+	.globl Pair__f32_get_first
+	.type Pair__f32_get_first, @function
+Pair__f32_get_first:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
+    lw $v0, 0($t9)
+    j .LPair__f32_get_first_ret_14
+    nop
+.LPair__f32_get_first_ret_14:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size Pair__f32_get_first, . - Pair__f32_get_first
+
+	.section .text
+	.globl Pair__f32_get_second
+	.type Pair__f32_get_second, @function
+Pair__f32_get_second:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
+    lw $v0, 4($t9)
+    j .LPair__f32_get_second_ret_15
+    nop
+.LPair__f32_get_second_ret_15:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size Pair__f32_get_second, . - Pair__f32_get_second
+
+	.section .text
+	.globl Pair__T_sum_i32
+	.type Pair__T_sum_i32, @function
+Pair__T_sum_i32:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t8, 136($sp)
+    lw $t9, 0($t8)
+    lw $t7, 136($sp)
+    lw $t8, 4($t7)
+    addu $v0, $t9, $t8
+    j .LPair__T_sum_i32_ret_16
+    nop
+.LPair__T_sum_i32_ret_16:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size Pair__T_sum_i32, . - Pair__T_sum_i32
+
+	.section .text
+	.globl Pair__T_get_first
+	.type Pair__T_get_first, @function
+Pair__T_get_first:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
+    lw $v0, 0($t9)
+    j .LPair__T_get_first_ret_17
+    nop
+.LPair__T_get_first_ret_17:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size Pair__T_get_first, . - Pair__T_get_first
+
+	.section .text
+	.globl Pair__T_get_second
+	.type Pair__T_get_second, @function
+Pair__T_get_second:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
+    lw $v0, 4($t9)
+    j .LPair__T_get_second_ret_18
+    nop
+.LPair__T_get_second_ret_18:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size Pair__T_get_second, . - Pair__T_get_second
 
 	.section .rodata
 	.align 2

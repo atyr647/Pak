@@ -159,17 +159,21 @@ jobs:
       - name: Assembler front end
         run: bash tcl/tools/n64asm_parity.sh
 
-      - name: Object generation (all canonical examples → .pakobj)
+      # Only examples the HAL contract accepts are standalone programs; the
+      # MIPS backend refuses the rest by design (dyn trait objects, libdragon-
+      # only math). Same filter as link_test.tcl and mips_parity.sh.
+      - name: Object generation (standalone canonical examples → .pakobj)
         run: |
           failed=0
           for f in examples/canonical/*.pk64; do
+            pak check "$f" --backend mips > /dev/null 2>&1 || continue
             if ! pak objgen "$f" -o /tmp/obj.pakobj > /dev/null 2>&1; then
               echo "OBJGEN FAIL: $f"
               pak objgen "$f" -o /tmp/obj.pakobj
               failed=1
             fi
           done
-          [ "$failed" -eq 0 ] && echo "All canonical examples produced object files."
+          [ "$failed" -eq 0 ] && echo "All standalone canonical examples produced object files."
           exit $failed
 
       # The runtime is Pak (+ a hand-written crt0), so both halves must stay

@@ -460,9 +460,9 @@ proc pak::mips_annlist {node} {
 oo::class create pak::MipsCodegen {
     variable em pool ra ret_label scopes defers next_local loop_header loop_exit loop_defer_depth \
              loop_result sret_off sret_size \
-             globals consts label_n fmtstr_counter \
+             globals consts float_consts label_n fmtstr_counter \
              tenv_layouts tenv_enum_values tenv_variant_decls fn_decls \
-             generic_fns generic_structs mono_emitted mono_queue type_nodes \
+             generic_fns generic_structs generic_impls mono_emitted mono_queue type_nodes \
              closure_envs closure_captures last_closure_env heap_inited
 
     constructor {} {
@@ -481,6 +481,7 @@ oo::class create pak::MipsCodegen {
         set sret_size 0
         set globals [dict create]
         set consts [dict create]
+        set float_consts [dict create]
         set label_n 0
         set fmtstr_counter 0
         set tenv_layouts [dict create]
@@ -490,6 +491,7 @@ oo::class create pak::MipsCodegen {
         set generic_structs [dict create]
         set mono_emitted [dict create]
         set mono_queue {}
+        set generic_impls [dict create]
         set type_nodes [dict create]
         set fn_decls [dict create]
         set closure_envs [dict create]
@@ -616,6 +618,10 @@ oo::class create pak::MipsCodegen {
                 FnDecl      { dict set fn_decls [pak::fval $decl name] $decl }
                 ImplBlock - ImplTraitBlock {
                     set type_name [pak::fval $decl type_name]
+                    # Recorded unconditionally: register_struct (which fills
+                    # generic_structs) runs after this loop, so testing for a
+                    # generic here would always miss.
+                    dict set generic_impls $type_name $decl
                     foreach m [pak::items [pak::nfield $decl methods]] {
                         dict set fn_decls "${type_name}_[pak::fval $m name]" $m
                     }
@@ -1037,6 +1043,38 @@ oo::class create pak::MipsCodegen {
         }
         return $result
     }
+    # Run this scope's defers, THEN drop the scope. `defer { free(buf) }` reads
+    # buf, which is a local of the scope being closed: emitting the deferred
+    # body after pop_scope left buf unresolvable, so it fell through to
+    # `la $t8, buf` against a symbol nothing defines and the link failed.
+    method pop_scope_running_defers {} {
+        set d [lindex $defers end]
+        for {set i [expr {[llength $d]-1}]} {$i >= 0} {incr i -1} {
+            my emit_stmt [lindex $d $i]
+        }
+        set defers [lrange $defers 0 end-1]
+        set scopes [lrange $scopes 0 end-1]
+    }
+
+    # Is this expression `<ContainerType>.init()`?
+    method is_container_init {v} {
+        if {[pak::kindof $v] ne "Call"} { return 0 }
+        set f [pak::nfield $v func]
+        if {[pak::kindof $f] ne "DotAccess"} { return 0 }
+        if {[pak::fval $f field] ne "init"} { return 0 }
+        set o [pak::nfield $f obj]
+        if {[pak::kindof $o] ne "Ident"} { return 0 }
+        return [expr {[pak::fval $o name] in {FixedList Pool RingBuffer FixedMap Vec}}]
+    }
+
+    # Zero a local's whole stack slot, one word at a time.
+    method zero_local_slot {off layout} {
+        set sz [dict get $layout size]
+        for {set i 0} {$i < $sz} {incr i 4} {
+            $em sw {$zero} [expr {$off + $i}] {$sp}
+        }
+    }
+
     method add_defer {body} {
         if {[llength $defers] > 0} {
             set last [lindex $defers end]
@@ -1120,6 +1158,12 @@ oo::class create pak::MipsCodegen {
             StaticDecl  { my emit_static $decl }
             ImplBlock - ImplTraitBlock {
                 set type_name [pak::fval $decl type_name]
+                # `impl Pair<T>` is a template. Emitting its methods under the
+                # bare name gave one Pair_sum_i32 shared by every instantiation,
+                # while call sites asked for Pair__i32_sum_i32 -- a symbol
+                # nothing defined, so the link failed. Monomorphs are queued as
+                # each instantiation is discovered; skip the template here.
+                if {[dict exists $generic_structs $type_name]} { return }
                 set subst [dict create Self [pak::N TypeName name $type_name]]
                 foreach m [pak::items [pak::nfield $decl methods]] {
                     set mangled "${type_name}_[pak::fval $m name]"
@@ -1180,6 +1224,13 @@ oo::class create pak::MipsCodegen {
                 dict set consts [pak::fval $decl name] [expr {entier(double($raw) * (1 << $shift))}]
                 return
             }
+        }
+        # A plain float const (const PI: f32 = 3.14159) has no integer value to
+        # fold, so eval_const_expr returned "" and PI was never a const either.
+        # It goes in the float pool and loads like any other float literal.
+        if {[pak::kindof $val] eq "FloatLit"} {
+            dict set float_consts [pak::fval $decl name] [pak::sval [pak::nfield $val value]]
+            return
         }
         set v [my eval_const_expr $val]
         if {$v ne ""} { dict set consts [pak::fval $decl name] $v }
@@ -1305,7 +1356,7 @@ oo::class create pak::MipsCodegen {
         set ret_label [my fresh_label ".L${name}_ret"]
         my emit_block $body
         # Emit outer-scope (param) defers before patching prologue
-        foreach d [my pop_scope] { my emit_stmt $d }
+        my pop_scope_running_defers
         set frame_size [my frame_size_for_locals $next_local [$ra used_callee_gprs]]
         my patch_frame_size $frame_size $prologue_start $prologue_end \
             $prologue_rec_start $prologue_rec_end
@@ -1538,7 +1589,7 @@ oo::class create pak::MipsCodegen {
     method emit_block {block} {
         my push_scope
         foreach stmt [pak::items [pak::nfield $block stmts]] { my emit_stmt $stmt }
-        foreach d [my pop_scope] { my emit_stmt $d }
+        my pop_scope_running_defers
     }
 
     method emit_block_or_stmt {node} {
@@ -1622,6 +1673,15 @@ oo::class create pak::MipsCodegen {
                         set loop_result [lrange $loop_result 0 end-1]
                         # Result is already in $off from Break's store_to_sp — nothing more to do
                     } else {
+                        # `FixedList.init()` is a static call on a TYPE, not a
+                        # method on a value: there is no FixedList object and no
+                        # FixedList_init symbol, so it fell through to a method
+                        # call and the link failed on an undefined `FixedList`.
+                        # It means "an empty container", which is a zeroed slot.
+                        if {[my is_container_init $v]} {
+                            my zero_local_slot $off $layout
+                            return
+                        }
                         set is_none [expr {[pak::kindof $v] eq "NoneLit"}]
                         if {$is_none} {
                             set z [$ra alloc_temp]
@@ -2225,7 +2285,7 @@ oo::class create pak::MipsCodegen {
         my push_scope
         my emit_result_bind $val_reg $pat
         my emit_block_or_stmt $body
-        foreach d [my pop_scope] { my emit_stmt $d }
+        my pop_scope_running_defers
         $em j $end_label
         $em nop
     }
@@ -2244,7 +2304,7 @@ oo::class create pak::MipsCodegen {
         my push_scope
         my emit_result_bind $val_reg $pat
         my emit_block_or_stmt $body
-        foreach d [my pop_scope] { my emit_stmt $d }
+        my pop_scope_running_defers
         $em j $end_label
         $em nop
     }
@@ -2329,7 +2389,7 @@ oo::class create pak::MipsCodegen {
         }
 
         my emit_block_or_stmt $body
-        foreach d [my pop_scope] { my emit_stmt $d }
+        my pop_scope_running_defers
         $em j $end_label
         $em nop
     }
@@ -3070,7 +3130,7 @@ oo::class create pak::MipsCodegen {
                 my emit_stmt $st
             }
         }
-        foreach d [my pop_scope] { my emit_stmt $d }
+        my pop_scope_running_defers
     }
 
     method emit_catch {expr dst} {
@@ -3338,6 +3398,14 @@ oo::class create pak::MipsCodegen {
 
     method emit_ident_load {name dst} {
         if {[dict exists $consts $name]} { $em li $dst [dict get $consts $name]; return }
+        if {[dict exists $float_consts $name]} {
+            set lbl [$pool intern_float [dict get $float_consts $name]]
+            set addr [$ra alloc_temp]
+            $em la $addr $lbl
+            $em lwc1 {$f12} 0 $addr
+            $ra free_temp $addr
+            return
+        }
         set local [my lookup_local $name]
         if {$local ne ""} {
             lassign $local off layout
@@ -4462,6 +4530,31 @@ oo::class create pak::MipsCodegen {
         return $mangled
     }
 
+    # Specialize `impl Pair<T>`'s methods for one instantiation, so
+    # Pair__i32_sum_i32 exists for the call site that names it.
+    method queue_impl_monomorphs {sname mangled type_args} {
+        if {![dict exists $generic_impls $sname]} return
+        set impl [dict get $generic_impls $sname]
+        set template [dict get $generic_structs $sname]
+        set subst [dict create Self [pak::N TypeName name $mangled]]
+        set tps [pak::items [pak::nfield $template type_params]]
+        set i 0
+        foreach tp $tps {
+            set tpname $tp
+            if {[llength $tp] > 1} { set tpname [lindex $tp 1] }
+            if {$i < [llength $type_args]} { dict set subst $tpname [lindex $type_args $i] }
+            incr i
+        }
+        foreach m [pak::items [pak::nfield $impl methods]] {
+            set mm "${mangled}_[pak::fval $m name]"
+            if {[dict exists $mono_emitted $mm]} continue
+            dict set mono_emitted $mm 1
+            dict set fn_decls $mm $m
+            lappend mono_queue [list $mm [my subst_params [pak::nfield $m params] $subst] \
+                [pak::nfield $m body] [my subst_type [pak::nfield $m ret_type] $subst]]
+        }
+    }
+
     method flush_mono {} {
         while {[llength $mono_queue] > 0} {
             set item [lindex $mono_queue 0]
@@ -4577,7 +4670,10 @@ oo::class create pak::MipsCodegen {
             }
         }
         set mangled "${sname}__[join $arg_names _]"
-        if {[dict exists $tenv_layouts $mangled]} { return $mangled }
+        if {[dict exists $tenv_layouts $mangled]} {
+            my queue_impl_monomorphs $sname $mangled $type_args
+            return $mangled
+        }
         if {![dict exists $generic_structs $sname]} { return $sname }
         set template [dict get $generic_structs $sname]
         set subst [dict create]
@@ -4609,6 +4705,9 @@ oo::class create pak::MipsCodegen {
         set layout [dict create size $total align $max_align is_float 0 is_signed 1 is_ptr 0 \
             fields $fields field_order $order frac_bits 0]
         dict set tenv_layouts $mangled $layout
+        # First sighting of this instantiation: its impl methods need
+        # specializing too, not just its layout.
+        my queue_impl_monomorphs $sname $mangled $type_args
         return $mangled
     }
 
@@ -4666,7 +4765,12 @@ oo::class create pak::MipsCodegen {
                     return [dict get $layout _type_name]
                 }
             }
-            return "[string toupper [string index $var_name 0]][string range $var_name 1 end]"
+            # No type known. This used to capitalise the VARIABLE name and hand
+            # it back as if it were a type, so `s.area()` on a `dyn Shape`
+            # became a call to S_area -- a symbol nothing defines, discovered
+            # only at link. Inference is allowed to fail; emit_method_call
+            # turns an empty answer into an error rather than a symbol.
+            return ""
         }
         return ""
     }
@@ -4724,6 +4828,9 @@ oo::class create pak::MipsCodegen {
     method emit_method_call {access args_seq dst} {
         set obj [pak::nfield $access obj]
         set type_name [my type_name_of $obj]
+        if {$type_name eq ""} {
+            pak::mips_unported "cannot determine the receiver type of .[pak::fval $access field]() -- no symbol to call"
+        }
         set mangled "${type_name}_[pak::fval $access field]"
 
         # Pointer receiver: pass the pointer. Value: pass the object's address.
@@ -5335,7 +5442,34 @@ oo::class create pak::MipsCodegen {
                     $em lw $dst 0 $addr_r
                     $ra free_temp $idx_r; $ra free_temp $addr_r
                 }
-                remove_at {
+                clear {
+                    $em sw {$zero} $len_off {$sp}
+                }
+                set {
+                    # data[i] = v. Element sizes above a word are copied a word
+                    # at a time, matching how push stores them.
+                    set idx_r [$ra alloc_temp]
+                    my emit_expr [lindex $args 0] $idx_r
+                    set addr_r [$ra alloc_temp]
+                    $em li $addr_r $esz
+                    $em mul $addr_r $idx_r $addr_r
+                    $em addiu $addr_r $addr_r $base_off
+                    $em addu $addr_r {$sp} $addr_r
+                    set val_r [$ra alloc_temp]
+                    my emit_expr [lindex $args 1] $val_r
+                    if {$esz <= 4} {
+                        $em sw $val_r 0 $addr_r
+                    } else {
+                        set w [$ra alloc_temp]
+                        for {set i 0} {$i < $esz} {incr i 4} {
+                            $em lw $w $i $val_r
+                            $em sw $w $i $addr_r
+                        }
+                        $ra free_temp $w
+                    }
+                    $ra free_temp $idx_r; $ra free_temp $addr_r; $ra free_temp $val_r
+                }
+                remove - remove_at {
                     set len_r [$ra alloc_temp]
                     $em lw $len_r $len_off {$sp}
                     $em addiu $len_r $len_r -1
@@ -5372,10 +5506,12 @@ oo::class create pak::MipsCodegen {
                     my emit_jal pak_pool_release
                 }
                 default {
-                    $em addiu {$a0} {$sp} $base_off
-                    my marshal_args $args_seq 1
-                    my emit_jal "_PakList_${method}"
-                    if {$dst ne {$v0}} { $em move $dst {$v0} }
+                    # There is no _PakList_* helper library: the standalone
+                    # link is boot.S plus runtime.pk64 and nothing else. Emitting
+                    # a call to one produced an object that only failed at
+                    # link time, naming a symbol no source defines. Fail here,
+                    # where the message can name the method.
+                    pak::mips_unported "container method ${gname}.${method} is not implemented on the standalone backend"
                 }
             }
             return
@@ -5450,7 +5586,7 @@ oo::class create pak::MipsCodegen {
                     $ra free_temp $head_r; $ra free_temp $addr_r
                     $ra free_temp $cap_r;  $ra free_temp $len_r
                 }
-                peek {
+                peek - peek_back {
                     set n_r [$ra alloc_temp]
                     if {[llength $args] > 0} { my emit_expr [lindex $args 0] $n_r } else { $em li $n_r 0 }
                     set tail_r [$ra alloc_temp]
@@ -5472,10 +5608,9 @@ oo::class create pak::MipsCodegen {
                     $ra free_temp $cap_r; $ra free_temp $addr_r
                 }
                 default {
-                    $em addiu {$a0} {$sp} $base_off
-                    my marshal_args $args_seq 1
-                    my emit_jal "_PakRBuf_${method}"
-                    if {$dst ne {$v0}} { $em move $dst {$v0} }
+                    # As with FixedList: no _PakRBuf_* helper library exists,
+                    # so calling one only fails at link.
+                    pak::mips_unported "container method ${gname}.${method} is not implemented on the standalone backend"
                 }
             }
             return

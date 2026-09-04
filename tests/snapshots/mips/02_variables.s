@@ -250,8 +250,8 @@ main:
     li $t8, 100
     sw $t8, 136($sp)
     move $t9, $t8
-    la $t8, SPEED
-    lw $t8, 0($t8)
+    la $t7, .Lf324
+    lwc1 $f12, 0($t7)
     swc1 $f12, 140($sp)
     move $t9, $t8
     li $t8, 0
@@ -263,12 +263,12 @@ main:
     move $t9, $t8
     lwc1 $f12, 156($sp)
     mov.s $f14, $f12
-    la $t5, .Lf324
+    la $t5, .Lf325
     lwc1 $f12, 0($t5)
     add.s $f12, $f14, $f12
     swc1 $f12, 156($sp)
     move $t9, $t8
-    la $t8, .Lstr5
+    la $t8, .Lstr6
     sw $t8, 148($sp)
     move $t9, $t8
 .Lmain_ret_0:
@@ -284,7 +284,7 @@ main:
 .Lstr1:
 	.asciiz "player"
 	.align 0
-.Lstr5:
+.Lstr6:
 	.asciiz "done"
 	.align 2
 .Lf320:
@@ -297,6 +297,9 @@ main:
 	.word 1056964608
 	.align 2
 .Lf324:
+	.word 1075838976
+	.align 2
+.Lf325:
 	.word 1065353216
 
 	.section .data

@@ -63,6 +63,7 @@ oo::class create pak::Checker {
                 }
                 FnDecl {
                     my register_name [pak::fval $decl name] $decl
+                    my check_fn_signature_types $decl
                     if {![pak::isnil [pak::nfield $decl body]]} { my check_fn_body $decl }
                 }
                 ImplBlock - ImplTraitBlock {
@@ -78,6 +79,29 @@ oo::class create pak::Checker {
                 ConstDecl {
                     my register_name [pak::fval $decl name] $decl
                     my check_const $decl
+                }
+                ExternConst {
+                    # An extern symbol resolves on the standalone backend only
+                    # if the HAL itself defines it -- boot.S and runtime.pk64
+                    # are all that gets linked. An extern const is usually a
+                    # libdragon macro, which is nothing the linker can find:
+                    # the codegen emitted the reference and the link failed on
+                    # an undefined symbol. Say so here, where it can be read.
+                    if {$backend eq "mips" && ![pak::mips_hal_symbol [pak::fval $decl name]]} {
+                        my err E010 "extern const '[pak::fval $decl name]' is not defined on the standalone backend" \
+                            "Only boot.S and runtime/standalone/runtime.pk64 are linked, so an extern symbol they do not define cannot resolve. Use the libdragon backend, or give it a value with `const`." \
+                            $decl
+                    }
+                }
+                ExternBlock {
+                    if {$backend eq "mips"} {
+                        foreach ed [pak::items [pak::nfield $decl decls]] {
+                            if {[pak::mips_hal_symbol [pak::fval $ed name]]} continue
+                            my err E010 "extern fn '[pak::fval $ed name]' is not defined on the standalone backend" \
+                                "Only boot.S and runtime/standalone/runtime.pk64 are linked, so an extern symbol they do not define cannot resolve. Use the libdragon backend, or implement it in the HAL." \
+                                $ed
+                        }
+                    }
                 }
                 CfgBlock {
                     my check_cfg $decl
@@ -128,6 +152,13 @@ oo::class create pak::Checker {
     method check_entry {decl} {}
 
     # ── function body checks ──────────────────────────────────────────────────
+    method check_fn_signature_types {decl} {
+        foreach prm [pak::items [pak::nfield $decl params]] {
+            my check_backend_type [pak::nfield $prm type]
+        }
+        my check_backend_type [pak::nfield $decl ret_type]
+    }
+
     method check_fn_body {decl} {
         set body [pak::nfield $decl body]
         if {[pak::isnil $body]} return
@@ -164,6 +195,37 @@ oo::class create pak::Checker {
         return $terminated
     }
 
+    # FixedMap and Pool lower to calls into pak_map_* / pak_pool_* helpers that
+    # runtime/standalone/runtime.pk64 does not define -- there is no helper
+    # library on the standalone path, only boot.S and the HAL. The codegen
+    # emitted those calls anyway and the failure surfaced as an undefined
+    # symbol at link. Report it here, against the declaration, instead.
+    method check_backend_type {t} {
+        if {$backend ne "mips"} return
+        if {[pak::isnil $t] || [llength $t] < 2 || [lindex $t 0] ne "node"} return
+        if {[pak::kindof $t] eq "TypeDynTrait"} {
+            my err E010 "dyn trait objects are not implemented on the standalone backend" \
+                "Vtable dispatch is not lowered by the MIPS backend. Use a concrete type, or the libdragon backend." \
+                $t
+            return
+        }
+        if {[pak::kindof $t] eq "TypeGeneric"} {
+            set n [pak::fval $t name]
+            if {$n in {FixedMap Pool}} {
+                my err E010 "container '$n' is not implemented on the standalone backend" \
+                    "It lowers to pak_map_* / pak_pool_* helpers that runtime/standalone/runtime.pk64 does not define. Use FixedList or RingBuffer, or the libdragon backend." \
+                    $t
+                return
+            }
+        }
+        dict for {k v} [lindex $t 2] {
+            switch -- [lindex $v 0] {
+                node { my check_backend_type $v }
+                seq  { foreach it [pak::items $v] { my check_backend_type $it } }
+            }
+        }
+    }
+
     method check_block_calls {block} {
         foreach stmt [pak::items [pak::nfield $block stmts]] { my check_stmt_calls $stmt }
     }
@@ -172,6 +234,7 @@ oo::class create pak::Checker {
         switch -- [pak::kindof $stmt] {
             ExprStmt { my check_expr_calls [pak::nfield $stmt expr] }
             LetDecl {
+                my check_backend_type [pak::nfield $stmt type]
                 set v [pak::nfield $stmt value]
                 if {![pak::isnil $v]} { my check_expr_calls $v }
             }
