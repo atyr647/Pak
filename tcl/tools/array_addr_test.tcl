@@ -615,6 +615,40 @@ check_eq {CStr.is_empty} [static_hex $mw $syms empty] 00000000
 check_eq {str.from_cstr pak .len()} [static_hex $mw $syms slen] 00000003
 check_eq {Str.len field} [static_hex $mw $syms slen2] 00000003
 
+# ── Str.eq / contains / find / slice (bounded memcmp, not jal pak_str_eq)
+set src13 {
+static eqv: i32 = 0
+static has: i32 = 0
+static at: i32 = 0
+static pre: i32 = 0
+static suf: i32 = 0
+static sln: i32 = 0
+
+entry {
+    let ps: Str = str.from_cstr("hello world")
+    eqv = ps.eq(str.from_cstr("hello world")) as i32
+    has = ps.contains(str.from_cstr("world")) as i32
+    at = ps.find(str.from_cstr("world"))
+    pre = ps.starts_with(str.from_cstr("hello")) as i32
+    suf = ps.ends_with(str.from_cstr("world")) as i32
+    let part: Str = ps.slice(6, 5)
+    sln = part.len()
+}
+}
+set lx [pak::Lexer new $src13]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set syms [dict get $run data_syms]
+check_eq {Str.eq hello world} [static_hex $mw $syms eqv] 00000001
+check_eq {Str.contains world} [static_hex $mw $syms has] 00000001
+check_eq {Str.find world} [static_hex $mw $syms at] 00000006
+check_eq {Str.starts_with hello} [static_hex $mw $syms pre] 00000001
+check_eq {Str.ends_with world} [static_hex $mw $syms suf] 00000001
+check_eq {Str.slice(6,5).len} [static_hex $mw $syms sln] 00000005
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

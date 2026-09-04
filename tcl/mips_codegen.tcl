@@ -4197,6 +4197,99 @@ oo::class create pak::MipsCodegen {
         $ra free_temp $str_r
     }
 
+    method emit_pakstr_arg {expr data_r len_r} {
+        if {[pak::kindof $expr] eq "StringLit"} {
+            my emit_expr $expr $data_r
+            my emit_strlen $data_r $len_r
+            return
+        }
+        set p [$ra alloc_temp]
+        my emit_expr $expr $p
+        $em lw $data_r 0 $p
+        $em lw $len_r 4 $p
+        $ra free_temp $p
+    }
+
+    method emit_memcmp_n {a b n dst} {
+        set p [$ra alloc_temp]
+        set q [$ra alloc_temp]
+        set left [$ra alloc_temp]
+        $em move $p $a
+        $em move $q $b
+        $em move $left $n
+        $em li $dst 1
+        set loop [my fresh_label .Lmcmp]
+        set no [my fresh_label .Lmcmp_n]
+        set done [my fresh_label .Lmcmp_d]
+        $em beqz $left $done
+        $em nop
+        $em label $loop
+        set ca [$ra alloc_temp]
+        set cb [$ra alloc_temp]
+        $em lbu $ca 0 $p
+        $em lbu $cb 0 $q
+        $em bne $ca $cb $no
+        $em nop
+        $em addiu $p $p 1
+        $em addiu $q $q 1
+        $em addiu $left $left -1
+        $em bnez $left $loop
+        $em nop
+        $em j $done
+        $em nop
+        $em label $no
+        $em li $dst 0
+        $em label $done
+        $ra free_temp $cb
+        $ra free_temp $ca
+        $ra free_temp $left
+        $ra free_temp $q
+        $ra free_temp $p
+    }
+
+    method emit_memfind {hay hlen needle nlen dst} {
+        set i [$ra alloc_temp]
+        set last [$ra alloc_temp]
+        $em move $i {$zero}
+        set empty [my fresh_label .Lmf_e]
+        set miss [my fresh_label .Lmf_m]
+        set found [my fresh_label .Lmf_f]
+        set done [my fresh_label .Lmf_d]
+        set loop [my fresh_label .Lmf]
+        $em beqz $nlen $empty
+        $em nop
+        $em sltu $dst $hlen $nlen
+        $em bnez $dst $miss
+        $em nop
+        $em subu $last $hlen $nlen
+        $em label $loop
+        set p [$ra alloc_temp]
+        $em addu $p $hay $i
+        set eq [$ra alloc_temp]
+        my emit_memcmp_n $p $needle $nlen $eq
+        $em bnez $eq $found
+        $em nop
+        $em addiu $i $i 1
+        $em slt $eq $last $i
+        $em beqz $eq $loop
+        $em nop
+        $em label $miss
+        $em li $dst -1
+        $em j $done
+        $em nop
+        $em label $empty
+        $em move $dst {$zero}
+        $em j $done
+        $em nop
+        $em label $found
+        $em move $dst $i
+        $em label $done
+        $ra free_temp $eq
+        $ra free_temp $p
+        $ra free_temp $last
+        $ra free_temp $i
+    }
+
     # ── Str / PakStr fat-string built-in methods ──────────────────────────────
     method emit_pakstr_method {var_name method args_seq dst} {
         set local [my lookup_local $var_name]
@@ -4210,18 +4303,114 @@ oo::class create pak::MipsCodegen {
                 $em seq $dst $tmp {$zero}
                 $ra free_temp $tmp
             }
-            data     { $em lw $dst $base_off {$sp} }
+            data - as_cstr { $em lw $dst $base_off {$sp} }
             eq {
-                # pak_str_eq(a, b): pass both PakStr {ptr,len} via $a0-$a3
-                $em lw {$a0} $base_off {$sp}
-                $em lw {$a1} [expr {$base_off + 4}] {$sp}
-                set arg_r [$ra alloc_temp]
-                my emit_expr [lindex $args 0] $arg_r
-                $em lw {$a2} 0 $arg_r
-                $em lw {$a3} 4 $arg_r
-                $ra free_temp $arg_r
-                my emit_jal pak_str_eq
-                if {$dst ne {$v0}} { $em move $dst {$v0} }
+                set ad [$ra alloc_temp]; set al [$ra alloc_temp]
+                set bd [$ra alloc_temp]; set bl [$ra alloc_temp]
+                $em lw $ad $base_off {$sp}
+                $em lw $al [expr {$base_off + 4}] {$sp}
+                my emit_pakstr_arg [lindex $args 0] $bd $bl
+                set ne [my fresh_label .Lpeq_ne]
+                set done [my fresh_label .Lpeq_d]
+                $em bne $al $bl $ne
+                $em nop
+                my emit_memcmp_n $ad $bd $al $dst
+                $em j $done
+                $em nop
+                $em label $ne
+                $em li $dst 0
+                $em label $done
+                $ra free_temp $bl; $ra free_temp $bd
+                $ra free_temp $al; $ra free_temp $ad
+            }
+            contains {
+                set ad [$ra alloc_temp]; set al [$ra alloc_temp]
+                set bd [$ra alloc_temp]; set bl [$ra alloc_temp]
+                $em lw $ad $base_off {$sp}
+                $em lw $al [expr {$base_off + 4}] {$sp}
+                my emit_pakstr_arg [lindex $args 0] $bd $bl
+                set off [$ra alloc_temp]
+                my emit_memfind $ad $al $bd $bl $off
+                $em li $al -1
+                $em sne $dst $off $al
+                $ra free_temp $off
+                $ra free_temp $bl; $ra free_temp $bd
+                $ra free_temp $al; $ra free_temp $ad
+            }
+            find {
+                set ad [$ra alloc_temp]; set al [$ra alloc_temp]
+                set bd [$ra alloc_temp]; set bl [$ra alloc_temp]
+                $em lw $ad $base_off {$sp}
+                $em lw $al [expr {$base_off + 4}] {$sp}
+                my emit_pakstr_arg [lindex $args 0] $bd $bl
+                my emit_memfind $ad $al $bd $bl $dst
+                $ra free_temp $bl; $ra free_temp $bd
+                $ra free_temp $al; $ra free_temp $ad
+            }
+            starts_with {
+                set ad [$ra alloc_temp]; set al [$ra alloc_temp]
+                set bd [$ra alloc_temp]; set bl [$ra alloc_temp]
+                $em lw $ad $base_off {$sp}
+                $em lw $al [expr {$base_off + 4}] {$sp}
+                my emit_pakstr_arg [lindex $args 0] $bd $bl
+                set no [my fresh_label .Lpsw_no]
+                set done [my fresh_label .Lpsw_d]
+                $em sltu $dst $al $bl
+                $em bnez $dst $no
+                $em nop
+                my emit_memcmp_n $ad $bd $bl $dst
+                $em j $done
+                $em nop
+                $em label $no
+                $em li $dst 0
+                $em label $done
+                $ra free_temp $bl; $ra free_temp $bd
+                $ra free_temp $al; $ra free_temp $ad
+            }
+            ends_with {
+                set ad [$ra alloc_temp]; set al [$ra alloc_temp]
+                set bd [$ra alloc_temp]; set bl [$ra alloc_temp]
+                $em lw $ad $base_off {$sp}
+                $em lw $al [expr {$base_off + 4}] {$sp}
+                my emit_pakstr_arg [lindex $args 0] $bd $bl
+                set no [my fresh_label .Lpew_no]
+                set done [my fresh_label .Lpew_d]
+                $em sltu $dst $al $bl
+                $em bnez $dst $no
+                $em nop
+                $em subu $al $al $bl
+                $em addu $ad $ad $al
+                my emit_memcmp_n $ad $bd $bl $dst
+                $em j $done
+                $em nop
+                $em label $no
+                $em li $dst 0
+                $em label $done
+                $ra free_temp $bl; $ra free_temp $bd
+                $ra free_temp $al; $ra free_temp $ad
+            }
+            slice {
+                set ad [$ra alloc_temp]
+                $em lw $ad $base_off {$sp}
+                set st [$ra alloc_temp]
+                my emit_expr [lindex $args 0] $st
+                $em addu $ad $ad $st
+                set ln [$ra alloc_temp]
+                if {[llength $args] > 1} {
+                    my emit_expr [lindex $args 1] $ln
+                } else {
+                    $em lw $ln [expr {$base_off + 4}] {$sp}
+                    $em subu $ln $ln $st
+                }
+                set lay [dict get $tenv_layouts PakStr]
+                incr label_n
+                set off [my declare_local __psl_${label_n} $lay [pak::N TypeName name Str]]
+                $em sw $ad $off {$sp}
+                $em sw $ln [expr {$off + 4}] {$sp}
+                $em addiu $dst {$sp} $off
+                $ra free_temp $ln
+                $ra free_temp $st
+                $ra free_temp $ad
             }
             default {
                 $em lw {$a0} $base_off {$sp}
