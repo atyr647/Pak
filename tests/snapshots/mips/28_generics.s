@@ -197,7 +197,7 @@ Pair_sum_i32:
     lw $t8, 136($sp)
     lw $t9, 0($t8)
     lw $t7, 136($sp)
-    lw $t8, 0($t7)
+    lw $t8, 4($t7)
     addu $v0, $t9, $t8
     j .LPair_sum_i32_ret_0
     nop
@@ -240,7 +240,7 @@ Pair_get_second:
     addiu $fp, $sp, 320
     sw $a0, 136($sp)
     lw $t9, 136($sp)
-    lw $v0, 0($t9)
+    lw $v0, 4($t9)
     j .LPair_get_second_ret_2
     nop
 .LPair_get_second_ret_2:
@@ -367,7 +367,7 @@ main:
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     sw $t7, 104($sp)
-    jal P_sum_i32
+    jal Pair__i32_sum_i32
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
@@ -381,7 +381,7 @@ main:
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     sw $t7, 104($sp)
-    jal P_get_first
+    jal Pair__i32_get_first
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
@@ -414,7 +414,7 @@ main:
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     sw $t7, 104($sp)
-    jal Fp_sum_i32
+    jal Pair__f32_sum_i32
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
@@ -428,7 +428,7 @@ main:
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     sw $t7, 104($sp)
-    jal Fp_get_second
+    jal Pair__f32_get_second
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)

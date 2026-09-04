@@ -30,7 +30,14 @@ while IFS= read -r f; do
         mkdir -p "$SNAP_DIR"
         printf '%s\n' "$out" > "$snap"
     fi
-    if [ -f "$snap" ]; then
+    if [ ! -s "$snap" ]; then
+        # A missing OR empty snapshot is a failure, not a free pass: a truncated
+        # snapshot is how a regression gate silently stops checking anything.
+        # Regenerate with REGEN=1.
+        echo "MISSING OR EMPTY SNAPSHOT: $snap"
+        fail=$((fail+1))
+        fail_files="$fail_files $f"
+    else
         expected=$(cat "$snap")
         if [ "$out" = "$expected" ]; then
             pass=$((pass+1))
@@ -39,9 +46,6 @@ while IFS= read -r f; do
             fail_files="$fail_files $f"
             [ "${VERBOSE:-0}" = "1" ] && { echo "=== REGRESSION: $f ==="; diff <(printf '%s\n' "$expected") <(printf '%s\n' "$out") | head -40; }
         fi
-    else
-        # No snapshot yet — just check it compiles
-        pass=$((pass+1))
     fi
 done < <(find examples/canonical -name '*.pk64' | sort)
 

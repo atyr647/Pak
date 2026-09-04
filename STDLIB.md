@@ -473,7 +473,7 @@ rejects a no.
 | `str` | `concat` | `str_concat` | yes | no |
 | `str` | `data` | `str_data` | yes | no |
 | `str` | `eq` | `str_eq` | yes | no |
-| `str` | `from_cstr` | `str_from_cstr` | yes | no |
+| `str` | `from_cstr` | `pak_str_from_cstr` | yes | no |
 | `str` | `len` | `str_len` | yes | no |
 | `str` | `print` | `str_print` | yes | no |
 | `surface` | `alloc` | `surface_alloc` | yes | no |

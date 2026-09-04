@@ -1138,12 +1138,15 @@ update_playing:
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
     sw $a0, 136($sp)
-    sw $a1, 140($sp)
-    lw $t7, 140($sp)
+    move $t9, $a1
+    addiu $t8, $sp, 140
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    addiu $t7, $sp, 140
     lw $t8, 12($t7)
     move $t9, $t8
     sw $t9, 144($sp)
-    lw $t7, 140($sp)
+    addiu $t7, $sp, 140
     lw $t8, 16($t7)
     move $t9, $t8
     sw $t9, 148($sp)
@@ -1245,7 +1248,7 @@ update_playing:
     lw $t8, 100($sp)
     move $t9, $v0
 .Lif_end_50:
-    lw $t7, 140($sp)
+    addiu $t7, $sp, 140
     lw $t8, 0($t7)
     lb $t9, 8($t8)
     beqz $t9, .Lif_end_51
@@ -1275,7 +1278,7 @@ update_playing:
     lw $t8, 100($sp)
     move $t9, $v0
 .Lif_end_51:
-    lw $t7, 140($sp)
+    addiu $t7, $sp, 140
     lw $t8, 0($t7)
     lb $t9, 9($t8)
     beqz $t9, .Lif_end_52
@@ -1303,7 +1306,7 @@ update_playing:
     lw $t8, 100($sp)
     move $t9, $v0
 .Lif_end_52:
-    lw $t7, 140($sp)
+    addiu $t7, $sp, 140
     lw $t8, 0($t7)
     lb $t9, 7($t8)
     beqz $t9, .Lif_end_53
@@ -1321,7 +1324,7 @@ update_playing:
     lw $t8, 100($sp)
     move $t9, $v0
 .Lif_end_53:
-    lw $t7, 140($sp)
+    addiu $t7, $sp, 140
     lw $t8, 0($t7)
     lb $t9, 6($t8)
     beqz $t9, .Lif_end_54
@@ -1338,7 +1341,7 @@ update_playing:
     lw $t8, 100($sp)
     move $t9, $v0
 .Lif_end_54:
-    lw $t7, 140($sp)
+    addiu $t7, $sp, 140
     lw $t8, 0($t7)
     lb $t9, 4($t8)
     beqz $t9, .Lif_end_55
@@ -1366,7 +1369,7 @@ update_playing:
     lw $t8, 100($sp)
     move $t9, $v0
 .Lif_end_55:
-    lw $t7, 140($sp)
+    addiu $t7, $sp, 140
     lw $t8, 0($t7)
     lb $t9, 5($t8)
     beqz $t9, .Lif_end_56
@@ -1396,7 +1399,7 @@ update_playing:
     lw $t8, 100($sp)
     move $t9, $v0
 .Lif_end_56:
-    lw $t7, 140($sp)
+    addiu $t7, $sp, 140
     lw $t8, 4($t7)
     lb $t9, 3($t8)
     beqz $t9, .Lif_end_57
@@ -1696,10 +1699,10 @@ main:
     li $t8, 0
     bne $t9, $t8, .Larm_skip_74
     nop
-    lw $t5, 176($sp)
+    addiu $t5, $sp, 176
     lw $t6, 4($t5)
     lb $t7, 3($t6)
-    lw $t4, 176($sp)
+    addiu $t4, $sp, 176
     lw $t5, 4($t4)
     lb $t6, 0($t5)
     or $t5, $t7, $t6
@@ -1717,7 +1720,7 @@ main:
     li $t8, 1
     bne $t9, $t8, .Larm_skip_77
     nop
-    lw $a1, 176($sp)
+    addiu $a1, $sp, 176
     addiu $a0, $sp, 136
     sw $t9, 96($sp)
     sw $t8, 100($sp)
@@ -1732,7 +1735,7 @@ main:
     li $t8, 2
     bne $t9, $t8, .Larm_skip_79
     nop
-    lw $t6, 176($sp)
+    addiu $t6, $sp, 176
     lw $t7, 4($t6)
     lb $t8, 3($t7)
     beqz $t8, .Lif_end_80
@@ -1742,7 +1745,7 @@ main:
     sb $t7, 24($t6)
     move $t8, $t7
 .Lif_end_80:
-    lw $t6, 176($sp)
+    addiu $t6, $sp, 176
     lw $t7, 4($t6)
     lb $t8, 1($t7)
     beqz $t8, .Lif_end_81
@@ -1758,7 +1761,7 @@ main:
     li $t8, 3
     bne $t9, $t8, .Larm_skip_83
     nop
-    lw $t6, 176($sp)
+    addiu $t6, $sp, 176
     lw $t7, 4($t6)
     lb $t8, 3($t7)
     beqz $t8, .Lif_end_84

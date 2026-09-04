@@ -266,21 +266,24 @@ main:
     sw $t8, 0($t7)
     move $t9, $t8
 .Lif_end_3:
-    li $a0, 1
-    li $t8, 64
-    mul $a0, $a0, $t8
-    sw $t9, 96($sp)
-    jal __pak_alloc
+    li $t8, 1
+    li $t7, 64
+    mul $t8, $t8, $t7
+    la $t6, __pak_heap_ptr
+    lw $t7, 0($t6)
+    bnez $t7, .Lheap_ok_4
     nop
-    lw $t9, 96($sp)
-    move $t9, $v0
+    li $t7, 0x802A0000
+.Lheap_ok_4:
+    addiu $t5, $t8, 7
+    li $t6, 0xFFFFFFF8
+    and $t5, $t5, $t6
+    move $t9, $t7
+    addu $t7, $t7, $t5
+    la $t6, __pak_heap_ptr
+    sw $t7, 0($t6)
     sw $t9, 152($sp)
     lw $t8, 152($sp)
-    move $a0, $t8
-    sw $t9, 96($sp)
-    jal __pak_free
-    nop
-    lw $t9, 96($sp)
     move $t9, $zero
 .Lmain_ret_1:
     lw $fp, 312($sp)
@@ -294,4 +297,8 @@ main:
 	.align 2
 	.globl sink
 sink:
+	.word 0
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
 	.word 0

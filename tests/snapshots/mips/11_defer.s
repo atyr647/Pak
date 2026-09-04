@@ -193,14 +193,22 @@ do_work:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    li $a0, 1
-    li $t8, 256
-    mul $a0, $a0, $t8
-    sw $t9, 96($sp)
-    jal __pak_alloc
+    li $t8, 1
+    li $t7, 256
+    mul $t8, $t8, $t7
+    la $t6, __pak_heap_ptr
+    lw $t7, 0($t6)
+    bnez $t7, .Lheap_ok_1
     nop
-    lw $t9, 96($sp)
-    move $t9, $v0
+    li $t7, 0x802A0000
+.Lheap_ok_1:
+    addiu $t5, $t8, 7
+    li $t6, 0xFFFFFFF8
+    and $t5, $t5, $t6
+    move $t9, $t7
+    addu $t7, $t7, $t5
+    la $t6, __pak_heap_ptr
+    sw $t7, 0($t6)
     sw $t9, 136($sp)
     la $a0, .Lstr0
     sw $t9, 96($sp)
@@ -216,11 +224,6 @@ do_work:
     move $t9, $v0
     la $t8, buf
     lw $t8, 0($t8)
-    move $a0, $t8
-    sw $t9, 96($sp)
-    jal __pak_free
-    nop
-    lw $t9, 96($sp)
     move $t9, $zero
 .Ldo_work_ret_0:
     lw $fp, 312($sp)
@@ -267,7 +270,7 @@ main:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-.Lmain_ret_1:
+.Lmain_ret_2:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -294,3 +297,9 @@ main:
 	.align 0
 .Lstr5:
 	.asciiz "shutting down"
+
+	.section .data
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.word 0

@@ -352,11 +352,13 @@ main:
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
     sw $zero, 140($sp)
-    la $t7, .Lf323
-    lwc1 $f12, 0($t7)
+    la $t6, .Lf323
+    lwc1 $f12, 0($t6)
     swc1 $f12, 140($sp)
     addiu $t9, $sp, 140
-    sw $t9, 136($sp)
+    addiu $t8, $sp, 136
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
     addiu $a0, $sp, 136
     sw $t9, 96($sp)
     jal Shape_from_Circle

@@ -1487,7 +1487,7 @@ render_stars:
     move $a0, $t8
     sw $t9, 96($sp)
     sw $t8, 100($sp)
-    jal _slice
+    jal FixedList_slice
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
@@ -1659,7 +1659,10 @@ update:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    move $t9, $a0
+    addiu $t8, $sp, 136
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
     la $t8, gs
     addiu $t8, $t8, 772
     move $a0, $t8
@@ -1680,7 +1683,7 @@ update:
     lw $t9, 96($sp)
     lw $t8, 100($sp)
     move $t9, $v0
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 8($t8)
     beqz $t9, .Lif_end_62
@@ -1697,7 +1700,7 @@ update:
     swc1 $f12, 24($t7)
     move $t9, $t8
 .Lif_end_62:
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 9($t8)
     beqz $t9, .Lif_end_63
@@ -1714,7 +1717,7 @@ update:
     swc1 $f12, 24($t7)
     move $t9, $t8
 .Lif_end_63:
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 4($t8)
     beqz $t9, .Lif_end_64
@@ -1731,7 +1734,7 @@ update:
     swc1 $f12, 24($t7)
     move $t9, $t8
 .Lif_end_64:
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 5($t8)
     beqz $t9, .Lif_end_65
@@ -1748,7 +1751,7 @@ update:
     swc1 $f12, 24($t7)
     move $t9, $t8
 .Lif_end_65:
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 4($t7)
     lb $t9, 3($t8)
     beqz $t9, .Lif_end_66
@@ -1793,7 +1796,17 @@ init_scene:
     lw $t7, 104($sp)
     move $t8, $v0
     la $t7, gs
-    sw $t8, 0($t7)
+    move $a0, $t7
+    move $a1, $t8
+    li $a2, 772
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
+    jal memcpy
+    nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t9, $t8
     la $t8, math
     move $a0, $t8
@@ -1867,7 +1880,7 @@ init_scene:
     addiu $a1, $sp, 140
     sw $t9, 96($sp)
     sw $t8, 100($sp)
-    jal _push
+    jal FixedList_push
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
@@ -2059,7 +2072,7 @@ main:
     lw $t9, 96($sp)
     move $t9, $v0
     sw $t9, 136($sp)
-    lw $a0, 136($sp)
+    addiu $a0, $sp, 136
     sw $t9, 96($sp)
     jal update
     nop

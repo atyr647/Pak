@@ -341,7 +341,7 @@ main:
     move $t9, $v0
     sw $t9, 160($sp)
     lw $t7, 136($sp)
-    move $t8, $t7
+    sra $t8, $t7, 16
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
