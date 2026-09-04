@@ -111,7 +111,8 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `asm("template" : out : in : clobbers)` | ✅ Full | |
 | Named args `f(x: val)` | ✅ Full | |
 | `catch` expression | ✅ Full | |
-| Null-check expression `ptr?` | ✅ Full | |
+| Null-check expression `ptr?` | ✅ Full | Boolean is-not-none |
+| `match expr { .case { field: x } }` | ✅ Full | Named-field variant payload bindings |
 | Tuple access `t.0` | ✅ Full | |
 | Format string `"text {var}"` | ✅ Full | Lowers to `snprintf` into a static buffer |
 
@@ -188,7 +189,8 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Closures capturing environment | ✅ Full | Emitted as a GCC nested function; captures by reference within the enclosing frame |
 | Trait object dispatch (`dyn`) | ✅ Full | Vtable struct + fat pointer + thunks; constructor helpers emitted |
 | `goto` / labels | ✅ Full | |
-| Format strings | ✅ Full | `"x={n}"` → `snprintf` into static buffer |
+| Format strings | ✅ Full | `"x={n}"` → `snprintf` into static buffer; MIPS integers use itoa, floats use ftoa |
+| `match expr { .case { f: x } }` | ✅ Full | Named-field payload bindings |
 
 ---
 
@@ -229,14 +231,22 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `match .Circle(r)` | ✅ Full | Variant values pass by address so the tag is `lbu` at the object, not a load of the first word |
 | `let f = fn(x: i32)` / `f(3)` | ✅ Full | Closure after the caller; `jalr`; env holds *addresses* so `n = n+1` writes back |
 | `"x={n}"` integer fmt | ✅ Full | Inline itoa into a static buf; no libc snprintf |
+| `"x={f}"` float fmt | ✅ Full | Compile-time float literals strcpy; runtime f32 via integer-only ftoa (two fraction digits) |
 | `CStr.slice(i, n)` | ✅ Full | Copies `n` bytes into a NUL-terminated scratch buf |
 | `&s.field` / value-struct fields | ✅ Full | Place address of the object, not a spilled copy of the first word |
 | Method `self` (value, `*T`, `obj.field.m()`) | ✅ Full | Pointer receivers pass the pointer; `g.player.init()` is not a module call |
+| 4-byte / generic struct field load | ✅ Full | `Box { val: 9 }` and `Box<i32> { val: 9 }` memcpy the literal; `.val` is 9, not the stack address |
+| Named-field variant match (`.Rect { w: ww }`) | ✅ Full | Parsed as named bindings; loads the named payload field |
+| Trait `fn add(self, …)` / `n.add(5)` | ✅ Full | Untyped `self` is `*Self`; impl subst; 4-byte structs passed by address |
+| `alloc(T)` / `free` | ✅ Full | Inline 8-byte-aligned bump at `0x802A0000`; `free` is a no-op |
+| `if p?` postfix null-check | ✅ Full | Boolean is-not-none; `if p -> q` still binds |
+| `fix16.16 as i32` | ✅ Full | Arithmetic right-shift by frac bits; sim `mult` fills HI:LO for `*` |
 | `defer` | ✅ Full | |
 | `match` on enums | ✅ Full | |
 | Named-field variant construction (`Type.case { f: v }`) | ✅ Full | Stack-allocated with tag + payload stores |
 | Compound-assign `/=`, `%=`, `<<=`, `>>=` | ✅ Full | `/=` → `div`/`mflo`; `%=` → `div`/`mfhi`; shifts → `sllv`/`srav` |
-| Generics / traits | ⚠️ Partial | Same as C backend |
+| Generics / traits | ⚠️ Partial | Static dispatch works; `dyn Trait` vtable is C-only |
+
 
 ---
 

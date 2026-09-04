@@ -223,6 +223,7 @@ match_arm = pattern "=>" ( block | stmt ) ;
 pattern =
     "." name_or_keyword                          (* .CaseName *)
   | "." name_or_keyword "(" { pattern_binding [ "," ] } ")"  (* .Case(x, y) *)
+  | "." name_or_keyword "{" { IDENT ":" pattern_binding [ "," ] } "}"  (* .Case { field: x } *)
   | "_"                                          (* wildcard *)
   | INT                                          (* integer literal pattern *)
   | STRING                                       (* string literal pattern *)

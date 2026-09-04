@@ -120,13 +120,14 @@ proc pak::cg_subst_type {t subst} {
 
 oo::class create pak::Codegen {
     variable filename uses assets module_name fn_names enum_variants variant_types \
+             variant_case_fields \
              struct_fields scopes method_registry trait_decls const_values \
              generic_fns generic_structs generic_impls mono_struct_origin \
              module_headers defer_stack result_typedefs \
              result_typedef_names slice_typedefs slice_typedef_names \
              tuple_typedefs tuple_typedef_names vec_typedefs vec_typedef_names vec_used \
              container_typedefs container_typedef_names \
-             current_ret_type closures fmt_counter tmp_counter \
+             current_ret_type current_self_type closures fmt_counter tmp_counter \
              mono_cache pending_mono pending_nested _in_stmt loop_result_var loop_res_counter \
              fn_decls use_aliases allocator_used
 
@@ -141,6 +142,7 @@ oo::class create pak::Codegen {
         set allocator_used 0
         set enum_variants [dict create]
         set variant_types [dict create]
+        set variant_case_fields [dict create]
         set struct_fields [dict create]
         set scopes [list [dict create]]
         set defer_stack [list {}]
@@ -164,6 +166,7 @@ oo::class create pak::Codegen {
         set container_typedefs {}
         set container_typedef_names [dict create]
         set current_ret_type ""
+        set current_self_type ""
         set closures {}
         set fmt_counter 0
         set tmp_counter 0
@@ -375,6 +378,7 @@ oo::class create pak::Codegen {
         switch -- [pak::kindof $t] {
             TypeName {
                 set n [pak::fval $t name]
+                if {$n eq "Self" && $current_self_type ne ""} { return $current_self_type }
                 if {[dict exists $struct_fields $n] || [dict exists $variant_types $n] \
                         || $n in [dict values $enum_variants]} { return $n }
                 if {[dict exists $::pak::CG_PRIM $n]} { return [dict get $::pak::CG_PRIM $n] }
@@ -486,6 +490,10 @@ oo::class create pak::Codegen {
             ArrayLit  { return [my gen_array_lit $e] }
             UnaryOp {
                 set op [pak::fval $e op]
+                if {$op eq "?"} {
+                    # Postfix null-check: true when the pointer/option is not none.
+                    return "([my gen_expr [pak::nfield $e operand]] != NULL)"
+                }
                 return "$op[my gen_expr [pak::nfield $e operand]]"
             }
             BinaryOp {
@@ -1909,23 +1917,7 @@ oo::class create pak::Codegen {
 
     method pattern_bindings {pat expr_var} {
         switch -- [pak::kindof $pat] {
-            Call {
-                set fn [pak::nfield $pat func]
-                if {[pak::kindof $fn] ne "EnumVariantAccess"} { return {} }
-                set case_name [pak::fval $fn name]
-                set tn [expr {[dict exists $enum_variants $case_name] ? [dict get $enum_variants $case_name] : ""}]
-                if {![dict exists $variant_types $tn]} { return {} }
-                set result {}
-                set args [pak::items [pak::nfield $pat args]]
-                for {set i 0} {$i < [llength $args]} {incr i} {
-                    set arg [lindex $args $i]
-                    set arg_name [pak::fval $arg name]
-                    if {$arg_name ne "_"} {
-                        lappend result [list $arg_name "${expr_var}.data.${case_name}.field${i}"]
-                    }
-                }
-                return $result
-            }
+            Call { return [my call_arm_bindings $pat $expr_var] }
             DotAccess {
                 if {[pak::isnil [pak::nfield $pat binding]]} { return {} }
                 set obj_name [my gen_expr [pak::nfield $pat obj]]
@@ -1934,6 +1926,52 @@ oo::class create pak::Codegen {
             }
         }
         return {}
+    }
+
+    # Bindings for `.Case(x, y)` and `.Case { field: name }` match arms.
+    # C always names payload slots field0, field1, … in declaration order;
+    # NamedArg looks the field up so `.Rect { h: hh, w: ww }` still binds right.
+    method call_arm_bindings {pat expr_c} {
+        set fn [pak::nfield $pat func]
+        if {[pak::kindof $fn] ne "EnumVariantAccess"} { return {} }
+        set case_name [pak::fval $fn name]
+        set tn [expr {[dict exists $enum_variants $case_name] ? [dict get $enum_variants $case_name] : ""}]
+        if {![dict exists $variant_types $tn]} { return {} }
+        set field_names {}
+        if {[dict exists $variant_case_fields $tn $case_name]} {
+            set field_names [dict get $variant_case_fields $tn $case_name]
+        }
+        set result {}
+        set i 0
+        foreach arg [pak::items [pak::nfield $pat args]] {
+            set bind_name ""
+            set fi $i
+            set cfield ""
+            if {[pak::kindof $arg] eq "NamedArg"} {
+                set bind_node [pak::nfield $arg value]
+                if {[pak::kindof $bind_node] eq "Ident"} {
+                    set bind_name [pak::fval $bind_node name]
+                }
+                set want [pak::fval $arg name]
+                set found [lsearch -exact $field_names $want]
+                if {$found >= 0} { set fi $found }
+                set cfield $want
+            } elseif {[pak::kindof $arg] eq "Ident"} {
+                set bind_name [pak::fval $arg name]
+                if {$i < [llength $field_names] && [lindex $field_names $i] ne ""} {
+                    set cfield [lindex $field_names $i]
+                }
+            }
+            if {$bind_name ne "" && $bind_name ne "_"} {
+                if {$cfield ne ""} {
+                    lappend result [list $bind_name "${expr_c}.data.${case_name}.${cfield}"]
+                } else {
+                    lappend result [list $bind_name "${expr_c}.data.${case_name}.field${fi}"]
+                }
+            }
+            incr i
+        }
+        return $result
     }
 
     method gen_match_guarded {s pad indent} {
@@ -2065,21 +2103,11 @@ oo::class create pak::Codegen {
                     my scope_set $bind [pak::N TypeName name auto]
                 }
             } elseif {[pak::kindof $pat] eq "Call"} {
-                set fn [pak::nfield $pat func]
-                if {[pak::kindof $fn] eq "EnumVariantAccess"} {
-                    set case_name [pak::fval $fn name]
-                    set tn [expr {[dict exists $enum_variants $case_name] ? [dict get $enum_variants $case_name] : ""}]
-                    if {[dict exists $variant_types $tn]} {
-                        set args [pak::items [pak::nfield $pat args]]
-                        for {set i 0} {$i < [llength $args]} {incr i} {
-                            set arg [lindex $args $i]
-                            set arg_name [pak::fval $arg name]
-                            if {$arg_name ne "_"} {
-                                lappend lines "${inner2_pad}__auto_type $arg_name = ${expr}.data.${case_name}.field${i};"
-                                my scope_set $arg_name [pak::N TypeName name auto]
-                            }
-                        }
-                    }
+                foreach binding [my call_arm_bindings $pat $expr] {
+                    set vname [lindex $binding 0]
+                    set facc  [lindex $binding 1]
+                    lappend lines "${inner2_pad}__auto_type $vname = $facc;"
+                    my scope_set $vname [pak::N TypeName name auto]
                 }
             }
             set body [pak::nfield $arm body]
@@ -2438,6 +2466,8 @@ oo::class create pak::Codegen {
     }
 
     method gen_fn {fn prefix} {
+        set saved_self $current_self_type
+        if {$prefix ne ""} { set current_self_type $prefix }
         set ret [my gen_type [pak::nfield $fn ret_type]]
         set params {}
         foreach p [pak::items [pak::nfield $fn params]] {
@@ -2476,6 +2506,7 @@ oo::class create pak::Codegen {
         set body [pak::nfield $fn body]
         if {[pak::isnil $body]} {
             lappend head "$ret ${name}($param_str);"
+            set current_self_type $saved_self
             return [join $head \n]
         }
         set lines [concat $head [list "$ret ${name}($param_str) {"]]
@@ -2490,6 +2521,7 @@ oo::class create pak::Codegen {
         foreach d [my emit_defers_for_scope 1] { lappend lines $d }
         my scope_pop
         set current_ret_type $prev_ret
+        set current_self_type $saved_self
         lappend lines "}"
         return [join $lines \n]
     }
@@ -2556,6 +2588,15 @@ oo::class create pak::Codegen {
                     dict set variant_types [pak::fval $decl name] 1
                     foreach c [pak::items [pak::nfield $decl cases]] {
                         dict set enum_variants [pak::fval $c name] [pak::fval $decl name]
+                        set names {}
+                        foreach f [pak::items [pak::nfield $c fields]] {
+                            if {[lindex $f 0] eq "seq"} {
+                                lappend names [pak::sval [lindex [pak::items $f] 0]]
+                            } else {
+                                lappend names ""
+                            }
+                        }
+                        dict set variant_case_fields [pak::fval $decl name] [pak::fval $c name] $names
                     }
                 }
                 ImplBlock - ImplTraitBlock {
@@ -2589,6 +2630,15 @@ oo::class create pak::Codegen {
                             dict set variant_types [pak::fval $inner name] 1
                             foreach c [pak::items [pak::nfield $inner cases]] {
                                 dict set enum_variants [pak::fval $c name] [pak::fval $inner name]
+                                set names {}
+                                foreach f [pak::items [pak::nfield $c fields]] {
+                                    if {[lindex $f 0] eq "seq"} {
+                                        lappend names [pak::sval [lindex [pak::items $f] 0]]
+                                    } else {
+                                        lappend names ""
+                                    }
+                                }
+                                dict set variant_case_fields [pak::fval $inner name] [pak::fval $c name] $names
                             }
                         }
                         FnDecl { lappend fn_names [pak::fval $inner name] }

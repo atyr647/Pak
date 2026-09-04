@@ -645,6 +645,14 @@ The `->` after the condition introduces the binding name. The compiler checks
 that `ptr` is a nullable type (`?*T` / `Option(T)`); if not, `E002` fires.
 `binding` is only in scope inside the then-block.
 
+Postfix `?` is the boolean form of the same check (not Rust-style early return):
+
+```pak
+if ptr? {
+    -- ptr is not none
+}
+```
+
 ### Memory [IMPLEMENTED]
 
 ```pak
@@ -652,6 +660,9 @@ alloc(Type)           -- allocate one T on heap, returns *T
 alloc(Type, n)        -- allocate n T's on heap, returns *T
 free(ptr)             -- free heap pointer
 ```
+
+On the MIPS backend `alloc` is an inline bump from `0x802A0000` (same base as
+the standalone HAL); `free` is a no-op. The C backend maps to `malloc`/`free`.
 
 ### Sizeof / Offsetof / Alignof [IMPLEMENTED]
 
@@ -909,6 +920,15 @@ match entity {
     .enemy           => { handle_enemy() }
     .projectile(x, y) => { handle_proj(x, y) }
     .none            => {}
+}
+```
+
+Named-field payloads bind by field name, not position:
+
+```pak
+match s {
+    .Rect { w: ww, h: hh } => { a = ww + hh }
+    .Circ { r: rr }        => { a = rr }
 }
 ```
 
@@ -1174,7 +1194,7 @@ These constructs **do not exist** in Pak. Do not generate them.
 - `class` — use `struct` + `impl`
 - Exceptions / `try` / `throw` — use `Result(Ok, Err)`
 - `new` / `delete` — use `alloc()` / `free()`
-- Rust-style `?` operator — use `catch` or explicit `match`
+- Rust-style `?` early-return on `Result` — use `catch` or explicit `match`. Postfix `ptr?` is a boolean null-check.
 - `if let` / `while let` — use `match` or null-check `if ptr -> binding { }`
 - Trailing `?` on types meaning Option — use `Option(T)` or `?T`
 - `:=` (Go-style) — use `let`

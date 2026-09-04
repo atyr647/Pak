@@ -271,6 +271,21 @@ proc exec_insn {op args} {
             set n [lindex $args 0]
             if {$n} { set R($n) [expr {($R([lindex $args 1]) * $R([lindex $args 2])) & 0xFFFFFFFF}] }
         }
+        mult {
+            # Signed 64-bit product into HI:LO. Used by fix16.16 multiply.
+            set a $R([lindex $args 0]); if {$a >= 0x80000000} { set a [expr {$a - 0x100000000}] }
+            set b $R([lindex $args 1]); if {$b >= 0x80000000} { set b [expr {$b - 0x100000000}] }
+            set p [expr {$a * $b}]
+            set LO [expr {$p & 0xFFFFFFFF}]
+            set HI [expr {($p >> 32) & 0xFFFFFFFF}]
+        }
+        multu {
+            set a $R([lindex $args 0])
+            set b $R([lindex $args 1])
+            set p [expr {$a * $b}]
+            set LO [expr {$p & 0xFFFFFFFF}]
+            set HI [expr {($p >> 32) & 0xFFFFFFFF}]
+        }
         and {
             set n [lindex $args 0]
             if {$n} { set R($n) [expr {$R([lindex $args 1]) & $R([lindex $args 2])}] }

@@ -853,6 +853,183 @@ set mw [dict get $run mem_w]
 set syms [dict get $run data_syms]
 check_eq {CStr.slice(1,3).len} [static_hex $mw $syms a] 00000003
 
+# ── generic / 4-byte struct field load (not the stack address)
+proc run_src {src} {
+    set lx [pak::Lexer new $src]
+    set ast [pak::parse_tokens [$lx tokenize]]
+    set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+    set asm [pak::records_to_asm $recs]
+    return [pak::mips_sim_run $asm main 200000]
+}
+proc check_a {name src want} {
+    set run [run_src $src]
+    set mw [dict get $run mem_w]
+    set syms [dict get $run data_syms]
+    check_eq $name [static_hex $mw $syms a] $want
+}
+
+check_a {generic Box<i32>.val} {
+struct Box<T> { val: T }
+static a: i32 = 0
+entry {
+    let mut b1 = Box<i32> { val: 9 }
+    a = b1.val
+}
+} 00000009
+
+check_a {4-byte struct Box.val} {
+struct Box { val: i32 }
+static a: i32 = 0
+entry {
+    let mut b1 = Box { val: 9 }
+    a = b1.val
+}
+} 00000009
+
+# ── named-field variant match
+check_a {named-field match Rect} {
+variant Shape {
+    Rect { w: i32, h: i32 }
+    Circ { r: i32 }
+}
+static a: i32 = 0
+entry {
+    let s = Shape.Rect { w: 3, h: 5 }
+    match s {
+        .Rect { w: ww, h: hh } => { a = ww + hh }
+        .Circ { r: rr } => { a = rr }
+    }
+}
+} 00000008
+
+check_a {named-field match reordered} {
+variant Shape {
+    Rect { w: i32, h: i32 }
+    Circ { r: i32 }
+}
+static a: i32 = 0
+entry {
+    let s = Shape.Rect { w: 3, h: 5 }
+    match s {
+        .Rect { h: hh, w: ww } => { a = ww * 10 + hh }
+        .Circ { r: rr } => { a = rr }
+    }
+}
+} 00000023
+
+# ── trait dispatch: untyped self is *Self, 4-byte struct passed by address
+check_a {trait untyped self} {
+trait Addable {
+    fn add(self, o: i32) -> i32
+}
+struct N { val: i32 }
+impl N for Addable {
+    fn add(self, o: i32) -> i32 { return self.val + o }
+}
+static a: i32 = 0
+entry {
+    let n = N { val: 3 }
+    a = n.add(5)
+}
+} 00000008
+
+check_a {trait typed self} {
+trait Addable {
+    fn add(self: *Self, o: i32) -> i32
+}
+struct N { val: i32 }
+impl N for Addable {
+    fn add(self: *N, o: i32) -> i32 { return self.val + o }
+}
+static a: i32 = 0
+entry {
+    let n = N { val: 3 }
+    a = n.add(5)
+}
+} 00000008
+
+# ── inline bump alloc (no jal __pak_alloc)
+check_a {alloc i32 store} {
+static a: i32 = 0
+entry {
+    let p: *i32 = alloc(i32)
+    *p = 42
+    a = *p
+}
+} 0000002A
+
+# ── postfix ? null-check
+check_a {if p? none} {
+static a: i32 = 0
+entry {
+    let p: ?*i32 = none
+    if p? {
+        a = 1
+    } else {
+        a = 2
+    }
+}
+} 00000002
+
+check_a {if p? some} {
+static a: i32 = 0
+static v: i32 = 7
+entry {
+    let p: ?*i32 = &v
+    if p? {
+        a = 1
+    } else {
+        a = 2
+    }
+}
+} 00000001
+
+# ── fix16.16 as i32 is sra 16; mul uses mult HI:LO
+check_a {fix16.16 as i32} {
+static a: i32 = 0
+entry {
+    let x: fix16.16 = 6 as fix16.16
+    a = x as i32
+}
+} 00000006
+
+check_a {fix16.16 mul as i32} {
+static a: i32 = 0
+entry {
+    let x: fix16.16 = 2 as fix16.16
+    let y: fix16.16 = 3 as fix16.16
+    let z: fix16.16 = x * y
+    a = z as i32
+}
+} 00000006
+
+# ── float format without snprintf
+check_a {fmt x={1.5} lit} {
+static a: i32 = 0
+entry {
+    let s: CStr = "x={1.5}"
+    a = s.len()
+}
+} 00000005
+
+check_a {fmt x={f} 1.5} {
+static a: i32 = 0
+entry {
+    let f: f32 = 1.5
+    let s: CStr = "x={f}"
+    a = s.len()
+}
+} 00000006
+
+check_a {fmt x={n} still itoa} {
+static a: i32 = 0
+entry {
+    let n: i32 = 3
+    let s: CStr = "x={n}"
+    a = s.len()
+}
+} 00000003
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }
