@@ -649,6 +649,78 @@ check_eq {Str.starts_with hello} [static_hex $mw $syms pre] 00000001
 check_eq {Str.ends_with world} [static_hex $mw $syms suf] 00000001
 check_eq {Str.slice(6,5).len} [static_hex $mw $syms sln] 00000005
 
+# ── array.as_slice / get_unchecked
+set src14 {
+static a: i32 = 0
+static b: i32 = 0
+static c: i32 = 0
+entry {
+    let buf: [4]i32 = [10, 20, 30, 40]
+    let s: []i32 = buf.as_slice()
+    a = s.len
+    b = s[1]
+    c = buf.get_unchecked(2)
+}
+}
+set lx [pak::Lexer new $src14]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set syms [dict get $run data_syms]
+check_eq {[4]i32.as_slice.len} [static_hex $mw $syms a] 00000004
+check_eq {as_slice s[1]} [static_hex $mw $syms b] 00000014
+check_eq {get_unchecked(2)} [static_hex $mw $syms c] 0000001E
+
+# ── Result match / Option Some+none / catch
+set src15 {
+static a: i32 = 0
+static b: i32 = 0
+static c: i32 = 0
+static d: i32 = 0
+static e: i32 = 0
+
+fn get_ok() -> Result(i32, i32) { return ok(5) }
+fn get_err() -> Result(i32, i32) { return err(3) }
+
+entry {
+    let x: Result(i32, i32) = ok(5)
+    match x {
+        .ok(v) => { a = v }
+        .err(e) => { a = e }
+    }
+    let y: Result(i32, i32) = err(3)
+    match y {
+        .ok(v) => { b = v }
+        .err(e) => { b = e }
+    }
+    let s: Option(i32) = Some(7)
+    match s {
+        .Some(v) => { c = v }
+        .None => { c = 0 }
+    }
+    let n: Option(i32) = none
+    match n {
+        .Some(v) => { d = v }
+        .None => { d = 9 }
+    }
+    e = get_ok() catch { 0 }
+}
+}
+set lx [pak::Lexer new $src15]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set syms [dict get $run data_syms]
+check_eq {match ok(5)} [static_hex $mw $syms a] 00000005
+check_eq {match err(3)} [static_hex $mw $syms b] 00000003
+check_eq {match Some(7)} [static_hex $mw $syms c] 00000007
+check_eq {match none} [static_hex $mw $syms d] 00000009
+check_eq {get_ok() catch} [static_hex $mw $syms e] 00000005
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

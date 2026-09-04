@@ -1583,6 +1583,17 @@ oo::class create pak::MipsCodegen {
                         set loop_result [lrange $loop_result 0 end-1]
                         # Result is already in $off from Break's store_to_sp — nothing more to do
                     } else {
+                        set is_none [expr {[pak::kindof $v] eq "NoneLit"}]
+                        if {$is_none} {
+                            set z [$ra alloc_temp]
+                            $em move $z {$zero}
+                            my store_to_sp $off $z $layout
+                            set lsz [dict get $layout size]
+                            if {$lsz > 4} {
+                                $em sw {$zero} [expr {$off + 4}] {$sp}
+                            }
+                            $ra free_temp $z
+                        } else {
                         set is_str_lit [expr {
                             [pak::kindof $v] eq "StringLit" &&
                             $tn ne "" && ![pak::isnil $tn] &&
@@ -1622,6 +1633,7 @@ oo::class create pak::MipsCodegen {
                             my emit_expr $v $tmp
                             my store_to_sp $off $tmp $layout
                             $ra free_temp $tmp
+                        }
                         }
                         }
                     }
@@ -2037,6 +2049,25 @@ oo::class create pak::MipsCodegen {
 
             set pat [pak::nfield $arm pattern]
             set pkind [pak::kindof $pat]
+            set case_name ""
+            if {$pkind eq "EnumVariantAccess"} {
+                set case_name [pak::fval $pat name]
+            } elseif {$pkind eq "Call" && [pak::kindof [pak::nfield $pat func]] eq "EnumVariantAccess"} {
+                set case_name [pak::fval [pak::nfield $pat func] name]
+            } elseif {$pkind eq "DotAccess"} {
+                set case_name [pak::fval $pat field]
+            }
+            set cl [string tolower $case_name]
+            if {$cl in {ok err}} {
+                my emit_result_arm $val $pat $cl [pak::nfield $arm body] $skip_label $end_label $arm
+                $em label $skip_label
+                continue
+            }
+            if {$cl in {some none}} {
+                my emit_option_arm $val $pat $cl [pak::nfield $arm body] $skip_label $end_label $arm
+                $em label $skip_label
+                continue
+            }
 
             if {$pkind eq "Ident" && [pak::fval $pat name] eq "_"} {
                 # Wildcard — always matches (guard still evaluated if present)
@@ -2121,6 +2152,60 @@ oo::class create pak::MipsCodegen {
         $em label $end_label
     }
 
+    method emit_result_bind {val_reg pat} {
+        set args {}
+        if {[pak::kindof $pat] eq "Call"} {
+            set args [pak::items [pak::nfield $pat args]]
+        }
+        if {[llength $args] == 0} return
+        set arg [lindex $args 0]
+        if {[pak::kindof $arg] ne "Ident" || [pak::fval $arg name] eq "_"} return
+        set tmp [$ra alloc_temp]
+        $em lw $tmp 4 $val_reg
+        set fl [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]
+        set bind_off [my declare_local [pak::fval $arg name] $fl]
+        $em sw $tmp $bind_off {$sp}
+        $ra free_temp $tmp
+    }
+
+    method emit_result_arm {val_reg pat cl body skip_label end_label {arm ""}} {
+        set tag [$ra alloc_temp]
+        $em lbu $tag 0 $val_reg
+        if {$cl eq "ok"} {
+            $em beqz $tag $skip_label
+        } else {
+            $em bnez $tag $skip_label
+        }
+        $em nop
+        $ra free_temp $tag
+        if {$arm ne ""} { my emit_arm_guard $arm $skip_label }
+        my push_scope
+        my emit_result_bind $val_reg $pat
+        my emit_block_or_stmt $body
+        foreach d [my pop_scope] { my emit_stmt $d }
+        $em j $end_label
+        $em nop
+    }
+
+    method emit_option_arm {val_reg pat cl body skip_label end_label {arm ""}} {
+        set tag [$ra alloc_temp]
+        $em lbu $tag 0 $val_reg
+        if {$cl eq "some"} {
+            $em beqz $tag $skip_label
+        } else {
+            $em bnez $tag $skip_label
+        }
+        $em nop
+        $ra free_temp $tag
+        if {$arm ne ""} { my emit_arm_guard $arm $skip_label }
+        my push_scope
+        my emit_result_bind $val_reg $pat
+        my emit_block_or_stmt $body
+        foreach d [my pop_scope] { my emit_stmt $d }
+        $em j $end_label
+        $em nop
+    }
+
     method emit_variant_arm {val_reg pat body skip_label end_label {arm ""}} {
         set case_name [pak::fval [pak::nfield $pat func] name]
         set tag_val   [my resolve_variant_tag $case_name]
@@ -2143,8 +2228,8 @@ oo::class create pak::MipsCodegen {
         $ra free_temp $tag_r
         if {$arm ne ""} { my emit_arm_guard $arm $skip_label }
 
-        # Bind payload fields
         set args [pak::items [pak::nfield $pat args]]
+        my push_scope
         if {[llength $args] > 0 && $vname ne ""} {
             set case_fields [my variant_case_fields $vname $case_name]
             set payload_align 4
@@ -2189,6 +2274,7 @@ oo::class create pak::MipsCodegen {
         }
 
         my emit_block_or_stmt $body
+        foreach d [my pop_scope] { my emit_stmt $d }
         $em j $end_label
         $em nop
     }
@@ -2974,7 +3060,11 @@ oo::class create pak::MipsCodegen {
         set tn [my unwrap_type $tn]
         if {$tn eq "" || [pak::isnil $tn]} { return 0 }
         switch -- [pak::kindof $tn] {
-            TypeSlice - TypeArray { return 1 }
+            TypeSlice - TypeArray - TypeResult { return 1 }
+            TypeOption {
+                set lay [my mips_layout $tn]
+                return [expr {[dict get $lay size] > 4}]
+            }
             default { return [my type_is_struct_value $tn] }
         }
     }
@@ -3042,6 +3132,45 @@ oo::class create pak::MipsCodegen {
         my emit_scale_index $idx $elem
         $em addu $base $base $idx
         return [list $base $idx $elem]
+    }
+
+    method emit_as_slice {var_name type_node dst} {
+        set inner [pak::nfield $type_node inner]
+        set slice_tn [pak::N TypeSlice inner $inner mutable 0]
+        set lay [my mips_layout $slice_tn]
+        incr label_n
+        set off [my declare_local __as_${label_n} $lay $slice_tn]
+        set ptr [$ra alloc_temp]
+        if {[pak::kindof $type_node] eq "TypeSlice"} {
+            set local [my lookup_local $var_name]
+            $em lw $ptr [lindex $local 0] {$sp}
+            $em sw $ptr $off {$sp}
+            $em lw $ptr [expr {[lindex $local 0] + 4}] {$sp}
+            $em sw $ptr [expr {$off + 4}] {$sp}
+        } else {
+            my emit_place_addr [pak::N Ident name $var_name type_args [pak::Seq {}]] $ptr
+            $em sw $ptr $off {$sp}
+            set sz [pak::nfield $type_node size]
+            set n [expr {[pak::kindof $sz] eq "IntLit" ? [pak::fval $sz value] : 0}]
+            $em li $ptr $n
+            $em sw $ptr [expr {$off + 4}] {$sp}
+        }
+        $ra free_temp $ptr
+        $em addiu $dst {$sp} $off
+    }
+
+    method emit_get_unchecked {var_name type_node args_seq dst} {
+        set args [pak::items $args_seq]
+        set idx_expr [lindex $args 0]
+        set obj [pak::N Ident name $var_name type_args [pak::Seq {}]]
+        lassign [my emit_index_addr $obj $idx_expr] base idx elem
+        if {[my type_is_struct_value [pak::nfield $type_node inner]]} {
+            $em move $dst $base
+        } else {
+            my emit_typed_load $dst 0 $base $elem
+        }
+        $ra free_temp $base
+        $ra free_temp $idx
     }
 
     method emit_index_access {expr dst} {
@@ -3647,6 +3776,29 @@ oo::class create pak::MipsCodegen {
                         return
                     }
                 }
+                if {[pak::kindof $receiver_type_node] eq "TypeArray" ||
+                    [pak::kindof $receiver_type_node] eq "TypeSlice"} {
+                    if {$fn in {as_slice as_slice_mut}} {
+                        my emit_as_slice $obj_name $receiver_type_node $dst
+                        return
+                    }
+                    if {$fn eq "get_unchecked"} {
+                        my emit_get_unchecked $obj_name $receiver_type_node \
+                            [pak::nfield $expr args] $dst
+                        return
+                    }
+                    if {$fn eq "len"} {
+                        if {[pak::kindof $receiver_type_node] eq "TypeArray"} {
+                            set sz [pak::nfield $receiver_type_node size]
+                            set n [expr {[pak::kindof $sz] eq "IntLit" ? [pak::fval $sz value] : 0}]
+                            $em li $dst $n
+                        } else {
+                            set local [my lookup_local $obj_name]
+                            $em lw $dst [expr {[lindex $local 0] + 4}] {$sp}
+                        }
+                        return
+                    }
+                }
                 if {[pak::kindof $receiver_type_node] eq "TypeGeneric"} {
                     set gn [pak::fval $receiver_type_node name]
                     if {$gn in {FixedList Pool RingBuffer FixedMap Vec}} {
@@ -3671,6 +3823,10 @@ oo::class create pak::MipsCodegen {
         }
         if {[pak::kindof $func] eq "Ident"} {
             set fname [pak::fval $func name]
+            if {$fname in {Some some}} {
+                my emit_option_some [pak::nfield $expr args] $dst
+                return
+            }
             # Variant constructor via bare name: Circle(r)
             set vname [my resolve_variant_name_for_case $fname]
             if {$vname ne ""} {
@@ -3874,6 +4030,22 @@ oo::class create pak::MipsCodegen {
             return [pak::nfield [dict get $fn_decls $name] ret_type]
         }
         return ""
+    }
+
+    method emit_option_some {args_seq dst} {
+        set args [pak::items $args_seq]
+        set lay [dict create size 8 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]
+        incr label_n
+        set off [my declare_local __some_${label_n} $lay]
+        $em sw {$zero} $off {$sp}
+        $em sw {$zero} [expr {$off + 4}] {$sp}
+        $em li $dst 1
+        $em sb $dst $off {$sp}
+        set val [$ra alloc_temp]
+        my emit_expr [lindex $args 0] $val
+        $em sw $val [expr {$off + 4}] {$sp}
+        $ra free_temp $val
+        $em addiu $dst {$sp} $off
     }
 
     method emit_direct_call {fname args_seq dst {self_reg ""}} {

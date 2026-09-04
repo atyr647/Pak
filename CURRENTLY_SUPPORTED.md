@@ -223,6 +223,8 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `let p = mk()` / `q.doubled()` / `rest(s)` | ✅ Full | sret: callee copies into the caller's frame; `s[1..n]` on a slice uses the data pointer |
 | `CStr.len()` / `str.from_cstr` / `Str.len` | ✅ Full | Inline strlen/eq/find; no libc. `Str` is `{data, len}` |
 | `Str.eq` / `contains` / `find` / `slice` | ✅ Full | Bounded memcmp on `{data, len}`, not `jal pak_str_eq` |
+| `[N]T.as_slice()` / `get_unchecked` | ✅ Full | Fat `{ptr, len}` pair; `get_unchecked(i)` is unscaled index |
+| `match .ok/.err` / `Some` / `none` / `catch` | ✅ Full | Result/Option sret; match bindings are arm-scoped |
 | `&s.field` / value-struct fields | ✅ Full | Place address of the object, not a spilled copy of the first word |
 | Method `self` (value, `*T`, `obj.field.m()`) | ✅ Full | Pointer receivers pass the pointer; `g.player.init()` is not a module call |
 | `defer` | ✅ Full | |

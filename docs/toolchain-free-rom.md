@@ -213,7 +213,8 @@ wait loops terminate instead of hanging.
   `s[1..n]` on a slice indexes the data, not the fat pointer. CStr methods
   (len/eq/find/starts_with/ends_with/contains) are inlined so the ROM does not
   need libc; `str.from_cstr` builds a `{data, len}` Str. `Str.eq` / `contains` /
-  `find` / `slice` are bounded memcmp on that pair. Goldens live in
+  `find` / `slice` are bounded memcmp on that pair. `[N]T.as_slice()` builds a
+  fat slice; `match .ok/.err` and `Some`/`none` lower Result/Option. Goldens live in
   `tcl/tools/array_addr_test.tcl`.
 * **FPU encodings.** COP1 ops (`add.s`/`sub.s`/`mul.s`/`div.s`, the
   `mov`/`neg`/`abs`/`sqrt` unary group, `cvt.*`, the `c.<cond>.s` compare
