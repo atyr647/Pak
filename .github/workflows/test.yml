@@ -88,6 +88,12 @@ jobs:
       - name: Codegen snapshot parity (canonical examples)
         run: bash tcl/tools/cg_parity.sh
 
+      # Snapshot parity only proves the C matches the text we checked in. This
+      # runs cc over it, so C that no compiler accepts fails here instead of at
+      # a user's `make`. tests/c_compile_known_broken.txt is the current floor.
+      - name: Generated C compiles (cc -fsyntax-only)
+        run: tclsh tcl/tools/c_compile_test.tcl
+
       - name: MIPS assembly snapshots (canonical examples)
         run: bash tcl/tools/mips_parity.sh
 

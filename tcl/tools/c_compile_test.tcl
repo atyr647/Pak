@@ -1,0 +1,246 @@
+#!/usr/bin/env tclsh
+# Compile the C backend's output, instead of only diffing it against a snapshot.
+#
+#   tclsh tcl/tools/c_compile_test.tcl            # gate
+#   tclsh tcl/tools/c_compile_test.tcl --list     # print per-file error counts
+#   tclsh tcl/tools/c_compile_test.tcl --regen    # rewrite the known-broken list
+#
+# Why this exists: every other check on the libdragon path compares generated C
+# to checked-in text. Text that matches its snapshot can still be text no
+# compiler accepts, and for half the canonical corpus it is. This runs cc over
+# the real output so a syntax or scoping bug fails here rather than at a user's
+# `make`.
+#
+# libdragon is not installed in CI, so the headers the codegen includes are
+# stubbed. The stubs are not hand-written: every C symbol is declared from
+# MODULE_API, the same table the checker and STDLIB index derive from, so the
+# HAL contract and this gate cannot drift apart. Only the two `pak_str_*` /
+# `pak_arena_*` families are skipped -- the codegen emits its own definitions
+# for those in the prelude.
+#
+# tests/c_compile_known_broken.txt lists the examples whose C does NOT compile
+# today. The gate fails in BOTH directions: a file off the list that stops
+# compiling is a regression, and a file on the list that starts compiling must
+# be removed from it. The list is debt, and it can only shrink.
+
+set HERE [file dirname [file normalize [info script]]]
+set REPO [file normalize [file join $HERE .. ..]]
+source [file join $HERE .. module_api.tcl]
+
+set KNOWN [file join $REPO tests c_compile_known_broken.txt]
+set CC [expr {[info exists ::env(CC)] ? $::env(CC) : "cc"}]
+
+proc have_cc {} {
+    global CC
+    expr {![catch {exec sh -c "command -v $CC"}]}
+}
+
+# ── stub tree ───────────────────────────────────────────────────────────────
+
+proc hal_stub_header {} {
+    set out {}
+    lappend out "#pragma once"
+    lappend out "#include <stdint.h>"
+    lappend out "#include <stdbool.h>"
+    lappend out "#include <stddef.h>"
+    lappend out "/* Declared from MODULE_API -- do not hand-edit. */"
+    set seen [dict create]
+    foreach key [pak::module_api_keys] {
+        lassign $key mod fn
+        set sym [pak::module_api_symbol $mod $fn]
+        if {[dict exists $seen $sym]} continue
+        # The codegen defines these itself in the generated prelude.
+        if {[string match "pak_str_*" $sym] || [string match "pak_arena_*" $sym]} continue
+        dict set seen $sym 1
+        lappend out "long ${sym}();"
+    }
+    return [join $out "\n"]
+}
+
+# Every `#include <...>` the generated C asks for, so a newly-included header
+# stubs itself instead of failing the gate for a reason that is not the code.
+proc included_headers {csrc} {
+    set hs {}
+    foreach line [split $csrc "\n"] {
+        if {[regexp {^\s*#include\s*[<"]([^>"]+)[>"]} $line -> h]} {
+            # Real C library headers must come from the system, not a stub.
+            if {$h in {stdint.h stdbool.h stddef.h stdlib.h string.h math.h stdio.h}} continue
+            lappend hs $h
+        }
+    }
+    return [lsort -unique $hs]
+}
+
+# Symbols the generated C declares or defines itself. Stubbing those too is how
+# a gate invents "conflicting types" errors that say nothing about the codegen.
+proc self_declared {csrc} {
+    set syms {}
+    foreach line [split $csrc "\n"] {
+        if {[regexp {([A-Za-z_][A-Za-z0-9_]*)\s*\(} $line -> sym]} {
+            if {[regexp {^\s*(extern|static)?\s*[A-Za-z_]} $line] \
+                && [regexp {[);]\s*$|\{\s*$} $line]} {
+                lappend syms $sym
+            }
+        }
+    }
+    return [lsort -unique $syms]
+}
+
+proc write_stubs {dir csrc} {
+    file mkdir $dir
+    set skip [self_declared $csrc]
+    set out {}
+    foreach line [split [hal_stub_header] "\n"] {
+        if {[regexp {^long ([A-Za-z0-9_]+)\(\);$} $line -> sym] && $sym in $skip} continue
+        lappend out $line
+    }
+    set fh [open [file join $dir hal_stubs.h] w]
+    puts $fh [join $out "\n"]
+    close $fh
+    foreach h [included_headers $csrc] {
+        set path [file join $dir $h]
+        file mkdir [file dirname $path]
+        set fh [open $path w]
+        puts $fh "#include \"hal_stubs.h\""
+        close $fh
+    }
+}
+
+# ── per-example compile ─────────────────────────────────────────────────────
+
+proc explain_c {pk} {
+    global REPO
+    set cli [file join $REPO tcl cli.tcl]
+    if {[catch {exec tclsh $cli explain $pk} out]} { return "" }
+    return $out
+}
+
+# Returns {errcount firstlines}. The stub dir is rebuilt per file so a header
+# one example includes cannot mask a missing include in another.
+proc compile_one {pk workdir} {
+    global CC
+    set csrc [explain_c $pk]
+    if {$csrc eq ""} { return [list 1 "pak explain produced no output"] }
+    set dir [file join $workdir [file rootname [file tail $pk]]]
+    file delete -force $dir
+    write_stubs $dir $csrc
+    set cfile [file join $dir gen.c]
+    set fh [open $cfile w]; puts $fh $csrc; close $fh
+
+    set diag ""
+    catch {exec $CC -fsyntax-only -std=gnu99 -I$dir $cfile 2>@1} diag
+    set n 0
+    set first {}
+    foreach line [split $diag "\n"] {
+        if {[string match "*error:*" $line]} {
+            incr n
+            if {[llength $first] < 3} { lappend first [string trim $line] }
+        }
+    }
+    return [list $n [join $first "\n      "]]
+}
+
+# ── known-broken list ───────────────────────────────────────────────────────
+
+proc read_known {} {
+    global KNOWN
+    set names {}
+    if {![file exists $KNOWN]} { return $names }
+    foreach line [split [read [open $KNOWN r]] "\n"] {
+        set line [string trim $line]
+        if {$line eq "" || [string index $line 0] eq "#"} continue
+        lappend names $line
+    }
+    return $names
+}
+
+proc write_known {names} {
+    global KNOWN
+    set fh [open $KNOWN w]
+    puts $fh "# Canonical examples whose generated C does NOT compile."
+    puts $fh "#"
+    puts $fh "# Maintained by tcl/tools/c_compile_test.tcl. This is debt, not"
+    puts $fh "# configuration: fix a backend bug, drop the name, and the gate holds"
+    puts $fh "# the new floor. Adding a name is how a regression gets waved through,"
+    puts $fh "# so add one only with the bug it records written down."
+    puts $fh ""
+    foreach n [lsort $names] { puts $fh $n }
+    close $fh
+}
+
+# ── main ────────────────────────────────────────────────────────────────────
+
+set mode gate
+if {"--list" in $argv} { set mode list }
+if {"--regen" in $argv} { set mode regen }
+
+if {![have_cc]} {
+    puts "c compile gate: SKIP (no $CC on PATH)"
+    exit 0
+}
+
+set workdir [file join [expr {[info exists ::env(TMPDIR)] ? $::env(TMPDIR) : "/tmp"}] pak_c_compile]
+file delete -force $workdir
+file mkdir $workdir
+
+set examples [lsort [glob -nocomplain [file join $REPO examples canonical *.pk64]]]
+set broken {}
+set clean {}
+set detail [dict create]
+foreach pk $examples {
+    set name [file tail $pk]
+    lassign [compile_one $pk $workdir] n first
+    if {$n > 0} {
+        lappend broken $name
+        dict set detail $name [list $n $first]
+    } else {
+        lappend clean $name
+    }
+}
+
+if {$mode eq "list"} {
+    foreach name $broken {
+        lassign [dict get $detail $name] n first
+        puts [format "%-24s %3d errors" $name $n]
+        puts "      $first"
+    }
+    puts ""
+    puts "compiles: [llength $clean]/[llength $examples]"
+    exit 0
+}
+
+if {$mode eq "regen"} {
+    write_known $broken
+    puts "wrote [llength $broken] known-broken names to [file tail $KNOWN]"
+    exit 0
+}
+
+set known [read_known]
+set regressed {}   ;# broken but not on the list
+set fixed {}       ;# on the list but now compiles
+foreach name $broken   { if {$name ni $known}  { lappend regressed $name } }
+foreach name $known    { if {$name ni $broken} { lappend fixed $name } }
+
+puts "c compile gate: [llength $clean]/[llength $examples] canonical examples compile"
+puts "                [llength $known] known-broken, [llength $regressed] regressed, [llength $fixed] newly fixed"
+
+set rc 0
+if {[llength $regressed]} {
+    puts ""
+    puts "REGRESSION -- generated C no longer compiles:"
+    foreach name $regressed {
+        lassign [dict get $detail $name] n first
+        puts "  $name ($n errors)"
+        puts "      $first"
+    }
+    set rc 1
+}
+if {[llength $fixed]} {
+    puts ""
+    puts "FIXED -- these now compile; drop them from tests/c_compile_known_broken.txt:"
+    foreach name $fixed { puts "  $name" }
+    puts "  (tclsh tcl/tools/c_compile_test.tcl --regen)"
+    set rc 1
+}
+if {$rc == 0} { puts "" ; puts "no regressions." }
+exit $rc

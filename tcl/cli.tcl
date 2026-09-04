@@ -392,8 +392,10 @@ proc pak::cli_build_mips_rom {parsed root out opts config project_name rom_title
     binary scan [string range $rom 16 23] IuIu crc1 crc2
     puts [format "ROM: %s  (%d bytes)  CRC1=%08X  CRC2=%08X" \
         $out [string length $rom] $crc1 $crc2]
-    if {[dict exists $result symbols main]} {
-        puts "entry main -> [format %#010x [dict get $result symbols main]]"
+    # The ROM boots at _start (boot.S), not main: printing main's address here
+    # named the wrong symbol as the entry point.
+    if {[dict exists $result symbols _start]} {
+        puts "entry _start -> [format %#010x [dict get $result symbols _start]]"
     }
 }
 proc pak::_module_path {prog} {

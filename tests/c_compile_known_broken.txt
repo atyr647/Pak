@@ -1,0 +1,22 @@
+# Canonical examples whose generated C does NOT compile.
+#
+# Maintained by tcl/tools/c_compile_test.tcl. This is debt, not
+# configuration: fix a backend bug, drop the name, and the gate holds
+# the new floor. Adding a name is how a regression gets waved through,
+# so add one only with the bug it records written down.
+
+06_variants.pk64
+09_pointers.pk64
+10_result.pk64
+13_extern.pk64
+14_assets.pk64
+15_game_loop.pk64
+16_platformer.pk64
+17_annotations.pk64
+23_containers.pk64
+24_slices.pk64
+26_closures.pk64
+28_generics.pk64
+29_strings.pk64
+30_raycaster.pk64
+31_demo3d.pk64
