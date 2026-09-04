@@ -216,9 +216,10 @@ wait loops terminate instead of hanging.
   `find` / `slice` are bounded memcmp on that pair. `[N]T.as_slice()` builds a
   fat slice; `match .ok/.err` and `Some`/`none` lower Result/Option. Generic
   `id<T>` is emitted after the caller; variant match uses the value's address.
-  Closures are queued the same way and called via `jalr`; captures copy
-  enclosing locals into an env word passed as a hidden arg. Integer `"x={n}"`
-  formats with inline itoa. Goldens live in `tcl/tools/array_addr_test.tcl`.
+  Closures are queued the same way and called via `jalr`; the env holds
+  addresses of captured locals so assignment writes back. `CStr.slice(i,n)`
+  copies into a NUL-terminated scratch buf. Integer `"x={n}"` formats with
+  inline itoa. Goldens live in `tcl/tools/array_addr_test.tcl`.
 * **FPU encodings.** COP1 ops (`add.s`/`sub.s`/`mul.s`/`div.s`, the
   `mov`/`neg`/`abs`/`sqrt` unary group, `cvt.*`, the `c.<cond>.s` compare
   family, `bc1t`/`bc1f`, `mtc1`/`mfc1`) all have golden encodings in

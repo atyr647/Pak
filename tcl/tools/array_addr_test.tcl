@@ -815,6 +815,44 @@ set syms [dict get $run data_syms]
 check_eq {capture n addn(3)} [static_hex $mw $syms a] 0000000D
 check_eq {capture n+m addm(1)} [static_hex $mw $syms b] 0000000F
 
+# ── capturing assignment writes back through the env pointer
+set src20 {
+static a: i32 = 0
+entry {
+    let mut n: i32 = 1
+    let bump = fn() { n = n + 1 }
+    bump()
+    bump()
+    a = n
+}
+}
+set lx [pak::Lexer new $src20]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set syms [dict get $run data_syms]
+check_eq {capture-mut bump twice} [static_hex $mw $syms a] 00000003
+
+# ── CStr.slice copies len bytes and NUL-terminates
+set src21 {
+static a: i32 = 0
+entry {
+    let s: CStr = "hello"
+    let t: CStr = s.slice(1, 3)
+    a = t.len()
+}
+}
+set lx [pak::Lexer new $src21]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set syms [dict get $run data_syms]
+check_eq {CStr.slice(1,3).len} [static_hex $mw $syms a] 00000003
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

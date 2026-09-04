@@ -423,7 +423,7 @@ main:
     move $t9, $t8
     li $t9, 10
     sw $t9, 148($sp)
-    lw $t8, 148($sp)
+    addiu $t8, $sp, 148
     sw $t8, 156($sp)
     la $t9, __closure_11
     sw $t9, 152($sp)
@@ -562,6 +562,7 @@ __closure_11:
     sw $a1, 140($sp)
     lw $t9, 136($sp)
     lw $t7, 140($sp)
+    lw $t7, 0($t7)
     lw $t8, 0($t7)
     addu $v0, $t9, $t8
     j .L__closure_11_ret_17

@@ -2779,7 +2779,12 @@ oo::class create pak::MipsCodegen {
             set i 0
             foreach c $caps {
                 set tmp [$ra alloc_temp]
-                my emit_ident_load $c $tmp
+                set local [my lookup_local $c]
+                if {$local ne ""} {
+                    $em addiu $tmp {$sp} [lindex $local 0]
+                } else {
+                    my emit_ident_load $c $tmp
+                }
                 $em sw $tmp [expr {$env_off + $i * 4}] {$sp}
                 $ra free_temp $tmp
                 incr i
@@ -3137,7 +3142,8 @@ oo::class create pak::MipsCodegen {
             if {$env ne ""} {
                 set ep [$ra alloc_temp]
                 $em lw $ep [lindex $env 0] {$sp}
-                $em lw $dst [expr {$idx * 4}] $ep
+                $em lw $ep [expr {$idx * 4}] $ep
+                $em lw $dst 0 $ep
                 $ra free_temp $ep
                 return
             }
@@ -3665,6 +3671,33 @@ oo::class create pak::MipsCodegen {
         }
     }
 
+    method emit_memcpy_bytes {dst_reg src_reg n_reg} {
+        set d [$ra alloc_temp]
+        set s [$ra alloc_temp]
+        set n [$ra alloc_temp]
+        set ch [$ra alloc_temp]
+        $em move $d $dst_reg
+        $em move $s $src_reg
+        $em move $n $n_reg
+        set loop [my fresh_label .Lmcb]
+        set done [my fresh_label .Lmcb_d]
+        $em label $loop
+        $em beqz $n $done
+        $em nop
+        $em lbu $ch 0 $s
+        $em sb $ch 0 $d
+        $em addiu $s $s 1
+        $em addiu $d $d 1
+        $em addiu $n $n -1
+        $em j $loop
+        $em nop
+        $em label $done
+        $ra free_temp $ch
+        $ra free_temp $n
+        $ra free_temp $s
+        $ra free_temp $d
+    }
+
     method emit_memcpy {dst_reg src_reg nbytes} {
         if {$nbytes <= 0} return
         if {$nbytes <= 32} {
@@ -3879,9 +3912,18 @@ oo::class create pak::MipsCodegen {
         }
         switch -- [pak::kindof $target] {
             Ident {
-                set local [my lookup_local [pak::fval $target name]]
+                set name [pak::fval $target name]
+                set local [my lookup_local $name]
                 if {$local ne ""} {
                     my store_to_sp [lindex $local 0] $val_reg [lindex $local 1]
+                } elseif {[dict exists $closure_captures $name]} {
+                    set idx [dict get $closure_captures $name]
+                    set env [my lookup_local __env]
+                    set ep [$ra alloc_temp]
+                    $em lw $ep [lindex $env 0] {$sp}
+                    $em lw $ep [expr {$idx * 4}] $ep
+                    $em sw $val_reg 0 $ep
+                    $ra free_temp $ep
                 } else {
                     set addr_r [$ra alloc_temp]
                     $em la $addr_r [pak::fval $target name]
@@ -4653,8 +4695,26 @@ oo::class create pak::MipsCodegen {
             }
             slice {
                 set off_r [$ra alloc_temp]
+                set len_r [$ra alloc_temp]
                 my emit_expr [lindex $args 0] $off_r
-                $em addu $dst $str_r $off_r
+                if {[llength $args] > 1} {
+                    my emit_expr [lindex $args 1] $len_r
+                } else {
+                    my emit_strlen $str_r $len_r
+                    $em subu $len_r $len_r $off_r
+                }
+                set buf_name "__pak_cslice_$fmtstr_counter"
+                incr fmtstr_counter
+                $pool add_static $buf_name 256 1 ""
+                set dstp [$ra alloc_temp]
+                $em la $dstp $buf_name
+                $em addu $off_r $str_r $off_r
+                my emit_memcpy_bytes $dstp $off_r $len_r
+                $em addu $dstp $dstp $len_r
+                $em sb {$zero} 0 $dstp
+                $em la $dst $buf_name
+                $ra free_temp $dstp
+                $ra free_temp $len_r
                 $ra free_temp $off_r
             }
             to_pakstr {
