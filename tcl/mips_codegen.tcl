@@ -2609,6 +2609,14 @@ oo::class create pak::MipsCodegen {
         set buf_name "__pak_fmtbuf_$fmtstr_counter"
         incr fmtstr_counter
         $pool add_static $buf_name 256 1 ""
+        set use_float 0
+        foreach ep $expr_parts {
+            if {[my infer_is_float $ep]} { set use_float 1; break }
+        }
+        if {!$use_float} {
+            my emit_fmt_int $buf_name $parts $dst
+            return
+        }
         # Evaluate all expression arguments into temp registers
         set arg_regs {}
         foreach ep $expr_parts {
@@ -2635,15 +2643,121 @@ oo::class create pak::MipsCodegen {
         $em la $dst $buf_name
     }
 
+    method emit_fmt_int {buf_name parts dst} {
+        set p [$ra alloc_temp]
+        $em la $p $buf_name
+        foreach part $parts {
+            if {[lindex $part 0] eq "lit"} {
+                set text [lindex $part 1]
+                if {$text eq ""} continue
+                set src [$ra alloc_temp]
+                $em la $src [$pool intern_string $text]
+                my emit_strcpy_advance $src $p
+                $ra free_temp $src
+            } else {
+                set v [$ra alloc_temp]
+                my emit_expr $part $v
+                my emit_itoa $v $p
+                $ra free_temp $v
+            }
+        }
+        $em sb {$zero} 0 $p
+        $ra free_temp $p
+        $em la $dst $buf_name
+    }
+
+    method emit_strcpy_advance {src dst_ptr} {
+        set s [$ra alloc_temp]
+        set ch [$ra alloc_temp]
+        $em move $s $src
+        set loop [my fresh_label .Lcpy]
+        set done [my fresh_label .Lcpy_d]
+        $em label $loop
+        $em lbu $ch 0 $s
+        $em beqz $ch $done
+        $em nop
+        $em sb $ch 0 $dst_ptr
+        $em addiu $s $s 1
+        $em addiu $dst_ptr $dst_ptr 1
+        $em j $loop
+        $em nop
+        $em label $done
+        $ra free_temp $ch
+        $ra free_temp $s
+    }
+
+    method emit_itoa {n_reg dst_ptr} {
+        set work [$ra alloc_temp]
+        $em move $work $n_reg
+        set done [my fresh_label .Litoa_end]
+        set digits [my fresh_label .Litoa_d]
+        $em bnez $work $digits
+        $em nop
+        $em li $work 48
+        $em sb $work 0 $dst_ptr
+        $em addiu $dst_ptr $dst_ptr 1
+        $em j $done
+        $em nop
+        $em label $digits
+        set neg [my fresh_label .Litoa_n]
+        $em bge $work {$zero} $neg
+        $em nop
+        $em li $work 45
+        $em sb $work 0 $dst_ptr
+        $em addiu $dst_ptr $dst_ptr 1
+        $em subu $work {$zero} $n_reg
+        $em label $neg
+        set start [$ra alloc_temp]
+        $em move $start $dst_ptr
+        set ten [$ra alloc_temp]
+        $em li $ten 10
+        set loop [my fresh_label .Litoa_l]
+        $em label $loop
+        $em div $work $ten
+        set dig [$ra alloc_temp]
+        $em mfhi $dig
+        $em addiu $dig $dig 48
+        $em sb $dig 0 $dst_ptr
+        $em addiu $dst_ptr $dst_ptr 1
+        $em mflo $work
+        $em bnez $work $loop
+        $em nop
+        set left [$ra alloc_temp]
+        set right [$ra alloc_temp]
+        $em move $left $start
+        $em addiu $right $dst_ptr -1
+        set rloop [my fresh_label .Litoa_r]
+        set rdone [my fresh_label .Litoa_rd]
+        $em label $rloop
+        $em sltu $dig $left $right
+        $em beqz $dig $rdone
+        $em nop
+        $em lbu $work 0 $left
+        $em lbu $dig 0 $right
+        $em sb $dig 0 $left
+        $em sb $work 0 $right
+        $em addiu $left $left 1
+        $em addiu $right $right -1
+        $em j $rloop
+        $em nop
+        $em label $rdone
+        $ra free_temp $right
+        $ra free_temp $left
+        $ra free_temp $dig
+        $ra free_temp $ten
+        $ra free_temp $start
+        $em label $done
+        $ra free_temp $work
+    }
+
     method emit_closure {expr} {
         set name [my fresh_label __closure]
         set body [pak::nfield $expr body]
         if {[pak::kindof $body] ne "Block"} {
             set body [pak::N Block stmts [pak::Seq [list [pak::N Return value $body]]]]
         }
-        set saved [my save_fn_state]
-        my emit_fn $name [pak::nfield $expr params] $body
-        my restore_fn_state $saved
+        lappend mono_queue [list $name [pak::nfield $expr params] $body \
+            [pak::nfield $expr ret_type]]
         return $name
     }
 
@@ -3839,6 +3953,16 @@ oo::class create pak::MipsCodegen {
             set fname [pak::fval $func name]
             if {$fname in {Some some}} {
                 my emit_option_some [pak::nfield $expr args] $dst
+                return
+            }
+            # Local holding a function pointer (closure / fn-ptr).
+            if {[my lookup_local $fname] ne ""} {
+                my marshal_args [pak::nfield $expr args]
+                set fptr [$ra alloc_temp]
+                my emit_ident_load $fname $fptr
+                my emit_jalr_reg $fptr
+                $ra free_temp $fptr
+                if {$dst ne {$v0}} { $em move $dst {$v0} }
                 return
             }
             # Variant constructor via bare name: Circle(r)

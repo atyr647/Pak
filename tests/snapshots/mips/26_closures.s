@@ -196,8 +196,11 @@ apply:
     sw $a0, 136($sp)
     sw $a1, 140($sp)
     lw $a0, 140($sp)
-    jal f
+    lw $t9, 136($sp)
+    sw $t9, 96($sp)
+    jalr $ra, $t9
     nop
+    lw $t9, 96($sp)
     j .Lapply_ret_0
     nop
 .Lapply_ret_0:
@@ -220,11 +223,17 @@ compose:
     sw $a1, 140($sp)
     sw $a2, 144($sp)
     lw $a0, 144($sp)
-    jal g
+    lw $t9, 140($sp)
+    sw $t9, 96($sp)
+    jalr $ra, $t9
     nop
+    lw $t9, 96($sp)
     move $a0, $v0
-    jal f
+    lw $t9, 136($sp)
+    sw $t9, 96($sp)
+    jalr $ra, $t9
     nop
+    lw $t9, 96($sp)
     j .Lcompose_ret_1
     nop
 .Lcompose_ret_1:
@@ -256,18 +265,21 @@ map_sum:
     bge $t7, $t8, .Lfor_x_5
     nop
     lw $a0, 152($sp)
+    lw $t4, 136($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     sw $t7, 104($sp)
     sw $t6, 108($sp)
     sw $t5, 112($sp)
-    jal f
+    sw $t4, 116($sp)
+    jalr $ra, $t4
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
     lw $t7, 104($sp)
     lw $t6, 108($sp)
     lw $t5, 112($sp)
+    lw $t4, 116($sp)
     move $t5, $v0
     lw $t4, 148($sp)
     addu $t5, $t4, $t5
@@ -299,107 +311,50 @@ main:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-
-	.section .text
-	.globl __closure_7
-	.type __closure_7, @function
-__closure_7:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
-    li $t8, 2
-    mul $v0, $t9, $t8
-    j .L__closure_7_ret_8
-    nop
-.L__closure_7_ret_8:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
-    jr $ra
-    nop
-	.size __closure_7, . - __closure_7
     la $t9, __closure_7
     sw $t9, 136($sp)
     li $a0, 5
+    lw $t7, 136($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
-    jal double
+    sw $t7, 104($sp)
+    jalr $ra, $t7
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-
-	.section .text
-	.globl __closure_9
-	.type __closure_9, @function
-__closure_9:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
-    lw $t8, 136($sp)
-    mul $v0, $t9, $t8
-    j .L__closure_9_ret_10
-    nop
-.L__closure_9_ret_10:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
-    jr $ra
-    nop
-	.size __closure_9, . - __closure_9
-    la $t9, __closure_9
+    la $t9, __closure_8
     sw $t9, 140($sp)
     li $a0, 4
+    lw $t7, 140($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
-    jal square
+    sw $t7, 104($sp)
+    jalr $ra, $t7
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-
-	.section .text
-	.globl __closure_11
-	.type __closure_11, @function
-__closure_11:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    li $t9, 0
-    lw $t8, 136($sp)
-    subu $v0, $t9, $t8
-    j .L__closure_11_ret_12
-    nop
-.L__closure_11_ret_12:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
-    jr $ra
-    nop
-	.size __closure_11, . - __closure_11
-    la $t9, __closure_11
+    la $t9, __closure_9
     sw $t9, 144($sp)
     li $a0, 7
+    lw $t7, 144($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
-    jal negate
+    sw $t7, 104($sp)
+    jalr $ra, $t7
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
@@ -442,29 +397,7 @@ __closure_11:
     sw $t8, 0($t7)
     move $t9, $t8
     li $a1, 5
-
-	.section .text
-	.globl __closure_13
-	.type __closure_13, @function
-__closure_13:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
-    li $t8, 100
-    addu $v0, $t9, $t8
-    j .L__closure_13_ret_14
-    nop
-.L__closure_13_ret_14:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
-    jr $ra
-    nop
-	.size __closure_13, . - __closure_13
-    la $a0, __closure_13
+    la $a0, __closure_10
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal apply
@@ -490,38 +423,18 @@ __closure_13:
     move $t9, $t8
     li $t9, 10
     sw $t9, 148($sp)
-
-	.section .text
-	.globl __closure_15
-	.type __closure_15, @function
-__closure_15:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
-    la $t8, base
-    lw $t8, 0($t8)
-    addu $v0, $t9, $t8
-    j .L__closure_15_ret_16
-    nop
-.L__closure_15_ret_16:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
-    jr $ra
-    nop
-	.size __closure_15, . - __closure_15
-    la $t9, __closure_15
+    la $t9, __closure_11
     sw $t9, 152($sp)
     li $a0, 5
+    lw $t7, 152($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
-    jal add_base
+    sw $t7, 104($sp)
+    jalr $ra, $t7
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
@@ -545,6 +458,117 @@ __closure_15:
     jr $ra
     nop
 	.size main, . - main
+
+	.section .text
+	.globl __closure_7
+	.type __closure_7, @function
+__closure_7:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
+    li $t8, 2
+    mul $v0, $t9, $t8
+    j .L__closure_7_ret_12
+    nop
+.L__closure_7_ret_12:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size __closure_7, . - __closure_7
+
+	.section .text
+	.globl __closure_8
+	.type __closure_8, @function
+__closure_8:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
+    lw $t8, 136($sp)
+    mul $v0, $t9, $t8
+    j .L__closure_8_ret_13
+    nop
+.L__closure_8_ret_13:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size __closure_8, . - __closure_8
+
+	.section .text
+	.globl __closure_9
+	.type __closure_9, @function
+__closure_9:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    li $t9, 0
+    lw $t8, 136($sp)
+    subu $v0, $t9, $t8
+    j .L__closure_9_ret_14
+    nop
+.L__closure_9_ret_14:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size __closure_9, . - __closure_9
+
+	.section .text
+	.globl __closure_10
+	.type __closure_10, @function
+__closure_10:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
+    li $t8, 100
+    addu $v0, $t9, $t8
+    j .L__closure_10_ret_15
+    nop
+.L__closure_10_ret_15:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size __closure_10, . - __closure_10
+
+	.section .text
+	.globl __closure_11
+	.type __closure_11, @function
+__closure_11:
+    addiu $sp, $sp, -320
+    sw $ra, 316($sp)
+    sw $fp, 312($sp)
+    addiu $fp, $sp, 320
+    sw $a0, 136($sp)
+    lw $t9, 136($sp)
+    la $t8, base
+    lw $t8, 0($t8)
+    addu $v0, $t9, $t8
+    j .L__closure_11_ret_16
+    nop
+.L__closure_11_ret_16:
+    lw $fp, 312($sp)
+    lw $ra, 316($sp)
+    addiu $sp, $sp, 320
+    jr $ra
+    nop
+	.size __closure_11, . - __closure_11
 
 	.section .data
 	.align 2

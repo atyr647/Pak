@@ -227,6 +227,8 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `match .ok/.err` / `Some` / `none` / `catch` | ✅ Full | Result/Option sret; match bindings are arm-scoped |
 | `id<T>(x)` / `id(11)` | ✅ Full | Monomorphized as a real function after the caller, not spliced into it |
 | `match .Circle(r)` | ✅ Full | Variant values pass by address so the tag is `lbu` at the object, not a load of the first word |
+| `let f = fn(x: i32)` / `f(3)` | ✅ Full | Closure emitted after the caller; `jalr` of the pointer. Capturing still uses the callee frame |
+| `"x={n}"` integer fmt | ✅ Full | Inline itoa into a static buf; no libc snprintf |
 | `&s.field` / value-struct fields | ✅ Full | Place address of the object, not a spilled copy of the first word |
 | Method `self` (value, `*T`, `obj.field.m()`) | ✅ Full | Pointer receivers pass the pointer; `g.player.init()` is not a module call |
 | `defer` | ✅ Full | |

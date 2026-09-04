@@ -234,7 +234,7 @@ proc parse_asm {text} {
 #          "jmp:L"  → branch/jump taken; caller executes delay slot then jumps
 
 proc exec_insn {op args} {
-    upvar 1 R R  HI HI  LO LO  mb mb  mh mh  mw mw  dsyms dsyms  mseq mseq  mseqi mseqi
+    upvar 1 R R  HI HI  LO LO  mb mb  mh mh  mw mw  dsyms dsyms  labels labels  mseq mseq  mseqi mseqi
 
     switch -- $op {
         nop - sync { return "" }
@@ -501,7 +501,13 @@ proc exec_insn {op args} {
             set n [lindex $args 0]
             set sym [lindex $args 1]
             if {$n} {
-                set R($n) [expr {[dict exists $dsyms $sym] ? [dict get $dsyms $sym] : 0}]
+                if {[dict exists $labels $sym]} {
+                    set R($n) [dict get $labels $sym]
+                } elseif {[dict exists $dsyms $sym]} {
+                    set R($n) [dict get $dsyms $sym]
+                } else {
+                    set R($n) 0
+                }
             }
         }
 
@@ -511,12 +517,17 @@ proc exec_insn {op args} {
             # The simulator works on an instruction list rather than addresses,
             # so $ra holds the index of the instruction after the call's delay
             # slot. `jr $ra` returns there; $ra starts out invalid, so the
-            # outermost return ends the run. Computed jumps are not modelled.
+            # outermost return ends the run.
             set n [lindex $args 0]
             if {$n eq "" || $R($n) == 0xFFFFFFFF} { return "done" }
             return "ret:$R($n)"
         }
-        jalr { return "done" }
+        jalr {
+            # `jalr $rs` or `jalr $rd, $rs` — target is the last register.
+            set n [lindex $args end]
+            if {$n eq "" || $R($n) == 0xFFFFFFFF} { return "done" }
+            return "callidx:$R($n)"
+        }
     }
     return ""
 }
@@ -570,10 +581,21 @@ proc run {text {start "main"} {limit 20000000} {preset {}}} {
 
         if {$result eq "done"} break
 
-        if {[string match "jmp:*" $result] || [string match "call:*" $result]} {
+        if {[string match "jmp:*" $result] || [string match "call:*" $result] \
+            || [string match "callidx:*" $result]} {
             # MIPS branch delay slot: instruction at PC+1 always executes
             set ds [lindex $insns [expr {$pc + 1}]]
             if {[llength $ds]} { incr count; exec_insn {*}$ds }
+            if {[string match "callidx:*" $result]} {
+                set R(31) [expr {$pc + 2}]
+                set new_pc [string range $result 8 end]
+                if {![string is integer -strict $new_pc]} break
+                set new_pc [expr {$new_pc}]
+                if {$new_pc < 0 || $new_pc >= $n_insns} break
+                if {$new_pc == $pc} break
+                set pc $new_pc
+                continue
+            }
             if {[string match "call:*" $result]} {
                 set R(31) [expr {$pc + 2}]
                 set lbl [string range $result 5 end]
