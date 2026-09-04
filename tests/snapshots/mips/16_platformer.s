@@ -1075,8 +1075,7 @@ Player_physics:
     sltiu $t9, $t8, 1
     beqz $t9, .Lif_end_16
     nop
-    la $t8, GRAVITY
-    lw $t8, 0($t8)
+    li $t8, 26214
     lw $t6, 136($sp)
     lw $t7, 12($t6)
     addu $t8, $t7, $t8
@@ -1085,13 +1084,11 @@ Player_physics:
     move $t9, $t8
     lw $t7, 136($sp)
     lw $t8, 12($t7)
-    la $t7, MAX_FALL
-    lw $t7, 0($t7)
+    li $t7, 524288
     sgt $t9, $t8, $t7
     beqz $t9, .Lif_end_17
     nop
-    la $t8, MAX_FALL
-    lw $t8, 0($t8)
+    li $t8, 524288
     lw $t7, 136($sp)
     sw $t8, 12($t7)
     move $t9, $t8
@@ -1377,8 +1374,7 @@ Player_handle_input:
     lb $t9, 7($t8)
     beqz $t9, .Lif_end_34
     nop
-    la $t8, MOVE_SPEED
-    lw $t8, 0($t8)
+    li $t8, 163840
     lw $t7, 136($sp)
     sw $t8, 8($t7)
     move $t9, $t8
@@ -1392,8 +1388,7 @@ Player_handle_input:
     lb $t9, 6($t8)
     beqz $t9, .Lif_end_35
     nop
-    la $t7, MOVE_SPEED
-    lw $t7, 0($t7)
+    li $t7, 163840
     subu $t8, $zero, $t7
     lw $t7, 136($sp)
     sw $t8, 8($t7)
@@ -1418,8 +1413,7 @@ Player_handle_input:
     sltu $t9, $zero, $t6
     beqz $t9, .Lif_end_37
     nop
-    la $t7, JUMP_FORCE
-    lw $t7, 0($t7)
+    li $t7, 393216
     subu $t8, $zero, $t7
     lw $t7, 136($sp)
     sw $t8, 12($t7)

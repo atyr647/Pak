@@ -1164,7 +1164,24 @@ oo::class create pak::MipsCodegen {
         foreach d [pak::items [pak::nfield $branch stmts]] { my emit_top_decl $d }
     }
     method collect_const {decl} {
-        set v [my eval_const_expr [pak::nfield $decl value]]
+        # A fixed-point const is written as a decimal but stored as an integer
+        # scaled by 2^frac: `const GRAVITY: fix16.16 = 0.4` is 26214. Without
+        # this eval_const_expr sees a FloatLit it has no case for, returns "",
+        # and the name never enters $consts -- so every reference to it was
+        # emitted as `la $t8, GRAVITY` against a symbol nothing defines, and
+        # the link failed with an undefined symbol.
+        set typ [pak::nfield $decl type]
+        set val [pak::nfield $decl value]
+        if {![pak::isnil $typ] && [pak::kindof $typ] eq "TypeName" \
+                && [pak::kindof $val] eq "FloatLit"} {
+            set shift [pak::frac_bits_for [pak::fval $typ name]]
+            if {$shift != 0} {
+                set raw [pak::sval [pak::nfield $val value]]
+                dict set consts [pak::fval $decl name] [expr {entier(double($raw) * (1 << $shift))}]
+                return
+            }
+        }
+        set v [my eval_const_expr $val]
         if {$v ne ""} { dict set consts [pak::fval $decl name] $v }
     }
 
