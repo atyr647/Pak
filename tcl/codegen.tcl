@@ -2093,12 +2093,93 @@ oo::class create pak::Codegen {
         return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
     }
 
+    # The case name an arm selects on: .ok(v) / .ok / Result.ok all name "ok".
+    method arm_case_name {arm} {
+        set pat [pak::nfield $arm pattern]
+        switch -- [pak::kindof $pat] {
+            EnumVariantAccess { return [pak::fval $pat name] }
+            DotAccess         { return [pak::fval $pat field] }
+            Call {
+                set fn [pak::nfield $pat func]
+                switch -- [pak::kindof $fn] {
+                    EnumVariantAccess { return [pak::fval $fn name] }
+                    DotAccess         { return [pak::fval $fn field] }
+                }
+            }
+        }
+        return ""
+    }
+
+    # The single binding an arm introduces, if any: .ok(v) binds v.
+    method arm_binding_name {arm} {
+        set pat [pak::nfield $arm pattern]
+        if {[pak::kindof $pat] eq "DotAccess" && ![pak::isnil [pak::nfield $pat binding]]} {
+            return [pak::sval [pak::nfield $pat binding]]
+        }
+        if {[pak::kindof $pat] eq "Call"} {
+            set a [pak::items [pak::nfield $pat args]]
+            if {[llength $a] == 1 && [pak::kindof [lindex $a 0]] eq "Ident"} {
+                return [pak::fval [lindex $a 0] name]
+            }
+        }
+        return ""
+    }
+
+    # A Result is a struct with a bool, not a tagged enum: `match r { .ok(v) =>
+    # ... .err(e) => ... }` has no integer to switch on and no ok/err constants
+    # to name. It lowers to if/else on .is_ok, binding the matching union arm.
+    method gen_match_result {s pad indent arms} {
+        set expr [my gen_expr [pak::nfield $s expr]]
+        set inner_pad [string repeat "    " [expr {$indent+1}]]
+        set ok_arm ""
+        set err_arm ""
+        foreach arm $arms {
+            switch -- [my arm_case_name $arm] {
+                ok  { set ok_arm $arm }
+                err { set err_arm $arm }
+            }
+        }
+        if {$ok_arm eq "" || $err_arm eq ""} { return "" }
+
+        set lines {}
+        lappend lines "${pad}if (${expr}.is_ok) \{"
+        foreach spec [list [list $ok_arm value] [list $err_arm error]] {
+            lassign $spec arm field
+            my scope_push
+            set bind [my arm_binding_name $arm]
+            if {$bind ne ""} {
+                lappend lines "${inner_pad}__auto_type $bind = ${expr}.data.${field};"
+                my scope_set $bind [pak::N TypeName name auto]
+            }
+            set body [pak::nfield $arm body]
+            if {[pak::kindof $body] eq "Block"} {
+                foreach st [pak::items [pak::nfield $body stmts]] {
+                    lappend lines [my gen_stmt $st [expr {$indent+1}]]
+                }
+            } else {
+                lappend lines "${inner_pad}[my gen_expr $body];"
+            }
+            foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+            my scope_pop
+            if {$field eq "value"} { lappend lines "${pad}\} else \{" }
+        }
+        lappend lines "${pad}\}"
+        return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
+    }
+
     method gen_match {s pad indent} {
         set arms [pak::items [pak::nfield $s arms]]
         foreach arm $arms {
             if {![pak::isnil [pak::nfield $arm guard]]} {
                 return [my gen_match_guarded $s $pad $indent]
             }
+        }
+        # ok/err are not variant cases -- they are the two halves of PakResult.
+        set names {}
+        foreach arm $arms { lappend names [my arm_case_name $arm] }
+        if {[lsort -unique $names] eq {err ok}} {
+            set r [my gen_match_result $s $pad $indent $arms]
+            if {$r ne ""} { return $r }
         }
         set expr [my gen_expr [pak::nfield $s expr]]
         set inner_pad [string repeat "    " [expr {$indent+1}]]
@@ -2461,6 +2542,16 @@ oo::class create pak::Codegen {
         set typ [pak::nfield $c type]
         if {![pak::isnil $typ]} {
             set ct [my gen_type $typ]
+            # A fixed-point const is an integer scaled by 2^shift, not a float.
+            # `const GRAVITY: fix16.16 = 0.4` was emitting the float literal
+            # into `enum { GRAVITY = 0.4f };` -- not an integer constant, and
+            # every later >> on it operated on a float.
+            set shift [pak::cg_fixshift $typ]
+            if {$shift != 0 && [pak::kindof [pak::nfield $c value]] eq "FloatLit"} {
+                set raw [pak::fval [pak::nfield $c value] value]
+                set scaled [expr {entier(double($raw) * (1 << $shift))}]
+                return "enum { [pak::fval $c name] = $scaled };"
+            }
             if {$ct in {int32_t uint32_t int int16_t uint16_t int8_t uint8_t int64_t uint64_t}} {
                 return "enum { [pak::fval $c name] = $val };"
             }

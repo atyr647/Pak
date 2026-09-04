@@ -49,70 +49,50 @@ static int32_t sink = 0;
 
 int main(void) {
     __auto_type r = load_data("level.bin");
-    switch (r) {
-        case ok:
-        {
-            sink = data;
-            break;
-        }
-        case err:
-        {
-            switch (e) {
-                case LoadError_file_not_found:
-                {
-                    sink = -1;
-                    break;
-                }
-                case LoadError_bad_format:
-                {
-                    sink = -2;
-                    break;
-                }
-                case LoadError_out_of_memory:
-                {
-                    sink = -3;
-                    break;
-                }
+    if (r.is_ok) {
+        __auto_type data = r.data.value;
+        sink = data;
+    } else {
+        __auto_type e = r.data.error;
+        switch (e) {
+            case LoadError_file_not_found:
+            {
+                sink = -1;
+                break;
             }
-            break;
+            case LoadError_bad_format:
+            {
+                sink = -2;
+                break;
+            }
+            case LoadError_out_of_memory:
+            {
+                sink = -3;
+                break;
+            }
         }
     }
     __auto_type d = divide(10, 2);
-    switch (d) {
-        case err:
-        {
-            sink = -10;
-            break;
-        }
-        case ok:
-        {
-            sink = v;
-            break;
-        }
+    if (d.is_ok) {
+        __auto_type v = d.data.value;
+        sink = v;
+    } else {
+        __auto_type e = d.data.error;
+        sink = -10;
     }
     PakResult_int32_t_LoadError always_ok = (PakResult_int32_t_LoadError){ .is_ok = true, .data.value = 100 };
     PakResult_int32_t_LoadError always_err = (PakResult_int32_t_LoadError){ .is_ok = false, .data.error = LoadError_bad_format };
-    switch (always_ok) {
-        case ok:
-        {
-            sink = v;
-            break;
-        }
-        case err:
-        {
-            break;
-        }
+    if (always_ok.is_ok) {
+        __auto_type v = always_ok.data.value;
+        sink = v;
+    } else {
+        __auto_type e = always_ok.data.error;
     }
-    switch (always_err) {
-        case ok:
-        {
-            break;
-        }
-        case err:
-        {
-            sink = -1;
-            break;
-        }
+    if (always_err.is_ok) {
+        __auto_type v = always_err.data.value;
+    } else {
+        __auto_type e = always_err.data.error;
+        sink = -1;
     }
     return 0;
 }

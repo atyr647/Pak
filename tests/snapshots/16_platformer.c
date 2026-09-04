@@ -118,13 +118,13 @@ enum { SCREEN_W = 320 };
 
 enum { SCREEN_H = 240 };
 
-enum { GRAVITY = 0.4f };
+enum { GRAVITY = 26214 };
 
-enum { JUMP_FORCE = 6.0f };
+enum { JUMP_FORCE = 393216 };
 
-enum { MOVE_SPEED = 2.5f };
+enum { MOVE_SPEED = 163840 };
 
-enum { MAX_FALL = 8.0f };
+enum { MAX_FALL = 524288 };
 
 enum { PLAYER_W = 12 };
 

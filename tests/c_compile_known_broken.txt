@@ -5,7 +5,6 @@
 # the new floor. Adding a name is how a regression gets waved through,
 # so add one only with the bug it records written down.
 
-10_result.pk64
 13_extern.pk64
 14_assets.pk64
 15_game_loop.pk64
