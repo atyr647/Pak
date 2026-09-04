@@ -16,8 +16,10 @@
 	.extern rdpq_detach
 	.extern rdpq_detach_show
 	.extern rdpq_set_mode_standard
+	.extern rdpq_set_mode_standard_z
 	.extern rdpq_set_mode_copy
 	.extern rdpq_set_mode_fill
+	.extern rdpq_clear_z
 	.extern rdpq_fill_rectangle
 	.extern rdpq_sync_full
 	.extern rdpq_sync_pipe
@@ -33,15 +35,29 @@
 	.extern rdpq_set_fog_color
 	.extern rdpq_set_env_color
 	.extern rdpq_set_prim_color
+	.extern rdpq_set_prim_depth
+	.extern rdpq_set_key_r
+	.extern rdpq_set_key_gb
+	.extern rdpq_set_convert
 	.extern rdpq_set_texture_image
 	.extern rdpq_set_tile
+	.extern rdpq_set_tile_mask
 	.extern rdpq_set_tile_size
 	.extern rdpq_load_tile
 	.extern rdpq_load_block
 	.extern rdpq_load_tlut
 	.extern rdpq_texture_rectangle
 	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_texture_rectangle_flip
 	.extern rdpq_triangle
+	.extern rdpq_triangle_z
+	.extern rdpq_triangle_shade
+	.extern rdpq_triangle_shade_z
+	.extern rdpq_triangle_tex
+	.extern rdpq_triangle_tex_z
+	.extern rdpq_triangle_shade_tex
+	.extern rdpq_triangle_shade_tex_z
+	.extern rdpq_set_tri_z
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -50,6 +66,11 @@
 	.extern audio_init
 	.extern audio_close
 	.extern audio_get_buffer
+	.extern audio_get_frequency
+	.extern audio_can_write
+	.extern audio_write
+	.extern audio_write_silence
+	.extern audio_set_buffer_num
 	.extern debugf
 	.extern assert
 	.extern dma_read
@@ -187,19 +208,15 @@ save_game:
 .Lif_end_1:
     li $t8, 222
     la $t7, eeprom_buf
-    lw $t7, 0($t7)
     li $t6, 0
-    sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     li $t8, 173
     la $t7, eeprom_buf
-    lw $t7, 0($t7)
     li $t6, 1
-    sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     la $t6, score
     lw $t6, 0($t6)
@@ -207,11 +224,9 @@ save_game:
     srav $t7, $t6, $t5
     andi $t8, $t7, 255
     la $t7, eeprom_buf
-    lw $t7, 0($t7)
     li $t6, 2
-    sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     la $t6, score
     lw $t6, 0($t6)
@@ -219,11 +234,9 @@ save_game:
     srav $t7, $t6, $t5
     andi $t8, $t7, 255
     la $t7, eeprom_buf
-    lw $t7, 0($t7)
     li $t6, 3
-    sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     la $t6, score
     lw $t6, 0($t6)
@@ -231,47 +244,35 @@ save_game:
     srav $t7, $t6, $t5
     andi $t8, $t7, 255
     la $t7, eeprom_buf
-    lw $t7, 0($t7)
     li $t6, 4
-    sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     la $t7, score
     lw $t7, 0($t7)
     andi $t8, $t7, 255
     la $t7, eeprom_buf
-    lw $t7, 0($t7)
     li $t6, 5
-    sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     la $t8, level
     lw $t8, 0($t8)
     la $t7, eeprom_buf
-    lw $t7, 0($t7)
     li $t6, 6
-    sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     li $t8, 0
     la $t7, eeprom_buf
-    lw $t7, 0($t7)
     li $t6, 7
-    sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
-    la $t7, eeprom_buf
-    lw $t7, 0($t7)
-    li $t6, 0
-    sll $t6, $t6, 2
-    addu $t7, $t7, $t6
-    lw $t8, 0($t7)
-    sw $t8, 136($sp)
-    addiu $a1, $sp, 136
+    la $t8, eeprom_buf
+    li $t7, 0
+    addu $t8, $t8, $t7
+    move $a1, $t8
     li $a0, 0
     sw $t9, 96($sp)
     jal eeprom_write
@@ -308,14 +309,10 @@ load_game:
     j .Lload_game_ret_2
     nop
 .Lif_end_3:
-    la $t7, eeprom_buf
-    lw $t7, 0($t7)
-    li $t6, 0
-    sll $t6, $t6, 2
-    addu $t7, $t7, $t6
-    lw $t8, 0($t7)
-    sw $t8, 136($sp)
-    addiu $a1, $sp, 136
+    la $t8, eeprom_buf
+    li $t7, 0
+    addu $t8, $t8, $t7
+    move $a1, $t8
     li $a0, 0
     sw $t9, 96($sp)
     jal eeprom_read
@@ -323,11 +320,9 @@ load_game:
     lw $t9, 96($sp)
     move $t9, $v0
     la $t7, eeprom_buf
-    lw $t7, 0($t7)
     li $t6, 0
-    sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    lw $t8, 0($t7)
+    lbu $t8, 0($t7)
     li $t7, 222
     sne $t9, $t8, $t7
     beqz $t9, .Lif_end_4
@@ -337,11 +332,9 @@ load_game:
     nop
 .Lif_end_4:
     la $t7, eeprom_buf
-    lw $t7, 0($t7)
     li $t6, 1
-    sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    lw $t8, 0($t7)
+    lbu $t8, 0($t7)
     li $t7, 173
     sne $t9, $t8, $t7
     beqz $t9, .Lif_end_5
@@ -351,51 +344,41 @@ load_game:
     nop
 .Lif_end_5:
     la $t2, eeprom_buf
-    lw $t2, 0($t2)
     li $t1, 2
-    sll $t1, $t1, 2
     addu $t2, $t2, $t1
-    lw $t3, 0($t2)
+    lbu $t3, 0($t2)
     move $t4, $t3
     li $t3, 24
     sllv $t5, $t4, $t3
     la $t1, eeprom_buf
-    lw $t1, 0($t1)
     li $t0, 3
-    sll $t0, $t0, 2
     addu $t1, $t1, $t0
-    lw $t2, 0($t1)
+    lbu $t2, 0($t1)
     move $t3, $t2
     li $t2, 16
     sllv $t4, $t3, $t2
     or $t6, $t5, $t4
     la $t2, eeprom_buf
-    lw $t2, 0($t2)
     li $t1, 4
-    sll $t1, $t1, 2
     addu $t2, $t2, $t1
-    lw $t3, 0($t2)
+    lbu $t3, 0($t2)
     move $t4, $t3
     li $t3, 8
     sllv $t5, $t4, $t3
     or $t7, $t6, $t5
     la $t4, eeprom_buf
-    lw $t4, 0($t4)
     li $t3, 5
-    sll $t3, $t3, 2
     addu $t4, $t4, $t3
-    lw $t5, 0($t4)
+    lbu $t5, 0($t4)
     move $t6, $t5
     or $t8, $t7, $t6
     la $t7, score
     sw $t8, 0($t7)
     move $t9, $t8
     la $t7, eeprom_buf
-    lw $t7, 0($t7)
     li $t6, 6
-    sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    lw $t8, 0($t7)
+    lbu $t8, 0($t7)
     la $t7, level
     sw $t8, 0($t7)
     move $t9, $t8
@@ -439,8 +422,8 @@ main:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 136($sp)
-    lw $t8, 136($sp)
+    sb $t9, 136($sp)
+    lbu $t8, 136($sp)
     sltiu $t9, $t8, 1
     beqz $t9, .Lif_end_7
     nop

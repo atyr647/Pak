@@ -16,8 +16,10 @@
 	.extern rdpq_detach
 	.extern rdpq_detach_show
 	.extern rdpq_set_mode_standard
+	.extern rdpq_set_mode_standard_z
 	.extern rdpq_set_mode_copy
 	.extern rdpq_set_mode_fill
+	.extern rdpq_clear_z
 	.extern rdpq_fill_rectangle
 	.extern rdpq_sync_full
 	.extern rdpq_sync_pipe
@@ -33,15 +35,29 @@
 	.extern rdpq_set_fog_color
 	.extern rdpq_set_env_color
 	.extern rdpq_set_prim_color
+	.extern rdpq_set_prim_depth
+	.extern rdpq_set_key_r
+	.extern rdpq_set_key_gb
+	.extern rdpq_set_convert
 	.extern rdpq_set_texture_image
 	.extern rdpq_set_tile
+	.extern rdpq_set_tile_mask
 	.extern rdpq_set_tile_size
 	.extern rdpq_load_tile
 	.extern rdpq_load_block
 	.extern rdpq_load_tlut
 	.extern rdpq_texture_rectangle
 	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_texture_rectangle_flip
 	.extern rdpq_triangle
+	.extern rdpq_triangle_z
+	.extern rdpq_triangle_shade
+	.extern rdpq_triangle_shade_z
+	.extern rdpq_triangle_tex
+	.extern rdpq_triangle_tex_z
+	.extern rdpq_triangle_shade_tex
+	.extern rdpq_triangle_shade_tex_z
+	.extern rdpq_set_tri_z
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -50,6 +66,11 @@
 	.extern audio_init
 	.extern audio_close
 	.extern audio_get_buffer
+	.extern audio_get_frequency
+	.extern audio_can_write
+	.extern audio_write
+	.extern audio_write_silence
+	.extern audio_set_buffer_num
 	.extern debugf
 	.extern assert
 	.extern dma_read
@@ -191,9 +212,8 @@ sum_scanline:
     mul $t1, $t0, $s7
     lw $t0, 152($sp)
     addu $t2, $t1, $t0
-    sll $t2, $t2, 2
     addu $t3, $t3, $t2
-    lw $t4, 0($t3)
+    lbu $t4, 0($t3)
     move $t5, $t4
     lw $t4, 148($sp)
     addu $t5, $t4, $t5
@@ -222,10 +242,10 @@ sum_scanline:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -784
+    sw $ra, 780($sp)
+    sw $fp, 776($sp)
+    addiu $fp, $sp, 784
     addiu $a0, $sp, 200
     move $a1, $zero
     li $a2, 64
@@ -250,15 +270,13 @@ main:
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
-    lw $t6, 136($sp)
+    addiu $t6, $sp, 136
     lw $t7, 0($t6)
     andi $t8, $t7, 255
     la $t7, dma_out
-    lw $t7, 0($t7)
     li $t6, 0
-    sll $t6, $t6, 2
     addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     addiu $a0, $sp, 520
     move $a1, $zero
@@ -282,26 +300,20 @@ main:
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
-    lw $t4, 264($sp)
-    lw $t6, 0($t4)
+    addiu $t6, $sp, 264
     li $t5, 0
-    sll $t5, $t5, 2
     addu $t6, $t6, $t5
-    lw $t7, 0($t6)
+    lbu $t7, 0($t6)
     move $t8, $t7
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
     li $a2, 320
     li $a1, 0
-    la $t6, dma_out
-    lw $t6, 0($t6)
-    li $t5, 0
-    sll $t5, $t5, 2
-    addu $t6, $t6, $t5
-    lw $t7, 0($t6)
-    sw $t7, 776($sp)
-    addiu $a0, $sp, 776
+    la $t7, dma_out
+    li $t6, 0
+    addu $t7, $t7, $t6
+    move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal sum_scanline
@@ -313,9 +325,9 @@ main:
     sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_4:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 776($sp)
+    lw $ra, 780($sp)
+    addiu $sp, $sp, 784
     jr $ra
     nop
 	.size main, . - main

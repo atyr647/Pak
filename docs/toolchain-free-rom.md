@@ -11,6 +11,7 @@ source to machine code.
 .pk64  (game + runtime/standalone/runtime.pk64)      boot.S (hand-written crt0)
   → Tcl MIPS codegen (tcl/mips_codegen.tcl)     → Tcl asm front-end
       structured RECORD stream                       (tcl/n64enc.tcl parse_asm)
+  → Tcl optimizer (tcl/optimize.tcl) on records
   → Tcl binary encoder (tcl/n64enc.tcl) ───────────────┘
       records → machine-code words + relocations → .pakobj object file
   → Tcl flat linker (tcl/n64link.tcl)
@@ -24,17 +25,21 @@ No GCC, no `as`, no `ld`, no `objcopy`, no `n64tool`.
 ## The runtime is Pak + a tiny hand-written crt0
 
 * **`runtime/standalone/runtime.pk64`** — the HAL written entirely in Pak:
-  display and framebuffer setup, SI controller polling, `memset`/`memcpy`, and
-  a real RDP driver. Free functions emit bare symbol names (`display_init`,
-  `rdpq_fill_rectangle`, …) matching the calls the codegen lowers game code
-  into. MMIO is done with `(0xA4400000 as *volatile u32)` writes; framebuffers
+  display and framebuffer setup, SI controller polling, EEPROM via SI/PIF
+  Joybus channel 4, PI DMA, `memset`/`memcpy`, and a real RDP driver. Free
+  functions emit bare symbol names (`display_init`, `rdpq_fill_rectangle`,
+  `eeprom_present`, …) matching the calls the codegen lowers game code into.
+  MMIO is done with `(0xA4400000 as *volatile u32)` writes; framebuffers
   live in uncached KSEG1 RDRAM so CPU writes are immediately visible to the
   Video Interface.
-* **`runtime/standalone/boot.S`** — the crt0 (~12 instructions). It needs CP0 access
-  (`mfc0`/`mtc0`) which Pak cannot express, so it stays hand-written assembly
-  and is assembled by the encoder's `.s` front-end (`pak asmobj`). The linker
-  supplies `__bss_start`/`__bss_end` so boot can zero `.bss`, and boot's
-  `jal main` is resolved to the game's `entry` block across objects.
+* **`runtime/standalone/boot.S`** — the crt0. It needs CP0 access
+  (`mfc0`/`mtc0`) and `cache` which Pak cannot express, so it stays
+  hand-written assembly and is assembled by the encoder's `.s` front-end
+  (`pak asmobj`). After zeroing `.bss` it copies an 8-byte trampoline to
+  0x80000000 / 0x80 / 0x100 / 0x180 (KSEG1 stores + I-cache hit-invalidate)
+  so a CPU exception `jal`s `exception_paint`. The linker supplies
+  `__bss_start`/`__bss_end`; boot's `jal main` is resolved to the game's
+  `entry` block across objects.
 
 A full ROM is three objects linked in order — **boot first** so `_start` lands
 at `0x80000400`:
@@ -43,7 +48,10 @@ at `0x80000400`:
 pak asmobj runtime/standalone/boot.S        -o boot.pakobj      # crt0
 pak objgen runtime/standalone/runtime.pk64  -o runtime.pakobj   # HAL
 pak objgen game.pk64             -o game.pakobj      # the game
-pak link boot.pakobj runtime.pakobj game.pakobj -o game.z64 --name GAME
+pak link boot.pakobj runtime.pakobj game.pakobj -o game.z64 --name GAME --size 4
+
+# or, from a pak.toml project:
+pak build --backend mips -o game.z64
 ```
 
 ## Why records instead of re-parsing assembly text
@@ -59,9 +67,10 @@ emitted item:
 | label | `{label main}` |
 | directive | `{d section .text}`, `{d word 0x10}`, `{d asciiz {Hello}}` |
 
-The text output (`pak explain --backend mips`, snapshots) is byte-for-byte
-unchanged; records are purely additive. The encoder consumes records, so there
-is a single source of truth and no fragile operand-string parsing.
+The unoptimized text dump (`mips_generate`, snapshots) is unchanged; records
+are the IR. The encoder consumes records after `pak::optimize_records`, so
+there is a single source of truth and no fragile operand-string parsing.
+`pak explain --backend mips` dumps that same optimized stream as text.
 
 ## Commands
 
@@ -104,16 +113,33 @@ references (`la`, `j`/`jal`, `.word sym`) become relocations the linker patches.
 
 ## Memory layout (matches `runtime/standalone/n64.ld`)
 
-* Base `0x80000400` (after the IPL3 stack reservation).
-* Section order: `.text` → align16 `.rodata` → align8 `.data` → align8 `.bss`.
-* `.bss` reserves address space but is not stored in the ROM image (boot.S
-  zero-fills it at startup). `R_MIPS_HI16`/`LO16` use the standard `+0x8000`
-  carry correction.
+Cached KSEG0. Uncached KSEG1 is `addr | 0xA0000000` (how the runtime names
+framebuffers and the display list).
+
+| Region | Address | Size |
+|--------|---------|------|
+| `.text` / `.rodata` / `.data` / `.bss` | `0x80000400` | grows up; **must stay 64 bytes below FB0** |
+| 64-byte gap | | linker error on overlap |
+| FB0 / FB1 / FB2 | `0x80200000` / `0x80225800` / `0x8024B000` | 320×240×16bpp each (`0x25800`) |
+| Z buffer | `0x80271000` | 320×240×16-bit (`0x25800`) |
+| RDP display list | `0x80297000` | 8 KB |
+| AI PCM ring | `0x80299000` | 28 KB (up to 8 stereo buffers) |
+| bump heap | `0x802A0000`–`0x803C0000` | |
+| stack top | `0x80400000` | grows down |
+
+Cart images are padded to 4/8/16/32/64 MiB
+(`pak link --size 4`, default 4); a 2.9 MB `.z64` crashes on flashcarts.
+
+The linker exports `__fb0`, `__fb1`, `__fb2`, `__zb`, `__dl_base`, `__ab`,
+`__heap_start`, `__heap_end`, `__stack_top` so a program can read the map instead of
+hard-coding it. `.bss` still reserves address space but is not stored in the
+ROM image (boot.S zero-fills it at startup). `R_MIPS_HI16`/`LO16` use the
+standard `+0x8000` carry correction.
 
 ## The RDP does the drawing
 
 Nothing is rasterized on the CPU. `rdpq_*` builds a display list of 64-bit RDP
-commands in uncached RDRAM at `0xA0271000` and hands it to the Display
+commands in uncached RDRAM at `0xA0297000` and hands it to the Display
 Processor by writing `DPC_START`/`DPC_END`, then polls `DPC_STATUS` until the
 pipe, command and DMA engines are all idle. Uncached KSEG1 means a CPU write
 lands in RDRAM immediately, so the DP reads exactly what was written with no
@@ -125,10 +151,10 @@ What the runtime drives:
 |------|----------|
 | Render target | `SET_COLOR_IMAGE`, `SET_Z_IMAGE`, `SET_SCISSOR` |
 | Modes | `SET_OTHER_MODES` (FILL / COPY / 1-cycle), `SET_COMBINE` |
-| Colour registers | fill, blend, fog, env, prim |
+| Colour registers | fill, blend, fog, env, prim, prim depth, chroma-key R/GB (0x2B/0x2A), YUV convert (0x2C) |
 | Fills | `FILL_RECTANGLE` in FILL cycle — four bytes per cycle |
-| Texturing | `SET_TEXTURE_IMAGE`, `SET_TILE`, `SET_TILE_SIZE`, `LOAD_TILE`, `LOAD_BLOCK`, `LOAD_TLUT`, `TEXTURE_RECTANGLE` |
-| Geometry | `TRIANGLE` (flat, edge coefficients in s15.16) |
+| Texturing | `SET_TEXTURE_IMAGE` (writeback of KSEG0 sources), `SET_TILE` / `SET_TILE` clamp+mirror+mask, `SET_TILE_SIZE`, `LOAD_TILE`, `LOAD_BLOCK` (0x33, SH=texels-1), `LOAD_TLUT` (0x30, colour index in 10.2×4), `TEXTURE_RECTANGLE` / scaled dsdx, `TEXTURE_RECTANGLE_FLIP` (0x25) |
+| Geometry | `TRIANGLE` (0x08), `TRIANGLE_Z` (0x09), `TRI_TEX` (0x0A), `TRI_TEX_Z` (0x0B), `TRI_SHADE` (0x0C), `TRI_SHADE_Z` (0x0D), `TRI_SHADE_TXTR` (0x0E), `TRI_SHADE_TXTR_Z` (0x0F). Edges s15.16; shade RGBA s15.16; Z 15.16 of 0..32767. |
 | Sync | `SYNC_PIPE`, `SYNC_TILE`, `SYNC_LOAD`, `SYNC_FULL` |
 
 A full-screen clear is one `FILL_RECTANGLE` instead of 76 800 uncached
@@ -155,16 +181,45 @@ wait loops terminate instead of hanging.
 ## Current limitations
 
 * **Optimization.** The peephole/scheduler/delay-slot passes in
-  `tcl/optimize.tcl` operate on assembly *text*, not records. The encoded binary
-  is therefore correct but **not** delay-slot-optimized (the codegen emits
-  explicit `nop`s in delay slots, which are valid under `.set noreorder`).
-  Porting the optimizer to operate on records is a follow-up.
-* **Triangles are flat.** `rdpq.triangle` emits the edge-only command (0x08).
-  Gouraud shading, texture coordinates and Z-buffering need the shade, texture
-  and depth coefficient blocks, which are not generated yet.
-* **Tiles are unmasked.** `rdpq.set_tile` leaves the mask and shift fields
-  zero, which is wrap-with-no-mirroring. Power-of-two clamping and mirroring
-  need those fields exposed.
+  `tcl/optimize.tcl` operate on instruction records. `pak objgen` and
+  `pak build --backend mips -o game.z64` run them before encode, so the
+  binary is delay-slot-filled. `pak explain --backend mips` dumps the same
+  optimized stream as text. Encoded-byte call/MMIO goldens live in
+  `tcl/tools/enc_exec_test.tcl`.
+* **Shade+tex.** `rdpq.triangle_shade_tex` is Gouraud + affine ST (0x0E).
+  `rdpq.set_tri_z` then `rdpq.triangle_shade_tex_z` adds Z (0x0F). Fill+Z is
+  `rdpq.triangle_z` (0x09); tex+Z is `rdpq.triangle_tex_z` after `set_tri_z`
+  (0x0B). Same s15.16 coefficients as `triangle_tex` / `triangle_shade`.
+* **Exception paint.** `boot.S` copies an 8-byte trampoline to the four VR4300
+  exception vectors and `jal`s `exception_paint`, which fills FB0/FB1/FB2 with
+  RGBA5551 `0xF801` and programs the VI. `assert` / `__pak_panic` take the same
+  path. Goldens live in `tcl/tools/exception_test.tcl`.
+* **Audio PCM.** `audio.init` programs the AI (NTSC DACRATE/BITRATE, DMA
+  enable). Buffers sit at `0x80299000`; `get_buffer` returns `none` when
+  `AI_STATUS.FULL` is set, and a fill-only loop kicks the previous buffer.
+  Goldens live in `tcl/tools/audio_test.tcl`.
+* **Array address.** `&arr` of a static or local array is the first-element
+  address (`la` / `addiu $sp`). Indexing `[N]u8` emits `sb`/`lbu` at `base+i`.
+  `as` binds looser than unary `&`, so `&buf as u32` is the label, not a stack
+  slot. `&s.field` and `p.x =` on a value struct use the object's address
+  (pointer receivers still load the pointer). Method `self` follows the same
+  rule; `g.player.init()` is a method, not a module call. `buf[i..j]` of
+  `[N]u8` is a fat pointer whose start is scaled by the element size, not
+  always ×4. `for x in arr` on `[N]T` uses the compile-time length; struct
+  elements are copied whole so `p.x`/`p.y` both hit. `[N]T.len` is N.
+  `pts[i] = Point { ... }` memcpy's the literal, not its stack address.
+  Slice / struct / array arguments memcpy from the passed address. Returning
+  those types uses a hidden sret pointer so the value lives in the caller.
+  `s[1..n]` on a slice indexes the data, not the fat pointer. CStr methods
+  (len/eq/find/starts_with/ends_with/contains) are inlined so the ROM does not
+  need libc; `str.from_cstr` builds a `{data, len}` Str. `Str.eq` / `contains` /
+  `find` / `slice` are bounded memcmp on that pair. `[N]T.as_slice()` builds a
+  fat slice; `match .ok/.err` and `Some`/`none` lower Result/Option. Generic
+  `id<T>` is emitted after the caller; variant match uses the value's address.
+  Closures are queued the same way and called via `jalr`; the env holds
+  addresses of captured locals so assignment writes back. `CStr.slice(i,n)`
+  copies into a NUL-terminated scratch buf. Integer `"x={n}"` formats with
+  inline itoa. Goldens live in `tcl/tools/array_addr_test.tcl`.
 * **FPU encodings.** COP1 ops (`add.s`/`sub.s`/`mul.s`/`div.s`, the
   `mov`/`neg`/`abs`/`sqrt` unary group, `cvt.*`, the `c.<cond>.s` compare
   family, `bc1t`/`bc1f`, `mtc1`/`mfc1`) all have golden encodings in

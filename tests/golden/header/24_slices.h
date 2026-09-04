@@ -5,10 +5,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct {
+typedef struct Point Point;
+
+struct Point {
     int32_t x;
     int32_t y;
-} Point;
+};
 
 int32_t sum(PakSlice_int32_t s);
 int32_t find_max(PakSlice_int32_t s);

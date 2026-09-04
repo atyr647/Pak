@@ -38,40 +38,14 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
-enum { SCREEN_W = 320 };
 
-enum { SCREEN_H = 240 };
+/* -- User type forward declarations -- */
+typedef struct Platform Platform;
+typedef struct Player Player;
+typedef struct Camera Camera;
+typedef struct GameState GameState;
 
-enum { GRAVITY = 0.4f };
-
-enum { JUMP_FORCE = 6.0f };
-
-enum { MOVE_SPEED = 2.5f };
-
-enum { MAX_FALL = 8.0f };
-
-enum { PLAYER_W = 12 };
-
-enum { PLAYER_H = 16 };
-
-enum { MAX_PLATFORMS = 8 };
-
-enum { MAX_COINS = 16 };
-
-enum { TILE_SIZE = 16 };
-
-enum { COLOR_SKY = 0x5588CCFF };
-
-enum { COLOR_GROUND = 0x4A3728FF };
-
-enum { COLOR_PLAYER = 0xFF4444FF };
-
-enum { COLOR_COIN = 0xFFDD00FF };
-
-enum { COLOR_PLATFORM = 0x336633FF };
-
-enum { COLOR_BLACK = 0x000000FF };
-
+/* -- User types -- */
 typedef enum {
     PlayerState_idle,
     PlayerState_running,
@@ -104,15 +78,15 @@ typedef struct {
     } data;
 } Pickup;
 
-typedef struct {
+struct Platform {
     int32_t x;
     int32_t y;
     int32_t w;
     int32_t h;
     bool active;
-} Platform;
+};
 
-typedef struct {
+struct Player {
     int32_t x;
     int32_t y;
     int32_t vx;
@@ -124,21 +98,55 @@ typedef struct {
     int32_t score;
     int32_t jump_timer;
     int32_t coyote_time;
-} Player;
+};
 
-typedef struct {
+struct Camera {
     int32_t x;
     int32_t scroll_speed;
     int32_t offset;
-} Camera;
+};
 
-typedef struct {
+struct GameState {
     Player player;
     Camera camera;
     GamePhase phase;
     int32_t frame;
     int32_t coins_collected;
-} GameState;
+};
+
+enum { SCREEN_W = 320 };
+
+enum { SCREEN_H = 240 };
+
+enum { GRAVITY = 26214 };
+
+enum { JUMP_FORCE = 393216 };
+
+enum { MOVE_SPEED = 163840 };
+
+enum { MAX_FALL = 524288 };
+
+enum { PLAYER_W = 12 };
+
+enum { PLAYER_H = 16 };
+
+enum { MAX_PLATFORMS = 8 };
+
+enum { MAX_COINS = 16 };
+
+enum { TILE_SIZE = 16 };
+
+enum { COLOR_SKY = 0x5588CCFF };
+
+enum { COLOR_GROUND = 0x4A3728FF };
+
+enum { COLOR_PLAYER = 0xFF4444FF };
+
+enum { COLOR_COIN = 0xFFDD00FF };
+
+enum { COLOR_PLATFORM = 0x336633FF };
+
+enum { COLOR_BLACK = 0x000000FF };
 
 static Platform platforms[8];
 
@@ -156,22 +164,22 @@ void init_platforms(void) {
 }
 
 void init_pickups(void) {
-    pickups[0] = Pickup_coin(60, 145);
-    pickups[1] = Pickup_coin(80, 145);
-    pickups[2] = Pickup_coin(180, 115);
-    pickups[3] = Pickup_coin(200, 115);
-    pickups[4] = Pickup_coin(80, 85);
-    pickups[5] = Pickup_coin(150, 35);
-    pickups[6] = Pickup_coin(165, 35);
-    pickups[7] = Pickup_coin(260, 55);
-    pickups[8] = Pickup_empty;
-    pickups[9] = Pickup_empty;
-    pickups[10] = Pickup_empty;
-    pickups[11] = Pickup_empty;
-    pickups[12] = Pickup_empty;
-    pickups[13] = Pickup_empty;
-    pickups[14] = Pickup_empty;
-    pickups[15] = Pickup_empty;
+    pickups[0] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 60, .field1 = 145 } };
+    pickups[1] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 80, .field1 = 145 } };
+    pickups[2] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 180, .field1 = 115 } };
+    pickups[3] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 200, .field1 = 115 } };
+    pickups[4] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 80, .field1 = 85 } };
+    pickups[5] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 150, .field1 = 35 } };
+    pickups[6] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 165, .field1 = 35 } };
+    pickups[7] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 260, .field1 = 55 } };
+    pickups[8] = (Pickup){ .tag = Pickup_tag_empty };
+    pickups[9] = (Pickup){ .tag = Pickup_tag_empty };
+    pickups[10] = (Pickup){ .tag = Pickup_tag_empty };
+    pickups[11] = (Pickup){ .tag = Pickup_tag_empty };
+    pickups[12] = (Pickup){ .tag = Pickup_tag_empty };
+    pickups[13] = (Pickup){ .tag = Pickup_tag_empty };
+    pickups[14] = (Pickup){ .tag = Pickup_tag_empty };
+    pickups[15] = (Pickup){ .tag = Pickup_tag_empty };
 }
 
 bool aabb_overlap(int32_t ax, int32_t ay, int32_t aw, int32_t ah, int32_t bx, int32_t by, int32_t bw, int32_t bh) {
@@ -191,7 +199,7 @@ bool aabb_overlap(int32_t ax, int32_t ay, int32_t aw, int32_t ah, int32_t bx, in
 }
 
 int32_t check_platform_landing(int32_t px, int32_t py, int32_t pvy) {
-    if (pvy <= 0.0f) {
+    if (pvy <= 0) {
         return -1;
     }
     int32_t i = 0;
@@ -232,11 +240,11 @@ void Player_physics(Player * self) {
     }
     self->y += self->vy;
     self->x += self->vx;
-    self->vx = (int32_t)(((int64_t)(self->vx) * (0.8f)) >> 16);
-    if (self->x < 0.0f) {
+    self->vx = (int32_t)(((int64_t)(self->vx) * (52428)) >> 16);
+    if (self->x < 0) {
         self->x = 0.0f;
     }
-    if (self->x > 308.0f) {
+    if (self->x > 20185088) {
         self->x = 308.0f;
     }
 }
@@ -263,7 +271,7 @@ void Player_resolve_collisions(Player * self) {
             self->on_ground = false;
         }
     }
-    if (self->y > 280.0f) {
+    if (self->y > 18350080) {
         self->y = 180.0f;
         self->x = 40.0f;
         self->vy = 0.0f;
@@ -306,7 +314,7 @@ void Player_update_state(Player * self) {
         self->jump_timer -= 1;
     }
     if (!self->on_ground) {
-        if (self->vy < 0.0f) {
+        if (self->vy < 0) {
             self->state = PlayerState_jumping;
         }
         else {
@@ -316,7 +324,7 @@ void Player_update_state(Player * self) {
     else if (self->jump_timer > 0) {
         self->state = PlayerState_landing;
     }
-    else if ((self->vx > 0.2f) || (self->vx < -0.2f)) {
+    else if ((self->vx > 13107) || (self->vx < -0.2f)) {
         self->state = PlayerState_running;
     }
     else {
@@ -329,14 +337,14 @@ void Player_collect_pickups(Player * self) {
     __auto_type py = (int32_t)self->y;
     int32_t i = 0;
     while (i < MAX_COINS) {
-        switch (pickups[i]) {
+        switch (pickups[i].tag) {
             case Pickup_tag_coin:
             {
                 __auto_type cx = pickups[i].data.coin.field0;
                 __auto_type cy = pickups[i].data.coin.field1;
                 if (aabb_overlap(px, py, PLAYER_W, PLAYER_H, (cx - 4), (cy - 4), 8, 8)) {
                     self->score += 10;
-                    pickups[i] = Pickup_empty;
+                    pickups[i] = (Pickup){ .tag = Pickup_tag_empty };
                 }
                 break;
             }
@@ -356,10 +364,10 @@ void Camera_init(Camera * self) {
 }
 
 void Camera_follow(Camera * self, int32_t player_x) {
-    int32_t target = (player_x - 120.0f);
+    int32_t target = (player_x - 7864320);
     __auto_type diff = (target - self->x);
     self->x += (diff * 0.1f);
-    if (self->x < 0.0f) {
+    if (self->x < 0) {
         self->x = 0.0f;
     }
     self->offset = (int32_t)self->x;
@@ -490,12 +498,12 @@ void draw_hud(GameState * gs) {
 }
 
 void update_playing(GameState * gs, joypad_status_t pad) {
-    gs->player.handle_input(pad);
-    gs->player.physics();
-    gs->player.resolve_collisions();
-    gs->player.update_state();
-    gs->player.collect_pickups();
-    gs->camera.follow(gs->player.x);
+    Player_handle_input(&gs->player, pad);
+    Player_physics(&gs->player);
+    Player_resolve_collisions(&gs->player);
+    Player_update_state(&gs->player);
+    Player_collect_pickups(&gs->player);
+    Camera_follow(&gs->camera, gs->player.x);
     if (pad.pressed.start) {
         gs->phase = GamePhase_paused;
     }
@@ -519,8 +527,8 @@ void update_paused(GameState * gs, joypad_status_t pad) {
 
 void update_gameover(GameState * gs, joypad_status_t pad) {
     if (pad.pressed.start || pad.pressed.a) {
-        gs->player.init();
-        gs->camera.init();
+        Player_init(&gs->player);
+        Camera_init(&gs->camera);
         gs->frame = 0;
         gs->coins_collected = 0;
         init_platforms();
@@ -634,8 +642,8 @@ int main(void) {
     joypad_init();
     timer_init();
     GameState gs; /* undefined */
-    gs.player.init();
-    gs.camera.init();
+    Player_init(&gs.player);
+    Camera_init(&gs.camera);
     gs.phase = GamePhase_title;
     gs.frame = 0;
     gs.coins_collected = 0;

@@ -16,8 +16,10 @@
 	.extern rdpq_detach
 	.extern rdpq_detach_show
 	.extern rdpq_set_mode_standard
+	.extern rdpq_set_mode_standard_z
 	.extern rdpq_set_mode_copy
 	.extern rdpq_set_mode_fill
+	.extern rdpq_clear_z
 	.extern rdpq_fill_rectangle
 	.extern rdpq_sync_full
 	.extern rdpq_sync_pipe
@@ -33,15 +35,29 @@
 	.extern rdpq_set_fog_color
 	.extern rdpq_set_env_color
 	.extern rdpq_set_prim_color
+	.extern rdpq_set_prim_depth
+	.extern rdpq_set_key_r
+	.extern rdpq_set_key_gb
+	.extern rdpq_set_convert
 	.extern rdpq_set_texture_image
 	.extern rdpq_set_tile
+	.extern rdpq_set_tile_mask
 	.extern rdpq_set_tile_size
 	.extern rdpq_load_tile
 	.extern rdpq_load_block
 	.extern rdpq_load_tlut
 	.extern rdpq_texture_rectangle
 	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_texture_rectangle_flip
 	.extern rdpq_triangle
+	.extern rdpq_triangle_z
+	.extern rdpq_triangle_shade
+	.extern rdpq_triangle_shade_z
+	.extern rdpq_triangle_tex
+	.extern rdpq_triangle_tex_z
+	.extern rdpq_triangle_shade_tex
+	.extern rdpq_triangle_shade_tex_z
+	.extern rdpq_set_tri_z
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -50,6 +66,11 @@
 	.extern audio_init
 	.extern audio_close
 	.extern audio_get_buffer
+	.extern audio_get_frequency
+	.extern audio_can_write
+	.extern audio_write
+	.extern audio_write_silence
+	.extern audio_set_buffer_num
 	.extern debugf
 	.extern assert
 	.extern dma_read
@@ -172,8 +193,15 @@ area:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
+    move $t9, $a0
+    addiu $t8, $sp, 136
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
+    addiu $t9, $sp, 136
     lbu $t8, 0($t9)
     li $t7, 0
     bne $t8, $t7, .Larm_skip_3

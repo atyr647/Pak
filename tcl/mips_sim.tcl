@@ -1,16 +1,17 @@
 # tcl/mips_sim.tcl — minimal MIPS-I/III text-format simulator.
 #
 # Executes the instruction subset emitted by the Pak MIPS backend, captures
-# all halfword (sh) and word (sw) stores, and returns the result.
+# all byte (sb), halfword (sh) and word (sw) stores, and returns the result.
 # Registers are stored as unsigned 32-bit integers; sign is applied only where
 # the semantics require it (slt, div, sra, conditional branches).
 #
 # Public API:
-#   pak::mips_sim_run text ?start? ?limit?  ->  dict {mem_h mem_w insns}
+#   pak::mips_sim_run text ?start? ?limit? ?preset?  ->  dict {mem_b mem_h mem_w insns}
 #     text  — MIPS assembly text (.extern/.section/.globl etc. are skipped)
 #     start — label to begin execution at (default: "main")
 #     limit — instruction budget before forced halt (default: 20 000 000)
 #   Return dict keys:
+#     mem_b  — dict {byte_addr -> u8}   of all sb stores
 #     mem_h  — dict {byte_addr -> u16}  of all sh stores
 #     mem_w  — dict {byte_addr -> u32}  of all sw stores
 #     insns  — count of instructions dispatched
@@ -222,6 +223,7 @@ proc parse_asm {text} {
 # State is accessed via upvar 1 from run (local variables, no proc-call penalty):
 #   R   — array of 32 unsigned 32-bit registers
 #   HI LO — multiply/divide results
+#   mb  — dict byte_addr->u8   (sb stores)
 #   mh  — dict byte_addr->u16  (sh stores)
 #   mw  — dict byte_addr->u32  (sw stores)
 #
@@ -232,7 +234,7 @@ proc parse_asm {text} {
 #          "jmp:L"  → branch/jump taken; caller executes delay slot then jumps
 
 proc exec_insn {op args} {
-    upvar 1 R R  HI HI  LO LO  mh mh  mw mw  dsyms dsyms  mseq mseq  mseqi mseqi
+    upvar 1 R R  HI HI  LO LO  mb mb  mh mh  mw mw  dsyms dsyms  labels labels  mseq mseq  mseqi mseqi
 
     switch -- $op {
         nop - sync { return "" }
@@ -268,6 +270,21 @@ proc exec_insn {op args} {
         mul {
             set n [lindex $args 0]
             if {$n} { set R($n) [expr {($R([lindex $args 1]) * $R([lindex $args 2])) & 0xFFFFFFFF}] }
+        }
+        mult {
+            # Signed 64-bit product into HI:LO. Used by fix16.16 multiply.
+            set a $R([lindex $args 0]); if {$a >= 0x80000000} { set a [expr {$a - 0x100000000}] }
+            set b $R([lindex $args 1]); if {$b >= 0x80000000} { set b [expr {$b - 0x100000000}] }
+            set p [expr {$a * $b}]
+            set LO [expr {$p & 0xFFFFFFFF}]
+            set HI [expr {($p >> 32) & 0xFFFFFFFF}]
+        }
+        multu {
+            set a $R([lindex $args 0])
+            set b $R([lindex $args 1])
+            set p [expr {$a * $b}]
+            set LO [expr {$p & 0xFFFFFFFF}]
+            set HI [expr {($p >> 32) & 0xFFFFFFFF}]
         }
         and {
             set n [lindex $args 0]
@@ -408,7 +425,19 @@ proc exec_insn {op args} {
             lassign [lindex $args 1] off base
             dict set mh [expr {($R($base) + $off) & 0xFFFFFFFF}] [expr {$R([lindex $args 0]) & 0xFFFF}]
         }
-        sb { }
+        sb {
+            # Byte store. Merge into the containing word so lbu (which reads
+            # mem_w big-endian) sees the write, and keep mem_b so tests can
+            # assert PIF command bytes without reconstructing words.
+            lassign [lindex $args 1] off base
+            set addr [expr {($R($base) + $off) & 0xFFFFFFFF}]
+            set val  [expr {$R([lindex $args 0]) & 0xFF}]
+            dict set mb $addr $val
+            set w [expr {$addr & ~3}]
+            set shift [expr {(3 - ($addr & 3)) * 8}]
+            set cur [expr {[dict exists $mw $w] ? [dict get $mw $w] : 0}]
+            dict set mw $w [expr {($cur & ~(0xFF << $shift)) | ($val << $shift)}]
+        }
 
         lw {
             set n [lindex $args 0]
@@ -476,12 +505,24 @@ proc exec_insn {op args} {
             set v $R([lindex $args 0]); if {$v >= 0x80000000} { set v [expr {$v - 0x100000000}] }
             if {$v >= 0} { return "jmp:[lindex $args 1]" }
         }
+        bge {
+            # Pseudo: slt $at, s1, s2; beq $at, $0, lbl  — branch if s1 >= s2.
+            set a $R([lindex $args 0]); if {$a >= 0x80000000} { set a [expr {$a - 0x100000000}] }
+            set b $R([lindex $args 1]); if {$b >= 0x80000000} { set b [expr {$b - 0x100000000}] }
+            if {$a >= $b} { return "jmp:[lindex $args 2]" }
+        }
 
         la {
             set n [lindex $args 0]
             set sym [lindex $args 1]
             if {$n} {
-                set R($n) [expr {[dict exists $dsyms $sym] ? [dict get $dsyms $sym] : 0}]
+                if {[dict exists $labels $sym]} {
+                    set R($n) [dict get $labels $sym]
+                } elseif {[dict exists $dsyms $sym]} {
+                    set R($n) [dict get $dsyms $sym]
+                } else {
+                    set R($n) 0
+                }
             }
         }
 
@@ -491,12 +532,17 @@ proc exec_insn {op args} {
             # The simulator works on an instruction list rather than addresses,
             # so $ra holds the index of the instruction after the call's delay
             # slot. `jr $ra` returns there; $ra starts out invalid, so the
-            # outermost return ends the run. Computed jumps are not modelled.
+            # outermost return ends the run.
             set n [lindex $args 0]
             if {$n eq "" || $R($n) == 0xFFFFFFFF} { return "done" }
             return "ret:$R($n)"
         }
-        jalr { return "done" }
+        jalr {
+            # `jalr $rs` or `jalr $rd, $rs` — target is the last register.
+            set n [lindex $args end]
+            if {$n eq "" || $R($n) == 0xFFFFFFFF} { return "done" }
+            return "callidx:$R($n)"
+        }
     }
     return ""
 }
@@ -520,6 +566,7 @@ proc run {text {start "main"} {limit 20000000} {preset {}}} {
     set R(31) 0xFFFFFFFF            ;# $ra — invalid, so the outermost jr halts
     set HI 0;  set LO 0
     set mh [dict create]   ;# sh stores
+    set mb [dict create]   ;# sb stores
     # Seed memory with the data sections so a static's initialiser is readable,
     # then with any caller-supplied values. `preset` is how a test models MMIO
     # the program polls: without it a status register reads 0 forever and a
@@ -549,10 +596,21 @@ proc run {text {start "main"} {limit 20000000} {preset {}}} {
 
         if {$result eq "done"} break
 
-        if {[string match "jmp:*" $result] || [string match "call:*" $result]} {
+        if {[string match "jmp:*" $result] || [string match "call:*" $result] \
+            || [string match "callidx:*" $result]} {
             # MIPS branch delay slot: instruction at PC+1 always executes
             set ds [lindex $insns [expr {$pc + 1}]]
             if {[llength $ds]} { incr count; exec_insn {*}$ds }
+            if {[string match "callidx:*" $result]} {
+                set R(31) [expr {$pc + 2}]
+                set new_pc [string range $result 8 end]
+                if {![string is integer -strict $new_pc]} break
+                set new_pc [expr {$new_pc}]
+                if {$new_pc < 0 || $new_pc >= $n_insns} break
+                if {$new_pc == $pc} break
+                set pc $new_pc
+                continue
+            }
             if {[string match "call:*" $result]} {
                 set R(31) [expr {$pc + 2}]
                 set lbl [string range $result 5 end]
@@ -572,7 +630,7 @@ proc run {text {start "main"} {limit 20000000} {preset {}}} {
         }
     }
 
-    return [dict create mem_h $mh mem_w $mw insns $count]
+    return [dict create mem_b $mb mem_h $mh mem_w $mw insns $count data_syms $dsyms]
 }
 
 } ;# namespace eval pak::mipsim

@@ -5,6 +5,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+typedef struct Camera Camera;
+typedef struct GameState GameState;
+
 typedef enum {
     GamePhase_title,
     GamePhase_playing,
@@ -12,22 +15,22 @@ typedef enum {
     GamePhase_gameover,
 } GamePhase;
 
-typedef struct {
+struct Camera {
     float pos_x;
     float pos_y;
     float dir_x;
     float dir_y;
     float plane_x;
     float plane_y;
-} Camera;
+};
 
-typedef struct {
+struct GameState {
     Camera cam;
     GamePhase phase;
     int32_t frame;
     int32_t health;
     int32_t score;
-} GameState;
+};
 
 uint8_t map_get(int32_t mx, int32_t my);
 uint32_t wall_color(uint8_t wtype, int32_t side);

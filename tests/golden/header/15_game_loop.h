@@ -5,11 +5,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct {
+typedef struct GameState GameState;
+
+struct GameState {
     int32_t x;
     int32_t y;
     bool running;
-} GameState;
+};
 
 void update(GameState * gs);
 void render(GameState * gs);

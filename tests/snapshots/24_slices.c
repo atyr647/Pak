@@ -22,13 +22,18 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
 
-typedef struct { int32_t *data; int32_t len; } PakSlice_int32_t;
-typedef struct { Point *data; int32_t len; } PakSlice_Point;
-typedef struct {
+/* -- User type forward declarations -- */
+typedef struct Point Point;
+
+/* -- User types -- */
+struct Point {
     int32_t x;
     int32_t y;
-} Point;
+};
 
+
+typedef struct { int32_t *data; int32_t len; } PakSlice_int32_t;
+typedef struct { Point *data; int32_t len; } PakSlice_Point;
 int32_t sum(PakSlice_int32_t s) {
     int32_t total = 0;
     for (int _i_item = 0; _i_item < (s).len; _i_item++) {

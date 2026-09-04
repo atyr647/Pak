@@ -39,6 +39,34 @@ proc pak::strip_parens {s} {
 
 set ::pak::CG_FIXSHIFT [dict create fix16.16 16 fix10.5 5 fix1.15 15]
 
+# C keywords and common typedefs a Pak identifier may legally collide with.
+# `let double: fn(i32) -> i32 = ...` is fine Pak and emitted `... double = ...`,
+# which is a syntax error in C. Colliding names get a trailing underscore, at
+# the declaration and at every use, so the two stay in step.
+# Functions the headers this codegen always emits (<string.h>, <math.h>,
+# <stdlib.h>, <stdio.h>) already declare. An `extern "C"` block naming one of
+# these is telling the compiler a symbol exists in the linked library -- which
+# is already true, and already declared with the real prototype. Re-declaring
+# it from Pak's approximation of the signature (uint8_t *memset(uint8_t *,
+# int32_t, uint32_t) against void *memset(void *, int, size_t)) is a
+# conflicting declaration and fails the build, so the declaration is skipped
+# and the real one is used. The Pak signature still drives type checking.
+set ::pak::CG_LIBC_DECLARED {
+    memset memcpy memmove memcmp memchr
+    strlen strcmp strncmp strcpy strncpy strcat strncat strstr strchr strrchr
+    malloc calloc realloc free abs labs atoi atof
+    printf sprintf snprintf puts putchar
+    sinf cosf tanf sqrtf fabsf floorf ceilf powf atan2f fmodf
+    sin cos tan sqrt fabs floor ceil pow atan2 fmod
+}
+
+set ::pak::CG_C_KEYWORDS {
+    auto break case char const continue default do double else enum extern
+    float for goto if inline int long register restrict return short signed
+    sizeof static struct switch typedef union unsigned void volatile while
+    _Bool _Complex _Imaginary bool complex imaginary
+}
+
 # Mirror codegen._NUMERIC_CAST_METHODS / _FIXPOINT_CAST / _VEC*_INSTANCE / _MAT4_INSTANCE
 set ::pak::CG_NUMERIC_CAST [dict create \
     as_i8 int8_t as_i16 int16_t as_i32 int32_t as_i64 int64_t \
@@ -120,13 +148,14 @@ proc pak::cg_subst_type {t subst} {
 
 oo::class create pak::Codegen {
     variable filename uses assets module_name fn_names enum_variants variant_types \
+             variant_case_fields \
              struct_fields scopes method_registry trait_decls const_values \
              generic_fns generic_structs generic_impls mono_struct_origin \
              module_headers defer_stack result_typedefs \
              result_typedef_names slice_typedefs slice_typedef_names \
              tuple_typedefs tuple_typedef_names vec_typedefs vec_typedef_names vec_used \
              container_typedefs container_typedef_names \
-             current_ret_type closures fmt_counter tmp_counter \
+             current_ret_type current_self_type closures fmt_counter tmp_counter \
              mono_cache pending_mono pending_nested _in_stmt loop_result_var loop_res_counter \
              fn_decls use_aliases allocator_used
 
@@ -141,6 +170,7 @@ oo::class create pak::Codegen {
         set allocator_used 0
         set enum_variants [dict create]
         set variant_types [dict create]
+        set variant_case_fields [dict create]
         set struct_fields [dict create]
         set scopes [list [dict create]]
         set defer_stack [list {}]
@@ -164,6 +194,7 @@ oo::class create pak::Codegen {
         set container_typedefs {}
         set container_typedef_names [dict create]
         set current_ret_type ""
+        set current_self_type ""
         set closures {}
         set fmt_counter 0
         set tmp_counter 0
@@ -342,24 +373,95 @@ oo::class create pak::Codegen {
         return "void *"
     }
 
+    # A float literal in a fixed-point expression is scaled at compile time;
+    # anything else is generated normally.
+    method gen_fix_operand {e shift} {
+        if {$shift != 0 && [pak::kindof $e] eq "FloatLit"} {
+            set raw [pak::sval [pak::nfield $e value]]
+            return [expr {entier(double($raw) * (1 << $shift))}]
+        }
+        return [my gen_expr $e]
+    }
+
+    # Does any field of this declaration use a type the compiler synthesizes a
+    # typedef for (container, Vec, slice, tuple, Result)? Those typedefs are
+    # emitted as one block, so such a declaration has to follow it.
+    method type_uses_generated {t} {
+        if {[pak::isnil $t] || [llength $t] < 2} { return 0 }
+        switch -- [pak::kindof $t] {
+            TypeGeneric {
+                if {[pak::fval $t name] in {FixedList RingBuffer FixedMap Pool Vec List Slice Array}} { return 1 }
+            }
+            TypeSlice - TypeTuple - TypeResult { return 1 }
+        }
+        if {[lindex $t 0] ne "node"} { return 0 }
+        dict for {k v} [lindex $t 2] {
+            switch -- [lindex $v 0] {
+                node { if {[my type_uses_generated $v]} { return 1 } }
+                seq  { foreach it [pak::items $v] { if {[my type_uses_generated $it]} { return 1 } } }
+            }
+        }
+        return 0
+    }
+
+    method decl_needs_generated_type {decl} {
+        # A VariantDecl carries `cases`, each with its own `fields`; a struct or
+        # union carries `fields` directly.
+        set field_lists {}
+        switch -- [pak::kindof $decl] {
+            StructDecl - UnionDecl { lappend field_lists [pak::nfield $decl fields] }
+            VariantDecl {
+                foreach c [pak::items [pak::nfield $decl cases]] {
+                    lappend field_lists [pak::nfield $c fields]
+                }
+            }
+            default { return 0 }
+        }
+        foreach fl $field_lists {
+            foreach field [pak::items $fl] {
+                if {[catch {set ft [pak::nfield $field type]}]} continue
+                if {[my type_uses_generated $ft]} { return 1 }
+            }
+        }
+        return 0
+    }
+
+    method type_struct_name {t} {
+        if {[pak::kindof $t] eq "TypeName"} { return [pak::fval $t name] }
+        if {[pak::kindof $t] eq "TypePointer" && [pak::kindof [pak::nfield $t inner]] eq "TypeName"} {
+            return [pak::fval [pak::nfield $t inner] name]
+        }
+        return ""
+    }
+
     method expr_type {e} {
         switch -- [pak::kindof $e] {
             Ident { return [my scope_get [pak::fval $e name]] }
+            Call {
+                # A container's slice()/items() yields the fat-pointer slice of
+                # its element type. Without this a `let ss = xs.slice()` was
+                # __auto_type with no known type, so ss[i] indexed the struct.
+                set fn [pak::nfield $e func]
+                if {[pak::kindof $fn] eq "DotAccess" && [pak::fval $fn field] in {slice items}} {
+                    set ot [my expr_type [pak::nfield $fn obj]]
+                    if {[pak::kindof $ot] eq "TypeGeneric" \
+                            && [pak::fval $ot name] in {FixedList Pool Vec}} {
+                        set gargs [pak::items [pak::nfield $ot args]]
+                        if {[llength $gargs] > 0} {
+                            return [pak::N TypeSlice inner [lindex $gargs 0] mutable 0]
+                        }
+                    }
+                }
+            }
             DotAccess {
-                set obj [pak::nfield $e obj]
-                if {[pak::kindof $obj] eq "Ident"} {
-                    set ot [my scope_get [pak::fval $obj name]]
-                    set sname ""
-                    if {[pak::kindof $ot] eq "TypeName"} {
-                        set sname [pak::fval $ot name]
-                    } elseif {[pak::kindof $ot] eq "TypePointer" && [pak::kindof [pak::nfield $ot inner]] eq "TypeName"} {
-                        set sname [pak::fval [pak::nfield $ot inner] name]
-                    }
-                    if {$sname ne "" && [dict exists $struct_fields $sname]} {
-                        set fields [dict get $struct_fields $sname]
-                        set fld [pak::fval $e field]
-                        if {[dict exists $fields $fld]} { return [dict get $fields $fld] }
-                    }
+                # Recurse, so gs.cam.pos_x resolves as far as the fields are
+                # known, not just one level from a bare identifier.
+                set ot [my expr_type [pak::nfield $e obj]]
+                set sname [my type_struct_name $ot]
+                if {$sname ne "" && [dict exists $struct_fields $sname]} {
+                    set fields [dict get $struct_fields $sname]
+                    set fld [pak::fval $e field]
+                    if {[dict exists $fields $fld]} { return [dict get $fields $fld] }
                 }
             }
         }
@@ -375,6 +477,7 @@ oo::class create pak::Codegen {
         switch -- [pak::kindof $t] {
             TypeName {
                 set n [pak::fval $t name]
+                if {$n eq "Self" && $current_self_type ne ""} { return $current_self_type }
                 if {[dict exists $struct_fields $n] || [dict exists $variant_types $n] \
                         || $n in [dict values $enum_variants]} { return $n }
                 if {[dict exists $::pak::CG_PRIM $n]} { return [dict get $::pak::CG_PRIM $n] }
@@ -428,9 +531,26 @@ oo::class create pak::Codegen {
         }
     }
 
+    # C reserves these; a Pak local may legitimately be called `double`.
+    method c_ident {name} {
+        if {$name in $::pak::CG_C_KEYWORDS} { return "${name}_" }
+        return $name
+    }
+
     method gen_array_decl {name t} {
+        set name [my c_ident $name]
         if {[pak::kindof $t] eq "TypeArray"} {
             return "[my gen_type [pak::nfield $t inner]] $name\[[my gen_expr [pak::nfield $t size]]\]"
+        }
+        # A function pointer names itself inside the parens: int32_t (*f)(int32_t).
+        # gen_type returns the abstract form, int32_t (*)(int32_t), which is a
+        # type name and cannot carry a declarator after it.
+        if {[pak::kindof $t] eq "TypeFn"} {
+            set abstract [my gen_type $t]
+            set i [string first "(*)" $abstract]
+            if {$i >= 0} {
+                return "[string range $abstract 0 [expr {$i+1}]]${name}[string range $abstract [expr {$i+2}] end]"
+            }
         }
         return "[my gen_type $t] $name"
     }
@@ -453,7 +573,7 @@ oo::class create pak::Codegen {
             }
             NoneLit      { return "NULL" }
             UndefinedLit { return "/* undefined */" }
-            Ident        { return [pak::fval $e name] }
+            Ident        { return [my c_ident [pak::fval $e name]] }
             DotAccess    { return [my gen_dot $e] }
             IndexAccess {
                 set obj [my gen_expr [pak::nfield $e obj]]
@@ -469,8 +589,17 @@ oo::class create pak::Codegen {
                 set parts {}
                 foreach pair [pak::items [pak::nfield $e fields]] {
                     set p [pak::items $pair]
+                    # `data: undefined` asks for no initializer for that field.
+                    # It was emitting `.data = ` with nothing after the `=`.
+                    # Omitting the designator is the C spelling; LANGUAGE.md
+                    # calls undefined "zero/undefined initialized", and an
+                    # omitted field in a designated initializer is zeroed.
+                    if {[pak::kindof [lindex $p 1]] eq "UndefinedLit"} continue
                     lappend parts ".[pak::sval [lindex $p 0]] = [my gen_expr [lindex $p 1]]"
                 }
+                # C99 has no empty initializer list, so an all-undefined
+                # literal zeroes the whole object rather than emitting `{}`.
+                if {[llength $parts] == 0} { return "($type_name){0}" }
                 return "($type_name){[join $parts {, }]}"
             }
             VariantLit {
@@ -486,14 +615,22 @@ oo::class create pak::Codegen {
             ArrayLit  { return [my gen_array_lit $e] }
             UnaryOp {
                 set op [pak::fval $e op]
+                if {$op eq "?"} {
+                    # Postfix null-check: true when the pointer/option is not none.
+                    return "([my gen_expr [pak::nfield $e operand]] != NULL)"
+                }
                 return "$op[my gen_expr [pak::nfield $e operand]]"
             }
             BinaryOp {
-                set left [my gen_expr [pak::nfield $e left]]
-                set right [my gen_expr [pak::nfield $e right]]
                 set op [pak::fval $e op]
                 set shift [pak::cg_fixshift [my expr_type [pak::nfield $e left]]]
                 if {$shift == 0} { set shift [pak::cg_fixshift [my expr_type [pak::nfield $e right]]] }
+                # A float literal against a fixed-point operand is written in
+                # the same units as the operand: `self.vx * 0.8` means 0.8, not
+                # raw 0. Emitting the float left `((int64_t)vx * (0.8f)) >> 16`,
+                # which shifts a float. Scale the literal to match instead.
+                set left  [my gen_fix_operand [pak::nfield $e left] $shift]
+                set right [my gen_fix_operand [pak::nfield $e right] $shift]
                 if {$shift != 0 && $op eq "*"} {
                     return "(int32_t)(((int64_t)($left) * ($right)) >> $shift)"
                 }
@@ -503,7 +640,15 @@ oo::class create pak::Codegen {
                 return "($left $op $right)"
             }
             Assign {
-                return "[my gen_expr [pak::nfield $e target]] [pak::fval $e op] [my gen_expr [pak::nfield $e value]]"
+                set tgt [my gen_expr [pak::nfield $e target]]
+                set val [my gen_expr [pak::nfield $e value]]
+                # FixedList.init() lowers to {0}, which is an initializer, not
+                # an expression: `gs.stars = {0};` does not parse. Zero the
+                # object instead.
+                if {$val eq "{0}" && [pak::fval $e op] eq "="} {
+                    return "memset(&($tgt), 0, sizeof($tgt))"
+                }
+                return "$tgt [pak::fval $e op] $val"
             }
             AddrOf { return "&[my gen_expr [pak::nfield $e expr]]" }
             Deref  { return "*[my gen_expr [pak::nfield $e expr]]" }
@@ -511,7 +656,12 @@ oo::class create pak::Codegen {
             NamedArg { return [my gen_expr [pak::nfield $e value]] }
             EnumVariantAccess {
                 set n [pak::fval $e name]
-                if {[dict exists $enum_variants $n]} { return "[dict get $enum_variants $n]_$n" }
+                if {[dict exists $enum_variants $n]} {
+                    set owner [dict get $enum_variants $n]
+                    set vc [my gen_variant_ctor $owner $n {}]
+                    if {$vc ne ""} { return $vc }
+                    return "${owner}_$n"
+                }
                 return $n
             }
             TupleAccess { return "([my gen_expr [pak::nfield $e obj]]).f[pak::fval $e index]" }
@@ -620,6 +770,10 @@ oo::class create pak::Codegen {
         set field [pak::fval $e field]
         if {[pak::kindof $obj] eq "Ident"} {
             set n [pak::fval $obj name]
+            # A unit variant case is still a value of the variant type, so it
+            # needs the tagged literal an enum member does not.
+            set vc [my gen_variant_ctor $n $field {}]
+            if {$vc ne ""} { return $vc }
             if {$n in [dict values $enum_variants]} { return "${obj_str}_$field" }
             if {[dict exists $enum_variants $field]} { return "${obj_str}_$field" }
             if {[dict exists $::pak::CG_API [list $n $field]] || [dict exists $::pak::CG_API_LAMBDA [list $n $field]]} {
@@ -720,9 +874,57 @@ oo::class create pak::Codegen {
     }
 
     # ── closures (mirror codegen._gen_closure / _emit_closures) ────────────────
+
+    # Every Ident named anywhere under a node.
+    method collect_idents {n acc} {
+        upvar 1 $acc names
+        if {[llength $n] < 2 || [lindex $n 0] ne "node"} { return }
+        if {[pak::kindof $n] eq "Ident"} { dict set names [pak::fval $n name] 1 }
+        # A node is {node Kind FieldsDict Pos}: the fields are one dict at
+        # index 2, not trailing key/value pairs.
+        dict for {k v} [lindex $n 2] {
+            switch -- [lindex $v 0] {
+                node { my collect_idents $v names }
+                seq  { foreach it [pak::items $v] { my collect_idents $it names } }
+            }
+        }
+    }
+
+    # Does this fn literal read a local of the enclosing function? Params and
+    # anything it declares itself do not count, and neither do file-scope names
+    # -- a static or another function is reachable from a hoisted definition.
+    method closure_captures {e} {
+        set names [dict create]
+        my collect_idents [pak::nfield $e body] names
+        set own [dict create]
+        foreach p [pak::items [pak::nfield $e params]] { dict set own [pak::fval $p name] 1 }
+        foreach st [pak::items [pak::nfield [pak::nfield $e body] stmts]] {
+            if {[pak::kindof $st] eq "LetStmt"} { dict set own [pak::fval $st name] 1 }
+        }
+        # Locals of the enclosing function are every scope frame above global.
+        dict for {n _} $names {
+            if {[dict exists $own $n]} continue
+            for {set i [expr {[llength $scopes]-1}]} {$i >= 1} {incr i -1} {
+                if {[dict exists [lindex $scopes $i] $n]} { return 1 }
+            }
+        }
+        return 0
+    }
+
     method gen_closure {e} {
+        # A non-capturing fn literal is just a function: hoisting it to file
+        # scope is ISO C and gives it a name unique across the whole file. Only
+        # a literal that reads an enclosing local still needs a GCC nested
+        # function (a GNU extension -- see NOT_SUPPORTED.md).
+        if {$_in_stmt && ![my closure_captures $e]} {
+            set name "_pak_closure_[llength $closures]"
+            lappend closures [list $name $e]
+            return $name
+        }
         if {$_in_stmt} {
             # Inside a statement: emit as GCC nested function inline (mirrors Python _pending_nested)
+            # The counter spans closures already hoisted plus those pending, so
+            # two nested closures in one function cannot both be _pak_clo_0.
             set name "_pak_clo_[expr {[llength $closures] + [llength $pending_nested]}]"
             lappend pending_nested [list $name $e]
             return $name
@@ -740,7 +942,7 @@ oo::class create pak::Codegen {
             set ret [expr {[pak::isnil $rt] ? "void" : [my gen_type $rt]}]
             set params {}
             foreach p [pak::items [pak::nfield $e params]] {
-                lappend params "[my gen_type [pak::nfield $p type]] [pak::fval $p name]"
+                lappend params [my gen_array_decl [pak::fval $p name] [pak::nfield $p type]]
             }
             set param_str [expr {[llength $params] > 0 ? [join $params {, }] : "void"}]
             lappend lines "static $ret ${name}($param_str) {"
@@ -770,7 +972,7 @@ oo::class create pak::Codegen {
             set ret [expr {[pak::isnil $rt] ? "void" : [my gen_type $rt]}]
             set params {}
             foreach p [pak::items [pak::nfield $e params]] {
-                lappend params "[my gen_type [pak::nfield $p type]] [pak::fval $p name]"
+                lappend params [my gen_array_decl [pak::fval $p name] [pak::nfield $p type]]
             }
             set param_str [expr {[llength $params] > 0 ? [join $params {, }] : "void"}]
             lappend lines "${pad}$ret ${name}($param_str) {"
@@ -1038,7 +1240,14 @@ oo::class create pak::Codegen {
         if {$method eq "len" && $na == 0} {
             if {[pak::kindof $obj_type] eq "TypeSlice"} { return "($obj).len" }
             if {[pak::kindof $obj_type] eq "TypeArray"} { return "(int32_t)(sizeof($obj)/sizeof(($obj)\[0\]))" }
-            return "($obj).len"
+            # A CStr is char *, which has no .len -- fall through to the string
+            # block below, where len is strlen. Returning ($obj).len here made
+            # cstr.len() a member access on a pointer.
+            if {!($c_type in {"const char *" "char *"} \
+                  || ([pak::kindof $obj_type] eq "TypeName" \
+                      && [pak::fval $obj_type name] in {CStr c_char}))} {
+                return "($obj).len"
+            }
         }
         if {$method eq "free" && $na == 0} {
             if {$c_type in {"T3DMat4FP *" "T3DMat4FP*"}} { return "free_uncached($obj)" }
@@ -1083,7 +1292,12 @@ oo::class create pak::Codegen {
                     return "({ int32_t _ri = ($a0); ($obj).data\[_ri\] = ($obj).data\[--($obj).len\]; })"
                 }
                 if {$method in {items slice}} {
-                    return "($elem_t \*){ .data = ($obj).data, .len = ($obj).len }"
+                    # A slice is the fat-pointer struct, not a bare pointer:
+                    # `(Star *){ .data = ..., .len = ... }` cast to a pointer
+                    # type and then used designators on it, so the result had
+                    # no .len to read and indexing it went through a pointer.
+                    set td [my slice_typedef [lindex $args 0]]
+                    return "($td)\{ .data = ($obj).data, .len = ($obj).len \}"
                 }
                 if {$method eq "len" && $na == 0} {
                     return "($obj).len"
@@ -1322,6 +1536,31 @@ oo::class create pak::Codegen {
         return $out
     }
 
+    # A variant case is a value, not a function: Shape.circle(5.0) is
+    # (Shape){ .tag = Shape_tag_circle, .data.circle = { .field0 = 5.0f } }.
+    # The payload struct is named Shape_circle, so there is no name left to
+    # call -- emitting Shape_circle(5.0f) named the type and could never
+    # compile. Returns "" when {tname case} is not a variant case.
+    method gen_variant_ctor {tname case ctor_args} {
+        if {![dict exists $variant_types $tname]} { return "" }
+        if {![dict exists $enum_variants $case] || [dict get $enum_variants $case] ne $tname} { return "" }
+        set tag "${tname}_tag_${case}"
+        if {[llength $ctor_args] == 0} { return "(${tname}){ .tag = ${tag} }" }
+        set field_names {}
+        if {[dict exists $variant_case_fields $tname $case]} {
+            set field_names [dict get $variant_case_fields $tname $case]
+        }
+        set parts {}
+        set i 0
+        foreach a $ctor_args {
+            set fn [lindex $field_names $i]
+            if {$fn eq ""} { set fn "field$i" }
+            lappend parts ".$fn = $a"
+            incr i
+        }
+        return "(${tname}){ .tag = ${tag}, .data.${case} = { [join $parts {, }] } }"
+    }
+
     method gen_call {e} {
         set args {}
         foreach a [pak::items [pak::nfield $e args]] { lappend args [my gen_expr $a] }
@@ -1347,21 +1586,27 @@ oo::class create pak::Codegen {
         if {[pak::kindof $func] eq "DotAccess" && [pak::kindof [pak::nfield $func obj]] eq "Ident"} {
             set type_name [pak::fval [pak::nfield $func obj] name]
             set method [pak::fval $func field]
+            set r [my gen_variant_ctor $type_name $method $args]
+            if {$r ne ""} { return $r }
             # Static type-method calls
             set r [my gen_static_type_method $type_name $method $args]
             if {$r ne ""} { return $r }
         }
         # Method call: obj.method(args) → TypeName_method(&obj, args)
-        if {[pak::kindof $func] eq "DotAccess" && [pak::kindof [pak::nfield $func obj]] eq "Ident"} {
-            set obj_name [pak::fval [pak::nfield $func obj] name]
-            set method_name [pak::fval $func field]
-            set obj_type [my scope_get $obj_name]
-            set tname ""
-            if {[pak::kindof $obj_type] eq "TypeName"} {
-                set tname [pak::fval $obj_type name]
-            } elseif {[pak::kindof $obj_type] eq "TypePointer" && [pak::kindof [pak::nfield $obj_type inner]] eq "TypeName"} {
-                set tname [pak::fval [pak::nfield $obj_type inner] name]
+        # The receiver need not be a bare identifier: gs.cam.rotate(a) is a
+        # method on the Camera field, and used to fall through to member
+        # access on the struct because only Ident receivers were handled.
+        if {[pak::kindof $func] eq "DotAccess"} {
+            set obj_node [pak::nfield $func obj]
+            if {[pak::kindof $obj_node] eq "Ident"} {
+                set obj_name [pak::fval $obj_node name]
+                set obj_type [my scope_get $obj_name]
+            } else {
+                set obj_name [my gen_expr $obj_node]
+                set obj_type [my expr_type $obj_node]
             }
+            set method_name [pak::fval $func field]
+            set tname [my type_struct_name $obj_type]
             if {$tname ne "" && ![dict exists $method_registry $tname] && [dict exists $mono_struct_origin $tname]} {
                 my monomorphize_impl_methods $tname
             }
@@ -1599,13 +1844,25 @@ oo::class create pak::Codegen {
         }
         if {![pak::isnil $typ]} {
             set decl [my gen_array_decl $name $typ]
-            my scope_set $name $typ
+            # `let p: Pair<i32>` declares Pair_int32_t in C, but storing the
+            # generic type here left the scope saying "Pair" -- a name with no
+            # method registry and no monomorph entry, so p.sum_i32() fell all
+            # the way through to member access on the struct. Record the
+            # monomorphized name the declaration actually uses.
+            if {[pak::kindof $typ] eq "TypeGeneric" && [dict exists $generic_structs [pak::fval $typ name]]} {
+                my scope_set $name [pak::N TypeName name [my gen_type $typ]]
+            } else {
+                my scope_set $name $typ
+            }
         } else {
             set decl "__auto_type $name"
             if {[pak::kindof [pak::nfield $s value]] eq "AddrOf"} {
                 my scope_set $name [pak::N TypePointer inner [pak::N TypeName name auto] nullable 0 mutable 0]
             } elseif {[pak::kindof [pak::nfield $s value]] eq "StructLit"} {
                 my scope_set $name [pak::N TypeName name [my struct_lit_c_name [pak::nfield $s value]]]
+            } else {
+                set vt [my expr_type [pak::nfield $s value]]
+                if {$vt ne "" && ![pak::isnil $vt]} { my scope_set $name $vt }
             }
         }
         set val [pak::nfield $s value]
@@ -1873,6 +2130,32 @@ oo::class create pak::Codegen {
         return ""
     }
 
+    # When the matched expression has no declared type (let e = Event.quit, so
+    # the C is __auto_type), fall back to the arms: every case name resolves to
+    # exactly one variant or enum. Without this the switch is on the struct
+    # rather than its tag, which no compiler accepts.
+    method match_type_from_arms {arms} {
+        foreach arm $arms {
+            set pat [pak::nfield $arm pattern]
+            set pn ""
+            switch -- [pak::kindof $pat] {
+                EnumVariantAccess { set pn [pak::fval $pat name] }
+                DotAccess         { set pn [pak::fval $pat field] }
+                Call {
+                    set fn [pak::nfield $pat func]
+                    switch -- [pak::kindof $fn] {
+                        EnumVariantAccess { set pn [pak::fval $fn name] }
+                        DotAccess         { set pn [pak::fval $fn field] }
+                    }
+                }
+            }
+            if {$pn ne "" && [dict exists $enum_variants $pn]} {
+                return [dict get $enum_variants $pn]
+            }
+        }
+        return ""
+    }
+
     method pattern_cond {pat expr_var is_variant match_type} {
         switch -- [pak::kindof $pat] {
             Ident { return "1" }
@@ -1909,23 +2192,7 @@ oo::class create pak::Codegen {
 
     method pattern_bindings {pat expr_var} {
         switch -- [pak::kindof $pat] {
-            Call {
-                set fn [pak::nfield $pat func]
-                if {[pak::kindof $fn] ne "EnumVariantAccess"} { return {} }
-                set case_name [pak::fval $fn name]
-                set tn [expr {[dict exists $enum_variants $case_name] ? [dict get $enum_variants $case_name] : ""}]
-                if {![dict exists $variant_types $tn]} { return {} }
-                set result {}
-                set args [pak::items [pak::nfield $pat args]]
-                for {set i 0} {$i < [llength $args]} {incr i} {
-                    set arg [lindex $args $i]
-                    set arg_name [pak::fval $arg name]
-                    if {$arg_name ne "_"} {
-                        lappend result [list $arg_name "${expr_var}.data.${case_name}.field${i}"]
-                    }
-                }
-                return $result
-            }
+            Call { return [my call_arm_bindings $pat $expr_var] }
             DotAccess {
                 if {[pak::isnil [pak::nfield $pat binding]]} { return {} }
                 set obj_name [my gen_expr [pak::nfield $pat obj]]
@@ -1934,6 +2201,52 @@ oo::class create pak::Codegen {
             }
         }
         return {}
+    }
+
+    # Bindings for `.Case(x, y)` and `.Case { field: name }` match arms.
+    # C always names payload slots field0, field1, … in declaration order;
+    # NamedArg looks the field up so `.Rect { h: hh, w: ww }` still binds right.
+    method call_arm_bindings {pat expr_c} {
+        set fn [pak::nfield $pat func]
+        if {[pak::kindof $fn] ne "EnumVariantAccess"} { return {} }
+        set case_name [pak::fval $fn name]
+        set tn [expr {[dict exists $enum_variants $case_name] ? [dict get $enum_variants $case_name] : ""}]
+        if {![dict exists $variant_types $tn]} { return {} }
+        set field_names {}
+        if {[dict exists $variant_case_fields $tn $case_name]} {
+            set field_names [dict get $variant_case_fields $tn $case_name]
+        }
+        set result {}
+        set i 0
+        foreach arg [pak::items [pak::nfield $pat args]] {
+            set bind_name ""
+            set fi $i
+            set cfield ""
+            if {[pak::kindof $arg] eq "NamedArg"} {
+                set bind_node [pak::nfield $arg value]
+                if {[pak::kindof $bind_node] eq "Ident"} {
+                    set bind_name [pak::fval $bind_node name]
+                }
+                set want [pak::fval $arg name]
+                set found [lsearch -exact $field_names $want]
+                if {$found >= 0} { set fi $found }
+                set cfield $want
+            } elseif {[pak::kindof $arg] eq "Ident"} {
+                set bind_name [pak::fval $arg name]
+                if {$i < [llength $field_names] && [lindex $field_names $i] ne ""} {
+                    set cfield [lindex $field_names $i]
+                }
+            }
+            if {$bind_name ne "" && $bind_name ne "_"} {
+                if {$cfield ne ""} {
+                    lappend result [list $bind_name "${expr_c}.data.${case_name}.${cfield}"]
+                } else {
+                    lappend result [list $bind_name "${expr_c}.data.${case_name}.field${fi}"]
+                }
+            }
+            incr i
+        }
+        return $result
     }
 
     method gen_match_guarded {s pad indent} {
@@ -1993,6 +2306,80 @@ oo::class create pak::Codegen {
         return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
     }
 
+    # The case name an arm selects on: .ok(v) / .ok / Result.ok all name "ok".
+    method arm_case_name {arm} {
+        set pat [pak::nfield $arm pattern]
+        switch -- [pak::kindof $pat] {
+            EnumVariantAccess { return [pak::fval $pat name] }
+            DotAccess         { return [pak::fval $pat field] }
+            Call {
+                set fn [pak::nfield $pat func]
+                switch -- [pak::kindof $fn] {
+                    EnumVariantAccess { return [pak::fval $fn name] }
+                    DotAccess         { return [pak::fval $fn field] }
+                }
+            }
+        }
+        return ""
+    }
+
+    # The single binding an arm introduces, if any: .ok(v) binds v.
+    method arm_binding_name {arm} {
+        set pat [pak::nfield $arm pattern]
+        if {[pak::kindof $pat] eq "DotAccess" && ![pak::isnil [pak::nfield $pat binding]]} {
+            return [pak::sval [pak::nfield $pat binding]]
+        }
+        if {[pak::kindof $pat] eq "Call"} {
+            set a [pak::items [pak::nfield $pat args]]
+            if {[llength $a] == 1 && [pak::kindof [lindex $a 0]] eq "Ident"} {
+                return [pak::fval [lindex $a 0] name]
+            }
+        }
+        return ""
+    }
+
+    # A Result is a struct with a bool, not a tagged enum: `match r { .ok(v) =>
+    # ... .err(e) => ... }` has no integer to switch on and no ok/err constants
+    # to name. It lowers to if/else on .is_ok, binding the matching union arm.
+    method gen_match_result {s pad indent arms} {
+        set expr [my gen_expr [pak::nfield $s expr]]
+        set inner_pad [string repeat "    " [expr {$indent+1}]]
+        set ok_arm ""
+        set err_arm ""
+        foreach arm $arms {
+            switch -- [my arm_case_name $arm] {
+                ok  { set ok_arm $arm }
+                err { set err_arm $arm }
+            }
+        }
+        if {$ok_arm eq "" || $err_arm eq ""} { return "" }
+
+        set lines {}
+        lappend lines "${pad}if (${expr}.is_ok) \{"
+        foreach spec [list [list $ok_arm value] [list $err_arm error]] {
+            lassign $spec arm field
+            my scope_push
+            set bind [my arm_binding_name $arm]
+            if {$bind ne ""} {
+                lappend lines "${inner_pad}__auto_type $bind = ${expr}.data.${field};"
+                my scope_set $bind [pak::N TypeName name auto]
+            }
+            set body [pak::nfield $arm body]
+            if {[pak::kindof $body] eq "Block"} {
+                foreach st [pak::items [pak::nfield $body stmts]] {
+                    lappend lines [my gen_stmt $st [expr {$indent+1}]]
+                }
+            } else {
+                lappend lines "${inner_pad}[my gen_expr $body];"
+            }
+            foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+            my scope_pop
+            if {$field eq "value"} { lappend lines "${pad}\} else \{" }
+        }
+        lappend lines "${pad}\}"
+        return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
+    }
+
     method gen_match {s pad indent} {
         set arms [pak::items [pak::nfield $s arms]]
         foreach arm $arms {
@@ -2000,10 +2387,18 @@ oo::class create pak::Codegen {
                 return [my gen_match_guarded $s $pad $indent]
             }
         }
+        # ok/err are not variant cases -- they are the two halves of PakResult.
+        set names {}
+        foreach arm $arms { lappend names [my arm_case_name $arm] }
+        if {[lsort -unique $names] eq {err ok}} {
+            set r [my gen_match_result $s $pad $indent $arms]
+            if {$r ne ""} { return $r }
+        }
         set expr [my gen_expr [pak::nfield $s expr]]
         set inner_pad [string repeat "    " [expr {$indent+1}]]
         set inner2_pad [string repeat "    " [expr {$indent+2}]]
         set match_type [my match_type_name [pak::nfield $s expr]]
+        if {$match_type eq ""} { set match_type [my match_type_from_arms $arms] }
         set is_variant [dict exists $variant_types $match_type]
         set switch_expr [expr {$is_variant ? "${expr}.tag" : $expr}]
         set lines [list "${pad}switch ($switch_expr) {"]
@@ -2065,21 +2460,11 @@ oo::class create pak::Codegen {
                     my scope_set $bind [pak::N TypeName name auto]
                 }
             } elseif {[pak::kindof $pat] eq "Call"} {
-                set fn [pak::nfield $pat func]
-                if {[pak::kindof $fn] eq "EnumVariantAccess"} {
-                    set case_name [pak::fval $fn name]
-                    set tn [expr {[dict exists $enum_variants $case_name] ? [dict get $enum_variants $case_name] : ""}]
-                    if {[dict exists $variant_types $tn]} {
-                        set args [pak::items [pak::nfield $pat args]]
-                        for {set i 0} {$i < [llength $args]} {incr i} {
-                            set arg [lindex $args $i]
-                            set arg_name [pak::fval $arg name]
-                            if {$arg_name ne "_"} {
-                                lappend lines "${inner2_pad}__auto_type $arg_name = ${expr}.data.${case_name}.field${i};"
-                                my scope_set $arg_name [pak::N TypeName name auto]
-                            }
-                        }
-                    }
+                foreach binding [my call_arm_bindings $pat $expr] {
+                    set vname [lindex $binding 0]
+                    set facc  [lindex $binding 1]
+                    lappend lines "${inner2_pad}__auto_type $vname = $facc;"
+                    my scope_set $vname [pak::N TypeName name auto]
                 }
             }
             set body [pak::nfield $arm body]
@@ -2163,7 +2548,11 @@ oo::class create pak::Codegen {
             }
         }
         set attr_str [join $attrs " "]
-        set lines [list "typedef struct {"]
+        # Tagged, not anonymous: a struct that names itself (?*Node) or another
+        # struct declared later needs a tag to forward-declare. The matching
+        # `typedef struct Name Name;` is emitted in the forward block.
+        set name [pak::fval $s name]
+        set lines [list "struct $name {"]
         foreach field [pak::items [pak::nfield $s fields]] {
             set bw [pak::nfield $field bit_width]
             if {![pak::isnil $bw]} {
@@ -2173,16 +2562,17 @@ oo::class create pak::Codegen {
             }
         }
         set suffix [expr {$attr_str ne "" ? " $attr_str" : ""}]
-        lappend lines "} [pak::fval $s name]${suffix};"
+        lappend lines "}${suffix};"
         return [join $lines \n]
     }
 
     method gen_union {u} {
-        set lines [list "typedef union {"]
+        set name [pak::fval $u name]
+        set lines [list "union $name {"]
         foreach field [pak::items [pak::nfield $u fields]] {
             lappend lines "    [my gen_array_decl [pak::fval $field name] [pak::nfield $field type]];"
         }
-        lappend lines "} [pak::fval $u name];"
+        lappend lines "};"
         return [join $lines \n]
     }
 
@@ -2365,6 +2755,16 @@ oo::class create pak::Codegen {
         set typ [pak::nfield $c type]
         if {![pak::isnil $typ]} {
             set ct [my gen_type $typ]
+            # A fixed-point const is an integer scaled by 2^shift, not a float.
+            # `const GRAVITY: fix16.16 = 0.4` was emitting the float literal
+            # into `enum { GRAVITY = 0.4f };` -- not an integer constant, and
+            # every later >> on it operated on a float.
+            set shift [pak::cg_fixshift $typ]
+            if {$shift != 0 && [pak::kindof [pak::nfield $c value]] eq "FloatLit"} {
+                set raw [pak::fval [pak::nfield $c value] value]
+                set scaled [expr {entier(double($raw) * (1 << $shift))}]
+                return "enum { [pak::fval $c name] = $scaled };"
+            }
             if {$ct in {int32_t uint32_t int int16_t uint16_t int8_t uint8_t int64_t uint64_t}} {
                 return "enum { [pak::fval $c name] = $val };"
             }
@@ -2379,7 +2779,14 @@ oo::class create pak::Codegen {
 
     method gen_extern {ext} {
         set lines [list "/* extern \"[pak::fval $ext abi]\" */"]
-        foreach decl [pak::items [pak::nfield $ext decls]] { lappend lines [my gen_fn $decl ""] }
+        foreach decl [pak::items [pak::nfield $ext decls]] {
+            set nm [pak::fval $decl name]
+            if {$nm in $::pak::CG_LIBC_DECLARED} {
+                lappend lines "/* $nm: already declared by the C standard headers */"
+                continue
+            }
+            lappend lines [my gen_fn $decl ""]
+        }
         return [join $lines \n]
     }
 
@@ -2438,6 +2845,8 @@ oo::class create pak::Codegen {
     }
 
     method gen_fn {fn prefix} {
+        set saved_self $current_self_type
+        if {$prefix ne ""} { set current_self_type $prefix }
         set ret [my gen_type [pak::nfield $fn ret_type]]
         set params {}
         foreach p [pak::items [pak::nfield $fn params]] {
@@ -2445,7 +2854,7 @@ oo::class create pak::Codegen {
             if {[pak::kindof $pt] eq "TypeArray"} {
                 lappend params [my gen_array_decl [pak::fval $p name] $pt]
             } else {
-                lappend params "[my gen_type $pt] [pak::fval $p name]"
+                lappend params [my gen_array_decl [pak::fval $p name] $pt]
             }
         }
         if {[pak::fval $fn variadic]} {
@@ -2476,6 +2885,7 @@ oo::class create pak::Codegen {
         set body [pak::nfield $fn body]
         if {[pak::isnil $body]} {
             lappend head "$ret ${name}($param_str);"
+            set current_self_type $saved_self
             return [join $head \n]
         }
         set lines [concat $head [list "$ret ${name}($param_str) {"]]
@@ -2490,6 +2900,7 @@ oo::class create pak::Codegen {
         foreach d [my emit_defers_for_scope 1] { lappend lines $d }
         my scope_pop
         set current_ret_type $prev_ret
+        set current_self_type $saved_self
         lappend lines "}"
         return [join $lines \n]
     }
@@ -2556,6 +2967,15 @@ oo::class create pak::Codegen {
                     dict set variant_types [pak::fval $decl name] 1
                     foreach c [pak::items [pak::nfield $decl cases]] {
                         dict set enum_variants [pak::fval $c name] [pak::fval $decl name]
+                        set names {}
+                        foreach f [pak::items [pak::nfield $c fields]] {
+                            if {[lindex $f 0] eq "seq"} {
+                                lappend names [pak::sval [lindex [pak::items $f] 0]]
+                            } else {
+                                lappend names ""
+                            }
+                        }
+                        dict set variant_case_fields [pak::fval $decl name] [pak::fval $c name] $names
                     }
                 }
                 ImplBlock - ImplTraitBlock {
@@ -2589,6 +3009,15 @@ oo::class create pak::Codegen {
                             dict set variant_types [pak::fval $inner name] 1
                             foreach c [pak::items [pak::nfield $inner cases]] {
                                 dict set enum_variants [pak::fval $c name] [pak::fval $inner name]
+                                set names {}
+                                foreach f [pak::items [pak::nfield $c fields]] {
+                                    if {[lindex $f 0] eq "seq"} {
+                                        lappend names [pak::sval [lindex [pak::items $f] 0]]
+                                    } else {
+                                        lappend names ""
+                                    }
+                                }
+                                dict set variant_case_fields [pak::fval $inner name] [pak::fval $c name] $names
                             }
                         }
                         FnDecl { lappend fn_names [pak::fval $inner name] }
@@ -2634,18 +3063,89 @@ oo::class create pak::Codegen {
 
         lappend out ""
 
+        # An asset name is a handle usable anywhere in the file (LANGUAGE.md
+        # section 14), not just a path string: `rdpq.sprite_blit(bg, ...)`
+        # passes the loaded asset. Emitting only <name>_path left every use of
+        # the bare name undeclared. Typed assets with a known loader get a
+        # lazily-loaded handle -- lazy because the filesystem is not mounted
+        # until the entry block runs, so loading at static-init time is too
+        # early. Untyped assets keep the path alone; there is nothing to load
+        # them with.
+        set asset_loaders [dict create Sprite [list {sprite_t *} sprite_load]]
         foreach asset $assets {
-            lappend out "/* asset: [pak::fval $asset name] from \"[pak::fval $asset path]\" */"
-            lappend out "static const char *[pak::fval $asset name]_path = \"pak:/[pak::fval $asset path]\";"
+            set aname [pak::fval $asset name]
+            set apath [pak::fval $asset path]
+            set atype [pak::nfield $asset asset_type]
+            set tname ""
+            if {![pak::isnil $atype]} {
+                set tname [expr {[pak::kindof $atype] eq "TypeName" ? [pak::fval $atype name] : [pak::sval $atype]}]
+            }
+            lappend out "/* asset: $aname from \"$apath\" */"
+            lappend out "static const char *${aname}_path = \"pak:/${apath}\";"
+            if {[dict exists $asset_loaders $tname]} {
+                lassign [dict get $asset_loaders $tname] ctype loader
+                lappend out "static $ctype _pak_asset_${aname} = 0;"
+                lappend out "static inline $ctype _pak_asset_get_${aname}(void) \{"
+                lappend out "    if (!_pak_asset_${aname}) _pak_asset_${aname} = ${loader}(${aname}_path);"
+                lappend out "    return _pak_asset_${aname};"
+                lappend out "\}"
+                lappend out "#define $aname (_pak_asset_get_${aname}())"
+            }
         }
         if {[llength $assets] > 0} { lappend out "" }
 
         # body (generated before preamble runtime types are appended, matching Python)
+        #
+        # User type declarations are split out and emitted ahead of the Result /
+        # slice / tuple / container typedefs below. Those typedefs embed user
+        # types by value (a Result carries a LoadError, a fixed list carries
+        # Star data[64]), so a user type declared after them is an unknown type
+        # name at the point that matters.
+        # The dependency runs both ways: a container typedef embeds a user type
+        # (Star data[64]) and a user struct embeds a container (stars:
+        # FixedList(Star, 64)). So user types split around the container block --
+        # plain ones before it, ones with a container field after it -- giving
+        # Star, then _PakList_Star_64, then GameState.
+        # File-scope statics and consts were never put in scope, so `gs` had no
+        # type and every gs.field.method() call missed dispatch and fell
+        # through to member access. Seed them at the global frame (index 0)
+        # before any body is generated -- frame 0 is also what closure capture
+        # analysis treats as "not a capture", which is right for a global.
+        foreach decl $decls {
+            switch -- [pak::kindof $decl] {
+                StaticDecl - ConstDecl {
+                    set dt [pak::nfield $decl type]
+                    if {![pak::isnil $dt]} { my scope_set [pak::fval $decl name] $dt }
+                }
+            }
+        }
+
+        set type_decls {}
+        set late_type_decls {}
         set body {}
         foreach decl $decls {
             if {[pak::kindof $decl] in {UseDecl AssetDecl ModuleDecl}} continue
             set r [my gen_decl $decl]
-            if {$r ne ""} { lappend body $r; lappend body "" }
+            if {$r eq ""} continue
+            if {[pak::kindof $decl] in {StructDecl EnumDecl VariantDecl UnionDecl}} {
+                if {[my decl_needs_generated_type $decl]} {
+                    lappend late_type_decls $r; lappend late_type_decls ""
+                } else {
+                    lappend type_decls $r; lappend type_decls ""
+                }
+            } else {
+                lappend body $r; lappend body ""
+            }
+        }
+
+        # Forward typedefs, so a struct can name itself or a sibling declared
+        # later without depending on declaration order at all.
+        set fwd {}
+        foreach decl $decls {
+            switch -- [pak::kindof $decl] {
+                StructDecl { lappend fwd "typedef struct [pak::fval $decl name] [pak::fval $decl name];" }
+                UnionDecl  { lappend fwd "typedef union [pak::fval $decl name] [pak::fval $decl name];" }
+            }
         }
 
         lappend out ""
@@ -2661,6 +3161,18 @@ oo::class create pak::Codegen {
         lappend out "    if (a->ptr + sz > a->base + a->capacity) return NULL;"
         lappend out "    void *p = a->ptr; a->ptr += sz; return p; }"
         lappend out "static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }"
+
+        if {[llength $fwd] > 0} {
+            lappend out ""
+            lappend out "/* -- User type forward declarations -- */"
+            foreach l $fwd { lappend out $l }
+        }
+        if {[llength $type_decls] > 0} {
+            lappend out ""
+            lappend out "/* -- User types -- */"
+            foreach l $type_decls { lappend out $l }
+        }
+
         if {$allocator_used} {
             lappend out ""
             lappend out "/* -- Allocator trait (vtable-based custom allocator interface) -- */"
@@ -2774,6 +3286,12 @@ oo::class create pak::Codegen {
             foreach cl $closure_lines { lappend out $cl }
         }
 
+        if {[llength $late_type_decls] > 0} {
+            lappend out ""
+            lappend out "/* -- User types with generated-type fields -- */"
+            foreach l $late_type_decls { lappend out $l }
+        }
+
         # Emit monomorphized generic specializations generated during body codegen.
         # These must precede body so that specialized struct typedefs and function
         # definitions are visible where main/other code uses them.
@@ -2789,7 +3307,12 @@ oo::class create pak::Codegen {
                 } else {
                     switch -- [pak::kindof $decl] {
                         FnDecl     { lappend out [my gen_fn $decl ""] }
-                        StructDecl { lappend out [my gen_struct $decl] }
+                        StructDecl {
+                            # Monomorphs are not in $decls, so the forward block
+                            # above never saw them: pair the typedef here.
+                            lappend out "typedef struct [pak::fval $decl name] [pak::fval $decl name];"
+                            lappend out [my gen_struct $decl]
+                        }
                     }
                 }
                 lappend out ""

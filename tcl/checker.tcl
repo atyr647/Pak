@@ -13,7 +13,7 @@
 set _ckhere [file dirname [file normalize [info script]]]
 source [file join $_ckhere ast.tcl]
 source [file join $_ckhere ast_visit.tcl]
-source [file join $_ckhere check_tables.tcl]
+source [file join $_ckhere module_api.tcl]
 
 namespace eval pak {}
 
@@ -23,10 +23,11 @@ if {[info exists ::pak::_checker_loaded]} { return }
 set ::pak::_checker_loaded 1
 
 oo::class create pak::Checker {
-    variable filename diags top_names used_modules
+    variable filename diags top_names used_modules backend
 
-    constructor {{fname ""}} {
+    constructor {{fname ""} {be "c"}} {
         set filename $fname
+        set backend $be
         set diags {}
         set top_names [dict create]
         set used_modules [dict create]
@@ -62,6 +63,7 @@ oo::class create pak::Checker {
                 }
                 FnDecl {
                     my register_name [pak::fval $decl name] $decl
+                    my check_fn_signature_types $decl
                     if {![pak::isnil [pak::nfield $decl body]]} { my check_fn_body $decl }
                 }
                 ImplBlock - ImplTraitBlock {
@@ -77,6 +79,29 @@ oo::class create pak::Checker {
                 ConstDecl {
                     my register_name [pak::fval $decl name] $decl
                     my check_const $decl
+                }
+                ExternConst {
+                    # An extern symbol resolves on the standalone backend only
+                    # if the HAL itself defines it -- boot.S and runtime.pk64
+                    # are all that gets linked. An extern const is usually a
+                    # libdragon macro, which is nothing the linker can find:
+                    # the codegen emitted the reference and the link failed on
+                    # an undefined symbol. Say so here, where it can be read.
+                    if {$backend eq "mips" && ![pak::mips_hal_symbol [pak::fval $decl name]]} {
+                        my err E010 "extern const '[pak::fval $decl name]' is not defined on the standalone backend" \
+                            "Only boot.S and runtime/standalone/runtime.pk64 are linked, so an extern symbol they do not define cannot resolve. Use the libdragon backend, or give it a value with `const`." \
+                            $decl
+                    }
+                }
+                ExternBlock {
+                    if {$backend eq "mips"} {
+                        foreach ed [pak::items [pak::nfield $decl decls]] {
+                            if {[pak::mips_hal_symbol [pak::fval $ed name]]} continue
+                            my err E010 "extern fn '[pak::fval $ed name]' is not defined on the standalone backend" \
+                                "Only boot.S and runtime/standalone/runtime.pk64 are linked, so an extern symbol they do not define cannot resolve. Use the libdragon backend, or implement it in the HAL." \
+                                $ed
+                        }
+                    }
                 }
                 CfgBlock {
                     my check_cfg $decl
@@ -110,10 +135,16 @@ oo::class create pak::Checker {
                 my err E104 "Unknown module '[pak::fval $decl path]'" \
                     "Known n64 modules: [join $known {, }]" $decl
             } else {
-                dict set used_modules $mod 1
+                # name -> canonical module. Aliases (`use n64.display as disp`)
+                # resolve to `display` so MODULE_API lookup is by real module.
+                dict set used_modules $mod $mod
+                set alias [pak::nfield $decl alias]
+                if {![pak::isnil $alias]} {
+                    dict set used_modules [pak::fval $decl alias] $mod
+                }
             }
         } elseif {$prefix eq "t3d"} {
-            dict set used_modules t3d 1
+            dict set used_modules t3d t3d
         }
     }
 
@@ -121,6 +152,13 @@ oo::class create pak::Checker {
     method check_entry {decl} {}
 
     # ── function body checks ──────────────────────────────────────────────────
+    method check_fn_signature_types {decl} {
+        foreach prm [pak::items [pak::nfield $decl params]] {
+            my check_backend_type [pak::nfield $prm type]
+        }
+        my check_backend_type [pak::nfield $decl ret_type]
+    }
+
     method check_fn_body {decl} {
         set body [pak::nfield $decl body]
         if {[pak::isnil $body]} return
@@ -157,6 +195,37 @@ oo::class create pak::Checker {
         return $terminated
     }
 
+    # FixedMap and Pool lower to calls into pak_map_* / pak_pool_* helpers that
+    # runtime/standalone/runtime.pk64 does not define -- there is no helper
+    # library on the standalone path, only boot.S and the HAL. The codegen
+    # emitted those calls anyway and the failure surfaced as an undefined
+    # symbol at link. Report it here, against the declaration, instead.
+    method check_backend_type {t} {
+        if {$backend ne "mips"} return
+        if {[pak::isnil $t] || [llength $t] < 2 || [lindex $t 0] ne "node"} return
+        if {[pak::kindof $t] eq "TypeDynTrait"} {
+            my err E010 "dyn trait objects are not implemented on the standalone backend" \
+                "Vtable dispatch is not lowered by the MIPS backend. Use a concrete type, or the libdragon backend." \
+                $t
+            return
+        }
+        if {[pak::kindof $t] eq "TypeGeneric"} {
+            set n [pak::fval $t name]
+            if {$n in {FixedMap Pool}} {
+                my err E010 "container '$n' is not implemented on the standalone backend" \
+                    "It lowers to pak_map_* / pak_pool_* helpers that runtime/standalone/runtime.pk64 does not define. Use FixedList or RingBuffer, or the libdragon backend." \
+                    $t
+                return
+            }
+        }
+        dict for {k v} [lindex $t 2] {
+            switch -- [lindex $v 0] {
+                node { my check_backend_type $v }
+                seq  { foreach it [pak::items $v] { my check_backend_type $it } }
+            }
+        }
+    }
+
     method check_block_calls {block} {
         foreach stmt [pak::items [pak::nfield $block stmts]] { my check_stmt_calls $stmt }
     }
@@ -165,6 +234,7 @@ oo::class create pak::Checker {
         switch -- [pak::kindof $stmt] {
             ExprStmt { my check_expr_calls [pak::nfield $stmt expr] }
             LetDecl {
+                my check_backend_type [pak::nfield $stmt type]
                 set v [pak::nfield $stmt value]
                 if {![pak::isnil $v]} { my check_expr_calls $v }
             }
@@ -231,7 +301,7 @@ oo::class create pak::Checker {
         if {[pak::isnil $expr]} return
         switch -- [pak::kindof $expr] {
             Call {
-                my check_call_arity $expr
+                my check_module_call $expr
                 foreach arg [pak::items [pak::nfield $expr args]] { my check_expr_calls $arg }
             }
             BinaryOp {
@@ -255,14 +325,57 @@ oo::class create pak::Checker {
         }
     }
 
-    method check_call_arity {call} {
+    # Resolve n64.mod.fn / t3d.fn / used-module.fn. Empty list if this Call is
+    # not a module API invocation (method call, user function, etc.).
+    method module_call_of {call} {
+        set func [pak::nfield $call func]
+        if {[pak::kindof $func] ne "DotAccess"} { return {} }
+        set obj [pak::nfield $func obj]
+        set fn  [pak::fval $func field]
+        if {[pak::kindof $obj] eq "DotAccess"} {
+            set inner [pak::nfield $obj obj]
+            set mod [pak::fval $obj field]
+            if {[pak::kindof $inner] eq "Ident"} {
+                set prefix [pak::fval $inner name]
+                if {$prefix in {n64 t3d}} {
+                    return [list $mod $fn]
+                }
+            }
+        }
+        if {[pak::kindof $obj] eq "Ident"} {
+            set name [pak::fval $obj name]
+            if {[dict exists $used_modules $name]} {
+                return [list [dict get $used_modules $name] $fn]
+            }
+        }
+        return {}
+    }
+
+    method check_module_call {call} {
+        set pair [my module_call_of $call]
+        if {[llength $pair] != 2} { return }
+        lassign $pair mod fn
+        set key [list $mod $fn]
+        if {![pak::module_api_has $mod $fn]} {
+            my err E010 "unknown method '$mod.$fn'" \
+                "Not in MODULE_API. See STDLIB.md; unknown methods are never lowered." \
+                $call
+            return
+        }
+        if {$backend eq "mips" && ![pak::mips_hal_has $mod $fn]} {
+            my err E010 "unknown method '$mod.$fn' on the standalone backend" \
+                "Not defined in runtime/standalone/runtime.pk64. Use the libdragon backend, or implement it in the HAL." \
+                $call
+            return
+        }
+        my check_rdp_cached_addr $call $mod $fn
+        # Arity (E105) stays on the fully-qualified `n64.mod.fn(...)` form the
+        # goldens already cover. `mod.fn(...)` after `use` is existence + HAL
+        # only — several libdragon APIs are called with fewer args than the
+        # conservative table (rdpq.attach_clear with one argument, etc.).
         set func [pak::nfield $call func]
         if {[pak::kindof $func] ne "DotAccess"} return
-        set obj [pak::nfield $func obj]
-        if {[pak::kindof $obj] ne "DotAccess"} return
-        set mod [pak::fval $obj field]
-        set fn  [pak::fval $func field]
-        set key [list $mod $fn]
+        if {[pak::kindof [pak::nfield $func obj]] ne "DotAccess"} return
         if {![dict exists $::pak::API_ARITY $key]} return
         set arity [dict get $::pak::API_ARITY $key]
         set min_a [lindex $arity 0]
@@ -277,6 +390,31 @@ oo::class create pak::Checker {
             if {$min_a == $max_a} { set expected $min_a } else { set expected "${min_a}–${max_a}" }
             my err E105 "n64.$mod.${fn}() expects $expected argument(s), got $n" \
                 "Check the libdragon docs for the correct signature" $call
+        }
+    }
+
+    # Cached (KSEG0) addresses handed to the DP sample dcache, not RDRAM.
+    # rdpq.set_texture_image writebacks a conservative range at runtime; a
+    # literal in 0x80000000–0x9FFFFFFF is still the programmer naming a
+    # cached buffer, so it is E203. KSEG1 (0xA0000000+) is fine.
+    method check_rdp_cached_addr {call mod fn} {
+        if {$mod ne "rdpq"} return
+        if {$fn ni {set_texture_image set_color_image set_z_image}} return
+        set args [pak::items [pak::nfield $call args]]
+        if {[llength $args] == 0} return
+        set addr [lindex $args 0]
+        while {[pak::kindof $addr] eq "Cast"} {
+            set addr [pak::nfield $addr expr]
+        }
+        if {[pak::kindof $addr] ne "IntLit"} return
+        set v [pak::fval $addr value]
+        if {![string is integer -strict $v]} return
+        # Tcl wide ints; compare unsigned 32-bit.
+        set u [expr {$v & 0xFFFFFFFF}]
+        if {$u >= 0x80000000 && $u < 0xA0000000} {
+            my err E203 "cached KSEG0 address handed to rdpq.$fn" \
+                "The DP reads RDRAM, not dcache. Use a KSEG1 address (0xA0000000+) or a buffer that rdpq.set_texture_image can writeback." \
+                $call
         }
     }
 
@@ -316,8 +454,8 @@ proc pak::is_const_expr {expr} {
 }
 
 # ── public entry: run all checks on a parsed Program node ──────────────────────
-proc pak::semantic_check {program {filename ""}} {
-    set chk [pak::Checker new $filename]
+proc pak::semantic_check {program {filename ""} {backend "c"}} {
+    set chk [pak::Checker new $filename $backend]
     $chk check_program [pak::items [pak::nfield $program decls]]
     set out [$chk diags]
     $chk destroy

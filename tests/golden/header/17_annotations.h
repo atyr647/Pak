@@ -5,14 +5,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct {
+typedef struct DMAPacket DMAPacket;
+typedef struct CriticalBuffer CriticalBuffer;
+
+struct DMAPacket {
     uint32_t header;
     uint8_t data[60];
-} DMAPacket __attribute__((aligned(16)));
+} __attribute__((aligned(16)));
 
-typedef struct {
+struct CriticalBuffer {
     uint8_t data[256];
-} CriticalBuffer __attribute__((aligned(8)));
+} __attribute__((aligned(8)));
 
 int32_t sum_scanline(uint8_t * buf, int32_t y, int32_t width);
 

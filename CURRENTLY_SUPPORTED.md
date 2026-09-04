@@ -111,7 +111,8 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `asm("template" : out : in : clobbers)` | ✅ Full | |
 | Named args `f(x: val)` | ✅ Full | |
 | `catch` expression | ✅ Full | |
-| Null-check expression `ptr?` | ✅ Full | |
+| Null-check expression `ptr?` | ✅ Full | Boolean is-not-none |
+| `match expr { .case { field: x } }` | ✅ Full | Named-field variant payload bindings |
 | Tuple access `t.0` | ✅ Full | |
 | Format string `"text {var}"` | ✅ Full | Lowers to `snprintf` into a static buffer |
 
@@ -161,7 +162,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Return path checking (W201) | ✅ Full | Warning, not error |
 | Naming convention checks (W001–W003) | ✅ Full | Suppressible |
 | Asset declaration scope | ✅ Full | Fixed — asset names registered in typechecker scope |
-| Generic type instantiation | ⚠️ Partial | Type params tracked; generic function bodies not checked (can't resolve types without instantiation) |
+| Generic type instantiation | ✅ Full | Type-arg count (E015); generic function bodies checked at each instantiation (E016 on field access after T is concrete) |
 | Trait implementation completeness | ✅ Full | Method existence (E601/E602) and parameter count (E603) checked |
 | Result/Option type checking | ⚠️ Partial | Constructors accepted; match types partially resolved |
 
@@ -177,7 +178,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Fixed-point arithmetic | ✅ Full | Uses C macros |
 | `alloc` / `free` | ✅ Full | Maps to `malloc`/`free` |
 | `defer` → cleanup code | ✅ Full | |
-| N64 module API calls | ✅ Full | All modules in `n64_runtime.py` |
+| N64 module API calls | ✅ Full | `tcl/module_api.tcl` (CG_API ∪ CG_API_LAMBDA). Standalone HAL is the subset in `runtime/standalone/runtime.pk64`; `pak check --backend mips` is E010 on the rest. |
 | `asset` declarations | ✅ Full | |
 | `extern "C"` blocks | ✅ Full | |
 | `@cfg` conditional compilation | ✅ Full | Maps to `#if`/`#endif` |
@@ -188,7 +189,8 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Closures capturing environment | ✅ Full | Emitted as a GCC nested function; captures by reference within the enclosing frame |
 | Trait object dispatch (`dyn`) | ✅ Full | Vtable struct + fat pointer + thunks; constructor helpers emitted |
 | `goto` / labels | ✅ Full | |
-| Format strings | ✅ Full | `"x={n}"` → `snprintf` into static buffer |
+| Format strings | ✅ Full | `"x={n}"` → `snprintf` into static buffer; MIPS integers use itoa, floats use ftoa |
+| `match expr { .case { f: x } }` | ✅ Full | Named-field payload bindings |
 
 ---
 
@@ -204,13 +206,47 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Function calls (o32 ABI) | ✅ Full | |
 | N64 API calls via `jal` | ✅ Full | All modules |
 | Register allocation | ✅ Full | Linear-scan with stack spilling: 18 GPRs ($t0–$t9, $s0–$s7) + 8 pre-reserved spill slots per frame = 26 simultaneous live values. Named variables mapped to callee-saved $s regs. |
-| Peephole optimization | ✅ Full | |
-| Delay slot filling | ✅ Full | |
+| Peephole optimization | ✅ Full | On instruction records; `objgen` / one-shot ROM encode the optimized stream |
+| Delay slot filling | ✅ Full | Same record passes |
+| CPU exception paint | ✅ Full | crt0 installs 0x80000000/80/100/180; default fills FB red (`0xF801`) |
+| EEPROM (SI/PIF ch4) | ✅ Full | `present` / `type_detect` / `read` / `write` / `init` on the standalone HAL |
+| Audio PCM (AI) | ✅ Full | `init`/`get_buffer`/`write`/`close` on the standalone HAL; 16-bit stereo |
+| Shade+tex triangles | ✅ Full | RDP 0x0E Gouraud+ST; 0x0F after `rdpq.set_tri_z` |
+| Fill+Z / tex+Z triangles | ✅ Full | RDP 0x09 `rdpq.triangle_z`; 0x0B `rdpq.triangle_tex_z` after `set_tri_z` |
+| LOAD_BLOCK / LOAD_TLUT | ✅ Full | RDP 0x33 / 0x30; executed in `rdp_test.tcl` |
+| Tex-rect flip / prim depth / fog+env | ✅ Full | RDP 0x25 / 0x2E / 0x38 / 0x3B |
+| Chroma key / YUV convert / scaled texrect | ✅ Full | RDP 0x2A/0x2B/0x2C; 0x24 with custom dsdx |
+| Array address / u8 index | ✅ Full | `&arr` is `la`; `[N]u8` stores `sb` at base+i (not scale-4 `sw`) |
+| `&arr[i]` / `*u8[i]` / `[]u8` slices | ✅ Full | Slice start is elem-size, not always ×4; `for b in s` loads bytes |
+| `for x in [N]T` | ✅ Full | Length is `[N]`, not the first two words as a fat pointer |
+| `for p in []Point` / `[N]T.len` | ✅ Full | Struct elements memcpy; `.len` is N or the fat-pointer length |
+| `pts[i] = Point { ... }` | ✅ Full | Aggregate `=` memcpy, not a store of the literal's address |
+| `sum(s)` / `add(p)` / `a = b` | ✅ Full | Slice, struct, and array args memcpy from the passed address |
+| `let p = mk()` / `q.doubled()` / `rest(s)` | ✅ Full | sret: callee copies into the caller's frame; `s[1..n]` on a slice uses the data pointer |
+| `CStr.len()` / `str.from_cstr` / `Str.len` | ✅ Full | Inline strlen/eq/find; no libc. `Str` is `{data, len}` |
+| `Str.eq` / `contains` / `find` / `slice` | ✅ Full | Bounded memcmp on `{data, len}`, not `jal pak_str_eq` |
+| `[N]T.as_slice()` / `get_unchecked` | ✅ Full | Fat `{ptr, len}` pair; `get_unchecked(i)` is unscaled index |
+| `match .ok/.err` / `Some` / `none` / `catch` | ✅ Full | Result/Option sret; match bindings are arm-scoped |
+| `id<T>(x)` / `id(11)` | ✅ Full | Monomorphized as a real function after the caller, not spliced into it |
+| `match .Circle(r)` | ✅ Full | Variant values pass by address so the tag is `lbu` at the object, not a load of the first word |
+| `let f = fn(x: i32)` / `f(3)` | ✅ Full | Closure after the caller; `jalr`; env holds *addresses* so `n = n+1` writes back |
+| `"x={n}"` integer fmt | ✅ Full | Inline itoa into a static buf; no libc snprintf |
+| `"x={f}"` float fmt | ✅ Full | Compile-time float literals strcpy; runtime f32 via integer-only ftoa (two fraction digits) |
+| `CStr.slice(i, n)` | ✅ Full | Copies `n` bytes into a NUL-terminated scratch buf |
+| `&s.field` / value-struct fields | ✅ Full | Place address of the object, not a spilled copy of the first word |
+| Method `self` (value, `*T`, `obj.field.m()`) | ✅ Full | Pointer receivers pass the pointer; `g.player.init()` is not a module call |
+| 4-byte / generic struct field load | ✅ Full | `Box { val: 9 }` and `Box<i32> { val: 9 }` memcpy the literal; `.val` is 9, not the stack address |
+| Named-field variant match (`.Rect { w: ww }`) | ✅ Full | Parsed as named bindings; loads the named payload field |
+| Trait `fn add(self, …)` / `n.add(5)` | ✅ Full | Untyped `self` is `*Self`; impl subst; 4-byte structs passed by address |
+| `alloc(T)` / `free` | ✅ Full | Inline 8-byte-aligned bump at `0x802A0000`; `free` is a no-op |
+| `if p?` postfix null-check | ✅ Full | Boolean is-not-none; `if p -> q` still binds |
+| `fix16.16 as i32` | ✅ Full | Arithmetic right-shift by frac bits; sim `mult` fills HI:LO for `*` |
 | `defer` | ✅ Full | |
 | `match` on enums | ✅ Full | |
 | Named-field variant construction (`Type.case { f: v }`) | ✅ Full | Stack-allocated with tag + payload stores |
 | Compound-assign `/=`, `%=`, `<<=`, `>>=` | ✅ Full | `/=` → `div`/`mflo`; `%=` → `div`/`mfhi`; shifts → `sllv`/`srav` |
-| Generics / traits | ⚠️ Partial | Same as C backend |
+| Generics / traits | ⚠️ Partial | Static dispatch works; `dyn Trait` vtable is C-only |
+
 
 ---
 

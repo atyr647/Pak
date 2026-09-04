@@ -38,11 +38,50 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
 
+/* -- User type forward declarations -- */
+typedef struct Star Star;
+typedef struct Cube Cube;
+typedef struct GameState GameState;
+
+/* -- User types -- */
+struct Star {
+    int32_t sx;
+    int32_t sy;
+    float z;
+};
+
+struct Cube {
+    float tx;
+    float ty;
+    float tz;
+    float sc;
+    float ry;
+    float rx;
+    float spy;
+    float spx;
+    uint32_t col0;
+    uint32_t col1;
+    uint32_t col2;
+};
+
+
+typedef struct { Star *data; int32_t len; } PakSlice_Star;
+
 /* -- Container types -- */
 typedef struct {
     Star data[64];
     int32_t len;
 } _PakList_Star_64;
+
+
+/* -- User types with generated-type fields -- */
+struct GameState {
+    _PakList_Star_64 stars;
+    Cube cube_a;
+    Cube cube_b;
+    int32_t frame;
+    bool running;
+};
 
 enum { SCREEN_W = 320 };
 
@@ -67,34 +106,6 @@ static int32_t cf_idx[24] = {0, 1, 2, 3, 5, 4, 7, 6, 4, 0, 3, 7, 1, 5, 6, 2, 3, 
 static uint32_t sky_col[6] = {0x050C14FF, 0x0A1828FF, 0x10243AFF, 0x182F4CFF, 0x1F3A5FFF, 0x2A4A70FF};
 
 static uint32_t gnd_col[8] = {0x3C2B1AFF, 0x352717FF, 0x2E2214FF, 0x281E11FF, 0x221A0EFF, 0x1C160BFF, 0x161208FF, 0x100E06FF};
-
-typedef struct {
-    int32_t sx;
-    int32_t sy;
-    float z;
-} Star;
-
-typedef struct {
-    float tx;
-    float ty;
-    float tz;
-    float sc;
-    float ry;
-    float rx;
-    float spy;
-    float spx;
-    uint32_t col0;
-    uint32_t col1;
-    uint32_t col2;
-} Cube;
-
-typedef struct {
-    _PakList_Star_64 stars;
-    Cube cube_a;
-    Cube cube_b;
-    int32_t frame;
-    bool running;
-} GameState;
 
 static GameState gs;
 
@@ -247,9 +258,9 @@ void render_sky_ground(void) {
 }
 
 void render_stars(void) {
-    __auto_type ss = gs.stars.slice();
+    __auto_type ss = (PakSlice_Star){ .data = (gs.stars).data, .len = (gs.stars).len };
     for (int i = 0; i < (ss).len; i++) {
-        Star s = ss[i];
+        Star s = (ss).data[i];
         uint32_t col = 0x444444FF;
         if (s.z > 0.75f) {
             col = 0xFFFFFFFF;
@@ -270,8 +281,8 @@ void render_stars(void) {
 }
 
 void update(joypad_status_t pad) {
-    gs.cube_a.spin();
-    gs.cube_b.spin();
+    Cube_spin(&gs.cube_a);
+    Cube_spin(&gs.cube_b);
     if (pad.held.l) {
         gs.cube_a.spy -= 0.003f;
     }
@@ -291,11 +302,11 @@ void update(joypad_status_t pad) {
 }
 
 void init_scene(void) {
-    gs.stars = {0};
+    memset(&(gs.stars), 0, sizeof(gs.stars));
     __pak_srand(0xDEAD);
     int32_t cnt = 0;
     while (cnt < 64) {
-        gs.stars.push((Star){.sx = __pak_rand_range(0, 318), .sy = __pak_rand_range(0, 115), .z = __pak_rand_f()});
+        ((gs.stars).len < 64 ? ((gs.stars).data[(gs.stars).len++] = ((Star){.sx = __pak_rand_range(0, 318), .sy = __pak_rand_range(0, 115), .z = __pak_rand_f()}), 1) : 0);
         cnt += 1;
     }
     gs.cube_a = (Cube){.tx = -0.5f, .ty = 0.0f, .tz = 5.5f, .sc = 1.6f, .ry = 0.0f, .rx = 0.5f, .spy = 0.018f, .spx = 0.011f, .col0 = 0xFF5500FF, .col1 = 0xCC3300FF, .col2 = 0xFF8800FF};

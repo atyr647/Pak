@@ -22,6 +22,10 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
 
+/* -- User type forward declarations -- */
+typedef struct Pair Pair;
+typedef struct KeyVal KeyVal;
+
 /* -- Generic specializations -- */
 int32_t identity_int32_t(int32_t x) {
     return x;
@@ -53,20 +57,47 @@ int32_t swap_first_int32_t(int32_t a, int32_t b) {
     return b;
 }
 
-typedef struct {
+typedef struct Pair_int32_t Pair_int32_t;
+struct Pair_int32_t {
     int32_t first;
     int32_t second;
-} Pair_int32_t;
+};
 
-typedef struct {
+int32_t Pair_int32_t_sum_i32(Pair_int32_t * self) {
+    return (self->first + self->second);
+}
+
+int32_t Pair_int32_t_get_first(Pair_int32_t * self) {
+    return self->first;
+}
+
+int32_t Pair_int32_t_get_second(Pair_int32_t * self) {
+    return self->second;
+}
+
+typedef struct Pair_float Pair_float;
+struct Pair_float {
     float first;
     float second;
-} Pair_float;
+};
 
-typedef struct {
+float Pair_float_sum_i32(Pair_float * self) {
+    return (self->first + self->second);
+}
+
+float Pair_float_get_first(Pair_float * self) {
+    return self->first;
+}
+
+float Pair_float_get_second(Pair_float * self) {
+    return self->second;
+}
+
+typedef struct KeyVal_int32_t_float KeyVal_int32_t_float;
+struct KeyVal_int32_t_float {
     int32_t key;
     float value;
-} KeyVal_int32_t_float;
+};
 
 static int32_t sink_i = 0;
 
@@ -83,12 +114,12 @@ int main(void) {
     Pair_int32_t p = (Pair_int32_t){.first = 10, .second = 32};
     sink_i = p.first;
     sink_i = p.second;
-    sink_i = p.sum_i32();
-    sink_i = p.get_first();
+    sink_i = Pair_int32_t_sum_i32(&p);
+    sink_i = Pair_int32_t_get_first(&p);
     Pair_float fp = (Pair_float){.first = 1.5f, .second = 2.5f};
     sink_f = fp.first;
-    sink_f = fp.sum_i32();
-    sink_f = fp.get_second();
+    sink_f = Pair_float_sum_i32(&fp);
+    sink_f = Pair_float_get_second(&fp);
     sink_i = identity_int32_t(99);
     KeyVal_int32_t_float kv = (KeyVal_int32_t_float){.key = 1, .value = 9.9f};
     sink_i = kv.key;

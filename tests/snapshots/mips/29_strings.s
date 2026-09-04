@@ -16,8 +16,10 @@
 	.extern rdpq_detach
 	.extern rdpq_detach_show
 	.extern rdpq_set_mode_standard
+	.extern rdpq_set_mode_standard_z
 	.extern rdpq_set_mode_copy
 	.extern rdpq_set_mode_fill
+	.extern rdpq_clear_z
 	.extern rdpq_fill_rectangle
 	.extern rdpq_sync_full
 	.extern rdpq_sync_pipe
@@ -33,15 +35,29 @@
 	.extern rdpq_set_fog_color
 	.extern rdpq_set_env_color
 	.extern rdpq_set_prim_color
+	.extern rdpq_set_prim_depth
+	.extern rdpq_set_key_r
+	.extern rdpq_set_key_gb
+	.extern rdpq_set_convert
 	.extern rdpq_set_texture_image
 	.extern rdpq_set_tile
+	.extern rdpq_set_tile_mask
 	.extern rdpq_set_tile_size
 	.extern rdpq_load_tile
 	.extern rdpq_load_block
 	.extern rdpq_load_tlut
 	.extern rdpq_texture_rectangle
 	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_texture_rectangle_flip
 	.extern rdpq_triangle
+	.extern rdpq_triangle_z
+	.extern rdpq_triangle_shade
+	.extern rdpq_triangle_shade_z
+	.extern rdpq_triangle_tex
+	.extern rdpq_triangle_tex_z
+	.extern rdpq_triangle_shade_tex
+	.extern rdpq_triangle_shade_tex_z
+	.extern rdpq_set_tri_z
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -50,6 +66,11 @@
 	.extern audio_init
 	.extern audio_close
 	.extern audio_get_buffer
+	.extern audio_get_frequency
+	.extern audio_can_write
+	.extern audio_write
+	.extern audio_write_silence
+	.extern audio_set_buffer_num
 	.extern debugf
 	.extern assert
 	.extern dma_read
@@ -175,41 +196,58 @@ check_greeting:
     sw $a0, 136($sp)
     lw $t8, 136($sp)
     la $t7, .Lstr0
-    move $a0, $t7
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    jal strlen
+    move $t6, $t8
+    move $t5, $t7
+.Lsw_1:
+    lbu $t3, 0($t5)
+    beqz $t3, .Lsw_yes_3
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    move $a2, $v0
-    move $a0, $t8
-    move $a1, $t7
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    jal strncmp
+    lbu $t4, 0($t6)
+    bne $t4, $t3, .Lsw_no_2
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    seq $t9, $v0, $zero
+    addiu $t6, $t6, 1
+    addiu $t5, $t5, 1
+    j .Lsw_1
+    nop
+.Lsw_yes_3:
+    li $t9, 1
+    j .Lsw_d_4
+    nop
+.Lsw_no_2:
+    li $t9, 0
+.Lsw_d_4:
     lw $t7, 136($sp)
-    move $a0, $t7
-    la $a1, .Lstr1
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    jal strstr
+    la $t6, .Lstr1
+    move $t4, $t7
+.Lss_5:
+    lbu $t1, 0($t4)
+    beqz $t1, .Lss_m_7
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    sltu $t8, $zero, $v0
-    move $t8, $v0
-    sltu $t8, $zero, $t8
+    move $t3, $t4
+    move $t2, $t6
+.Lss_i_9:
+    lbu $t0, 0($t2)
+    beqz $t0, .Lss_f_6
+    nop
+    lbu $t1, 0($t3)
+    bne $t1, $t0, .Lss_n_10
+    nop
+    addiu $t3, $t3, 1
+    addiu $t2, $t2, 1
+    j .Lss_i_9
+    nop
+.Lss_n_10:
+    addiu $t4, $t4, 1
+    j .Lss_5
+    nop
+.Lss_f_6:
+    move $t5, $t4
+    j .Lss_d_8
+    nop
+.Lss_m_7:
+    move $t5, $zero
+.Lss_d_8:
+    sltu $t8, $zero, $t5
     sltiu $t7, $t9, 1
     sltiu $v0, $t8, 1
     or $v0, $t7, $v0
@@ -235,16 +273,29 @@ same_string:
     sw $a0, 136($sp)
     sw $a1, 140($sp)
     lw $t9, 136($sp)
-    move $a0, $t9
-    lw $a1, 140($sp)
-    sw $t9, 96($sp)
-    jal strcmp
+    lw $t8, 140($sp)
+    move $t7, $t9
+    move $t6, $t8
+.Lstreq_12:
+    lbu $t5, 0($t7)
+    lbu $t4, 0($t6)
+    bne $t5, $t4, .Lstreq_ne_13
     nop
-    lw $t9, 96($sp)
-    seq $v0, $v0, $zero
-    j .Lsame_string_ret_1
+    beqz $t5, .Lstreq_d_14
+    addiu $t7, $t7, 1
+    move $v0, $zero
+    addiu $t6, $t6, 1
+    j .Lstreq_12
     nop
-.Lsame_string_ret_1:
+.Lstreq_ne_13:
+    li $v0, 0
+    j .Lstreq_d_14
+    nop
+.Lstreq_d_14:
+    seq $v0, $t5, $t4
+    j .Lsame_string_ret_11
+    nop
+.Lsame_string_ret_11:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -263,23 +314,47 @@ find_offset:
     sw $a0, 136($sp)
     sw $a1, 140($sp)
     lw $t9, 136($sp)
-    move $a0, $t9
-    lw $a1, 140($sp)
-    sw $t9, 96($sp)
-    jal strstr
+    lw $t8, 140($sp)
+    move $t6, $t9
+.Lss_16:
+    lbu $t3, 0($t6)
+    beqz $t3, .Lss_m_18
     nop
-    lw $t9, 96($sp)
-    bne $v0, $zero, .Lsf_3
+    move $t5, $t6
+    move $t4, $t8
+.Lss_i_20:
+    lbu $t2, 0($t4)
+    beqz $t2, .Lss_f_17
+    nop
+    lbu $t3, 0($t5)
+    bne $t3, $t2, .Lss_n_21
+    nop
+    addiu $t5, $t5, 1
+    addiu $t4, $t4, 1
+    j .Lss_i_20
+    nop
+.Lss_n_21:
+    addiu $t6, $t6, 1
+    j .Lss_16
+    nop
+.Lss_f_17:
+    move $t7, $t6
+    j .Lss_d_19
+    nop
+.Lss_m_18:
+    move $t7, $zero
+.Lss_d_19:
+    bnez $t7, .Lsf_22
     nop
     li $v0, -1
-    j .Lsfe_4
+    j .Lsfe_23
     nop
-.Lsf_3:
-    subu $v0, $v0, $t9
-.Lsfe_4:
-    j .Lfind_offset_ret_2
+.Lsf_22:
+    subu $v0, $t7, $t9
+.Lsfe_23:
+    j .Lfind_offset_ret_15
     nop
-.Lfind_offset_ret_2:
+.Lfind_offset_ret_15:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -295,11 +370,16 @@ check_pakstr:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    move $t9, $a0
+    addiu $t8, $sp, 136
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
     lw $v0, 140($sp)
-    j .Lcheck_pakstr_ret_5
+    j .Lcheck_pakstr_ret_24
     nop
-.Lcheck_pakstr_ret_5:
+.Lcheck_pakstr_ret_24:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -315,205 +395,301 @@ main:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
+    sw $s7, 308($sp)
     la $t9, .Lstr2
     sw $t9, 136($sp)
     lw $t7, 136($sp)
-    move $a0, $t7
-    la $a1, .Lstr1
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    jal strstr
+    la $t6, .Lstr1
+    move $t4, $t7
+.Lss_26:
+    lbu $t1, 0($t4)
+    beqz $t1, .Lss_m_28
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    sltu $t8, $zero, $v0
-    move $t8, $v0
-    sltu $t8, $zero, $t8
+    move $t3, $t4
+    move $t2, $t6
+.Lss_i_30:
+    lbu $t0, 0($t2)
+    beqz $t0, .Lss_f_27
+    nop
+    lbu $t1, 0($t3)
+    bne $t1, $t0, .Lss_n_31
+    nop
+    addiu $t3, $t3, 1
+    addiu $t2, $t2, 1
+    j .Lss_i_30
+    nop
+.Lss_n_31:
+    addiu $t4, $t4, 1
+    j .Lss_26
+    nop
+.Lss_f_27:
+    move $t5, $t4
+    j .Lss_d_29
+    nop
+.Lss_m_28:
+    move $t5, $zero
+.Lss_d_29:
+    sltu $t8, $zero, $t5
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
     la $t6, .Lstr0
-    move $a0, $t6
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    sw $t6, 108($sp)
-    jal strlen
+    move $t5, $t7
+    move $t4, $t6
+.Lsw_32:
+    lbu $t2, 0($t4)
+    beqz $t2, .Lsw_yes_34
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    lw $t6, 108($sp)
-    move $a2, $v0
-    move $a0, $t7
-    move $a1, $t6
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    sw $t6, 108($sp)
-    jal strncmp
+    lbu $t3, 0($t5)
+    bne $t3, $t2, .Lsw_no_33
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    lw $t6, 108($sp)
-    seq $t8, $v0, $zero
+    addiu $t5, $t5, 1
+    addiu $t4, $t4, 1
+    j .Lsw_32
+    nop
+.Lsw_yes_34:
+    li $t8, 1
+    j .Lsw_d_35
+    nop
+.Lsw_no_33:
+    li $t8, 0
+.Lsw_d_35:
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
     la $t6, .Lstr1
-    move $a0, $t6
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    sw $t6, 108($sp)
-    jal strlen
+    move $t3, $t6
+    move $t5, $zero
+.Lstrlen_36:
+    lbu $t2, 0($t3)
+    beqz $t2, .Lstrlend_37
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    lw $t6, 108($sp)
-    move $t5, $v0
-    move $a0, $t7
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    sw $t6, 108($sp)
-    sw $t5, 112($sp)
-    jal strlen
+    addiu $t3, $t3, 1
+    addiu $t5, $t5, 1
+    j .Lstrlen_36
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    lw $t6, 108($sp)
-    lw $t5, 112($sp)
-    move $t4, $v0
+.Lstrlend_37:
+    move $t3, $t7
+    move $t4, $zero
+.Lstrlen_38:
+    lbu $t2, 0($t3)
+    beqz $t2, .Lstrlend_39
+    nop
+    addiu $t3, $t3, 1
+    addiu $t4, $t4, 1
+    j .Lstrlen_38
+    nop
+.Lstrlend_39:
+    sltu $t8, $t4, $t5
+    bnez $t8, .Lew_no_40
+    nop
     addu $t3, $t7, $t4
     subu $t3, $t3, $t5
-    move $a0, $t3
-    move $a1, $t6
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    sw $t6, 108($sp)
-    sw $t5, 112($sp)
-    sw $t4, 116($sp)
-    sw $t3, 120($sp)
-    jal strcmp
+    move $t2, $t3
+    move $t1, $t6
+.Lstreq_43:
+    lbu $t0, 0($t2)
+    lbu $s7, 0($t1)
+    bne $t0, $s7, .Lstreq_ne_44
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    lw $t6, 108($sp)
-    lw $t5, 112($sp)
-    lw $t4, 116($sp)
-    lw $t3, 120($sp)
-    seq $t8, $v0, $zero
+    beqz $t0, .Lstreq_d_45
+    addiu $t2, $t2, 1
+    move $t8, $zero
+    addiu $t1, $t1, 1
+    j .Lstreq_43
+    nop
+.Lstreq_ne_44:
+    li $t8, 0
+    j .Lstreq_d_45
+    nop
+.Lstreq_d_45:
+    seq $t8, $t0, $s7
+    j .Lew_d_42
+    nop
+.Lew_no_40:
+    li $t8, 0
+.Lew_d_42:
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
-    move $a0, $t7
-    la $a1, .Lstr2
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    jal strcmp
+    la $t6, .Lstr2
+    move $t5, $t7
+    move $t4, $t6
+.Lstreq_46:
+    lbu $t3, 0($t5)
+    lbu $t2, 0($t4)
+    bne $t3, $t2, .Lstreq_ne_47
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    seq $t8, $v0, $zero
+    beqz $t3, .Lstreq_d_48
+    addiu $t5, $t5, 1
+    move $t8, $zero
+    addiu $t4, $t4, 1
+    j .Lstreq_46
+    nop
+.Lstreq_ne_47:
+    li $t8, 0
+    j .Lstreq_d_48
+    nop
+.Lstreq_d_48:
+    seq $t8, $t3, $t2
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
-    move $a0, $t7
-    la $a1, .Lstr3
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    jal strcmp
+    la $t6, .Lstr3
+    move $t5, $t7
+    move $t4, $t6
+.Lstreq_49:
+    lbu $t3, 0($t5)
+    lbu $t2, 0($t4)
+    bne $t3, $t2, .Lstreq_ne_50
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    seq $t8, $v0, $zero
+    beqz $t3, .Lstreq_d_51
+    addiu $t5, $t5, 1
+    move $t8, $zero
+    addiu $t4, $t4, 1
+    j .Lstreq_49
+    nop
+.Lstreq_ne_50:
+    li $t8, 0
+    j .Lstreq_d_51
+    nop
+.Lstreq_d_51:
+    seq $t8, $t3, $t2
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
-    move $a0, $t7
-    la $a1, .Lstr1
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    jal strstr
+    la $t6, .Lstr1
+    move $t4, $t7
+.Lss_52:
+    lbu $t1, 0($t4)
+    beqz $t1, .Lss_m_54
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    bne $v0, $zero, .Lsf_7
+    move $t3, $t4
+    move $t2, $t6
+.Lss_i_56:
+    lbu $t0, 0($t2)
+    beqz $t0, .Lss_f_53
+    nop
+    lbu $t1, 0($t3)
+    bne $t1, $t0, .Lss_n_57
+    nop
+    addiu $t3, $t3, 1
+    addiu $t2, $t2, 1
+    j .Lss_i_56
+    nop
+.Lss_n_57:
+    addiu $t4, $t4, 1
+    j .Lss_52
+    nop
+.Lss_f_53:
+    move $t5, $t4
+    j .Lss_d_55
+    nop
+.Lss_m_54:
+    move $t5, $zero
+.Lss_d_55:
+    bnez $t5, .Lsf_58
     nop
     li $t8, -1
-    j .Lsfe_8
+    j .Lsfe_59
     nop
-.Lsf_7:
-    subu $t8, $v0, $t7
-.Lsfe_8:
+.Lsf_58:
+    subu $t8, $t5, $t7
+.Lsfe_59:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
-    move $a0, $t7
-    la $a1, .Lstr0
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    jal strstr
+    la $t6, .Lstr0
+    move $t4, $t7
+.Lss_60:
+    lbu $t1, 0($t4)
+    beqz $t1, .Lss_m_62
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    bne $v0, $zero, .Lsf_9
+    move $t3, $t4
+    move $t2, $t6
+.Lss_i_64:
+    lbu $t0, 0($t2)
+    beqz $t0, .Lss_f_61
+    nop
+    lbu $t1, 0($t3)
+    bne $t1, $t0, .Lss_n_65
+    nop
+    addiu $t3, $t3, 1
+    addiu $t2, $t2, 1
+    j .Lss_i_64
+    nop
+.Lss_n_65:
+    addiu $t4, $t4, 1
+    j .Lss_60
+    nop
+.Lss_f_61:
+    move $t5, $t4
+    j .Lss_d_63
+    nop
+.Lss_m_62:
+    move $t5, $zero
+.Lss_d_63:
+    bnez $t5, .Lsf_66
     nop
     li $t8, -1
-    j .Lsfe_10
+    j .Lsfe_67
     nop
-.Lsf_9:
-    subu $t8, $v0, $t7
-.Lsfe_10:
+.Lsf_66:
+    subu $t8, $t5, $t7
+.Lsfe_67:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
-    move $a0, $t7
-    la $a1, .Lstr4
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    jal strstr
+    la $t6, .Lstr4
+    move $t4, $t7
+.Lss_68:
+    lbu $t1, 0($t4)
+    beqz $t1, .Lss_m_70
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    bne $v0, $zero, .Lsf_11
+    move $t3, $t4
+    move $t2, $t6
+.Lss_i_72:
+    lbu $t0, 0($t2)
+    beqz $t0, .Lss_f_69
+    nop
+    lbu $t1, 0($t3)
+    bne $t1, $t0, .Lss_n_73
+    nop
+    addiu $t3, $t3, 1
+    addiu $t2, $t2, 1
+    j .Lss_i_72
+    nop
+.Lss_n_73:
+    addiu $t4, $t4, 1
+    j .Lss_68
+    nop
+.Lss_f_69:
+    move $t5, $t4
+    j .Lss_d_71
+    nop
+.Lss_m_70:
+    move $t5, $zero
+.Lss_d_71:
+    bnez $t5, .Lsf_74
     nop
     li $t8, -1
-    j .Lsfe_12
+    j .Lsfe_75
     nop
-.Lsf_11:
-    subu $t8, $v0, $t7
-.Lsfe_12:
+.Lsf_74:
+    subu $t8, $t5, $t7
+.Lsfe_75:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
-    lb $t8, 0($t7)
+    lbu $t8, 0($t7)
     sltiu $t8, $t8, 1
     la $t7, sink_b
     sw $t8, 0($t7)
@@ -521,22 +697,23 @@ main:
     la $t9, .Lstr5
     sw $t9, 140($sp)
     lw $t7, 140($sp)
-    lb $t8, 0($t7)
+    lbu $t8, 0($t7)
     sltiu $t8, $t8, 1
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
-    move $a0, $t7
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    jal strlen
+    move $t6, $t7
+    move $t8, $zero
+.Lstrlen_76:
+    lbu $t5, 0($t6)
+    beqz $t5, .Lstrlend_77
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    move $t8, $v0
+    addiu $t6, $t6, 1
+    addiu $t8, $t8, 1
+    j .Lstrlen_76
+    nop
+.Lstrlend_77:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
@@ -587,16 +764,27 @@ main:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    la $t8, str
-    move $a0, $t8
-    la $a1, .Lstr7
-    sw $t9, 96($sp)
-    jal Str_from_cstr
+    la $t7, .Lstr7
+    sw $t7, 152($sp)
+    move $t5, $t7
+    move $t6, $zero
+.Lstrlen_79:
+    lbu $t4, 0($t5)
+    beqz $t4, .Lstrlend_80
     nop
-    lw $t9, 96($sp)
-    move $t9, $v0
-    sw $t9, 144($sp)
-    lw $a0, 144($sp)
+    addiu $t5, $t5, 1
+    addiu $t6, $t6, 1
+    j .Lstrlen_79
+    nop
+.Lstrlend_80:
+    sw $t6, 156($sp)
+    addiu $t9, $sp, 152
+    addiu $t8, $sp, 144
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    addiu $a0, $sp, 144
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal check_pakstr
@@ -612,72 +800,115 @@ main:
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t8, 136($sp)
-    sw $t8, 160($sp)
-    move $a0, $t8
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    jal strlen
+    lw $t7, 136($sp)
+    sw $t7, 168($sp)
+    move $t5, $t7
+    move $t6, $zero
+.Lstrlen_82:
+    lbu $t4, 0($t5)
+    beqz $t4, .Lstrlend_83
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    sw $v0, 164($sp)
-    addiu $t9, $sp, 160
-    sw $t9, 152($sp)
-    lw $t8, 156($sp)
+    addiu $t5, $t5, 1
+    addiu $t6, $t6, 1
+    j .Lstrlen_82
+    nop
+.Lstrlend_83:
+    sw $t6, 172($sp)
+    addiu $t9, $sp, 168
+    addiu $t8, $sp, 160
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t8, 164($sp)
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
     lw $t8, 136($sp)
     li $t7, 6
-    addu $t9, $t8, $t7
-    sw $t9, 168($sp)
-    lw $t7, 168($sp)
-    move $a0, $t7
-    la $a1, .Lstr1
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    jal strcmp
+    move $t5, $t8
+    move $t6, $zero
+.Lstrlen_84:
+    lbu $t4, 0($t5)
+    beqz $t4, .Lstrlend_85
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    seq $t8, $v0, $zero
+    addiu $t5, $t5, 1
+    addiu $t6, $t6, 1
+    j .Lstrlen_84
+    nop
+.Lstrlend_85:
+    subu $t6, $t6, $t7
+    la $t5, __pak_cslice_0
+    addu $t7, $t8, $t7
+    move $t4, $t5
+    move $t3, $t7
+    move $t2, $t6
+.Lmcb_86:
+    beqz $t2, .Lmcb_d_87
+    nop
+    lbu $t1, 0($t3)
+    sb $t1, 0($t4)
+    addiu $t3, $t3, 1
+    addiu $t4, $t4, 1
+    addiu $t2, $t2, -1
+    j .Lmcb_86
+    nop
+.Lmcb_d_87:
+    addu $t5, $t5, $t6
+    sb $zero, 0($t5)
+    la $t9, __pak_cslice_0
+    sw $t9, 176($sp)
+    lw $t7, 176($sp)
+    la $t6, .Lstr1
+    move $t5, $t7
+    move $t4, $t6
+.Lstreq_88:
+    lbu $t3, 0($t5)
+    lbu $t2, 0($t4)
+    bne $t3, $t2, .Lstreq_ne_89
+    nop
+    beqz $t3, .Lstreq_d_90
+    addiu $t5, $t5, 1
+    move $t8, $zero
+    addiu $t4, $t4, 1
+    j .Lstreq_88
+    nop
+.Lstreq_ne_89:
+    li $t8, 0
+    j .Lstreq_d_90
+    nop
+.Lstreq_d_90:
+    seq $t8, $t3, $t2
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $t7, 168($sp)
-    la $t3, .Lstr1
-    move $a0, $t3
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    sw $t3, 108($sp)
-    jal strlen
+    lw $t7, 176($sp)
+    la $t6, .Lstr1
+    move $t5, $t7
+    move $t4, $t6
+.Lsw_91:
+    lbu $t2, 0($t4)
+    beqz $t2, .Lsw_yes_93
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    lw $t3, 108($sp)
-    move $a2, $v0
-    move $a0, $t7
-    move $a1, $t3
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    sw $t3, 108($sp)
-    jal strncmp
+    lbu $t3, 0($t5)
+    bne $t3, $t2, .Lsw_no_92
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    lw $t3, 108($sp)
-    seq $t8, $v0, $zero
+    addiu $t5, $t5, 1
+    addiu $t4, $t4, 1
+    j .Lsw_91
+    nop
+.Lsw_yes_93:
+    li $t8, 1
+    j .Lsw_d_94
+    nop
+.Lsw_no_92:
+    li $t8, 0
+.Lsw_d_94:
     la $t7, sink_b
     sw $t8, 0($t7)
     move $t9, $t8
-.Lmain_ret_6:
+.Lmain_ret_25:
+    lw $s7, 308($sp)
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -720,3 +951,9 @@ sink_i:
 	.globl sink_b
 sink_b:
 	.byte 0
+
+	.section .bss
+	.align 0
+	.globl __pak_cslice_0
+__pak_cslice_0:
+	.space 256

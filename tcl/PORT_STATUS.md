@@ -25,6 +25,11 @@ the old pytest suite into `tests/corpus/`.
 | Makefile generator | `makefile_gen.tcl` | `tests/golden/makefile.txt` | 4 scenarios |
 | PakFS archive | `pakfs.tcl` | `tests/golden/pakfs.txt` | 3 scenarios |
 | MIPS encoder | `n64enc.tcl` | `tcl/tools/n64enc_test.tcl` | 55 encodings |
+| Record optimizer + encoded exec | `optimize.tcl` | `tcl/tools/enc_exec_test.tcl` | call/MMIO goldens |
+| Array / sret / Result / generic / variant / closure / fmt | `mips_codegen.tcl` | `tcl/tools/array_addr_test.tcl` | capture-mut via env ptr; CStr.slice |
+| RDP stream (key/convert/scaled-texrect) | `runtime.pk64` | `tcl/tools/rdp_test.tcl` | 304 words unopt=opt |
+| Exception paint + crt0 vectors | `boot.S`, `runtime.pk64` | `tcl/tools/exception_test.tcl` | red-screen + 4 MiB ROM |
+| Audio PCM (AI) | `runtime.pk64` | `tcl/tools/audio_test.tcl` | DACRATE/LEN/kick |
 | Linker + ROM packer | `n64link.tcl`, `n64rom.tcl` | `tcl/tools/n64link_test.tcl` | 44 assertions |
 
 Token and AST dumps run to megabytes across the corpus, so those stages are

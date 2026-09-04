@@ -16,8 +16,10 @@
 	.extern rdpq_detach
 	.extern rdpq_detach_show
 	.extern rdpq_set_mode_standard
+	.extern rdpq_set_mode_standard_z
 	.extern rdpq_set_mode_copy
 	.extern rdpq_set_mode_fill
+	.extern rdpq_clear_z
 	.extern rdpq_fill_rectangle
 	.extern rdpq_sync_full
 	.extern rdpq_sync_pipe
@@ -33,15 +35,29 @@
 	.extern rdpq_set_fog_color
 	.extern rdpq_set_env_color
 	.extern rdpq_set_prim_color
+	.extern rdpq_set_prim_depth
+	.extern rdpq_set_key_r
+	.extern rdpq_set_key_gb
+	.extern rdpq_set_convert
 	.extern rdpq_set_texture_image
 	.extern rdpq_set_tile
+	.extern rdpq_set_tile_mask
 	.extern rdpq_set_tile_size
 	.extern rdpq_load_tile
 	.extern rdpq_load_block
 	.extern rdpq_load_tlut
 	.extern rdpq_texture_rectangle
 	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_texture_rectangle_flip
 	.extern rdpq_triangle
+	.extern rdpq_triangle_z
+	.extern rdpq_triangle_shade
+	.extern rdpq_triangle_shade_z
+	.extern rdpq_triangle_tex
+	.extern rdpq_triangle_tex_z
+	.extern rdpq_triangle_shade_tex
+	.extern rdpq_triangle_shade_tex_z
+	.extern rdpq_set_tri_z
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -50,6 +66,11 @@
 	.extern audio_init
 	.extern audio_close
 	.extern audio_get_buffer
+	.extern audio_get_frequency
+	.extern audio_can_write
+	.extern audio_write
+	.extern audio_write_silence
+	.extern audio_set_buffer_num
 	.extern debugf
 	.extern assert
 	.extern dma_read
@@ -175,14 +196,12 @@ Player_init:
     sw $a0, 136($sp)
     la $t7, .Lf320
     lwc1 $f12, 0($t7)
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
+    lw $t7, 136($sp)
     swc1 $f12, 0($t7)
     move $t9, $t8
     la $t7, .Lf320
     lwc1 $f12, 0($t7)
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
+    lw $t7, 136($sp)
     swc1 $f12, 4($t7)
     move $t9, $t8
     li $t8, 100
@@ -220,22 +239,18 @@ Player_move:
     swc1 $f12, 144($sp)
     lwc1 $f12, 140($sp)
     mov.s $f14, $f12
-    lw $t5, 136($sp)
-    lw $t6, 0($t5)
+    lw $t6, 136($sp)
     lwc1 $f12, 0($t6)
     add.s $f12, $f12, $f14
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
+    lw $t7, 136($sp)
     swc1 $f12, 0($t7)
     move $t9, $t8
     lwc1 $f12, 144($sp)
     mov.s $f14, $f12
-    lw $t5, 136($sp)
-    lw $t6, 0($t5)
+    lw $t6, 136($sp)
     lwc1 $f12, 4($t6)
     add.s $f12, $f12, $f14
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
+    lw $t7, 136($sp)
     swc1 $f12, 4($t7)
     move $t9, $t8
 .LPlayer_move_ret_1:
@@ -347,38 +362,41 @@ main:
     sw $t7, 12($t8)
     lw $t7, 16($t9)
     sw $t7, 16($t8)
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
+    addiu $t7, $sp, 136
     lwc1 $f12, 0($t7)
     la $t7, sink_x
     swc1 $f12, 0($t7)
     move $t9, $t8
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 8($t7)
     la $t7, sink_hp
     sw $t8, 0($t7)
     move $t9, $t8
     addiu $t8, $sp, 136
     move $a0, $t8
-    la $t8, .Lf320
-    lwc1 $f12, 0($t8)
+    la $t7, .Lf320
+    lwc1 $f12, 0($t7)
     mov.s $f14, $f12
-    la $t8, .Lf324
-    lwc1 $f12, 0($t8)
+    la $t7, .Lf324
+    lwc1 $f12, 0($t7)
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Player_move
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     addiu $t8, $sp, 136
     move $a0, $t8
     li $a1, 10
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Player_take_damage
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 8($t7)
     la $t7, sink_hp
     sw $t8, 0($t7)
@@ -386,13 +404,15 @@ main:
     addiu $t8, $sp, 136
     move $a0, $t8
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Player_is_alive
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     beqz $t9, .Lif_end_6
     nop
-    lw $t7, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 8($t7)
     la $t7, sink_hp
     sw $t8, 0($t7)

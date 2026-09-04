@@ -16,8 +16,10 @@
 	.extern rdpq_detach
 	.extern rdpq_detach_show
 	.extern rdpq_set_mode_standard
+	.extern rdpq_set_mode_standard_z
 	.extern rdpq_set_mode_copy
 	.extern rdpq_set_mode_fill
+	.extern rdpq_clear_z
 	.extern rdpq_fill_rectangle
 	.extern rdpq_sync_full
 	.extern rdpq_sync_pipe
@@ -33,15 +35,29 @@
 	.extern rdpq_set_fog_color
 	.extern rdpq_set_env_color
 	.extern rdpq_set_prim_color
+	.extern rdpq_set_prim_depth
+	.extern rdpq_set_key_r
+	.extern rdpq_set_key_gb
+	.extern rdpq_set_convert
 	.extern rdpq_set_texture_image
 	.extern rdpq_set_tile
+	.extern rdpq_set_tile_mask
 	.extern rdpq_set_tile_size
 	.extern rdpq_load_tile
 	.extern rdpq_load_block
 	.extern rdpq_load_tlut
 	.extern rdpq_texture_rectangle
 	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_texture_rectangle_flip
 	.extern rdpq_triangle
+	.extern rdpq_triangle_z
+	.extern rdpq_triangle_shade
+	.extern rdpq_triangle_shade_z
+	.extern rdpq_triangle_tex
+	.extern rdpq_triangle_tex_z
+	.extern rdpq_triangle_shade_tex
+	.extern rdpq_triangle_shade_tex_z
+	.extern rdpq_set_tri_z
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -50,6 +66,11 @@
 	.extern audio_init
 	.extern audio_close
 	.extern audio_get_buffer
+	.extern audio_get_frequency
+	.extern audio_can_write
+	.extern audio_write
+	.extern audio_write_silence
+	.extern audio_set_buffer_num
 	.extern debugf
 	.extern assert
 	.extern dma_read
@@ -245,21 +266,24 @@ main:
     sw $t8, 0($t7)
     move $t9, $t8
 .Lif_end_3:
-    li $a0, 1
-    li $t8, 64
-    mul $a0, $a0, $t8
-    sw $t9, 96($sp)
-    jal __pak_alloc
+    li $t8, 1
+    li $t7, 64
+    mul $t8, $t8, $t7
+    la $t6, __pak_heap_ptr
+    lw $t7, 0($t6)
+    bnez $t7, .Lheap_ok_4
     nop
-    lw $t9, 96($sp)
-    move $t9, $v0
+    li $t7, 0x802A0000
+.Lheap_ok_4:
+    addiu $t5, $t8, 7
+    li $t6, 0xFFFFFFF8
+    and $t5, $t5, $t6
+    move $t9, $t7
+    addu $t7, $t7, $t5
+    la $t6, __pak_heap_ptr
+    sw $t7, 0($t6)
     sw $t9, 152($sp)
     lw $t8, 152($sp)
-    move $a0, $t8
-    sw $t9, 96($sp)
-    jal __pak_free
-    nop
-    lw $t9, 96($sp)
     move $t9, $zero
 .Lmain_ret_1:
     lw $fp, 312($sp)
@@ -273,4 +297,8 @@ main:
 	.align 2
 	.globl sink
 sink:
+	.word 0
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
 	.word 0

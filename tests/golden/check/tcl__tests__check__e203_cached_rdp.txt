@@ -1,0 +1,1 @@
+(E203 error "cached KSEG0 address handed to rdpq.set_texture_image" "The DP reads RDRAM, not dcache. Use a KSEG1 address (0xA0000000+) or a buffer that rdpq.set_texture_image can writeback.")

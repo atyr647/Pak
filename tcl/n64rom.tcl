@@ -1,14 +1,17 @@
 # tcl/n64rom.tcl — build a bootable .z64 from a flat program image, with no
-# external tools: 64-byte header, IPL3
-# region, program at ROM 0x1000 (linked to run at 0x80000400), padded to a
-# full 1 MB CRC window, with CIC-NUS-6102 CRC1/CRC2 patched into the header.
-# Pure binary assembly via `binary format`, like pakfs.tcl.
+# external tools: 64-byte header, IPL3 region, program at ROM 0x1000 (linked
+# to run at 0x80000400), CIC-NUS-6102 CRC1/CRC2, padded to a 4/8/16/32/64 MiB
+# cart (default 4 MiB). A 2.9 MB image crashes on flashcarts.
 #
-# pak::n64rom {prog_bytes title ?ipl3?} -> .z64 bytes
+# pak::n64rom {prog_bytes title ?ipl3? ?rom_size?} -> .z64 bytes
 #   prog_bytes : flat image (text+rodata+data) linked to run at 0x80000400
 #   title      : up to 20 chars, ROM header name
 #   ipl3       : raw IPL3 bytes (up to 0xFC0). Use pak::n64rom_ipl3_from_z64 to
 #                lift the IPL3 region out of an existing ROM. "" -> zero IPL3.
+#   rom_size   : final cart size in bytes; must be 4/8/16/32/64 MiB. Default 4 MiB.
+#                If the image is larger, the next valid size is chosen. CRC1/CRC2
+#                are computed over the 1 MB window at ROM 0x1000 *before* the
+#                cart-size pad, so extra zeros do not change the checksum.
 
 namespace eval pak {}
 if {[info exists ::pak::_n64rom_loaded]} { return }
@@ -18,6 +21,10 @@ set ::pak::ROM_HEADER_SIZE 0x40      ;# 64 bytes
 set ::pak::ROM_IPL3_SIZE   0xFC0     ;# 4032 bytes (0x40 .. 0xFFF)
 set ::pak::ROM_ENTRY       0x80000400
 set ::pak::ROM_CRC_WINDOW  0x100000  ;# CRC covers 1 MB starting at ROM 0x1000
+# Flash RAM carts EverDrive / SummerCart64 / flashcarts expect a power-of-two
+# size. A 2.9 MB image will crash on hardware; pad to 4/8/16/32/64 MiB.
+set ::pak::ROM_VALID_SIZES [list 0x400000 0x800000 0x1000000 0x2000000 0x4000000]
+set ::pak::ROM_DEFAULT_SIZE 0x400000
 
 # ── CIC-NUS-6102 / 7101 CRC ─────────────────────────────────────────────────
 
@@ -100,7 +107,7 @@ proc pak::n64rom_ipl3_from_z64 {path} {
 
 # ── ROM assembly ─────────────────────────────────────────────────────────────
 
-proc pak::n64rom {prog_bytes title {ipl3 ""}} {
+proc pak::n64rom {prog_bytes title {ipl3 ""} {rom_size ""}} {
     if {[string length $ipl3] > $::pak::ROM_IPL3_SIZE} {
         set ipl3 [string range $ipl3 0 [expr {$::pak::ROM_IPL3_SIZE - 1}]]
     }
@@ -121,5 +128,31 @@ proc pak::n64rom {prog_bytes title {ipl3 ""}} {
 
     lassign [pak::n64_crc $rom] crc1 crc2
     set rom [string replace $rom 16 23 [binary format II $crc1 $crc2]]
+
+    # Cart-size pad. Flashcarts (and FZ) crash on a 2.9 MB image; only
+    # 4/8/16/32/64 MiB are valid. CRC is already baked and does not cover this.
+    if {$rom_size eq ""} { set rom_size $::pak::ROM_DEFAULT_SIZE }
+    set rom_size [expr {$rom_size}]
+    set ok 0
+    foreach s $::pak::ROM_VALID_SIZES {
+        if {$rom_size == $s} { set ok 1; break }
+    }
+    if {!$ok} {
+        return -code error "ROM size $rom_size is not 4/8/16/32/64 MiB"
+    }
+    set len [string length $rom]
+    if {$len > $rom_size} {
+        set chosen ""
+        foreach s $::pak::ROM_VALID_SIZES {
+            if {$s >= $len} { set chosen $s; break }
+        }
+        if {$chosen eq ""} {
+            return -code error "ROM image ([expr {$len}] bytes) exceeds 64 MiB"
+        }
+        set rom_size $chosen
+    }
+    if {$len < $rom_size} {
+        append rom [string repeat "\x00" [expr {$rom_size - $len}]]
+    }
     return $rom
 }

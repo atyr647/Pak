@@ -21,10 +21,15 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
-typedef struct {
+
+/* -- User type forward declarations -- */
+typedef struct Node Node;
+
+/* -- User types -- */
+struct Node {
     int32_t value;
     Node * next;
-} Node;
+};
 
 void double_value(int32_t * ptr) {
     *ptr = (*ptr * 2);

@@ -1,6 +1,8 @@
 # tcl/check_tables.tcl — lookup tables for the semantic checker: known
 # modules and their functions, builtin arities, and recognized @cfg features.
-# Generated once from a second implementation; now hand-maintained source.
+# Module *existence* is MODULE_API in tcl/module_api.tcl (CG_API ∪ CG_API_LAMBDA).
+# API_ARITY is the subset with a checked argument count (E105). Unknown methods
+# are E010, never silently lowered.
 namespace eval pak {}
 # Include guard (reachable via multiple consumers; see ast.tcl).
 if {[info exists ::pak::_check_tables_loaded]} { return }
@@ -48,9 +50,14 @@ set ::pak::KNOWN_MODULES [dict create \
 ]
 
 set ::pak::API_ARITY [dict create \
+    {audio can_write} {0 0} \
     {audio close} {0 0} \
     {audio get_buffer} {0 0} \
+    {audio get_frequency} {0 0} \
     {audio init} {2 2} \
+    {audio set_buffer_num} {1 1} \
+    {audio write} {1 1} \
+    {audio write_silence} {0 0} \
     {cache invalidate} {2 2} \
     {cache writeback} {2 2} \
     {cache writeback_inv} {2 2} \
@@ -67,6 +74,8 @@ set ::pak::API_ARITY [dict create \
     {dma read} {3 3} \
     {dma wait} {0 0} \
     {dma write} {3 3} \
+    {exception get_handler} {0 0} \
+    {exception set_handler} {1 1} \
     {rdpq attach} {2 2} \
     {rdpq attach_clear} {2 2} \
     {rdpq close} {0 0} \
@@ -74,7 +83,31 @@ set ::pak::API_ARITY [dict create \
     {rdpq detach_show} {0 0} \
     {rdpq fill_rectangle} {4 4} \
     {rdpq init} {0 0} \
+    {rdpq clear_z} {0 0} \
+    {rdpq set_mode_standard_z} {0 0} \
     {rdpq set_scissor} {4 4} \
+    {rdpq set_tile} {6 6} \
+    {rdpq set_tile_mask} {10 10} \
+    {rdpq set_texture_image} {4 4} \
+    {rdpq load_tile} {5 5} \
+    {rdpq load_block} {5 5} \
+    {rdpq load_tlut} {3 3} \
+    {rdpq texture_rectangle} {7 7} \
+    {rdpq texture_rectangle_flip} {7 7} \
+    {rdpq texture_rectangle_scaled} {9 9} \
+    {rdpq set_prim_depth} {2 2} \
+    {rdpq set_key_r} {3 3} \
+    {rdpq set_key_gb} {6 6} \
+    {rdpq set_convert} {6 6} \
+    {rdpq triangle} {6 6} \
+    {rdpq triangle_z} {9 9} \
+    {rdpq triangle_shade} {9 9} \
+    {rdpq triangle_shade_z} {12 12} \
+    {rdpq triangle_tex} {13 13} \
+    {rdpq triangle_tex_z} {13 13} \
+    {rdpq triangle_shade_tex} {16 16} \
+    {rdpq triangle_shade_tex_z} {16 16} \
+    {rdpq set_tri_z} {3 3} \
     {rdpq sync_full} {0 0} \
     {rdpq sync_pipe} {0 0} \
     {sprite blit} {3 3} \

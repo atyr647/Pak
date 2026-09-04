@@ -34,7 +34,7 @@ int16_t gen_sample(int32_t t) {
     if ((t % period) < (period / 2)) {
         return (int16_t)8000;
     }
-    return -(int16_t)8000;
+    return (int16_t)-8000;
 }
 
 void fill_audio_buffer(void) {

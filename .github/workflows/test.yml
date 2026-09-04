@@ -88,6 +88,12 @@ jobs:
       - name: Codegen snapshot parity (canonical examples)
         run: bash tcl/tools/cg_parity.sh
 
+      # Snapshot parity only proves the C matches the text we checked in. This
+      # runs cc over it, so C that no compiler accepts fails here instead of at
+      # a user's `make`. tests/c_compile_known_broken.txt is the current floor.
+      - name: Generated C compiles (cc -fsyntax-only)
+        run: tclsh tcl/tools/c_compile_test.tcl
+
       - name: MIPS assembly snapshots (canonical examples)
         run: bash tcl/tools/mips_parity.sh
 
@@ -117,6 +123,30 @@ jobs:
       - name: MIPS binary encoder (golden encodings)
         run: tclsh tcl/tools/n64enc_test.tcl
 
+      - name: Encoded exec goldens (optimizer on records, calls + MMIO)
+        run: tclsh tcl/tools/enc_exec_test.tcl
+
+      - name: Array address-of and u8 index (sb, not scale-4 sw)
+        run: tclsh tcl/tools/array_addr_test.tcl
+
+      - name: Exception paint (sim + vector trampoline + 4 MiB ROM)
+        run: tclsh tcl/tools/exception_test.tcl
+
+      - name: EEPROM SI/PIF + PI DMA goldens
+        run: tclsh tcl/tools/eeprom_test.tcl
+
+      - name: Audio PCM (AI DACRATE/LEN/kick)
+        run: tclsh tcl/tools/audio_test.tcl
+
+      - name: Generic instantiation checking (E015/E016)
+        run: tclsh tcl/tools/generic_inst_test.tcl
+
+      - name: HAL contract (MODULE_API + standalone E010)
+        run: tclsh tcl/tools/hal_check_test.tcl
+
+      - name: STDLIB generated from MODULE_API
+        run: tclsh tcl/tools/gen_stdlib.tcl --check
+
       - name: Flat linker + ROM packer
         run: tclsh tcl/tools/n64link_test.tcl
 
@@ -129,21 +159,36 @@ jobs:
       - name: Assembler front end
         run: bash tcl/tools/n64asm_parity.sh
 
-      - name: Object generation (all canonical examples → .pakobj)
+      # Only examples the HAL contract accepts are standalone programs; the
+      # MIPS backend refuses the rest by design (dyn trait objects, libdragon-
+      # only math). Same filter as link_test.tcl and mips_parity.sh.
+      - name: Object generation (standalone canonical examples → .pakobj)
         run: |
           failed=0
           for f in examples/canonical/*.pk64; do
+            pak check "$f" --backend mips > /dev/null 2>&1 || continue
             if ! pak objgen "$f" -o /tmp/obj.pakobj > /dev/null 2>&1; then
               echo "OBJGEN FAIL: $f"
               pak objgen "$f" -o /tmp/obj.pakobj
               failed=1
             fi
           done
-          [ "$failed" -eq 0 ] && echo "All canonical examples produced object files."
+          [ "$failed" -eq 0 ] && echo "All standalone canonical examples produced object files."
           exit $failed
 
       # The runtime is Pak (+ a hand-written crt0), so both halves must stay
       # buildable with no MIPS toolchain present.
+      # objgen succeeds on a program that references symbols nothing defines;
+      # only `pak link` finds that out, and nothing ran it over the corpus.
+      # tests/link_known_broken.txt is the current floor.
+      - name: Canonical examples link into ROMs
+        run: tclsh tcl/tools/link_test.tcl
+
+      # Linking proves every symbol resolves; this proves the code computes the
+      # right thing. Covers the constructs that used to fail at link.
+      - name: Standalone execution (consts, defer, monomorphs, FixedList)
+        run: tclsh tcl/tools/standalone_exec_test.tcl
+
       - name: Runtime builds toolchain-free (boot.S + runtime.pk64)
         run: |
           pak asmobj runtime/standalone/boot.S       -o /tmp/boot.pakobj

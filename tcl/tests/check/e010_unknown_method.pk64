@@ -1,0 +1,5 @@
+-- E010: method not in MODULE_API
+use n64.display
+entry {
+    display.not_a_real_api()
+}

@@ -1,0 +1,7 @@
+# Canonical examples whose generated C does NOT compile.
+#
+# Maintained by tcl/tools/c_compile_test.tcl. This is debt, not
+# configuration: fix a backend bug, drop the name, and the gate holds
+# the new floor. Adding a name is how a regression gets waved through,
+# so add one only with the bug it records written down.
+

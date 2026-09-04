@@ -5,18 +5,21 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct {
+typedef struct Sprite Sprite;
+typedef struct Enemy Enemy;
+
+struct Sprite {
     int32_t x;
     int32_t y;
     int32_t w;
     int32_t h;
-} Sprite;
+};
 
-typedef struct {
+struct Enemy {
     float x;
     float y;
     float speed;
-} Enemy;
+};
 
 
 #endif /* PAKMOD_DEMO_19_TRAITS_H */

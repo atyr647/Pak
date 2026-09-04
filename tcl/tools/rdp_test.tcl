@@ -19,7 +19,7 @@ source [file join $REPO tcl mips_sim.tcl]
 
 set RUNTIME  runtime/standalone/runtime.pk64
 set DRIVER   tcl/tests/rdp/commands.pk64
-set DL_BASE  [expr {0xA0271000}]
+set DL_BASE  [expr {0xA0297000}]
 
 set ::pass 0
 set ::fail 0
@@ -74,9 +74,10 @@ proc dl_words {mem} {
 
 # ── expected command stream ──────────────────────────────────────────────────
 # Derived by hand from the RDP command encodings; see the comments for the
-# field breakdown of each.
+# field breakdown of each. Unoptimized and optimized codegen must agree.
 set EXPECTED {
     3F10013F 00200000
+    3E000000 00271000
     2D000000 005003C0
     27000000 00000000
     2F300000 00000000
@@ -90,17 +91,139 @@ set EXPECTED {
     35101000 00000000
     34000000 0007C07C
     32000000 0007C07C
+    33000000 001FF100
+    30000000 0003C000
     2420C144 001900C8
     00000000 10000400
+    2520C144 001900C8
+    00000000 10000400
+    2428C144 001900C8
+    00000000 02000400
     27000000 00000000
     2F000000 00506040
     3C887F10 88FCF279
     3A000000 112233FF
     39000000 445566FF
+    38000000 778899AA
+    3B000000 BBCCDDFF
+    2E000000 7FFF0000
+    2B000000 00108004
+    2A010010 80048004
+    2C15FD5D 3B78E42A
     08000168 00500028
     00640000 FFFF2493
     000A0000 00006000
     000A0000 00090000
+    09000168 00500028
+    00640000 FFFF2493
+    000A0000 00006000
+    000A0000 00090000
+    00000000 00000000
+    00640064 00000000
+    35101000 00094250
+    0A0000C0 00400040
+    00300000 FFFF0000
+    00100000 00000000
+    00100000 00000000
+    00000000 7FFF0000
+    00200000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000020 00000000
+    00000020 00000000
+    00000000 00000000
+    00000000 00000000
+    3F10013F 00271000
+    27000000 00000000
+    2F300000 00000000
+    37000000 FFFCFFFC
+    364FC3BC 00000000
+    3F10013F 00200000
+    27000000 00000000
+    2F000000 00506070
+    3C887F10 88FCF279
+    0C000168 00500028
+    00640000 FFFF2493
+    000A0000 00006000
+    000A0000 00090000
+    00FF0000 000000FF
+    69BDF4DE A1640000
+    00000000 00000000
+    37A79BD3 2C860000
+    F000E000 30000000
+    C859E42C 537A0000
+    00000001 00000000
+    0B228591 6F4D0000
+    0D000168 00500028
+    00640000 FFFF2493
+    000A0000 00006000
+    000A0000 00090000
+    00FF00FF 00FF00FF
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00640064 00000000
+    0E0000C0 00400040
+    00300000 FFFF0000
+    00100000 00000000
+    00100000 00000000
+    00FF0000 000000FF
+    0800F800 00000000
+    00000000 00000000
+    00000000 00000000
+    08000000 F8000000
+    08000000 F8000000
+    00000000 00000000
+    00000000 00000000
+    00000000 7FFF0000
+    00200000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000020 00000000
+    00000020 00000000
+    00000000 00000000
+    00000000 00000000
+    0F0000C0 00400040
+    00300000 FFFF0000
+    00100000 00000000
+    00100000 00000000
+    00FF00FF 00FF00FF
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000000 7FFF0000
+    00200000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000020 00000000
+    00000020 00000000
+    00000000 00000000
+    00000000 00000000
+    0000001F 00004000
+    00FA00FA 00000000
+    0B0000C0 00400040
+    00300000 FFFF0000
+    00100000 00000000
+    00100000 00000000
+    00000000 7FFF0000
+    00200000 00000000
+    00000000 00000000
+    00000000 00000000
+    00000020 00000000
+    00000020 00000000
+    00000000 00000000
+    00000000 00000000
+    0000001F 00004000
+    00FA00FA 00000000
     27000000 00000000
     28000000 00000000
     26000000 00000000
@@ -109,6 +232,7 @@ set EXPECTED {
 
 set NOTES {
     "SET_COLOR_IMAGE   RGBA/16bpp, width 320, fb at 0x00200000"
+    "SET_Z_IMAGE       320x240 16-bit Z at 0x00271000"
     "SET_SCISSOR       (0,0)-(320,240) in 10.2"
     "SYNC_PIPE         before the mode change"
     "SET_OTHER_MODES   cycle_type = FILL (3)"
@@ -122,17 +246,139 @@ set NOTES {
     "SET_TILE          tile 0, RGBA/16bpp, line 8, tmem 0"
     "LOAD_TILE         tile 0, (0,0)-(32,32)"
     "SET_TILE_SIZE     tile 0, (0,0)-(32,32)"
+    "LOAD_BLOCK        0x33 tile 0, 512 texels, dxt 0x100"
+    "LOAD_TLUT         0x30 tile 0, colours 0..15 (10.2 * 4)"
     "TEXTURE_RECTANGLE tile 0, (100,50)-(132,82)"
     "                  s/t = 0, dsdx = 4 texels/cycle, dtdy = 1"
+    "TEXTURE_RECT_FLIP 0x25, same rect as TEXTURE_RECTANGLE"
+    "                  s/t = 0, dsdx = 4 texels/cycle, dtdy = 1"
+    "TEXTURE_RECTANGLE 0x24 scaled (100,50)-(164,82)"
+    "                  s/t = 0, dsdx = 0.5 texel/pixel, dtdy = 1"
     "SYNC_PIPE         before the mode change"
     "SET_OTHER_MODES   cycle_type = 1CYCLE, alpha blending"
     "SET_COMBINE       texel passthrough"
     "SET_PRIM_COLOR    0x112233FF"
     "SET_BLEND_COLOR   0x445566FF"
+    "SET_FOG_COLOR     0x778899AA"
+    "SET_ENV_COLOR     0xBBCCDDFF"
+    "SET_PRIM_DEPTH    z=0x7FFF, dz=0"
+    "SET_KEY_R         0x2B width=16 center=128 scale=4"
+    "SET_KEY_GB        0x2A width 16/16, center 128, scale 4"
+    "SET_CONVERT       0x2C NTSC k0..k5 (175,-43,-89,222,114,42)"
     "TRIANGLE          sorted (10,10) (100,20) (40,90); YL/YM/YH"
     "                  XL / DxLDy   (lower minor edge)"
     "                  XH / DxHDy   (major edge)"
     "                  XM / DxMDy   (upper minor edge)"
+    "TRIANGLE_Z        0x09 fill+Z, same edges as TRIANGLE"
+    "                  XL / DxLDy"
+    "                  XH / DxHDy"
+    "                  XM / DxMDy"
+    "                  Z / dZdx integer then fractional"
+    "                  dZde / dZdy integer then fractional"
+    "SET_TILE          clamp+mask (cms/cmt=2, mask 5/5)"
+    "TRI_TEX           0x0A affine ST, tile 0, Y=16/16/48"
+    "                  XL / DxLDy"
+    "                  XH / DxHDy"
+    "                  XM / DxMDy"
+    "                  S/T/W integer halves (W=0x7FFF)"
+    "                  dSdx / dTdx / dWdx integer"
+    "                  S/T/W fractional halves"
+    "                  dSdx / dTdx / dWdx fractional"
+    "                  dSde / dTde integer"
+    "                  dSdy / dTdy integer"
+    "                  dSde / dTde fractional"
+    "                  dSdy / dTdy fractional"
+    "SET_COLOR_IMAGE   clear_z: point at Z buffer 0x00271000"
+    "SYNC_PIPE         before FILL for Z clear"
+    "SET_OTHER_MODES   cycle_type = FILL"
+    "SET_FILL_COLOR    0xFFFC (max 16-bit Z), twice"
+    "FILL_RECTANGLE    full screen into Z"
+    "SET_COLOR_IMAGE   restore colour target 0x00200000"
+    "SYNC_PIPE         before 1-cycle + Z"
+    "SET_OTHER_MODES   1CYCLE + z_compare_en + z_update_en (0x30)"
+    "SET_COMBINE       texel passthrough"
+    "TRI_SHADE         0x0C Gouraud, same edges as TRIANGLE"
+    "                  XL / DxLDy"
+    "                  XH / DxHDy"
+    "                  XM / DxMDy"
+    "                  RGBA integer halves"
+    "                  dRdx.. integer"
+    "                  RGBA fractional halves"
+    "                  dRdx.. fractional"
+    "                  dRde.. integer"
+    "                  dRdy.. integer"
+    "                  dRde.. fractional"
+    "                  dRdy.. fractional"
+    "TRI_SHADE_Z       0x0D Gouraud + Z, same edges"
+    "                  XL / DxLDy"
+    "                  XH / DxHDy"
+    "                  XM / DxMDy"
+    "                  RGBA integer (white)"
+    "                  dRdx.. integer"
+    "                  RGBA fractional"
+    "                  dRdx.. fractional"
+    "                  dRde.. integer"
+    "                  dRdy.. integer"
+    "                  dRde.. fractional"
+    "                  dRdy.. fractional"
+    "                  Z / dZdx integer then fractional"
+    "                  dZde / dZdy integer then fractional"
+    "TRI_SHADE_TXTR    0x0E Gouraud + affine ST, tile 0, Y=16/16/48"
+    "                  XL / DxLDy"
+    "                  XH / DxHDy"
+    "                  XM / DxMDy"
+    "                  RGBA integer halves"
+    "                  dRdx.. integer"
+    "                  RGBA fractional halves"
+    "                  dRdx.. fractional"
+    "                  dRde.. integer"
+    "                  dRdy.. integer"
+    "                  dRde.. fractional"
+    "                  dRdy.. fractional"
+    "                  S/T/W integer halves (W=0x7FFF)"
+    "                  dSdx / dTdx integer"
+    "                  S/T/W fractional halves"
+    "                  dSdx / dTdx fractional"
+    "                  dSde / dTde integer"
+    "                  dSdy / dTdy integer"
+    "                  dSde / dTde fractional"
+    "                  dSdy / dTdy fractional"
+    "TRI_SHADE_TXTR_Z  0x0F Gouraud + tex + Z, same edges"
+    "                  XL / DxLDy"
+    "                  XH / DxHDy"
+    "                  XM / DxMDy"
+    "                  RGBA integer (white)"
+    "                  dRdx.. integer"
+    "                  RGBA fractional"
+    "                  dRdx.. fractional"
+    "                  dRde.. integer"
+    "                  dRdy.. integer"
+    "                  dRde.. fractional"
+    "                  dRdy.. fractional"
+    "                  S/T/W integer halves"
+    "                  dSdx / dTdx integer"
+    "                  S/T/W fractional"
+    "                  dSdx / dTdx fractional"
+    "                  dSde / dTde integer"
+    "                  dSdy / dTdy integer"
+    "                  dSde / dTde fractional"
+    "                  dSdy / dTdy fractional"
+    "                  Z / dZdx integer then fractional"
+    "                  dZde / dZdy integer then fractional"
+    "TRI_TEX_Z         0x0B affine ST + Z, tile 0, Y=16/16/48"
+    "                  XL / DxLDy"
+    "                  XH / DxHDy"
+    "                  XM / DxMDy"
+    "                  S/T/W integer halves (W=0x7FFF)"
+    "                  dSdx / dTdx / dWdx integer"
+    "                  S/T/W fractional halves"
+    "                  dSdx / dTdx / dWdx fractional"
+    "                  dSde / dTde integer"
+    "                  dSdy / dTdy integer"
+    "                  dSde / dTde fractional"
+    "                  dSdy / dTdy fractional"
+    "                  Z / dZdx integer then fractional"
+    "                  dZde / dZdy integer then fractional"
     "SYNC_PIPE"
     "SYNC_TILE"
     "SYNC_LOAD"
@@ -187,8 +433,8 @@ set dpc_start  [expr {0xA4100000}]
 set dpc_end    [expr {0xA4100004}]
 set dpc_status [expr {0xA410000C}]
 set dl_len [expr {4 * [llength $EXPECTED]}]
-ok "DPC_START" [reg_hex $mem_plain $dpc_start] [format %08X 0x00271000]
-ok "DPC_END"   [reg_hex $mem_plain $dpc_end]   [format %08X [expr {0x00271000 + $dl_len}]]
+ok "DPC_START" [reg_hex $mem_plain $dpc_start] [format %08X 0x00297000]
+ok "DPC_END"   [reg_hex $mem_plain $dpc_end]   [format %08X [expr {0x00297000 + $dl_len}]]
 ok "DPC_STATUS clears xbus/freeze/flush" [reg_hex $mem_plain $dpc_status] 00000015
 
 puts ""

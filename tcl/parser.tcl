@@ -222,9 +222,19 @@ oo::class create pak::Parser {
             if {[my accept ELLIPSIS]} { set variadic 1; break }
             set mut 0
             if {[my accept MUT]} { set mut 1 }
-            if {[my check SELF]} { set pname [my advancev] } else { set pname [my expectv IDENT] }
-            my expect COLON
-            set ptype [my parse_type]
+            if {[my check SELF]} {
+                set pname [my advancev]
+                if {[my accept COLON]} {
+                    set ptype [my parse_type]
+                } else {
+                    # `self` without a type is `*Self`; impl fixup rewrites Self.
+                    set ptype [pak::N TypePointer inner [pak::N TypeName name Self] nullable 0 mutable 0]
+                }
+            } else {
+                set pname [my expectv IDENT]
+                my expect COLON
+                set ptype [my parse_type]
+            }
             set dv [pak::Nil]
             if {[my accept EQ]} { set dv [my parse_expr] }
             lappend params [pak::N Param name $pname type $ptype mutable $mut default_value $dv]
@@ -781,6 +791,24 @@ oo::class create pak::Parser {
                 my expect RPAREN
                 return [pak::N Call func [pak::N EnumVariantAccess name $name] args $args type_args {}]
             }
+            if {[my check LBRACE]} {
+                # Named-field variant match: .Rect { w: ww, h: hh }
+                my advance
+                set args {}
+                while {![my check RBRACE] && ![my check EOF]} {
+                    set fn [my expectv IDENT]
+                    my expect COLON
+                    if {[my check UNDERSCORE]} {
+                        set bn [my advancev]
+                    } else {
+                        set bn [my expectv IDENT]
+                    }
+                    lappend args [pak::N NamedArg name $fn value [pak::N Ident name $bn type_args {}]]
+                    my match COMMA
+                }
+                my expect RBRACE
+                return [pak::N Call func [pak::N EnumVariantAccess name $name] args $args type_args {}]
+            }
             return [pak::N EnumVariantAccess name $name]
         } elseif {[my check UNDERSCORE]} {
             my advance
@@ -896,7 +924,15 @@ oo::class create pak::Parser {
     method parse_cmp {} { return [my binop_chain parse_shift {LT < GT > LTE <= GTE >=}] }
     method parse_shift {} { return [my binop_chain parse_add {SHL << SHR >>}] }
     method parse_add {} { return [my binop_chain parse_mul {PLUS + MINUS -}] }
-    method parse_mul {} { return [my binop_chain parse_unary {STAR * SLASH / PERCENT %}] }
+    method parse_mul {} { return [my binop_chain parse_cast {STAR * SLASH / PERCENT %}] }
+
+    method parse_cast {} {
+        set expr [my parse_unary]
+        if {[my accept AS]} {
+            return [pak::N Cast expr $expr type [my parse_type]]
+        }
+        return $expr
+    }
 
     method parse_unary {} {
         if {[my accept BANG] || [my accept NOT]} {
@@ -909,15 +945,7 @@ oo::class create pak::Parser {
             return [pak::N AddrOf expr [my parse_unary] mutable $mut]
         }
         if {[my accept STAR]} { return [pak::N Deref expr [my parse_unary]] }
-        return [my parse_cast]
-    }
-
-    method parse_cast {} {
-        set expr [my parse_postfix]
-        if {[my accept AS]} {
-            return [pak::N Cast expr $expr type [my parse_type]]
-        }
-        return $expr
+        return [my parse_postfix]
     }
 
     method parse_postfix {} {
@@ -992,6 +1020,9 @@ oo::class create pak::Parser {
                 }
                 my expect RBRACE
                 set expr [pak::N VariantLit variant_type $vtype case_name $vcase fields $fields]
+            } elseif {[my check QUESTION]} {
+                my advance
+                set expr [pak::N UnaryOp op "?" operand $expr]
             } else break
         }
         return $expr

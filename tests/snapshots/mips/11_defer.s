@@ -16,8 +16,10 @@
 	.extern rdpq_detach
 	.extern rdpq_detach_show
 	.extern rdpq_set_mode_standard
+	.extern rdpq_set_mode_standard_z
 	.extern rdpq_set_mode_copy
 	.extern rdpq_set_mode_fill
+	.extern rdpq_clear_z
 	.extern rdpq_fill_rectangle
 	.extern rdpq_sync_full
 	.extern rdpq_sync_pipe
@@ -33,15 +35,29 @@
 	.extern rdpq_set_fog_color
 	.extern rdpq_set_env_color
 	.extern rdpq_set_prim_color
+	.extern rdpq_set_prim_depth
+	.extern rdpq_set_key_r
+	.extern rdpq_set_key_gb
+	.extern rdpq_set_convert
 	.extern rdpq_set_texture_image
 	.extern rdpq_set_tile
+	.extern rdpq_set_tile_mask
 	.extern rdpq_set_tile_size
 	.extern rdpq_load_tile
 	.extern rdpq_load_block
 	.extern rdpq_load_tlut
 	.extern rdpq_texture_rectangle
 	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_texture_rectangle_flip
 	.extern rdpq_triangle
+	.extern rdpq_triangle_z
+	.extern rdpq_triangle_shade
+	.extern rdpq_triangle_shade_z
+	.extern rdpq_triangle_tex
+	.extern rdpq_triangle_tex_z
+	.extern rdpq_triangle_shade_tex
+	.extern rdpq_triangle_shade_tex_z
+	.extern rdpq_set_tri_z
 	.extern sprite_load
 	.extern rdpq_sprite_blit
 	.extern timer_init
@@ -50,6 +66,11 @@
 	.extern audio_init
 	.extern audio_close
 	.extern audio_get_buffer
+	.extern audio_get_frequency
+	.extern audio_can_write
+	.extern audio_write
+	.extern audio_write_silence
+	.extern audio_set_buffer_num
 	.extern debugf
 	.extern assert
 	.extern dma_read
@@ -172,14 +193,22 @@ do_work:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    li $a0, 1
-    li $t8, 256
-    mul $a0, $a0, $t8
-    sw $t9, 96($sp)
-    jal __pak_alloc
+    li $t8, 1
+    li $t7, 256
+    mul $t8, $t8, $t7
+    la $t6, __pak_heap_ptr
+    lw $t7, 0($t6)
+    bnez $t7, .Lheap_ok_1
     nop
-    lw $t9, 96($sp)
-    move $t9, $v0
+    li $t7, 0x802A0000
+.Lheap_ok_1:
+    addiu $t5, $t8, 7
+    li $t6, 0xFFFFFFF8
+    and $t5, $t5, $t6
+    move $t9, $t7
+    addu $t7, $t7, $t5
+    la $t6, __pak_heap_ptr
+    sw $t7, 0($t6)
     sw $t9, 136($sp)
     la $a0, .Lstr0
     sw $t9, 96($sp)
@@ -193,13 +222,7 @@ do_work:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    la $t8, buf
-    lw $t8, 0($t8)
-    move $a0, $t8
-    sw $t9, 96($sp)
-    jal __pak_free
-    nop
-    lw $t9, 96($sp)
+    lw $t8, 136($sp)
     move $t9, $zero
 .Ldo_work_ret_0:
     lw $fp, 312($sp)
@@ -246,7 +269,7 @@ main:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-.Lmain_ret_1:
+.Lmain_ret_2:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -273,3 +296,9 @@ main:
 	.align 0
 .Lstr5:
 	.asciiz "shutting down"
+
+	.section .data
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.word 0

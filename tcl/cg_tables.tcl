@@ -35,6 +35,7 @@ set ::pak::CG_API [dict create \
     {debug assert} {assert} \
     {debug flush} {flush} \
     {debug init} {debug_init_isviewer} \
+    {debug init_isviewer} {debug_init_isviewer} \
     {debug init_usbfs} {debug_init_usbfs} \
     {debug log} {debugf} \
     {debug print} {debugf} \
@@ -71,6 +72,7 @@ set ::pak::CG_API [dict create \
     {joypad init} {joypad_init} \
     {joypad poll} {joypad_poll} \
     {mixer ch_play} {mixer_ch_play} \
+    {mixer ch_playing} {mixer_ch_playing} \
     {mixer ch_set_freq} {mixer_ch_set_freq} \
     {mixer ch_set_vol} {mixer_ch_set_vol} \
     {mixer ch_stop} {mixer_ch_stop} \
@@ -86,6 +88,7 @@ set ::pak::CG_API [dict create \
     {rdpq block_free} {rdpq_block_free} \
     {rdpq block_run} {rdpq_block_run} \
     {rdpq call} {rdpq_call} \
+    {rdpq clear_z} {rdpq_clear_z} \
     {rdpq close} {rdpq_close} \
     {rdpq detach} {rdpq_detach} \
     {rdpq detach_show} {rdpq_detach_show} \
@@ -103,10 +106,16 @@ set ::pak::CG_API [dict create \
     {rdpq set_mode_copy} {rdpq_set_mode_copy} \
     {rdpq set_mode_fill} {rdpq_set_mode_fill} \
     {rdpq set_mode_standard} {rdpq_set_mode_standard} \
+    {rdpq set_mode_standard_z} {rdpq_set_mode_standard_z} \
     {rdpq set_other_modes_raw} {rdpq_set_other_modes_raw} \
     {rdpq set_prim_color} {rdpq_set_prim_color} \
+    {rdpq set_prim_depth} {rdpq_set_prim_depth} \
+    {rdpq set_key_r} {rdpq_set_key_r} \
+    {rdpq set_key_gb} {rdpq_set_key_gb} \
+    {rdpq set_convert} {rdpq_set_convert} \
     {rdpq set_scissor} {rdpq_set_scissor} \
     {rdpq set_tile} {rdpq_set_tile} \
+    {rdpq set_tile_mask} {rdpq_set_tile_mask} \
     {rdpq set_tile_size} {rdpq_set_tile_size} \
     {rdpq set_z_image} {rdpq_set_z_image} \
     {rdpq sync_full} {rdpq_sync_full} \
@@ -115,7 +124,16 @@ set ::pak::CG_API [dict create \
     {rdpq sync_tile} {rdpq_sync_tile} \
     {rdpq texture_rectangle} {rdpq_texture_rectangle} \
     {rdpq texture_rectangle_scaled} {rdpq_texture_rectangle_scaled} \
+    {rdpq texture_rectangle_flip} {rdpq_texture_rectangle_flip} \
     {rdpq triangle} {rdpq_triangle} \
+    {rdpq triangle_z} {rdpq_triangle_z} \
+    {rdpq triangle_shade} {rdpq_triangle_shade} \
+    {rdpq triangle_shade_z} {rdpq_triangle_shade_z} \
+    {rdpq triangle_tex} {rdpq_triangle_tex} \
+    {rdpq triangle_tex_z} {rdpq_triangle_tex_z} \
+    {rdpq triangle_shade_tex} {rdpq_triangle_shade_tex} \
+    {rdpq triangle_shade_tex_z} {rdpq_triangle_shade_tex_z} \
+    {rdpq set_tri_z} {rdpq_set_tri_z} \
     {rdpq_font draw_text} {rdpq_text_print} \
     {rdpq_font free} {rdpq_font_free} \
     {rdpq_font load} {rdpq_font_load} \
@@ -205,6 +223,7 @@ set ::pak::CG_API [dict create \
     {t3d viewport_set_projection} {t3d_viewport_set_projection} \
     {timer get_ticks} {get_ticks} \
     {timer init} {timer_init} \
+    {timer ticks} {get_ticks} \
     {tpak get_status} {tpak_get_status} \
     {tpak init} {tpak_init} \
     {tpak read} {tpak_read} \

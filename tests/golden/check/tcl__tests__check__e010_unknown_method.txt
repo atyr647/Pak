@@ -1,0 +1,1 @@
+(E010 error "unknown method 'display.not_a_real_api'" "Not in MODULE_API. See STDLIB.md; unknown methods are never lowered.")

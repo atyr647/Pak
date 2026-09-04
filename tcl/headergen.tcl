@@ -35,12 +35,28 @@ proc pak::generate_header {program module_path} {
         "" \
     ]
 
+    # Forward typedefs first, matching the .c: structs are emitted tagged, so a
+    # self-referential or forward-referencing field needs the name in scope
+    # before any definition is read.
+    set fwd {}
+    foreach decl [pak::items [pak::nfield $program decls]] {
+        switch -- [pak::kindof $decl] {
+            StructDecl { lappend fwd "typedef struct [pak::fval $decl name] [pak::fval $decl name];" }
+            UnionDecl  { lappend fwd "typedef union [pak::fval $decl name] [pak::fval $decl name];" }
+        }
+    }
+    if {[llength $fwd] > 0} {
+        foreach l $fwd { lappend lines $l }
+        lappend lines ""
+    }
+
     # Type declarations (structs, enums, variants)
     foreach decl [pak::items [pak::nfield $program decls]] {
         switch -- [pak::kindof $decl] {
             StructDecl  { lappend lines [$cg gen_struct $decl] ""  }
             EnumDecl    { lappend lines [$cg gen_enum $decl] ""    }
             VariantDecl { lappend lines [$cg gen_variant $decl] "" }
+            UnionDecl   { lappend lines [$cg gen_union $decl] ""   }
         }
     }
 

@@ -22,8 +22,10 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_detach \
     rdpq_detach_show \
     rdpq_set_mode_standard \
+    rdpq_set_mode_standard_z \
     rdpq_set_mode_copy \
     rdpq_set_mode_fill \
+    rdpq_clear_z \
     rdpq_fill_rectangle \
     rdpq_sync_full \
     rdpq_sync_pipe \
@@ -39,15 +41,29 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_set_fog_color \
     rdpq_set_env_color \
     rdpq_set_prim_color \
+    rdpq_set_prim_depth \
+    rdpq_set_key_r \
+    rdpq_set_key_gb \
+    rdpq_set_convert \
     rdpq_set_texture_image \
     rdpq_set_tile \
+    rdpq_set_tile_mask \
     rdpq_set_tile_size \
     rdpq_load_tile \
     rdpq_load_block \
     rdpq_load_tlut \
     rdpq_texture_rectangle \
     rdpq_texture_rectangle_scaled \
+    rdpq_texture_rectangle_flip \
     rdpq_triangle \
+    rdpq_triangle_z \
+    rdpq_triangle_shade \
+    rdpq_triangle_shade_z \
+    rdpq_triangle_tex \
+    rdpq_triangle_tex_z \
+    rdpq_triangle_shade_tex \
+    rdpq_triangle_shade_tex_z \
+    rdpq_set_tri_z \
     sprite_load \
     rdpq_sprite_blit \
     timer_init \
@@ -56,6 +72,11 @@ set ::pak::MIPS_EXTERNS [list \
     audio_init \
     audio_close \
     audio_get_buffer \
+    audio_get_frequency \
+    audio_can_write \
+    audio_write \
+    audio_write_silence \
+    audio_set_buffer_num \
     debugf \
     assert \
     dma_read \
@@ -185,8 +206,10 @@ set ::pak::MIPS_API [dict create \
     {rdpq detach} {rdpq_detach} \
     {rdpq detach_show} {rdpq_detach_show} \
     {rdpq set_mode_standard} {rdpq_set_mode_standard} \
+    {rdpq set_mode_standard_z} {rdpq_set_mode_standard_z} \
     {rdpq set_mode_copy} {rdpq_set_mode_copy} \
     {rdpq set_mode_fill} {rdpq_set_mode_fill} \
+    {rdpq clear_z} {rdpq_clear_z} \
     {rdpq fill_rectangle} {rdpq_fill_rectangle} \
     {rdpq sync_full} {rdpq_sync_full} \
     {rdpq sync_pipe} {rdpq_sync_pipe} \
@@ -202,15 +225,29 @@ set ::pak::MIPS_API [dict create \
     {rdpq set_fog_color} {rdpq_set_fog_color} \
     {rdpq set_env_color} {rdpq_set_env_color} \
     {rdpq set_prim_color} {rdpq_set_prim_color} \
+    {rdpq set_prim_depth} {rdpq_set_prim_depth} \
+    {rdpq set_key_r} {rdpq_set_key_r} \
+    {rdpq set_key_gb} {rdpq_set_key_gb} \
+    {rdpq set_convert} {rdpq_set_convert} \
     {rdpq set_texture_image} {rdpq_set_texture_image} \
     {rdpq set_tile} {rdpq_set_tile} \
+    {rdpq set_tile_mask} {rdpq_set_tile_mask} \
     {rdpq set_tile_size} {rdpq_set_tile_size} \
     {rdpq load_tile} {rdpq_load_tile} \
     {rdpq load_block} {rdpq_load_block} \
     {rdpq load_tlut} {rdpq_load_tlut} \
     {rdpq texture_rectangle} {rdpq_texture_rectangle} \
     {rdpq texture_rectangle_scaled} {rdpq_texture_rectangle_scaled} \
+    {rdpq texture_rectangle_flip} {rdpq_texture_rectangle_flip} \
     {rdpq triangle} {rdpq_triangle} \
+    {rdpq triangle_z} {rdpq_triangle_z} \
+    {rdpq triangle_shade} {rdpq_triangle_shade} \
+    {rdpq triangle_shade_z} {rdpq_triangle_shade_z} \
+    {rdpq triangle_tex} {rdpq_triangle_tex} \
+    {rdpq triangle_tex_z} {rdpq_triangle_tex_z} \
+    {rdpq triangle_shade_tex} {rdpq_triangle_shade_tex} \
+    {rdpq triangle_shade_tex_z} {rdpq_triangle_shade_tex_z} \
+    {rdpq set_tri_z} {rdpq_set_tri_z} \
     {sprite load} {sprite_load} \
     {sprite blit} {rdpq_sprite_blit} \
     {timer init} {timer_init} \
@@ -219,15 +256,24 @@ set ::pak::MIPS_API [dict create \
     {audio init} {audio_init} \
     {audio close} {audio_close} \
     {audio get_buffer} {audio_get_buffer} \
+    {audio get_frequency} {audio_get_frequency} \
+    {audio can_write} {audio_can_write} \
+    {audio write} {audio_write} \
+    {audio write_silence} {audio_write_silence} \
+    {audio set_buffer_num} {audio_set_buffer_num} \
     {debug log} {debugf} \
     {debug assert} {assert} \
     {debug log_value} {debugf} \
+    {str from_cstr} {pak_str_from_cstr} \
     {dma read} {dma_read} \
     {dma write} {dma_write} \
     {dma wait} {dma_wait} \
+    {exception set_handler} {exception_set_handler} \
+    {exception get_handler} {exception_get_handler} \
     {cache writeback} {data_cache_hit_writeback} \
     {cache invalidate} {data_cache_hit_invalidate} \
     {cache writeback_inv} {data_cache_hit_writeback_invalidate} \
+    {eeprom init} {eeprom_init} \
     {eeprom present} {eeprom_present} \
     {eeprom type_detect} {eeprom_type_detect} \
     {eeprom read} {eeprom_read} \

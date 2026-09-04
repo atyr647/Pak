@@ -35,11 +35,16 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
-typedef struct {
+
+/* -- User type forward declarations -- */
+typedef struct GameState GameState;
+
+/* -- User types -- */
+struct GameState {
     int32_t x;
     int32_t y;
     bool running;
-} GameState;
+};
 
 void update(GameState * gs) {
     __auto_type input = joypad_get_status(0);

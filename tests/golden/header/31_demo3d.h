@@ -5,13 +5,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct {
+typedef struct Star Star;
+typedef struct Cube Cube;
+typedef struct GameState GameState;
+
+struct Star {
     int32_t sx;
     int32_t sy;
     float z;
-} Star;
+};
 
-typedef struct {
+struct Cube {
     float tx;
     float ty;
     float tz;
@@ -23,15 +27,15 @@ typedef struct {
     uint32_t col0;
     uint32_t col1;
     uint32_t col2;
-} Cube;
+};
 
-typedef struct {
+struct GameState {
     _PakList_Star_64 stars;
     Cube cube_a;
     Cube cube_b;
     int32_t frame;
     bool running;
-} GameState;
+};
 
 int32_t edge_x_at(int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t y);
 void fill_quad(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t x2, int32_t y2, int32_t x3, int32_t y3, uint32_t col);

@@ -54,7 +54,7 @@ int main(void) {
     sink_b = ((s)[0] == '\0');
     const char * empty = "";
     sink_b = ((empty)[0] == '\0');
-    sink_i = (s).len;
+    sink_i = (int32_t)strlen(s);
     sink_b = check_greeting(s);
     sink_b = same_string(s, "hello world");
     sink_b = same_string(s, "other");

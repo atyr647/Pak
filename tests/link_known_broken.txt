@@ -1,0 +1,7 @@
+# Canonical examples that pass `pak check --backend mips` but do NOT link.
+#
+# Every name here is a hole in the HAL contract: the checker said the
+# program is a valid standalone program, and then the linker could not
+# resolve a symbol the codegen emitted. Maintained by
+# tcl/tools/link_test.tcl. This is debt and can only shrink.
+

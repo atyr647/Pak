@@ -205,6 +205,26 @@ ok "_fbss"       [format %#010x [dict get $r symbols _fbss]]       0x80000418
 ok "__bss_end"   [format %#010x [dict get $r symbols __bss_end]]   [format %#010x [expr {0x80000418 + 64}]]
 ok "_end"        [format %#010x [dict get $r symbols _end]]        [format %#010x [expr {0x80000418 + 64}]]
 
+puts "== memory-map symbols =="
+ok "__fb0"        [format %#010x [dict get $r symbols __fb0]]        0x80200000
+ok "__fb1"        [format %#010x [dict get $r symbols __fb1]]        0x80225800
+ok "__fb2"        [format %#010x [dict get $r symbols __fb2]]        0x8024b000
+ok "__zb"         [format %#010x [dict get $r symbols __zb]]         0x80271000
+ok "__dl_base"    [format %#010x [dict get $r symbols __dl_base]]    0x80297000
+ok "__ab"         [format %#010x [dict get $r symbols __ab]]         0x80299000
+ok "__heap_start" [format %#010x [dict get $r symbols __heap_start]] 0x802a0000
+ok "__stack_top"  [format %#010x [dict get $r symbols __stack_top]]  0x80400000
+
+puts "== overlap: .data that grows into FB0 is a link error =="
+# .text 4 bytes at 0x80000400; .data of 2 MiB starts at 0x80000410 and
+# crosses 0x80200000.
+expect_error "data overlaps framebuffer" [list link_texts [list "section .text
+sym _start 0
+data 03e00008
+section .data
+space 2097152
+"]] "memory map overlap"
+
 puts "== ROM packing =="
 set r [link_texts [list "section .text
 sym _start 0
@@ -212,6 +232,7 @@ data 03e00008 00000000
 "]]
 set rom [pak::n64rom [dict get $r image] "TESTROM"]
 ok "rom is word-aligned"  [expr {[string length $rom] % 4}] 0
+ok "rom is 4 MiB"          [string length $rom] 4194304
 ok "rom covers CRC window" [expr {[string length $rom] >= 0x101000}] 1
 ok "header magic"          [hexof [string range $rom 0 3]] 80371240
 binary scan [string range $rom 8 11] Iu entry_pc

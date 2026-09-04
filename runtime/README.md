@@ -38,16 +38,18 @@ The HAL for the path that needs no external tools at all: no GCC, no `as`, no
 | Area | Status |
 |------|--------|
 | Video Interface | 320x240 16bpp, triple buffered, vblank wait, flip |
-| RDP | full display list: fills, copies, texturing, flat triangles, all modes, colour registers, syncs — see `docs/toolchain-free-rom.md` |
+| RDP | fills, copies, texturing, flat/Gouraud/tex/shade-tex triangles, Z on every opcode 0x08–0x0F, syncs — see `docs/toolchain-free-rom.md` |
 | Controller | SI/PIF polling for port 0, held/pressed/released + stick |
 | PI DMA | cartridge to and from RDRAM, with the busy wait |
 | Timer | COP0 Count, `get_ticks`, frame delta in seconds |
 | Memory | bump allocator, `memset`, `memcpy`, `memcmp` |
 | Strings | `strlen`, `strcmp`, `strncmp`, `strstr` |
 | Cache | hit-writeback, hit-invalidate, and both together |
+| EEPROM | SI/PIF Joybus channel 4: present / type_detect / read / write |
+| Audio | AI 16-bit stereo PCM: init / get_buffer / write / close |
 
 Not provided, so a program using these needs the libdragon path (`--backend c`)
-or its own implementation: **audio** (the AI), **EEPROM / SRAM / FlashRAM
+or its own implementation: **mixer / wav64 / xm64**, **SRAM / FlashRAM
 saves**, **Controller Pak and Transfer Pak**, **rumble**, **sprite loading and
 blitting** (`sprite_load`, `rdpq_sprite_blit` — the RDP texturing primitives
 underneath them are all here), **rspq blocks**, and **Tiny3D**. They are

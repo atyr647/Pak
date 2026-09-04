@@ -21,10 +21,15 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
-typedef struct {
+
+/* -- User type forward declarations -- */
+typedef struct Vec2fx Vec2fx;
+
+/* -- User types -- */
+struct Vec2fx {
     int32_t x;
     int32_t y;
-} Vec2fx;
+};
 
 Vec2fx vec2fx_add(Vec2fx a, Vec2fx b) {
     return (Vec2fx){.x = (a.x + b.x), .y = (a.y + b.y)};

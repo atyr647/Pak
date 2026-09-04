@@ -1,14 +1,12 @@
 # Pak Language Reference
 
 This is the canonical syntax reference for the Pak programming language.
-Generated from the parser, lexer, and AST source — not from aspirational docs.
+It matches `tcl/parser.tcl` / `tcl/lexer.tcl` / `GRAMMAR.ebnf`. The grammar
+is frozen: new syntax is a language change, not a documentation edit.
 
-Every feature is tagged:
-- `[IMPLEMENTED]` — fully parsed, type-checked, and code-generated
-- `[PARTIAL]` — parsed and may type-check, but codegen may be incomplete
-- `[PLANNED]` — exists in design docs but NOT in the current implementation
-
-**Do not use `[PLANNED]` features in generated code.**
+`[IMPLEMENTED]` means parsed, type-checked, and code-generated. Things that
+are never legal live in `NOT_SUPPORTED.md`. Do not invent syntax that is in
+neither file.
 
 ---
 
@@ -647,6 +645,14 @@ The `->` after the condition introduces the binding name. The compiler checks
 that `ptr` is a nullable type (`?*T` / `Option(T)`); if not, `E002` fires.
 `binding` is only in scope inside the then-block.
 
+Postfix `?` is the boolean form of the same check (not Rust-style early return):
+
+```pak
+if ptr? {
+    -- ptr is not none
+}
+```
+
 ### Memory [IMPLEMENTED]
 
 ```pak
@@ -654,6 +660,9 @@ alloc(Type)           -- allocate one T on heap, returns *T
 alloc(Type, n)        -- allocate n T's on heap, returns *T
 free(ptr)             -- free heap pointer
 ```
+
+On the MIPS backend `alloc` is an inline bump from `0x802A0000` (same base as
+the standalone HAL); `free` is a no-op. The C backend maps to `malloc`/`free`.
 
 ### Sizeof / Offsetof / Alignof [IMPLEMENTED]
 
@@ -914,6 +923,15 @@ match entity {
 }
 ```
 
+Named-field payloads bind by field name, not position:
+
+```pak
+match s {
+    .Rect { w: ww, h: hh } => { a = ww + hh }
+    .Circ { r: rr }        => { a = rr }
+}
+```
+
 ### Match with Guard [IMPLEMENTED]
 
 ```pak
@@ -1091,6 +1109,8 @@ DMA safety rules (enforced by typechecker):
 
 - **E201**: Buffer passed to DMA must have `data_cache_hit_writeback` called first.
 - **E202**: Buffer passed to DMA must be `@aligned(16)`.
+- **E015**: Explicit type-argument count on a generic call must match the function.
+- **E016**: After a generic is instantiated, field access on a non-struct (e.g. `i32`) is an error.
 
 ---
 
@@ -1174,7 +1194,7 @@ These constructs **do not exist** in Pak. Do not generate them.
 - `class` — use `struct` + `impl`
 - Exceptions / `try` / `throw` — use `Result(Ok, Err)`
 - `new` / `delete` — use `alloc()` / `free()`
-- Rust-style `?` operator — use `catch` or explicit `match`
+- Rust-style `?` early-return on `Result` — use `catch` or explicit `match`. Postfix `ptr?` is a boolean null-check.
 - `if let` / `while let` — use `match` or null-check `if ptr -> binding { }`
 - Trailing `?` on types meaning Option — use `Option(T)` or `?T`
 - `:=` (Go-style) — use `let`

@@ -21,15 +21,33 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
-int32_t apply(int32_t (*)(int32_t) f, int32_t x) {
+
+/* -- Closures -- */
+static int32_t _pak_closure_0(int32_t x) {
+    return (x * 2);
+}
+
+static int32_t _pak_closure_1(int32_t x) {
+    return (x * x);
+}
+
+static int32_t _pak_closure_2(int32_t x) {
+    return (0 - x);
+}
+
+static int32_t _pak_closure_3(int32_t x) {
+    return (x + 100);
+}
+
+int32_t apply(int32_t (*f)(int32_t), int32_t x) {
     return f(x);
 }
 
-int32_t compose(int32_t (*)(int32_t) f, int32_t (*)(int32_t) g, int32_t x) {
+int32_t compose(int32_t (*f)(int32_t), int32_t (*g)(int32_t), int32_t x) {
     return f(g(x));
 }
 
-int32_t map_sum(int32_t (*)(int32_t) f, int32_t lo, int32_t hi) {
+int32_t map_sum(int32_t (*f)(int32_t), int32_t lo, int32_t hi) {
     int32_t total = 0;
     for (int i = lo; i < hi; i++) {
         total += f(i);
@@ -40,34 +58,22 @@ int32_t map_sum(int32_t (*)(int32_t) f, int32_t lo, int32_t hi) {
 static int32_t sink = 0;
 
 int main(void) {
-    int32_t _pak_clo_0(int32_t x) {
-        return (x * 2);
-    }
-    int32_t (*)(int32_t) double = _pak_clo_0;
-    sink = double(5);
-    int32_t _pak_clo_0(int32_t x) {
-        return (x * x);
-    }
-    int32_t (*)(int32_t) square = _pak_clo_0;
+    int32_t (*double_)(int32_t) = _pak_closure_0;
+    sink = double_(5);
+    int32_t (*square)(int32_t) = _pak_closure_1;
     sink = square(4);
-    int32_t _pak_clo_0(int32_t x) {
-        return (0 - x);
-    }
-    int32_t (*)(int32_t) negate = _pak_clo_0;
+    int32_t (*negate)(int32_t) = _pak_closure_2;
     sink = negate(7);
-    sink = apply(double, 6);
+    sink = apply(double_, 6);
     sink = apply(square, 3);
-    sink = compose(double, square, 2);
-    int32_t _pak_clo_0(int32_t x) {
-        return (x + 100);
-    }
-    sink = apply(_pak_clo_0, 5);
-    sink = map_sum(double, 1, 5);
+    sink = compose(double_, square, 2);
+    sink = apply(_pak_closure_3, 5);
+    sink = map_sum(double_, 1, 5);
     int32_t base = 10;
-    int32_t _pak_clo_0(int32_t x) {
+    int32_t _pak_clo_4(int32_t x) {
         return (x + base);
     }
-    int32_t (*)(int32_t) add_base = _pak_clo_0;
+    int32_t (*add_base)(int32_t) = _pak_clo_4;
     sink = add_base(5);
     sink = apply(add_base, 3);
     return 0;
