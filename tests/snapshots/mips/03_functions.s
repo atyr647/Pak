@@ -374,7 +374,7 @@ main:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 136($sp)
+    swc1 $f12, 136($sp)
     la $t8, .Lf322
     lwc1 $f12, 0($t8)
     swc1 $f12, 8($sp)
@@ -388,7 +388,7 @@ main:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 140($sp)
+    swc1 $f12, 140($sp)
     li $t9, 5
     sw $t9, 144($sp)
     addiu $a0, $sp, 144
@@ -404,10 +404,10 @@ main:
     lw $t9, 96($sp)
     move $t9, $v0
     lw $t6, 144($sp)
-    lw $t4, 136($sp)
+    lwc1 $f12, 136($sp)
     move $t5, $t4
     addu $t7, $t6, $t5
-    lw $t5, 140($sp)
+    lwc1 $f12, 140($sp)
     move $t6, $t5
     addu $t8, $t7, $t6
     la $t7, result_sink

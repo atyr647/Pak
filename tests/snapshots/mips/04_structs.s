@@ -374,23 +374,27 @@ main:
     move $t9, $t8
     addiu $t8, $sp, 136
     move $a0, $t8
-    la $t8, .Lf320
-    lwc1 $f12, 0($t8)
+    la $t7, .Lf320
+    lwc1 $f12, 0($t7)
     mov.s $f14, $f12
-    la $t8, .Lf324
-    lwc1 $f12, 0($t8)
+    la $t7, .Lf324
+    lwc1 $f12, 0($t7)
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Player_move
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     addiu $t8, $sp, 136
     move $a0, $t8
     li $a1, 10
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Player_take_damage
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     addiu $t7, $sp, 136
     lw $t8, 8($t7)
@@ -400,9 +404,11 @@ main:
     addiu $t8, $sp, 136
     move $a0, $t8
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Player_is_alive
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     beqz $t9, .Lif_end_6
     nop

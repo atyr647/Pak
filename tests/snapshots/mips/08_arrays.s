@@ -280,9 +280,34 @@ main:
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
     move $t9, $zero
-    sw $t9, 136($sp)
+    addiu $t8, $sp, 136
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
+    lw $t7, 12($t9)
+    sw $t7, 12($t8)
+    lw $t7, 16($t9)
+    sw $t7, 16($t8)
+    lw $t7, 20($t9)
+    sw $t7, 20($t8)
+    lw $t7, 24($t9)
+    sw $t7, 24($t8)
+    lw $t7, 28($t9)
+    sw $t7, 28($t8)
     move $t9, $zero
-    sw $t9, 168($sp)
+    addiu $t8, $sp, 168
+    move $a0, $t8
+    move $a1, $t9
+    li $a2, 64
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    jal memcpy
+    nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
     li $t8, 100
     addiu $t7, $sp, 136
     li $t6, 0

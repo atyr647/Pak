@@ -612,9 +612,11 @@ main:
     move $a0, $t8
     la $a1, .Lstr7
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Str_from_cstr
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     sw $t9, 144($sp)
     lw $a0, 144($sp)

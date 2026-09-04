@@ -319,18 +319,22 @@ main:
     li $a2, 20
     li $a1, 10
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Sprite_draw
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     addiu $t7, $sp, 136
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal Sprite_get_width
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
@@ -357,12 +361,14 @@ main:
     sw $t7, 8($t8)
     addiu $t8, $sp, 168
     move $a0, $t8
-    la $t8, .Lf322
-    lwc1 $f12, 0($t8)
+    la $t7, .Lf322
+    lwc1 $f12, 0($t7)
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Enemy_update
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     addiu $t6, $sp, 168
     lwc1 $f12, 0($t6)

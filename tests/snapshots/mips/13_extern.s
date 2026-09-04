@@ -205,7 +205,11 @@ main:
     lw $t9, 96($sp)
     move $t9, $v0
     move $t9, $zero
-    sw $t9, 136($sp)
+    addiu $t8, $sp, 136
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
     li $a2, 8
     addiu $t8, $sp, 136
     li $t7, 0

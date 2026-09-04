@@ -233,8 +233,8 @@ main:
     li $t7, 0
     addu $t8, $t8, $t7
     lbu $t9, 0($t8)
-    sw $t9, 136($sp)
-    lw $t8, 136($sp)
+    sb $t9, 136($sp)
+    lbu $t8, 136($sp)
     la $t7, rx_buffer
     li $t6, 1
     addu $t7, $t7, $t6

@@ -422,8 +422,8 @@ main:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 136($sp)
-    lw $t8, 136($sp)
+    sb $t9, 136($sp)
+    lbu $t8, 136($sp)
     sltiu $t9, $t8, 1
     beqz $t9, .Lif_end_7
     nop

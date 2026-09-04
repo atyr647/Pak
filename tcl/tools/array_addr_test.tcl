@@ -499,6 +499,71 @@ check_eq {sum_x([]Point) of 1+2} [word_hex $mw [expr {$DATA + 4}]] 00000003
 check_eq {add(Point) of pts[0]} [word_hex $mw [expr {$DATA + 8}]] 0000000B
 check_eq {a = b copies [2]i32} [word_hex $mw [expr {$DATA + 12}]] 0000001E
 
+# ── sret: returned structs/slices live in the caller's frame
+set src11 {
+struct Point {
+    x: i32
+    y: i32
+}
+static mk_sum: i32 = 0
+static nest_sum: i32 = 0
+static meth_sum: i32 = 0
+static sl_sum: i32 = 0
+static arr_ret: i32 = 0
+static nums: [4]i32 = undefined
+
+fn mk(x: i32, y: i32) -> Point {
+    return Point { x: x, y: y }
+}
+fn add(p: Point) -> i32 {
+    return p.x + p.y
+}
+fn rest(s: []i32) -> []i32 {
+    return s[1..4]
+}
+fn pair() -> [2]i32 {
+    let mut a: [2]i32 = undefined
+    a[0] = 3
+    a[1] = 7
+    return a
+}
+
+impl Point {
+    fn doubled(self: Point) -> Point {
+        return Point { x: self.x * 2, y: self.y * 2 }
+    }
+}
+
+entry {
+    let p = mk(3, 7)
+    mk_sum = p.x + p.y
+    nest_sum = add(mk(4, 6))
+    let q = Point { x: 5, y: 8 }
+    let r = q.doubled()
+    meth_sum = r.x + r.y
+    nums[0] = 10
+    nums[1] = 20
+    nums[2] = 30
+    nums[3] = 40
+    let s = rest(nums[0..4])
+    sl_sum = s[0] + s[1] + s[2]
+    let arr = pair()
+    arr_ret = arr[0] + arr[1]
+}
+}
+set lx [pak::Lexer new $src11]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set DATA 0x80300000
+check_eq {let p = mk(3,7) fields} [word_hex $mw $DATA] 0000000A
+check_eq {add(mk(4,6)) nested sret} [word_hex $mw [expr {$DATA + 4}]] 0000000A
+check_eq {q.doubled() method sret} [word_hex $mw [expr {$DATA + 8}]] 0000001A
+check_eq {rest([]i32) returns slice} [word_hex $mw [expr {$DATA + 12}]] 0000005A
+check_eq {pair() returns [2]i32} [word_hex $mw [expr {$DATA + 16}]] 0000000A
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

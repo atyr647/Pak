@@ -839,7 +839,7 @@ check_platform_landing:
     addu $t8, $t8, $t7
     move $t9, $t8
     sw $t9, 152($sp)
-    addiu $t8, $sp, 152
+    lw $t8, 152($sp)
     lbu $t9, 16($t8)
     beqz $t9, .Lif_end_12
     nop
@@ -847,16 +847,16 @@ check_platform_landing:
     li $t7, 16
     addu $t9, $t8, $t7
     sw $t9, 156($sp)
-    addiu $t7, $sp, 152
+    lw $t7, 152($sp)
     lw $t8, 12($t7)
     sw $t8, 28($sp)
-    addiu $t7, $sp, 152
+    lw $t7, 152($sp)
     lw $t8, 8($t7)
     sw $t8, 24($sp)
-    addiu $t7, $sp, 152
+    lw $t7, 152($sp)
     lw $t8, 4($t7)
     sw $t8, 20($sp)
-    addiu $t7, $sp, 152
+    lw $t7, 152($sp)
     lw $t8, 0($t7)
     sw $t8, 16($sp)
     li $a3, 4
@@ -870,11 +870,11 @@ check_platform_landing:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 160($sp)
-    lw $t9, 160($sp)
+    sb $t9, 160($sp)
+    lbu $t9, 160($sp)
     beqz $t9, .Lif_end_13
     nop
-    addiu $t9, $sp, 152
+    lw $t9, 152($sp)
     lw $v0, 4($t9)
     j .Lcheck_platform_landing_ret_7
     nop
@@ -1781,7 +1781,7 @@ draw_platforms:
     addu $t8, $t8, $t7
     move $t9, $t8
     sw $t9, 144($sp)
-    addiu $t8, $sp, 144
+    lw $t8, 144($sp)
     lbu $t9, 16($t8)
     beqz $t9, .Lif_end_70
     nop
@@ -1789,13 +1789,13 @@ draw_platforms:
     sw $t8, 20($sp)
     lw $t8, 136($sp)
     sw $t8, 16($sp)
-    addiu $t8, $sp, 144
+    lw $t8, 144($sp)
     lw $a3, 12($t8)
-    addiu $t8, $sp, 144
+    lw $t8, 144($sp)
     lw $a2, 8($t8)
-    addiu $t8, $sp, 144
+    lw $t8, 144($sp)
     lw $a1, 4($t8)
-    addiu $t8, $sp, 144
+    lw $t8, 144($sp)
     lw $a0, 0($t8)
     sw $t9, 96($sp)
     jal draw_rect_world
@@ -2214,47 +2214,59 @@ update_playing:
     move $a0, $t8
     lw $a1, 140($sp)
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Player_handle_input
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     lw $t8, 136($sp)
     move $a0, $t8
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Player_physics
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     lw $t8, 136($sp)
     move $a0, $t8
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Player_resolve_collisions
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     lw $t8, 136($sp)
     move $a0, $t8
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Player_update_state
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     lw $t8, 136($sp)
     move $a0, $t8
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Player_collect_pickups
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     lw $t8, 136($sp)
     addiu $t8, $t8, 36
     move $a0, $t8
-    lw $t8, 136($sp)
-    lw $a1, 0($t8)
+    lw $t7, 136($sp)
+    lw $a1, 0($t7)
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Camera_follow
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     lw $t7, 140($sp)
     lw $t8, 4($t7)
@@ -2376,17 +2388,21 @@ update_gameover:
     lw $t8, 136($sp)
     move $a0, $t8
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Player_init
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     lw $t8, 136($sp)
     addiu $t8, $t8, 36
     move $a0, $t8
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Camera_init
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     li $t8, 0
     lw $t7, 136($sp)
@@ -2925,17 +2941,21 @@ main:
     addiu $t8, $sp, 136
     move $a0, $t8
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Player_init
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     addiu $t8, $sp, 136
     addiu $t8, $t8, 36
     move $a0, $t8
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Camera_init
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     li $t8, 0
     addiu $t7, $sp, 136

@@ -197,10 +197,12 @@ main:
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal FixedList_init
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t9, $v0
     addiu $t8, $sp, 136
     move $a0, $t8
@@ -302,10 +304,12 @@ main:
     move $a0, $t8
     sw $t9, 96($sp)
     sw $t7, 100($sp)
+    sw $t8, 104($sp)
     jal RingBuffer_init
     nop
     lw $t9, 96($sp)
     lw $t7, 100($sp)
+    lw $t8, 104($sp)
     move $t9, $v0
     addiu $t7, $sp, 556
     move $a0, $t7
@@ -422,10 +426,12 @@ main:
     move $a0, $t6
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t6, 104($sp)
     jal FixedMap_init
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t6, 104($sp)
     move $t9, $v0
     addiu $t8, $sp, 608
     move $a0, $t8
@@ -509,10 +515,12 @@ main:
     move $a0, $t6
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t6, 104($sp)
     jal Pool_init
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t6, 104($sp)
     move $t9, $v0
     addiu $t8, $sp, 764
     move $a0, $t8
@@ -565,10 +573,12 @@ main:
     move $a0, $t6
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t6, 104($sp)
     jal Vec_init
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t6, 104($sp)
     move $t9, $v0
     addiu $t8, $sp, 964
     lw $t6, 0($t9)

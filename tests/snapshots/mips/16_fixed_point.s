@@ -193,33 +193,40 @@ vec2fx_add:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    move $t9, $a0
-    addiu $t8, $sp, 136
-    lw $t7, 0($t9)
-    sw $t7, 0($t8)
-    lw $t7, 4($t9)
-    sw $t7, 4($t8)
+    sw $a0, 136($sp)
     move $t9, $a1
-    addiu $t8, $sp, 144
+    addiu $t8, $sp, 140
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    sw $zero, 152($sp)
+    move $t9, $a2
+    addiu $t8, $sp, 148
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
     sw $zero, 156($sp)
-    addiu $t7, $sp, 136
-    lw $t8, 0($t7)
-    addiu $t6, $sp, 144
+    sw $zero, 160($sp)
+    addiu $t6, $sp, 140
     lw $t7, 0($t6)
-    addu $t9, $t8, $t7
-    sw $t9, 152($sp)
-    addiu $t7, $sp, 136
-    lw $t8, 4($t7)
-    addiu $t6, $sp, 144
+    addiu $t5, $sp, 148
+    lw $t6, 0($t5)
+    addu $t8, $t7, $t6
+    sw $t8, 156($sp)
+    addiu $t6, $sp, 140
     lw $t7, 4($t6)
-    addu $t9, $t8, $t7
-    sw $t9, 156($sp)
-    addiu $v0, $sp, 152
+    addiu $t5, $sp, 148
+    lw $t6, 4($t5)
+    addu $t8, $t7, $t6
+    sw $t8, 160($sp)
+    addiu $t9, $sp, 156
+    lw $t8, 136($sp)
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    move $v0, $t8
     j .Lvec2fx_add_ret_0
     nop
 .Lvec2fx_add_ret_0:
@@ -238,36 +245,43 @@ vec2fx_scale:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    move $t9, $a0
-    addiu $t8, $sp, 136
+    sw $a0, 136($sp)
+    move $t9, $a1
+    addiu $t8, $sp, 140
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    sw $a1, 144($sp)
-    sw $zero, 148($sp)
+    sw $a2, 148($sp)
     sw $zero, 152($sp)
-    addiu $t7, $sp, 136
-    lw $t8, 0($t7)
-    lw $t7, 144($sp)
-    mult $t8, $t7
-    mflo $t5
-    mfhi $t6
-    srl $t5, $t5, 16
-    sll $t6, $t6, 16
-    or $t9, $t5, $t6
-    sw $t9, 148($sp)
-    addiu $t7, $sp, 136
-    lw $t8, 4($t7)
-    lw $t7, 144($sp)
-    mult $t8, $t7
-    mflo $t5
-    mfhi $t6
-    srl $t5, $t5, 16
-    sll $t6, $t6, 16
-    or $t9, $t5, $t6
-    sw $t9, 152($sp)
-    addiu $v0, $sp, 148
+    sw $zero, 156($sp)
+    addiu $t6, $sp, 140
+    lw $t7, 0($t6)
+    lw $t6, 148($sp)
+    mult $t7, $t6
+    mflo $t4
+    mfhi $t5
+    srl $t4, $t4, 16
+    sll $t5, $t5, 16
+    or $t8, $t4, $t5
+    sw $t8, 152($sp)
+    addiu $t6, $sp, 140
+    lw $t7, 4($t6)
+    lw $t6, 148($sp)
+    mult $t7, $t6
+    mflo $t4
+    mfhi $t5
+    srl $t4, $t4, 16
+    sll $t5, $t5, 16
+    or $t8, $t4, $t5
+    sw $t8, 156($sp)
+    addiu $t9, $sp, 152
+    lw $t8, 136($sp)
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    move $v0, $t8
     j .Lvec2fx_scale_ret_1
     nop
 .Lvec2fx_scale_ret_1:
@@ -364,23 +378,37 @@ main:
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    addiu $a1, $sp, 180
-    addiu $a0, $sp, 164
+    addiu $a0, $sp, 204
+    addiu $a2, $sp, 180
+    addiu $a1, $sp, 164
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal vec2fx_add
     nop
     lw $t9, 96($sp)
-    move $t9, $v0
-    sw $t9, 196($sp)
-    la $t8, .Lf321
-    lwc1 $f12, 0($t8)
-    addiu $a0, $sp, 180
+    lw $t8, 100($sp)
+    addiu $t9, $sp, 204
+    addiu $t8, $sp, 196
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    addiu $a0, $sp, 220
+    la $t7, .Lf321
+    lwc1 $f12, 0($t7)
+    addiu $a1, $sp, 180
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal vec2fx_scale
     nop
     lw $t9, 96($sp)
-    move $t9, $v0
-    sw $t9, 200($sp)
+    lw $t8, 100($sp)
+    addiu $t9, $sp, 220
+    addiu $t8, $sp, 212
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
     lw $t3, 148($sp)
     lw $t2, 152($sp)
     addu $t4, $t3, $t2
@@ -391,7 +419,7 @@ main:
     addiu $t4, $sp, 196
     lw $t5, 0($t4)
     addu $t7, $t6, $t5
-    addiu $t5, $sp, 200
+    addiu $t5, $sp, 212
     lw $t6, 0($t5)
     addu $t8, $t7, $t6
     la $t7, sink_x

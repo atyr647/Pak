@@ -393,54 +393,74 @@ fill_quad:
     sw $t9, 168($sp)
     la $t8, math
     move $a0, $t8
-    la $t8, math
-    move $a0, $t8
+    la $t7, math
+    move $a0, $t7
     lw $a2, 164($sp)
     lw $a1, 156($sp)
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal Math_min_i32
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $a2, $v0
-    la $t8, math
-    move $a0, $t8
+    la $t7, math
+    move $a0, $t7
     lw $a2, 148($sp)
     lw $a1, 140($sp)
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal Math_min_i32
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $a1, $v0
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Math_min_i32
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     sw $t9, 172($sp)
     la $t8, math
     move $a0, $t8
-    la $t8, math
-    move $a0, $t8
+    la $t7, math
+    move $a0, $t7
     lw $a2, 164($sp)
     lw $a1, 156($sp)
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal Math_max_i32
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $a2, $v0
-    la $t8, math
-    move $a0, $t8
+    la $t7, math
+    move $a0, $t7
     lw $a2, 148($sp)
     lw $a1, 140($sp)
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal Math_max_i32
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $a1, $v0
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Math_max_i32
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     sw $t9, 176($sp)
     lw $t8, 172($sp)
@@ -790,49 +810,105 @@ render_cube:
     sw $s7, 324($sp)
     sw $a0, 136($sp)
     move $t9, $zero
-    sw $t9, 140($sp)
+    addiu $t8, $sp, 140
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
+    lw $t7, 12($t9)
+    sw $t7, 12($t8)
+    lw $t7, 16($t9)
+    sw $t7, 16($t8)
+    lw $t7, 20($t9)
+    sw $t7, 20($t8)
+    lw $t7, 24($t9)
+    sw $t7, 24($t8)
+    lw $t7, 28($t9)
+    sw $t7, 28($t8)
     move $t9, $zero
-    sw $t9, 172($sp)
+    addiu $t8, $sp, 172
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
+    lw $t7, 12($t9)
+    sw $t7, 12($t8)
+    lw $t7, 16($t9)
+    sw $t7, 16($t8)
+    lw $t7, 20($t9)
+    sw $t7, 20($t8)
+    lw $t7, 24($t9)
+    sw $t7, 24($t8)
+    lw $t7, 28($t9)
+    sw $t7, 28($t8)
     move $t9, $zero
-    sw $t9, 204($sp)
+    addiu $t8, $sp, 204
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
+    lw $t7, 12($t9)
+    sw $t7, 12($t8)
+    lw $t7, 16($t9)
+    sw $t7, 16($t8)
+    lw $t7, 20($t9)
+    sw $t7, 20($t8)
+    lw $t7, 24($t9)
+    sw $t7, 24($t8)
+    lw $t7, 28($t9)
+    sw $t7, 28($t8)
     la $t8, math
     move $a0, $t8
-    lw $t8, 136($sp)
-    lwc1 $f12, 16($t8)
+    lw $t7, 136($sp)
+    lwc1 $f12, 16($t7)
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Math_cos_f
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     swc1 $f12, 236($sp)
     la $t8, math
     move $a0, $t8
-    lw $t8, 136($sp)
-    lwc1 $f12, 16($t8)
+    lw $t7, 136($sp)
+    lwc1 $f12, 16($t7)
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Math_sin_f
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     swc1 $f12, 240($sp)
     la $t8, math
     move $a0, $t8
-    lw $t8, 136($sp)
-    lwc1 $f12, 20($t8)
+    lw $t7, 136($sp)
+    lwc1 $f12, 20($t7)
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Math_cos_f
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     swc1 $f12, 244($sp)
     la $t8, math
     move $a0, $t8
-    lw $t8, 136($sp)
-    lwc1 $f12, 20($t8)
+    lw $t7, 136($sp)
+    lwc1 $f12, 20($t7)
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Math_sin_f
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     swc1 $f12, 248($sp)
     li $t9, 0
@@ -1156,6 +1232,7 @@ render_cube:
     sw $t7, 104($sp)
     sw $t6, 108($sp)
     sw $t5, 112($sp)
+    sw $t4, 116($sp)
     jal Cube_face_col
     nop
     lw $t9, 96($sp)
@@ -1163,6 +1240,7 @@ render_cube:
     lw $t7, 104($sp)
     lw $t6, 108($sp)
     lw $t5, 112($sp)
+    lw $t4, 116($sp)
     move $t5, $v0
     sw $t5, 32($sp)
     addiu $t4, $sp, 172
@@ -1408,9 +1486,11 @@ render_stars:
     la $t8, gs
     move $a0, $t8
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal _slice
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     sw $t9, 136($sp)
     li $t9, 0
@@ -1419,10 +1499,12 @@ render_stars:
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal Ss_len
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
 .Lfor_h_49:
     lw $t7, 140($sp)
@@ -1582,17 +1664,21 @@ update:
     addiu $t8, $t8, 772
     move $a0, $t8
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Cube_spin
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     la $t8, gs
     addiu $t8, $t8, 816
     move $a0, $t8
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Cube_spin
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     lw $t7, 136($sp)
     lw $t8, 0($t7)
@@ -1699,10 +1785,12 @@ init_scene:
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal FixedList_init
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, gs
     sw $t8, 0($t7)
@@ -1711,9 +1799,11 @@ init_scene:
     move $a0, $t8
     li $a1, 57005
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal Math_rand_seed
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     li $t9, 0
     sw $t9, 136($sp)
@@ -1728,45 +1818,59 @@ init_scene:
     sw $zero, 140($sp)
     sw $zero, 144($sp)
     sw $zero, 148($sp)
-    la $t7, math
-    move $a0, $t7
+    la $t6, math
+    move $a0, $t6
     li $a2, 318
     li $a1, 0
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
+    sw $t6, 108($sp)
     jal Math_rand_range
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
-    move $t8, $v0
-    sw $t8, 140($sp)
-    la $t7, math
-    move $a0, $t7
+    lw $t7, 104($sp)
+    lw $t6, 108($sp)
+    move $t7, $v0
+    sw $t7, 140($sp)
+    la $t6, math
+    move $a0, $t6
     li $a2, 115
     li $a1, 0
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
+    sw $t6, 108($sp)
     jal Math_rand_range
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
-    move $t8, $v0
-    sw $t8, 144($sp)
-    la $t7, math
-    move $a0, $t7
+    lw $t7, 104($sp)
+    lw $t6, 108($sp)
+    move $t7, $v0
+    sw $t7, 144($sp)
+    la $t6, math
+    move $a0, $t6
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
+    sw $t6, 108($sp)
     jal Math_rand_f
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
-    move $t8, $v0
+    lw $t7, 104($sp)
+    lw $t6, 108($sp)
+    move $t7, $v0
     swc1 $f12, 148($sp)
     addiu $a1, $sp, 140
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal _push
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
     li $t8, 1
     lw $t7, 136($sp)

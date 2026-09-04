@@ -366,10 +366,12 @@ main:
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal P_sum_i32
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink_i
     sw $t8, 0($t7)
@@ -378,10 +380,12 @@ main:
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal P_get_first
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink_i
     sw $t8, 0($t7)
@@ -409,10 +413,12 @@ main:
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal Fp_sum_i32
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink_f
     swc1 $f12, 0($t7)
@@ -421,10 +427,12 @@ main:
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal Fp_get_second
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink_f
     swc1 $f12, 0($t7)

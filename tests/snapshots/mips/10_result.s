@@ -279,11 +279,17 @@ main:
     addiu $fp, $sp, 320
     la $a0, .Lstr0
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal load_data
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
-    sw $t9, 136($sp)
+    addiu $t8, $sp, 136
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
     lw $t9, 136($sp)
     lbu $t8, 0($t9)
     li $t7, 0
@@ -344,12 +350,18 @@ main:
     li $a1, 2
     li $a0, 10
     sw $t9, 96($sp)
+    sw $t8, 100($sp)
     jal divide
     nop
     lw $t9, 96($sp)
+    lw $t8, 100($sp)
     move $t9, $v0
-    sw $t9, 140($sp)
-    lw $t9, 140($sp)
+    addiu $t8, $sp, 144
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t9, 144($sp)
     lbu $t8, 0($t9)
     li $t7, 0
     bne $t8, $t7, .Larm_skip_19
@@ -375,30 +387,30 @@ main:
     nop
 .Larm_skip_21:
 .Lmatch_end_17:
-    sw $zero, 152($sp)
-    sw $zero, 156($sp)
+    sw $zero, 160($sp)
+    sw $zero, 164($sp)
     li $t9, 1
-    sb $t9, 152($sp)
+    sb $t9, 160($sp)
     li $t7, 100
-    sw $t7, 156($sp)
-    addiu $t9, $sp, 152
-    addiu $t8, $sp, 144
+    sw $t7, 164($sp)
+    addiu $t9, $sp, 160
+    addiu $t8, $sp, 152
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    sw $zero, 168($sp)
-    sw $zero, 172($sp)
-    sb $zero, 168($sp)
+    sw $zero, 176($sp)
+    sw $zero, 180($sp)
+    sb $zero, 176($sp)
     li $t7, 1
-    sw $t7, 172($sp)
-    addiu $t9, $sp, 168
-    addiu $t8, $sp, 160
+    sw $t7, 180($sp)
+    addiu $t9, $sp, 176
+    addiu $t8, $sp, 168
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t9, 144($sp)
+    lw $t9, 152($sp)
     lbu $t8, 0($t9)
     li $t7, 0
     bne $t8, $t7, .Larm_skip_24
@@ -419,7 +431,7 @@ main:
     nop
 .Larm_skip_26:
 .Lmatch_end_22:
-    lw $t9, 160($sp)
+    lw $t9, 168($sp)
     lbu $t8, 0($t9)
     li $t7, 0
     bne $t8, $t7, .Larm_skip_29

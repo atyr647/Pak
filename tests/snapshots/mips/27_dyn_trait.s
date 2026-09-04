@@ -304,8 +304,10 @@ get_area:
     sw $a0, 136($sp)
     addiu $t9, $sp, 136
     move $a0, $t9
+    sw $t9, 96($sp)
     jal S_area
     nop
+    lw $t9, 96($sp)
     j .Lget_area_ret_4
     nop
 .Lget_area_ret_4:
@@ -327,8 +329,10 @@ get_perimeter:
     sw $a0, 136($sp)
     addiu $t9, $sp, 136
     move $a0, $t9
+    sw $t9, 96($sp)
     jal S_perimeter
     nop
+    lw $t9, 96($sp)
     j .Lget_perimeter_ret_5
     nop
 .Lget_perimeter_ret_5:
@@ -364,10 +368,12 @@ main:
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal Shape_c_area
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink_f
     swc1 $f12, 0($t7)
@@ -376,10 +382,12 @@ main:
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal Shape_c_perimeter
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink_f
     swc1 $f12, 0($t7)
@@ -409,10 +417,12 @@ main:
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal Shape_r_area
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink_f
     swc1 $f12, 0($t7)
@@ -421,10 +431,12 @@ main:
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal Shape_r_perimeter
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink_f
     swc1 $f12, 0($t7)
@@ -466,10 +478,12 @@ main:
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal Circle_area
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink_f
     swc1 $f12, 0($t7)
@@ -478,10 +492,12 @@ main:
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
+    sw $t7, 104($sp)
     jal Rect_area
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink_f
     swc1 $f12, 0($t7)
@@ -491,11 +507,13 @@ main:
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     sw $t7, 104($sp)
+    sw $t6, 108($sp)
     jal Shape_r_area
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
     lw $t7, 104($sp)
+    lw $t6, 108($sp)
     move $t7, $v0
     move $t8, $t7
     la $t7, sink_i
