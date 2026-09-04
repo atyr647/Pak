@@ -436,6 +436,69 @@ check_eq {pts[0] = pts[1] copies fields} [word_hex $mw [expr {$DATA + 4}]] 00000
 check_eq {s[1] = Point{...} copies through slice} [word_hex $mw [expr {$DATA + 8}]] 00000021
 check_eq {a = b copies local structs} [word_hex $mw [expr {$DATA + 12}]] 00000037
 
+# ── slice / struct / array args and array assign: pass address, memcpy in
+set src10 {
+struct Point {
+    x: i32
+    y: i32
+}
+static nums: [4]i32 = undefined
+static pts: [2]Point = undefined
+static a: [2]i32 = undefined
+static b: [2]i32 = undefined
+static slice_sum: i32 = 0
+static pt_sum: i32 = 0
+static val_sum: i32 = 0
+static arr_sum: i32 = 0
+
+fn sum(s: []i32) -> i32 {
+    let mut total: i32 = 0
+    for item in s {
+        total = total + item
+    }
+    return total
+}
+fn sum_x(s: []Point) -> i32 {
+    let mut total: i32 = 0
+    for p in s {
+        total = total + p.x
+    }
+    return total
+}
+fn add(p: Point) -> i32 {
+    return p.x + p.y
+}
+
+entry {
+    nums[0] = 10
+    nums[1] = 20
+    nums[2] = 30
+    nums[3] = 40
+    let s = nums[0..4]
+    slice_sum = sum(s)
+    pts[0] = Point { x: 1, y: 10 }
+    pts[1] = Point { x: 2, y: 20 }
+    let ps = pts[0..2]
+    pt_sum = sum_x(ps)
+    val_sum = add(pts[0])
+    b[0] = 10
+    b[1] = 20
+    a = b
+    arr_sum = a[0] + a[1]
+}
+}
+set lx [pak::Lexer new $src10]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set DATA 0x80300000
+check_eq {sum([]i32) of 10+20+30+40} [word_hex $mw $DATA] 00000064
+check_eq {sum_x([]Point) of 1+2} [word_hex $mw [expr {$DATA + 4}]] 00000003
+check_eq {add(Point) of pts[0]} [word_hex $mw [expr {$DATA + 8}]] 0000000B
+check_eq {a = b copies [2]i32} [word_hex $mw [expr {$DATA + 12}]] 0000001E
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

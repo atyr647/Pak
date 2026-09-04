@@ -193,8 +193,18 @@ vec2fx_add:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    sw $a1, 144($sp)
+    move $t9, $a0
+    addiu $t8, $sp, 136
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    move $t9, $a1
+    addiu $t8, $sp, 144
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
     sw $zero, 152($sp)
     sw $zero, 156($sp)
     addiu $t7, $sp, 136
@@ -228,7 +238,12 @@ vec2fx_scale:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    move $t9, $a0
+    addiu $t8, $sp, 136
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
     sw $a1, 144($sp)
     sw $zero, 148($sp)
     sw $zero, 152($sp)

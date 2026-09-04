@@ -219,6 +219,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `for x in [N]T` | ✅ Full | Length is `[N]`, not the first two words as a fat pointer |
 | `for p in []Point` / `[N]T.len` | ✅ Full | Struct elements memcpy; `.len` is N or the fat-pointer length |
 | `pts[i] = Point { ... }` | ✅ Full | Aggregate `=` memcpy, not a store of the literal's address |
+| `sum(s)` / `add(p)` / `a = b` | ✅ Full | Slice, struct, and array args memcpy from the passed address |
 | `&s.field` / value-struct fields | ✅ Full | Place address of the object, not a spilled copy of the first word |
 | Method `self` (value, `*T`, `obj.field.m()`) | ✅ Full | Pointer receivers pass the pointer; `g.player.init()` is not a module call |
 | `defer` | ✅ Full | |

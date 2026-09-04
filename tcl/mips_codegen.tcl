@@ -1180,7 +1180,7 @@ oo::class create pak::MipsCodegen {
         foreach p [pak::items $params] {
             set p_layout [my mips_layout [pak::nfield $p type]]
             set off [my declare_local [pak::fval $p name] $p_layout [pak::nfield $p type]]
-            lappend param_info [list $off $p_layout $float_param_n $i]
+            lappend param_info [list $off $p_layout $float_param_n $i [pak::nfield $p type]]
             if {[dict get $p_layout is_float]} { incr float_param_n }
             incr i
         }
@@ -1195,7 +1195,7 @@ oo::class create pak::MipsCodegen {
         # (fp = old_sp = callee's frame top; caller put extra floats in its
         # outgoing-arg area at sp+0, sp+4, sp+8 ... = fp+0, fp+4, fp+8 ...).
         foreach pi $param_info {
-            lassign $pi off p_layout fpn idx
+            lassign $pi off p_layout fpn idx ptn
             if {[dict get $p_layout is_float]} {
                 if {$fpn == 0} {
                     my store_to_sp $off {} $p_layout
@@ -1207,6 +1207,19 @@ oo::class create pak::MipsCodegen {
                     $em lwc1 {$f12} [expr {$fpn * 4}] {$fp}
                     my store_to_sp $off {} $p_layout
                 }
+            } elseif {[my type_passed_by_addr $ptn]} {
+                set sz [dict get $p_layout size]
+                set src [$ra alloc_temp]
+                if {$idx < 4} {
+                    $em move $src [lindex $::pak::ARG_GPRS $idx]
+                } else {
+                    $em lw $src [expr {$idx * 4}] {$fp}
+                }
+                set dst_ptr [$ra alloc_temp]
+                $em addiu $dst_ptr {$sp} $off
+                my emit_memcpy $dst_ptr $src $sz
+                $ra free_temp $dst_ptr
+                $ra free_temp $src
             } elseif {$idx < 4} {
                 my store_to_sp $off [lindex $::pak::ARG_GPRS $idx] $p_layout
             } else {
@@ -2758,7 +2771,8 @@ oo::class create pak::MipsCodegen {
                 $em addiu $dst {$sp} $off
                 return
             }
-            if {[my type_is_struct_value [my lookup_type_node $name]]} {
+            set tn [my lookup_type_node $name]
+            if {[my type_passed_by_addr $tn]} {
                 $em addiu $dst {$sp} $off
                 return
             }
@@ -2771,7 +2785,7 @@ oo::class create pak::MipsCodegen {
                 $em la $dst $name
                 return
             }
-            if {[my type_is_struct_value [my lookup_type_node $name]]} {
+            if {[my type_passed_by_addr [my lookup_type_node $name]]} {
                 $em la $dst $name
                 return
             }
@@ -2856,6 +2870,15 @@ oo::class create pak::MipsCodegen {
         set lay [dict get $tenv_layouts $n]
         if {![dict exists $lay fields] || [dict size [dict get $lay fields]] == 0} { return 0 }
         return [expr {[dict get $lay size] > 4}]
+    }
+
+    method type_passed_by_addr {tn} {
+        set tn [my unwrap_type $tn]
+        if {$tn eq "" || [pak::isnil $tn]} { return 0 }
+        switch -- [pak::kindof $tn] {
+            TypeSlice - TypeArray { return 1 }
+            default { return [my type_is_struct_value $tn] }
+        }
     }
 
     method slice_type_of {obj} {
@@ -3347,7 +3370,7 @@ oo::class create pak::MipsCodegen {
     }
 
     method emit_assign_target {target val_reg op} {
-        if {$op eq "=" && [my type_is_struct_value [my expr_type $target]]} {
+        if {$op eq "=" && [my type_passed_by_addr [my expr_type $target]]} {
             set ttn [my unwrap_type [my expr_type $target]]
             set tsz [dict get [my mips_layout $ttn] size]
             set dst_ptr [$ra alloc_temp]

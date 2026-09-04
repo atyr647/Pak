@@ -193,7 +193,12 @@ sum:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    move $t9, $a0
+    addiu $t8, $sp, 136
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
     li $t9, 0
     sw $t9, 144($sp)
     addiu $t9, $sp, 136
@@ -244,7 +249,12 @@ find_max:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    move $t9, $a0
+    addiu $t8, $sp, 136
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
     addiu $t8, $sp, 136
     lw $t8, 0($t8)
     li $t7, 0
@@ -304,7 +314,12 @@ double_all:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    move $t9, $a0
+    addiu $t8, $sp, 136
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
     li $t9, 0
     sw $t9, 144($sp)
     addiu $t7, $sp, 136
@@ -351,7 +366,12 @@ sum_x:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    move $t9, $a0
+    addiu $t8, $sp, 136
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
     li $t9, 0
     sw $t9, 144($sp)
     addiu $t9, $sp, 136
@@ -505,7 +525,7 @@ main:
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $a0, 184($sp)
+    addiu $a0, $sp, 184
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal sum
@@ -531,7 +551,7 @@ main:
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $a0, 200($sp)
+    addiu $a0, $sp, 200
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal sum
@@ -542,7 +562,7 @@ main:
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $a0, 168($sp)
+    addiu $a0, $sp, 168
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal find_max
@@ -568,7 +588,7 @@ main:
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $a0, 216($sp)
+    addiu $a0, $sp, 216
     sw $t9, 96($sp)
     jal double_all
     nop
@@ -582,7 +602,7 @@ main:
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $a0, 184($sp)
+    addiu $a0, $sp, 184
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal sum
@@ -688,7 +708,7 @@ main:
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    lw $a0, 296($sp)
+    addiu $a0, $sp, 296
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal sum_x
