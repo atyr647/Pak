@@ -792,6 +792,29 @@ set syms [dict get $run data_syms]
 check_eq {fn-closure add(3,4)} [static_hex $mw $syms a] 00000007
 check_eq {fmt x={3} len} [static_hex $mw $syms b] 00000003
 
+# ── capturing closure: env word copied from enclosing n
+set src19 {
+static a: i32 = 0
+static b: i32 = 0
+entry {
+    let n: i32 = 10
+    let addn = fn(x: i32) -> i32 { return x + n }
+    a = addn(3)
+    let m: i32 = 4
+    let addm = fn(x: i32) -> i32 { return x + n + m }
+    b = addm(1)
+}
+}
+set lx [pak::Lexer new $src19]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set syms [dict get $run data_syms]
+check_eq {capture n addn(3)} [static_hex $mw $syms a] 0000000D
+check_eq {capture n+m addm(1)} [static_hex $mw $syms b] 0000000F
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

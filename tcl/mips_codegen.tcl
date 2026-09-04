@@ -462,7 +462,8 @@ oo::class create pak::MipsCodegen {
              loop_result sret_off sret_size \
              globals consts label_n fmtstr_counter \
              tenv_layouts tenv_enum_values tenv_variant_decls fn_decls \
-             generic_fns generic_structs mono_emitted mono_queue type_nodes
+             generic_fns generic_structs mono_emitted mono_queue type_nodes \
+             closure_envs closure_captures last_closure_env
 
     constructor {} {
         set em [pak::Emitter new]
@@ -491,6 +492,9 @@ oo::class create pak::MipsCodegen {
         set mono_queue {}
         set type_nodes [dict create]
         set fn_decls [dict create]
+        set closure_envs [dict create]
+        set closure_captures [dict create]
+        set last_closure_env ""
     }
     destructor {
         $em destroy
@@ -1640,6 +1644,10 @@ oo::class create pak::MipsCodegen {
                         }
                     }
                 }
+                if {$last_closure_env ne ""} {
+                    dict set closure_envs [pak::fval $stmt name] $last_closure_env
+                    set last_closure_env ""
+                }
             }
             StaticDecl { my emit_static $stmt }
             ConstDecl  {
@@ -2756,9 +2764,72 @@ oo::class create pak::MipsCodegen {
         if {[pak::kindof $body] ne "Block"} {
             set body [pak::N Block stmts [pak::Seq [list [pak::N Return value $body]]]]
         }
-        lappend mono_queue [list $name [pak::nfield $expr params] $body \
-            [pak::nfield $expr ret_type]]
+        set params [pak::nfield $expr params]
+        set param_names {}
+        foreach p [pak::items $params] {
+            lappend param_names [pak::fval $p name]
+        }
+        set caps [my find_captures $body $param_names]
+        lappend mono_queue [list $name $params $body [pak::nfield $expr ret_type] $caps]
+        if {[llength $caps] > 0} {
+            set elay [dict create size [expr {[llength $caps] * 4}] align 4 \
+                is_float 0 is_signed 0 is_ptr 0 fields {}]
+            incr label_n
+            set env_off [my declare_local __cenv_${label_n} $elay]
+            set i 0
+            foreach c $caps {
+                set tmp [$ra alloc_temp]
+                my emit_ident_load $c $tmp
+                $em sw $tmp [expr {$env_off + $i * 4}] {$sp}
+                $ra free_temp $tmp
+                incr i
+            }
+            set last_closure_env $env_off
+        } else {
+            set last_closure_env ""
+        }
         return $name
+    }
+
+    method find_captures {body param_names} {
+        set names {}
+        my collect_idents $body names
+        set caps {}
+        foreach n $names {
+            if {$n in $param_names} continue
+            if {$n in {_ self}} continue
+            if {$n in $caps} continue
+            if {[my lookup_local $n] ne ""} {
+                lappend caps $n
+            }
+        }
+        return $caps
+    }
+
+    method collect_idents {node accVar} {
+        upvar 1 $accVar acc
+        if {$node eq "" || [pak::isnil $node]} return
+        set tag [lindex $node 0]
+        if {$tag eq "seq"} {
+            foreach it [lindex $node 1] { my collect_idents $it acc }
+            return
+        }
+        if {$tag ne "node"} return
+        set k [pak::kindof $node]
+        if {$k eq "Ident"} {
+            lappend acc [pak::fval $node name]
+        }
+        if {![dict exists $::pak::FKIND $k]} return
+        set kinds [dict get $::pak::FKIND $k]
+        foreach {f fk} $kinds {
+            if {$fk eq "n"} {
+                my collect_idents [pak::nfield $node $f] acc
+            } elseif {$fk eq "L"} {
+                foreach it [pak::items [pak::nfield $node $f]] {
+                    my collect_idents $it acc
+                }
+            }
+        }
     }
 
     # A block in expression position: emit its statements, and take the value of
@@ -3059,6 +3130,17 @@ oo::class create pak::MipsCodegen {
             }
             my load_from_sp $off $dst $layout
             return
+        }
+        if {[dict exists $closure_captures $name]} {
+            set idx [dict get $closure_captures $name]
+            set env [my lookup_local __env]
+            if {$env ne ""} {
+                set ep [$ra alloc_temp]
+                $em lw $ep [lindex $env 0] {$sp}
+                $em lw $dst [expr {$idx * 4}] $ep
+                $ra free_temp $ep
+                return
+            }
         }
         if {[dict exists $globals $name]} {
             set layout [lindex [dict get $globals $name] 1]
@@ -3958,6 +4040,18 @@ oo::class create pak::MipsCodegen {
             # Local holding a function pointer (closure / fn-ptr).
             if {[my lookup_local $fname] ne ""} {
                 my marshal_args [pak::nfield $expr args]
+                if {[dict exists $closure_envs $fname]} {
+                    set env_off [dict get $closure_envs $fname]
+                    set n [llength [pak::items [pak::nfield $expr args]]]
+                    if {$n < 4} {
+                        $em addiu [lindex $::pak::ARG_GPRS $n] {$sp} $env_off
+                    } else {
+                        set tmp [$ra alloc_temp]
+                        $em addiu $tmp {$sp} $env_off
+                        $em sw $tmp [expr {($n - 4) * 4 + 16}] {$sp}
+                        $ra free_temp $tmp
+                    }
+                }
                 set fptr [$ra alloc_temp]
                 my emit_ident_load $fname $fptr
                 my emit_jalr_reg $fptr
@@ -4034,8 +4128,26 @@ oo::class create pak::MipsCodegen {
         while {[llength $mono_queue] > 0} {
             set item [lindex $mono_queue 0]
             set mono_queue [lrange $mono_queue 1 end]
-            lassign $item mangled params body ret
+            lassign $item mangled params body ret caps
+            if {$caps eq ""} { set caps {} }
+            set saved_caps $closure_captures
+            set closure_captures [dict create]
+            if {[llength $caps] > 0} {
+                set i 0
+                foreach c $caps {
+                    dict set closure_captures $c $i
+                    incr i
+                }
+                set env_ty [pak::N TypePointer inner [pak::N TypeName name i32] \
+                    nullable 0 mutable 0]
+                set env_p [pak::N Param name __env type $env_ty mutable 0 \
+                    default_value [pak::Nil]]
+                set plist [pak::items $params]
+                lappend plist $env_p
+                set params [pak::Seq $plist]
+            }
             my emit_fn $mangled $params $body $ret
+            set closure_captures $saved_caps
         }
     }
 

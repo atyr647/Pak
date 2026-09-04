@@ -423,9 +423,12 @@ main:
     move $t9, $t8
     li $t9, 10
     sw $t9, 148($sp)
+    lw $t8, 148($sp)
+    sw $t8, 156($sp)
     la $t9, __closure_11
     sw $t9, 152($sp)
     li $a0, 5
+    addiu $a1, $sp, 156
     lw $t7, 152($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
@@ -471,9 +474,9 @@ __closure_7:
     lw $t9, 136($sp)
     li $t8, 2
     mul $v0, $t9, $t8
-    j .L__closure_7_ret_12
+    j .L__closure_7_ret_13
     nop
-.L__closure_7_ret_12:
+.L__closure_7_ret_13:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -493,9 +496,9 @@ __closure_8:
     lw $t9, 136($sp)
     lw $t8, 136($sp)
     mul $v0, $t9, $t8
-    j .L__closure_8_ret_13
+    j .L__closure_8_ret_14
     nop
-.L__closure_8_ret_13:
+.L__closure_8_ret_14:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -515,9 +518,9 @@ __closure_9:
     li $t9, 0
     lw $t8, 136($sp)
     subu $v0, $t9, $t8
-    j .L__closure_9_ret_14
+    j .L__closure_9_ret_15
     nop
-.L__closure_9_ret_14:
+.L__closure_9_ret_15:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -537,9 +540,9 @@ __closure_10:
     lw $t9, 136($sp)
     li $t8, 100
     addu $v0, $t9, $t8
-    j .L__closure_10_ret_15
+    j .L__closure_10_ret_16
     nop
-.L__closure_10_ret_15:
+.L__closure_10_ret_16:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -556,13 +559,14 @@ __closure_11:
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
     sw $a0, 136($sp)
+    sw $a1, 140($sp)
     lw $t9, 136($sp)
-    la $t8, base
-    lw $t8, 0($t8)
+    lw $t7, 140($sp)
+    lw $t8, 0($t7)
     addu $v0, $t9, $t8
-    j .L__closure_11_ret_16
+    j .L__closure_11_ret_17
     nop
-.L__closure_11_ret_16:
+.L__closure_11_ret_17:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
