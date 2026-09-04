@@ -519,7 +519,12 @@ oo::class create pak::Codegen {
             NamedArg { return [my gen_expr [pak::nfield $e value]] }
             EnumVariantAccess {
                 set n [pak::fval $e name]
-                if {[dict exists $enum_variants $n]} { return "[dict get $enum_variants $n]_$n" }
+                if {[dict exists $enum_variants $n]} {
+                    set owner [dict get $enum_variants $n]
+                    set vc [my gen_variant_ctor $owner $n {}]
+                    if {$vc ne ""} { return $vc }
+                    return "${owner}_$n"
+                }
                 return $n
             }
             TupleAccess { return "([my gen_expr [pak::nfield $e obj]]).f[pak::fval $e index]" }
@@ -628,6 +633,10 @@ oo::class create pak::Codegen {
         set field [pak::fval $e field]
         if {[pak::kindof $obj] eq "Ident"} {
             set n [pak::fval $obj name]
+            # A unit variant case is still a value of the variant type, so it
+            # needs the tagged literal an enum member does not.
+            set vc [my gen_variant_ctor $n $field {}]
+            if {$vc ne ""} { return $vc }
             if {$n in [dict values $enum_variants]} { return "${obj_str}_$field" }
             if {[dict exists $enum_variants $field]} { return "${obj_str}_$field" }
             if {[dict exists $::pak::CG_API [list $n $field]] || [dict exists $::pak::CG_API_LAMBDA [list $n $field]]} {
@@ -1330,6 +1339,31 @@ oo::class create pak::Codegen {
         return $out
     }
 
+    # A variant case is a value, not a function: Shape.circle(5.0) is
+    # (Shape){ .tag = Shape_tag_circle, .data.circle = { .field0 = 5.0f } }.
+    # The payload struct is named Shape_circle, so there is no name left to
+    # call -- emitting Shape_circle(5.0f) named the type and could never
+    # compile. Returns "" when {tname case} is not a variant case.
+    method gen_variant_ctor {tname case ctor_args} {
+        if {![dict exists $variant_types $tname]} { return "" }
+        if {![dict exists $enum_variants $case] || [dict get $enum_variants $case] ne $tname} { return "" }
+        set tag "${tname}_tag_${case}"
+        if {[llength $ctor_args] == 0} { return "(${tname}){ .tag = ${tag} }" }
+        set field_names {}
+        if {[dict exists $variant_case_fields $tname $case]} {
+            set field_names [dict get $variant_case_fields $tname $case]
+        }
+        set parts {}
+        set i 0
+        foreach a $ctor_args {
+            set fn [lindex $field_names $i]
+            if {$fn eq ""} { set fn "field$i" }
+            lappend parts ".$fn = $a"
+            incr i
+        }
+        return "(${tname}){ .tag = ${tag}, .data.${case} = { [join $parts {, }] } }"
+    }
+
     method gen_call {e} {
         set args {}
         foreach a [pak::items [pak::nfield $e args]] { lappend args [my gen_expr $a] }
@@ -1355,6 +1389,8 @@ oo::class create pak::Codegen {
         if {[pak::kindof $func] eq "DotAccess" && [pak::kindof [pak::nfield $func obj]] eq "Ident"} {
             set type_name [pak::fval [pak::nfield $func obj] name]
             set method [pak::fval $func field]
+            set r [my gen_variant_ctor $type_name $method $args]
+            if {$r ne ""} { return $r }
             # Static type-method calls
             set r [my gen_static_type_method $type_name $method $args]
             if {$r ne ""} { return $r }
@@ -1881,6 +1917,32 @@ oo::class create pak::Codegen {
         return ""
     }
 
+    # When the matched expression has no declared type (let e = Event.quit, so
+    # the C is __auto_type), fall back to the arms: every case name resolves to
+    # exactly one variant or enum. Without this the switch is on the struct
+    # rather than its tag, which no compiler accepts.
+    method match_type_from_arms {arms} {
+        foreach arm $arms {
+            set pat [pak::nfield $arm pattern]
+            set pn ""
+            switch -- [pak::kindof $pat] {
+                EnumVariantAccess { set pn [pak::fval $pat name] }
+                DotAccess         { set pn [pak::fval $pat field] }
+                Call {
+                    set fn [pak::nfield $pat func]
+                    switch -- [pak::kindof $fn] {
+                        EnumVariantAccess { set pn [pak::fval $fn name] }
+                        DotAccess         { set pn [pak::fval $fn field] }
+                    }
+                }
+            }
+            if {$pn ne "" && [dict exists $enum_variants $pn]} {
+                return [dict get $enum_variants $pn]
+            }
+        }
+        return ""
+    }
+
     method pattern_cond {pat expr_var is_variant match_type} {
         switch -- [pak::kindof $pat] {
             Ident { return "1" }
@@ -2042,6 +2104,7 @@ oo::class create pak::Codegen {
         set inner_pad [string repeat "    " [expr {$indent+1}]]
         set inner2_pad [string repeat "    " [expr {$indent+2}]]
         set match_type [my match_type_name [pak::nfield $s expr]]
+        if {$match_type eq ""} { set match_type [my match_type_from_arms $arms] }
         set is_variant [dict exists $variant_types $match_type]
         set switch_expr [expr {$is_variant ? "${expr}.tag" : $expr}]
         set lines [list "${pad}switch ($switch_expr) {"]

@@ -164,22 +164,22 @@ void init_platforms(void) {
 }
 
 void init_pickups(void) {
-    pickups[0] = Pickup_coin(60, 145);
-    pickups[1] = Pickup_coin(80, 145);
-    pickups[2] = Pickup_coin(180, 115);
-    pickups[3] = Pickup_coin(200, 115);
-    pickups[4] = Pickup_coin(80, 85);
-    pickups[5] = Pickup_coin(150, 35);
-    pickups[6] = Pickup_coin(165, 35);
-    pickups[7] = Pickup_coin(260, 55);
-    pickups[8] = Pickup_empty;
-    pickups[9] = Pickup_empty;
-    pickups[10] = Pickup_empty;
-    pickups[11] = Pickup_empty;
-    pickups[12] = Pickup_empty;
-    pickups[13] = Pickup_empty;
-    pickups[14] = Pickup_empty;
-    pickups[15] = Pickup_empty;
+    pickups[0] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 60, .field1 = 145 } };
+    pickups[1] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 80, .field1 = 145 } };
+    pickups[2] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 180, .field1 = 115 } };
+    pickups[3] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 200, .field1 = 115 } };
+    pickups[4] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 80, .field1 = 85 } };
+    pickups[5] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 150, .field1 = 35 } };
+    pickups[6] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 165, .field1 = 35 } };
+    pickups[7] = (Pickup){ .tag = Pickup_tag_coin, .data.coin = { .field0 = 260, .field1 = 55 } };
+    pickups[8] = (Pickup){ .tag = Pickup_tag_empty };
+    pickups[9] = (Pickup){ .tag = Pickup_tag_empty };
+    pickups[10] = (Pickup){ .tag = Pickup_tag_empty };
+    pickups[11] = (Pickup){ .tag = Pickup_tag_empty };
+    pickups[12] = (Pickup){ .tag = Pickup_tag_empty };
+    pickups[13] = (Pickup){ .tag = Pickup_tag_empty };
+    pickups[14] = (Pickup){ .tag = Pickup_tag_empty };
+    pickups[15] = (Pickup){ .tag = Pickup_tag_empty };
 }
 
 bool aabb_overlap(int32_t ax, int32_t ay, int32_t aw, int32_t ah, int32_t bx, int32_t by, int32_t bw, int32_t bh) {
@@ -337,14 +337,14 @@ void Player_collect_pickups(Player * self) {
     __auto_type py = (int32_t)self->y;
     int32_t i = 0;
     while (i < MAX_COINS) {
-        switch (pickups[i]) {
+        switch (pickups[i].tag) {
             case Pickup_tag_coin:
             {
                 __auto_type cx = pickups[i].data.coin.field0;
                 __auto_type cy = pickups[i].data.coin.field1;
                 if (aabb_overlap(px, py, PLAYER_W, PLAYER_H, (cx - 4), (cy - 4), 8, 8)) {
                     self->score += 10;
-                    pickups[i] = Pickup_empty;
+                    pickups[i] = (Pickup){ .tag = Pickup_tag_empty };
                 }
                 break;
             }

@@ -159,12 +159,12 @@ static float sink = 0.0f;
 static int32_t sink_i = 0;
 
 int main(void) {
-    sink = area(Shape_circle(5.0f));
-    sink = area(Shape_rect(4.0f, 3.0f));
-    sink = area(Shape_point);
-    sink_i = entity_id(Entity_enemy);
-    __auto_type e = Event_mouse_move(100, 200);
-    switch (e) {
+    sink = area((Shape){ .tag = Shape_tag_circle, .data.circle = { .field0 = 5.0f } });
+    sink = area((Shape){ .tag = Shape_tag_rect, .data.rect = { .field0 = 4.0f, .field1 = 3.0f } });
+    sink = area((Shape){ .tag = Shape_tag_point });
+    sink_i = entity_id((Entity){ .tag = Entity_tag_enemy });
+    __auto_type e = (Event){ .tag = Event_tag_mouse_move, .data.mouse_move = { .field0 = 100, .field1 = 200 } };
+    switch (e.tag) {
         case Event_tag_key_press:
         {
             __auto_type k = e.data.key_press.field0;
@@ -185,7 +185,7 @@ int main(void) {
         }
     }
     __auto_type pkt = (Packet){.tag = Packet_tag_connect, .data.connect = {.id = 42, .port = 80}};
-    switch (pkt) {
+    switch (pkt.tag) {
         case Packet_tag_connect:
         {
             sink_i = 1;
