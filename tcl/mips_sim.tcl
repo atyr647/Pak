@@ -593,7 +593,7 @@ proc run {text {start "main"} {limit 20000000} {preset {}}} {
         }
     }
 
-    return [dict create mem_b $mb mem_h $mh mem_w $mw insns $count]
+    return [dict create mem_b $mb mem_h $mh mem_w $mw insns $count data_syms $dsyms]
 }
 
 } ;# namespace eval pak::mipsim

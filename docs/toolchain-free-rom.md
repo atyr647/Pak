@@ -210,7 +210,9 @@ wait loops terminate instead of hanging.
   `pts[i] = Point { ... }` memcpy's the literal, not its stack address.
   Slice / struct / array arguments memcpy from the passed address. Returning
   those types uses a hidden sret pointer so the value lives in the caller.
-  `s[1..n]` on a slice indexes the data, not the fat pointer. Goldens live in
+  `s[1..n]` on a slice indexes the data, not the fat pointer. CStr methods
+  (len/eq/find/starts_with/ends_with/contains) are inlined so the ROM does not
+  need libc; `str.from_cstr` builds a `{data, len}` Str. Goldens live in
   `tcl/tools/array_addr_test.tcl`.
 * **FPU encodings.** COP1 ops (`add.s`/`sub.s`/`mul.s`/`div.s`, the
   `mov`/`neg`/`abs`/`sqrt` unary group, `cvt.*`, the `c.<cond>.s` compare

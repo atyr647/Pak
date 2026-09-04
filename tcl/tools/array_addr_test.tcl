@@ -564,6 +564,57 @@ check_eq {q.doubled() method sret} [word_hex $mw [expr {$DATA + 8}]] 0000001A
 check_eq {rest([]i32) returns slice} [word_hex $mw [expr {$DATA + 12}]] 0000005A
 check_eq {pair() returns [2]i32} [word_hex $mw [expr {$DATA + 16}]] 0000000A
 
+# ── CStr / Str: inline strlen, no libc jal
+set src12 {
+static len: i32 = 0
+static has: i32 = 0
+static pre: i32 = 0
+static suf: i32 = 0
+static eqv: i32 = 0
+static at: i32 = 0
+static empty: i32 = 0
+static slen: i32 = 0
+static slen2: i32 = 0
+
+fn check_pakstr(s: Str) -> i32 {
+    return s.len()
+}
+
+entry {
+    let s: CStr = "hello world"
+    len = s.len()
+    has = s.contains("world") as i32
+    pre = s.starts_with("hello") as i32
+    suf = s.ends_with("world") as i32
+    eqv = s.eq("hello world") as i32
+    at = s.find("world")
+    empty = s.is_empty() as i32
+    let ps: Str = str.from_cstr("pak")
+    slen = check_pakstr(ps)
+    slen2 = ps.len
+}
+}
+set lx [pak::Lexer new $src12]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set syms [dict get $run data_syms]
+proc static_hex {mw syms name} {
+    set addr [dict get $syms $name]
+    return [word_hex $mw $addr]
+}
+check_eq {CStr.len hello world} [static_hex $mw $syms len] 0000000B
+check_eq {CStr.contains world} [static_hex $mw $syms has] 00000001
+check_eq {CStr.starts_with hello} [static_hex $mw $syms pre] 00000001
+check_eq {CStr.ends_with world} [static_hex $mw $syms suf] 00000001
+check_eq {CStr.eq hello world} [static_hex $mw $syms eqv] 00000001
+check_eq {CStr.find world} [static_hex $mw $syms at] 00000006
+check_eq {CStr.is_empty} [static_hex $mw $syms empty] 00000000
+check_eq {str.from_cstr pak .len()} [static_hex $mw $syms slen] 00000003
+check_eq {Str.len field} [static_hex $mw $syms slen2] 00000003
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

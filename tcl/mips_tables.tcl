@@ -264,6 +264,7 @@ set ::pak::MIPS_API [dict create \
     {debug log} {debugf} \
     {debug assert} {assert} \
     {debug log_value} {debugf} \
+    {str from_cstr} {pak_str_from_cstr} \
     {dma read} {dma_read} \
     {dma write} {dma_write} \
     {dma wait} {dma_wait} \

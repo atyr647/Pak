@@ -581,6 +581,22 @@ oo::class create pak::MipsCodegen {
                 is_float 0 is_signed 0 is_ptr 1 frac_bits 0 \
                 fields [dict get $cs fields] field_order [dict get $cs field_order]]
         }
+        # Str / PakStr is a fat pointer {data@0, len@4}. CStr is a C string.
+        if {![dict exists $tenv_layouts PakStr]} {
+            set u8p [pak::N TypePointer inner [pak::N TypeName name u8] nullable 0 mutable 0]
+            set i32_tn [pak::N TypeName name i32]
+            set sf [dict create]
+            dict set sf data [dict create name data offset 0 size 4 align 4 type_node $u8p]
+            dict set sf len  [dict create name len  offset 4 size 4 align 4 type_node $i32_tn]
+            set slay [dict create size 8 align 4 is_float 0 is_signed 1 is_ptr 0 \
+                fields $sf field_order {data len} frac_bits 0]
+            dict set tenv_layouts PakStr $slay
+            dict set tenv_layouts Str $slay
+        }
+        if {![dict exists $tenv_layouts CStr]} {
+            dict set tenv_layouts CStr [dict create size 4 align 4 \
+                is_float 0 is_signed 0 is_ptr 1 fields {} frac_bits 0]
+        }
     }
 
     method register_program {program} {
@@ -1567,6 +1583,22 @@ oo::class create pak::MipsCodegen {
                         set loop_result [lrange $loop_result 0 end-1]
                         # Result is already in $off from Break's store_to_sp — nothing more to do
                     } else {
+                        set is_str_lit [expr {
+                            [pak::kindof $v] eq "StringLit" &&
+                            $tn ne "" && ![pak::isnil $tn] &&
+                            [pak::kindof $tn] eq "TypeName" &&
+                            [pak::fval $tn name] in {Str PakStr}
+                        }]
+                        if {$is_str_lit} {
+                            set cstr [$ra alloc_temp]
+                            my emit_expr $v $cstr
+                            $em sw $cstr $off {$sp}
+                            set ln [$ra alloc_temp]
+                            my emit_strlen $cstr $ln
+                            $em sw $ln [expr {$off + 4}] {$sp}
+                            $ra free_temp $ln
+                            $ra free_temp $cstr
+                        } else {
                         set lsz [dict get $layout size]
                         # Determine if the RHS expression returns a pointer to a
                         # multi-word value on the stack (struct lit, variant ctor,
@@ -1590,6 +1622,7 @@ oo::class create pak::MipsCodegen {
                             my emit_expr $v $tmp
                             my store_to_sp $off $tmp $layout
                             $ra free_temp $tmp
+                        }
                         }
                     }
                 }
@@ -3888,6 +3921,10 @@ oo::class create pak::MipsCodegen {
     }
 
     method emit_module_call {mod fn args_seq dst} {
+        if {$mod eq "str" && $fn eq "from_cstr"} {
+            my emit_str_from_cstr $args_seq $dst
+            return
+        }
         my marshal_args $args_seq
         if {[dict exists $::pak::MIPS_API [list $mod $fn]]} {
             set sym [dict get $::pak::MIPS_API [list $mod $fn]]
@@ -3897,6 +3934,164 @@ oo::class create pak::MipsCodegen {
         if {$sym eq ""} { set sym "${mod}_${fn}" }
         my emit_jal $sym
         if {$dst ne {$v0}} { $em move $dst {$v0} }
+    }
+
+    # Inline C-string helpers. The sim halts on jal to libc, and the
+    # standalone ROM has no libc either.
+    method emit_strlen {src dst} {
+        set p [$ra alloc_temp]
+        set ch [$ra alloc_temp]
+        $em move $p $src
+        $em move $dst {$zero}
+        set loop [my fresh_label .Lstrlen]
+        set done [my fresh_label .Lstrlend]
+        $em label $loop
+        $em lbu $ch 0 $p
+        $em beqz $ch $done
+        $em nop
+        $em addiu $p $p 1
+        $em addiu $dst $dst 1
+        $em j $loop
+        $em nop
+        $em label $done
+        $ra free_temp $ch
+        $ra free_temp $p
+    }
+
+    method emit_streq {a b dst} {
+        set p [$ra alloc_temp]
+        set q [$ra alloc_temp]
+        set ca [$ra alloc_temp]
+        set cb [$ra alloc_temp]
+        $em move $p $a
+        $em move $q $b
+        set loop [my fresh_label .Lstreq]
+        set ne [my fresh_label .Lstreq_ne]
+        set done [my fresh_label .Lstreq_d]
+        $em label $loop
+        $em lbu $ca 0 $p
+        $em lbu $cb 0 $q
+        $em bne $ca $cb $ne
+        $em nop
+        $em beqz $ca $done
+        $em addiu $p $p 1
+        $em move $dst {$zero}
+        $em addiu $q $q 1
+        $em j $loop
+        $em nop
+        $em label $ne
+        $em li $dst 0
+        $em j $done
+        $em nop
+        $em label $done
+        $em seq $dst $ca $cb
+        $ra free_temp $cb
+        $ra free_temp $ca
+        $ra free_temp $q
+        $ra free_temp $p
+    }
+
+    method emit_starts_with {hay needle dst} {
+        set p [$ra alloc_temp]
+        set q [$ra alloc_temp]
+        set ca [$ra alloc_temp]
+        set cb [$ra alloc_temp]
+        $em move $p $hay
+        $em move $q $needle
+        set loop [my fresh_label .Lsw]
+        set no [my fresh_label .Lsw_no]
+        set yes [my fresh_label .Lsw_yes]
+        set done [my fresh_label .Lsw_d]
+        $em label $loop
+        $em lbu $cb 0 $q
+        $em beqz $cb $yes
+        $em nop
+        $em lbu $ca 0 $p
+        $em bne $ca $cb $no
+        $em nop
+        $em addiu $p $p 1
+        $em addiu $q $q 1
+        $em j $loop
+        $em nop
+        $em label $yes
+        $em li $dst 1
+        $em j $done
+        $em nop
+        $em label $no
+        $em li $dst 0
+        $em label $done
+        $ra free_temp $cb
+        $ra free_temp $ca
+        $ra free_temp $q
+        $ra free_temp $p
+    }
+
+    method emit_strstr {hay needle dst} {
+        set p [$ra alloc_temp]
+        $em move $p $hay
+        set outer [my fresh_label .Lss]
+        set found [my fresh_label .Lss_f]
+        set miss [my fresh_label .Lss_m]
+        set done [my fresh_label .Lss_d]
+        $em label $outer
+        set q [$ra alloc_temp]
+        set r [$ra alloc_temp]
+        set ca [$ra alloc_temp]
+        set cb [$ra alloc_temp]
+        $em lbu $ca 0 $p
+        $em beqz $ca $miss
+        $em nop
+        $em move $q $p
+        $em move $r $needle
+        set inner [my fresh_label .Lss_i]
+        set nomatch [my fresh_label .Lss_n]
+        $em label $inner
+        $em lbu $cb 0 $r
+        $em beqz $cb $found
+        $em nop
+        $em lbu $ca 0 $q
+        $em bne $ca $cb $nomatch
+        $em nop
+        $em addiu $q $q 1
+        $em addiu $r $r 1
+        $em j $inner
+        $em nop
+        $em label $nomatch
+        $em addiu $p $p 1
+        $em j $outer
+        $em nop
+        $em label $found
+        $em move $dst $p
+        $em j $done
+        $em nop
+        $em label $miss
+        $em move $dst {$zero}
+        $em label $done
+        $ra free_temp $cb
+        $ra free_temp $ca
+        $ra free_temp $r
+        $ra free_temp $q
+        $ra free_temp $p
+    }
+
+    method emit_pakstr_from_ptr {cstr_reg dst} {
+        set lay [dict get $tenv_layouts PakStr]
+        incr label_n
+        set off [my declare_local __ps_${label_n} $lay [pak::N TypeName name Str]]
+        $em sw $cstr_reg $off {$sp}
+        set len [$ra alloc_temp]
+        my emit_strlen $cstr_reg $len
+        $em sw $len [expr {$off + 4}] {$sp}
+        $ra free_temp $len
+        $em addiu $dst {$sp} $off
+    }
+
+    method emit_str_from_cstr {args_seq dst} {
+        set args [pak::items $args_seq]
+        set cstr [$ra alloc_temp]
+        my emit_expr [lindex $args 0] $cstr
+        my emit_pakstr_from_ptr $cstr $dst
+        $ra free_temp $cstr
     }
 
     # ── CStr (const char *) built-in methods ────────────────────────────────
@@ -3911,78 +4106,77 @@ oo::class create pak::MipsCodegen {
         }
         switch -- $method {
             len {
-                $em move {$a0} $str_r
-                my emit_jal strlen
-                if {$dst ne {$v0}} { $em move $dst {$v0} }
+                my emit_strlen $str_r $dst
             }
             is_empty {
-                $em lb $dst 0 $str_r
+                $em lbu $dst 0 $str_r
                 $em sltiu $dst $dst 1
             }
             contains {
-                $em move {$a0} $str_r
-                my marshal_args $args_seq 1
-                my emit_jal strstr
-                $em sltu $dst {$zero} {$v0}
-                if {$dst ne {$v0}} { $em move $dst {$v0}; $em sltu $dst {$zero} $dst }
+                set needle [$ra alloc_temp]
+                my emit_expr [lindex $args 0] $needle
+                set hit [$ra alloc_temp]
+                my emit_strstr $str_r $needle $hit
+                $em sltu $dst {$zero} $hit
+                $ra free_temp $hit
+                $ra free_temp $needle
             }
             starts_with {
-                set arg0_r [$ra alloc_temp]
-                my emit_expr [lindex $args 0] $arg0_r
-                # strlen(arg0) → a2
-                $em move {$a0} $arg0_r
-                my emit_jal strlen
-                $em move {$a2} {$v0}
-                $em move {$a0} $str_r
-                $em move {$a1} $arg0_r
-                my emit_jal strncmp
-                $em seq $dst {$v0} {$zero}
-                $ra free_temp $arg0_r
+                set needle [$ra alloc_temp]
+                my emit_expr [lindex $args 0] $needle
+                my emit_starts_with $str_r $needle $dst
+                $ra free_temp $needle
             }
             ends_with {
-                set arg0_r [$ra alloc_temp]
-                my emit_expr [lindex $args 0] $arg0_r
-                # nlen = strlen(arg0)
-                $em move {$a0} $arg0_r
-                my emit_jal strlen
-                set nlen_r [$ra alloc_temp]
-                $em move $nlen_r {$v0}
-                # slen = strlen(str)
-                $em move {$a0} $str_r
-                my emit_jal strlen
-                set slen_r [$ra alloc_temp]
-                $em move $slen_r {$v0}
-                # end_ptr = str + slen - nlen
-                set ep_r [$ra alloc_temp]
-                $em addu $ep_r $str_r $slen_r
-                $em subu $ep_r $ep_r $nlen_r
-                $em move {$a0} $ep_r
-                $em move {$a1} $arg0_r
-                my emit_jal strcmp
-                $em seq $dst {$v0} {$zero}
-                $ra free_temp $arg0_r; $ra free_temp $nlen_r
-                $ra free_temp $slen_r; $ra free_temp $ep_r
+                set needle [$ra alloc_temp]
+                my emit_expr [lindex $args 0] $needle
+                set nlen [$ra alloc_temp]
+                set slen [$ra alloc_temp]
+                my emit_strlen $needle $nlen
+                my emit_strlen $str_r $slen
+                set too_long [my fresh_label .Lew_no]
+                set cmp [my fresh_label .Lew_c]
+                set done [my fresh_label .Lew_d]
+                $em sltu $dst $slen $nlen
+                $em bnez $dst $too_long
+                $em nop
+                set ep [$ra alloc_temp]
+                $em addu $ep $str_r $slen
+                $em subu $ep $ep $nlen
+                my emit_streq $ep $needle $dst
+                $em j $done
+                $em nop
+                $em label $too_long
+                $em li $dst 0
+                $em label $done
+                $ra free_temp $ep
+                $ra free_temp $slen
+                $ra free_temp $nlen
+                $ra free_temp $needle
             }
             eq {
-                $em move {$a0} $str_r
-                my marshal_args $args_seq 1
-                my emit_jal strcmp
-                $em seq $dst {$v0} {$zero}
+                set other [$ra alloc_temp]
+                my emit_expr [lindex $args 0] $other
+                my emit_streq $str_r $other $dst
+                $ra free_temp $other
             }
             find {
-                $em move {$a0} $str_r
-                my marshal_args $args_seq 1
-                my emit_jal strstr
-                set lbl_found [my fresh_label .Lsf]
-                set lbl_end   [my fresh_label .Lsfe]
-                $em bne {$v0} {$zero} $lbl_found
+                set needle [$ra alloc_temp]
+                my emit_expr [lindex $args 0] $needle
+                set hit [$ra alloc_temp]
+                my emit_strstr $str_r $needle $hit
+                set found [my fresh_label .Lsf]
+                set end [my fresh_label .Lsfe]
+                $em bnez $hit $found
                 $em nop
                 $em li $dst -1
-                $em j $lbl_end
+                $em j $end
                 $em nop
-                $em label $lbl_found
-                $em subu $dst {$v0} $str_r
-                $em label $lbl_end
+                $em label $found
+                $em subu $dst $hit $str_r
+                $em label $end
+                $ra free_temp $hit
+                $ra free_temp $needle
             }
             slice {
                 set off_r [$ra alloc_temp]
@@ -3991,12 +4185,7 @@ oo::class create pak::MipsCodegen {
                 $ra free_temp $off_r
             }
             to_pakstr {
-                set ps_off [my declare_local __ps [dict create size 8 align 4 is_float 0 is_signed 1 is_ptr 0 fields {} frac_bits 0]]
-                $em sw $str_r $ps_off {$sp}
-                $em move {$a0} $str_r
-                my emit_jal strlen
-                $em sw {$v0} [expr {$ps_off + 4}] {$sp}
-                $em addiu $dst {$sp} $ps_off
+                my emit_pakstr_from_ptr $str_r $dst
             }
             default {
                 $em move {$a0} $str_r
