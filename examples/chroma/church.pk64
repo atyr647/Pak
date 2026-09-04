@@ -1,0 +1,227 @@
+-- church.pk64 — CHROMA nave on the Pak standalone RDP (FZ "Path A").
+--
+-- Streams unique 32x32 RGBA16 pages from the cartridge over PI DMA and draws
+-- the nave with textured, Z-buffered triangles. No libdragon, no RSP: the CPU
+-- builds a display list in uncached RDRAM and the DP rasterises it.
+--
+-- WHY IT STREAMS. Code + .data must stay below FB0 at 0x80000400..0x80200000,
+-- about 2 MB. Eighteen 256x256 RGBA16 sheets are 2.25 MB. Embedding them
+-- paints the framebuffers — the same crash class as the old 2.9 MB ROM, only
+-- quieter. So nothing here is a texture: the cart holds the pages, and one
+-- 2 KB page at a time lands in scratch.
+--
+-- PER VISIBLE PAGE:
+--   writeback -> dma.read -> dma.wait -> invalidate    (E201 / E202 enforced)
+--   set_texture_image (KSEG1 alias, never KSEG0 — E203)
+--   set_tile_mask (clamp/clamp, mask 5 = 32 texels)
+--   load_tile -> set_tile_size
+--   set_tri_z -> triangle_tex_z x2
+--
+-- KNOWN LIMIT: ST is affine, 1/w is stubbed in the runtime. Fine at this
+-- subdivision — one page per quad keeps each triangle small. Widen the bays
+-- and the texture will swim.
+
+use n64.display
+use n64.rdpq
+use n64.dma
+use n64.cache
+use n64.controller
+
+-- ── screen ──────────────────────────────────────────────────────────────────
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const HALF_W:   i32 = 160
+const HALF_H:   i32 = 120
+const FOCAL:    i32 = 160
+
+-- ── page store ──────────────────────────────────────────────────────────────
+-- One page is 32x32 RGBA5551 = 2048 bytes, comfortably inside TMEM's 4 KiB.
+const PAGE_DIM:   i32 = 32
+const PAGE_BYTES: i32 = 2048
+
+-- Cart address of page 0. The payload is linked at ROM 0x1000 and is far
+-- smaller than this, so the page atlas is appended past it by the CHROMA
+-- packer. Reading unwritten padding yields black pages, which is a legible
+-- failure rather than a crash.
+const PAGE_BASE: u32 = 0x1020_0000
+
+-- The DMA landing pad. @aligned(16) is required by the PI (E202 otherwise).
+@aligned(16)
+static page_buf: [2048]u8 = undefined
+
+-- ── nave geometry, in world units ───────────────────────────────────────────
+-- A corridor down +Z: floor, ceiling, and two walls, cut into bays. Each bay
+-- face is one quad and takes exactly one page.
+const NAVE_HALF_W: i32 = 110
+const NAVE_FLOOR:  i32 = 0 - 80
+const NAVE_CEIL:   i32 = 150
+const BAY_DEPTH:   i32 = 150
+const BAYS:        i32 = 10
+const NEAR_Z:      i32 = 40
+
+-- Z-buffer values are 0..32767, nearest first.
+const ZMAX: i32 = 32767
+
+static cam_z: i32 = 0
+static frame: i32 = 0
+
+-- ── projection ──────────────────────────────────────────────────────────────
+-- Integer perspective divide. z is already camera-relative and clamped to
+-- NEAR_Z by the caller, so the divide cannot trap.
+fn proj_x(wx: i32, wz: i32) -> i32 {
+    return HALF_W + (wx * FOCAL) / wz
+}
+
+fn proj_y(wy: i32, wz: i32) -> i32 {
+    return HALF_H - (wy * FOCAL) / wz
+}
+
+-- Depth mapped to the RDP's 0..32767 window. Near is small, far is large, so
+-- a plain z_compare keeps the nearest fragment.
+fn depth_of(wz: i32) -> i32 {
+    let d: i32 = (wz * 16) / (BAY_DEPTH / 8 + 1)
+    if d > ZMAX { return ZMAX }
+    if d < 0 { return 0 }
+    return d
+}
+
+-- ── page streaming ──────────────────────────────────────────────────────────
+-- The four steps the checker enforces. Literals, not consts: the DMA checker
+-- reads the argument expressions directly (see 18_dma.pk64).
+fn stream_page(page: i32) {
+    cache.writeback(&page_buf[0], 2048)
+    dma.read(&page_buf[0], 0x1020_0000 + (page * 2048) as u32, 2048)
+    dma.wait()
+    cache.invalidate(&page_buf[0], 2048)
+}
+
+-- Hand the page to the DP and describe the tile.
+--
+-- The DP reads RDRAM, not the d-cache, so the texture image is the KSEG1
+-- alias of the scratch buffer. Passing the KSEG0 pointer is E203.
+--
+-- line = (32 texels * 2 bytes) / 8 = 8. cms/cmt = 2 is GBI clamp; mask 5 is
+-- log2(32), so S and T clamp at the page edge instead of wrapping into the
+-- neighbouring page's texels.
+fn bind_page() {
+    let uncached: u32 = (&page_buf[0] as u32) | 0xA000_0000
+    rdpq.set_texture_image(uncached, 0, 2, 32)
+    rdpq.set_tile_mask(0, 0, 2, 8, 0, 0, 2, 2, 5, 5)
+    rdpq.load_tile(0, 0, 0, 32, 32)
+    rdpq.set_tile_size(0, 0, 0, 32, 32)
+    rdpq.sync_tile()
+}
+
+-- ── drawing ─────────────────────────────────────────────────────────────────
+-- One textured quad as two triangles, winding 0-1-2 and 0-2-3. ST spans the
+-- whole page in both triangles, so the seam between them is exact.
+fn draw_quad(x0: i32, y0: i32, z0: i32,
+             x1: i32, y1: i32, z1: i32,
+             x2: i32, y2: i32, z2: i32,
+             x3: i32, y3: i32, z3: i32) {
+    rdpq.set_tri_z(z0, z1, z2)
+    rdpq.triangle_tex_z(0, x0, y0, 0, 0,
+                           x1, y1, 32, 0,
+                           x2, y2, 32, 32)
+    rdpq.set_tri_z(z0, z2, z3)
+    rdpq.triangle_tex_z(0, x0, y0, 0, 0,
+                           x2, y2, 32, 32,
+                           x3, y3, 0, 32)
+}
+
+-- One bay face: stream its page, bind it, project four corners, draw.
+-- near_z / far_z are camera-relative and already past NEAR_Z.
+fn draw_face(page: i32,
+             nx0: i32, ny0: i32, nx1: i32, ny1: i32,
+             near_z: i32, far_z: i32) {
+    stream_page(page)
+    bind_page()
+
+    let zn: i32 = depth_of(near_z)
+    let zf: i32 = depth_of(far_z)
+
+    draw_quad(proj_x(nx0, near_z), proj_y(ny0, near_z), zn,
+              proj_x(nx1, near_z), proj_y(ny1, near_z), zn,
+              proj_x(nx1, far_z),  proj_y(ny1, far_z),  zf,
+              proj_x(nx0, far_z),  proj_y(ny0, far_z),  zf)
+}
+
+-- Bays are drawn far to near. Every face is Z-tested, so order is a bandwidth
+-- choice rather than a correctness one, but far-to-near keeps the overdraw
+-- that does happen cheap.
+fn draw_nave() {
+    let mut bay: i32 = BAYS - 1
+    loop {
+        if bay < 0 { break }
+
+        let near_w: i32 = bay * BAY_DEPTH - cam_z
+        let far_w:  i32 = near_w + BAY_DEPTH
+
+        -- Skip a bay entirely behind the near plane.
+        if far_w > NEAR_Z {
+            let mut nz: i32 = near_w
+            if nz < NEAR_Z { nz = NEAR_Z }
+
+            -- Four unique pages per bay. LOD: the two nearest bays get their
+            -- own pages, everything beyond reuses the far set, so walking
+            -- forward does not thrash the PI.
+            let mut slot: i32 = bay
+            if slot > 3 { slot = 3 }
+            let base: i32 = slot * 4
+
+            -- left wall
+            draw_face(base + 0,
+                      0 - NAVE_HALF_W, NAVE_CEIL,
+                      0 - NAVE_HALF_W, NAVE_FLOOR,
+                      nz, far_w)
+            -- right wall
+            draw_face(base + 1,
+                      NAVE_HALF_W, NAVE_FLOOR,
+                      NAVE_HALF_W, NAVE_CEIL,
+                      nz, far_w)
+            -- floor
+            draw_face(base + 2,
+                      0 - NAVE_HALF_W, NAVE_FLOOR,
+                      NAVE_HALF_W, NAVE_FLOOR,
+                      nz, far_w)
+            -- ceiling
+            draw_face(base + 3,
+                      NAVE_HALF_W, NAVE_CEIL,
+                      0 - NAVE_HALF_W, NAVE_CEIL,
+                      nz, far_w)
+        }
+
+        bay = bay - 1
+    }
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+
+    loop {
+        controller.poll()
+        let pad: *ControllerState = controller.read(0)
+
+        -- Walk the nave. The stick nudges it; it drifts forward regardless so
+        -- the demo shows motion on a pad-less emulator.
+        cam_z = cam_z + 2 + pad.stick_y / 16
+        if cam_z < 0 { cam_z = 0 }
+        if cam_z > BAYS * BAY_DEPTH { cam_z = 0 }
+
+        let fb: u32 = display.get()
+        rdpq.attach_clear(fb, 0x0000_11FF)
+        rdpq.clear_z()
+
+        -- One mode switch per frame, before any textured triangle.
+        rdpq.sync_pipe()
+        rdpq.set_mode_standard_z()
+
+        draw_nave()
+
+        rdpq.sync_full()
+        rdpq.detach_show()
+        frame = frame + 1
+    }
+}

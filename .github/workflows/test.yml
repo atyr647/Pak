@@ -189,6 +189,12 @@ jobs:
       - name: Standalone execution (consts, defer, monomorphs, FixedList)
         run: tclsh tcl/tools/standalone_exec_test.tcl
 
+      # The CHROMA nave end to end: it fits under FB0, it streams 2 KB pages
+      # over the PI instead of embedding sheets, and the DP is handed
+      # SET_TILE/LOAD_TILE/TRI_TEX_Z. This is the standalone "Path A".
+      - name: CHROMA nave (stream pages, draw textured tris)
+        run: tclsh tcl/tools/church_test.tcl
+
       - name: Runtime builds toolchain-free (boot.S + runtime.pk64)
         run: |
           pak asmobj runtime/standalone/boot.S       -o /tmp/boot.pakobj

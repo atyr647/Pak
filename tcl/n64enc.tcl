@@ -576,8 +576,13 @@ proc pak::enc::do_directive {ctxVar args} {
             emit_bytes ctx [list [expr {$v & 0xff}]]
         }
         space {
+            # One call, not one per byte. emit_bytes does a dict get/set of the
+            # whole section buffer, so calling it n times made .space quadratic:
+            # a 2 MB .bss (the size a texture atlas would be) took long enough
+            # to look like a hang rather than the memory-map error it should
+            # have reached.
             set n [imm [lindex $rest 0]]
-            for {set i 0} {$i < $n} {incr i} { emit_bytes ctx {0} }
+            if {$n > 0} { emit_bytes ctx [lrepeat $n 0] }
         }
         asciiz {
             # rest is the raw (already-unescaped) string. Rejoin in case it
