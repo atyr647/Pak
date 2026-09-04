@@ -22,9 +22,9 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
 /* extern "C" */
-uint8_t * memset(uint8_t * ptr, int32_t value, uint32_t size);
-uint8_t * memcpy(uint8_t * dst, uint8_t * src, uint32_t size);
-uint32_t strlen(char * s);
+/* memset: already declared by the C standard headers */
+/* memcpy: already declared by the C standard headers */
+/* strlen: already declared by the C standard headers */
 
 /* extern const uint32_t TICKS_PER_SECOND; (C macro passthrough) */
 

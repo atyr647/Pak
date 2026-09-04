@@ -105,6 +105,22 @@ proc self_declared {csrc} {
     return [lsort -unique $syms]
 }
 
+# `extern const RDPQ_COMBINER_FLAT: u32` is Pak declaring that a name exists in
+# the C headers -- usually as a macro, which is why the codegen emits it as a
+# comment rather than a declaration it would have to invent a definition for.
+# The gate honours that declaration the same way it honours MODULE_API: the
+# source says the name exists, so the stub provides one. Without this an
+# accurate passthrough reads as a codegen bug.
+proc extern_consts {csrc} {
+    set out {}
+    foreach line [split $csrc "\n"] {
+        if {[regexp {/\* extern const ([A-Za-z_][A-Za-z0-9_ *]*?) ([A-Za-z_][A-Za-z0-9_]*);} $line -> ctype name]} {
+            lappend out [list [string trim $ctype] $name]
+        }
+    }
+    return $out
+}
+
 proc write_stubs {dir csrc} {
     file mkdir $dir
     set skip [self_declared $csrc]
@@ -112,6 +128,10 @@ proc write_stubs {dir csrc} {
     foreach line [split [hal_stub_header] "\n"] {
         if {[regexp {^long ([A-Za-z0-9_]+)\(\);$} $line -> sym] && $sym in $skip} continue
         lappend out $line
+    }
+    foreach ec [extern_consts $csrc] {
+        lassign $ec ctype name
+        lappend out "static const $ctype $name = 0;"
     }
     set fh [open [file join $dir hal_stubs.h] w]
     puts $fh [join $out "\n"]

@@ -43,6 +43,23 @@ set ::pak::CG_FIXSHIFT [dict create fix16.16 16 fix10.5 5 fix1.15 15]
 # `let double: fn(i32) -> i32 = ...` is fine Pak and emitted `... double = ...`,
 # which is a syntax error in C. Colliding names get a trailing underscore, at
 # the declaration and at every use, so the two stay in step.
+# Functions the headers this codegen always emits (<string.h>, <math.h>,
+# <stdlib.h>, <stdio.h>) already declare. An `extern "C"` block naming one of
+# these is telling the compiler a symbol exists in the linked library -- which
+# is already true, and already declared with the real prototype. Re-declaring
+# it from Pak's approximation of the signature (uint8_t *memset(uint8_t *,
+# int32_t, uint32_t) against void *memset(void *, int, size_t)) is a
+# conflicting declaration and fails the build, so the declaration is skipped
+# and the real one is used. The Pak signature still drives type checking.
+set ::pak::CG_LIBC_DECLARED {
+    memset memcpy memmove memcmp memchr
+    strlen strcmp strncmp strcpy strncpy strcat strncat strstr strchr strrchr
+    malloc calloc realloc free abs labs atoi atof
+    printf sprintf snprintf puts putchar
+    sinf cosf tanf sqrtf fabsf floorf ceilf powf atan2f fmodf
+    sin cos tan sqrt fabs floor ceil pow atan2 fmod
+}
+
 set ::pak::CG_C_KEYWORDS {
     auto break case char const continue default do double else enum extern
     float for goto if inline int long register restrict return short signed
@@ -2762,7 +2779,14 @@ oo::class create pak::Codegen {
 
     method gen_extern {ext} {
         set lines [list "/* extern \"[pak::fval $ext abi]\" */"]
-        foreach decl [pak::items [pak::nfield $ext decls]] { lappend lines [my gen_fn $decl ""] }
+        foreach decl [pak::items [pak::nfield $ext decls]] {
+            set nm [pak::fval $decl name]
+            if {$nm in $::pak::CG_LIBC_DECLARED} {
+                lappend lines "/* $nm: already declared by the C standard headers */"
+                continue
+            }
+            lappend lines [my gen_fn $decl ""]
+        }
         return [join $lines \n]
     }
 

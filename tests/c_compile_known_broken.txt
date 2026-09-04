@@ -5,4 +5,3 @@
 # the new floor. Adding a name is how a regression gets waved through,
 # so add one only with the bug it records written down.
 
-13_extern.pk64
