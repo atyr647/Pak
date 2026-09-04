@@ -5,6 +5,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+typedef struct Platform Platform;
+typedef struct Player Player;
+typedef struct Camera Camera;
+typedef struct GameState GameState;
+
 typedef enum {
     PlayerState_idle,
     PlayerState_running,
@@ -37,15 +42,15 @@ typedef struct {
     } data;
 } Pickup;
 
-typedef struct {
+struct Platform {
     int32_t x;
     int32_t y;
     int32_t w;
     int32_t h;
     bool active;
-} Platform;
+};
 
-typedef struct {
+struct Player {
     int32_t x;
     int32_t y;
     int32_t vx;
@@ -57,21 +62,21 @@ typedef struct {
     int32_t score;
     int32_t jump_timer;
     int32_t coyote_time;
-} Player;
+};
 
-typedef struct {
+struct Camera {
     int32_t x;
     int32_t scroll_speed;
     int32_t offset;
-} Camera;
+};
 
-typedef struct {
+struct GameState {
     Player player;
     Camera camera;
     GamePhase phase;
     int32_t frame;
     int32_t coins_collected;
-} GameState;
+};
 
 void init_platforms(void);
 void init_pickups(void);

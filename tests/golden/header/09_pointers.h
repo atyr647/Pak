@@ -5,10 +5,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct {
+typedef struct Node Node;
+
+struct Node {
     int32_t value;
     Node * next;
-} Node;
+};
 
 void double_value(int32_t * ptr);
 

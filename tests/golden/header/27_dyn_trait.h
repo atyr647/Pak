@@ -5,14 +5,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct {
-    float radius;
-} Circle;
+typedef struct Circle Circle;
+typedef struct Rect Rect;
 
-typedef struct {
+struct Circle {
+    float radius;
+};
+
+struct Rect {
     float width;
     float height;
-} Rect;
+};
 
 float get_area(Shape s);
 float get_perimeter(Shape s);

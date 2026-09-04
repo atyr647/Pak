@@ -21,6 +21,21 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
+
+/* -- User type forward declarations -- */
+typedef struct Circle Circle;
+typedef struct Rect Rect;
+
+/* -- User types -- */
+struct Circle {
+    float radius;
+};
+
+struct Rect {
+    float width;
+    float height;
+};
+
 /* trait Shape */
 typedef struct {
     float (*area)(void *);
@@ -31,15 +46,6 @@ typedef struct {
     void *self;
     const Shape_vtable *vtable;
 } Shape;
-
-typedef struct {
-    float radius;
-} Circle;
-
-typedef struct {
-    float width;
-    float height;
-} Rect;
 
 /* impl Circle for Shape */
 float Circle_area(Circle * self) {

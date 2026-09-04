@@ -22,6 +22,10 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
 
+/* -- User type forward declarations -- */
+typedef struct Pair Pair;
+typedef struct KeyVal KeyVal;
+
 /* -- Generic specializations -- */
 int32_t identity_int32_t(int32_t x) {
     return x;
@@ -53,20 +57,23 @@ int32_t swap_first_int32_t(int32_t a, int32_t b) {
     return b;
 }
 
-typedef struct {
+typedef struct Pair_int32_t Pair_int32_t;
+struct Pair_int32_t {
     int32_t first;
     int32_t second;
-} Pair_int32_t;
+};
 
-typedef struct {
+typedef struct Pair_float Pair_float;
+struct Pair_float {
     float first;
     float second;
-} Pair_float;
+};
 
-typedef struct {
+typedef struct KeyVal_int32_t_float KeyVal_int32_t_float;
+struct KeyVal_int32_t_float {
     int32_t key;
     float value;
-} KeyVal_int32_t_float;
+};
 
 static int32_t sink_i = 0;
 

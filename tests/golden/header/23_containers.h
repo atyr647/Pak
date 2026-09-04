@@ -5,11 +5,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct {
+typedef struct Bullet Bullet;
+
+struct Bullet {
     float x;
     float y;
     int32_t active;
-} Bullet;
+};
 
 
 #endif /* PAKMOD_DEMO_23_CONTAINERS_H */

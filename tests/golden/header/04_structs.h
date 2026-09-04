@@ -5,17 +5,20 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct {
+typedef struct Vec2 Vec2;
+typedef struct Player Player;
+
+struct Vec2 {
     float x;
     float y;
-} Vec2;
+};
 
-typedef struct {
+struct Player {
     T3DVec2 pos;
     int32_t health;
     float speed;
     bool alive;
-} Player;
+};
 
 
 #endif /* PAKMOD_DEMO_04_STRUCTS_H */

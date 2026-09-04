@@ -22,6 +22,17 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
 
+/* -- User type forward declarations -- */
+typedef struct Bullet Bullet;
+
+/* -- User types -- */
+struct Bullet {
+    float x;
+    float y;
+    int32_t active;
+};
+
+
 /* -- Vec(T) dynamic vector -- */
 #include <stdlib.h>
 #define _PAK_VEC_PUSH(v, item) do { \
@@ -59,12 +70,6 @@ typedef struct {
     Bullet data[16];
     int32_t len;
 } _PakPool_Bullet_16;
-
-typedef struct {
-    float x;
-    float y;
-    int32_t active;
-} Bullet;
 
 enum { MAX_BULLETS = 32 };
 

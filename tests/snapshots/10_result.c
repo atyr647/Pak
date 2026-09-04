@@ -22,13 +22,15 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
 
-typedef struct { bool is_ok; union { int32_t value; LoadError error; } data; } PakResult_int32_t_LoadError;
+/* -- User types -- */
 typedef enum {
     LoadError_file_not_found,
     LoadError_bad_format,
     LoadError_out_of_memory,
 } LoadError;
 
+
+typedef struct { bool is_ok; union { int32_t value; LoadError error; } data; } PakResult_int32_t_LoadError;
 PakResult_int32_t_LoadError load_data(char * path) {
     if (path == NULL) {
         return (PakResult_int32_t_LoadError){ .is_ok = false, .data.error = LoadError_file_not_found };

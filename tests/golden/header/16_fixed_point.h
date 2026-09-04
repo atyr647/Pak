@@ -5,10 +5,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct {
+typedef struct Vec2fx Vec2fx;
+
+struct Vec2fx {
     int32_t x;
     int32_t y;
-} Vec2fx;
+};
 
 Vec2fx vec2fx_add(Vec2fx a, Vec2fx b);
 Vec2fx vec2fx_scale(Vec2fx v, int32_t s);

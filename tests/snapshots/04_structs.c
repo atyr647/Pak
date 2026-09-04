@@ -21,17 +21,23 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
-typedef struct {
+
+/* -- User type forward declarations -- */
+typedef struct Vec2 Vec2;
+typedef struct Player Player;
+
+/* -- User types -- */
+struct Vec2 {
     float x;
     float y;
-} Vec2;
+};
 
-typedef struct {
+struct Player {
     Vec2 pos;
     int32_t health;
     float speed;
     bool alive;
-} Player;
+};
 
 void Player_init(Player * self) {
     self->pos.x = 0.0f;

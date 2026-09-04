@@ -2191,7 +2191,11 @@ oo::class create pak::Codegen {
             }
         }
         set attr_str [join $attrs " "]
-        set lines [list "typedef struct {"]
+        # Tagged, not anonymous: a struct that names itself (?*Node) or another
+        # struct declared later needs a tag to forward-declare. The matching
+        # `typedef struct Name Name;` is emitted in the forward block.
+        set name [pak::fval $s name]
+        set lines [list "struct $name {"]
         foreach field [pak::items [pak::nfield $s fields]] {
             set bw [pak::nfield $field bit_width]
             if {![pak::isnil $bw]} {
@@ -2201,16 +2205,17 @@ oo::class create pak::Codegen {
             }
         }
         set suffix [expr {$attr_str ne "" ? " $attr_str" : ""}]
-        lappend lines "} [pak::fval $s name]${suffix};"
+        lappend lines "}${suffix};"
         return [join $lines \n]
     }
 
     method gen_union {u} {
-        set lines [list "typedef union {"]
+        set name [pak::fval $u name]
+        set lines [list "union $name {"]
         foreach field [pak::items [pak::nfield $u fields]] {
             lappend lines "    [my gen_array_decl [pak::fval $field name] [pak::nfield $field type]];"
         }
-        lappend lines "} [pak::fval $u name];"
+        lappend lines "};"
         return [join $lines \n]
     }
 
@@ -2691,11 +2696,33 @@ oo::class create pak::Codegen {
         if {[llength $assets] > 0} { lappend out "" }
 
         # body (generated before preamble runtime types are appended, matching Python)
+        #
+        # User type declarations are split out and emitted ahead of the Result /
+        # slice / tuple / container typedefs below. Those typedefs embed user
+        # types by value (a Result carries a LoadError, a fixed list carries
+        # Star data[64]), so a user type declared after them is an unknown type
+        # name at the point that matters.
+        set type_decls {}
         set body {}
         foreach decl $decls {
             if {[pak::kindof $decl] in {UseDecl AssetDecl ModuleDecl}} continue
             set r [my gen_decl $decl]
-            if {$r ne ""} { lappend body $r; lappend body "" }
+            if {$r eq ""} continue
+            if {[pak::kindof $decl] in {StructDecl EnumDecl VariantDecl UnionDecl}} {
+                lappend type_decls $r; lappend type_decls ""
+            } else {
+                lappend body $r; lappend body ""
+            }
+        }
+
+        # Forward typedefs, so a struct can name itself or a sibling declared
+        # later without depending on declaration order at all.
+        set fwd {}
+        foreach decl $decls {
+            switch -- [pak::kindof $decl] {
+                StructDecl { lappend fwd "typedef struct [pak::fval $decl name] [pak::fval $decl name];" }
+                UnionDecl  { lappend fwd "typedef union [pak::fval $decl name] [pak::fval $decl name];" }
+            }
         }
 
         lappend out ""
@@ -2711,6 +2738,18 @@ oo::class create pak::Codegen {
         lappend out "    if (a->ptr + sz > a->base + a->capacity) return NULL;"
         lappend out "    void *p = a->ptr; a->ptr += sz; return p; }"
         lappend out "static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }"
+
+        if {[llength $fwd] > 0} {
+            lappend out ""
+            lappend out "/* -- User type forward declarations -- */"
+            foreach l $fwd { lappend out $l }
+        }
+        if {[llength $type_decls] > 0} {
+            lappend out ""
+            lappend out "/* -- User types -- */"
+            foreach l $type_decls { lappend out $l }
+        }
+
         if {$allocator_used} {
             lappend out ""
             lappend out "/* -- Allocator trait (vtable-based custom allocator interface) -- */"
@@ -2839,7 +2878,12 @@ oo::class create pak::Codegen {
                 } else {
                     switch -- [pak::kindof $decl] {
                         FnDecl     { lappend out [my gen_fn $decl ""] }
-                        StructDecl { lappend out [my gen_struct $decl] }
+                        StructDecl {
+                            # Monomorphs are not in $decls, so the forward block
+                            # above never saw them: pair the typedef here.
+                            lappend out "typedef struct [pak::fval $decl name] [pak::fval $decl name];"
+                            lappend out [my gen_struct $decl]
+                        }
                     }
                 }
                 lappend out ""

@@ -21,6 +21,25 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
+
+/* -- User type forward declarations -- */
+typedef struct Sprite Sprite;
+typedef struct Enemy Enemy;
+
+/* -- User types -- */
+struct Sprite {
+    int32_t x;
+    int32_t y;
+    int32_t w;
+    int32_t h;
+};
+
+struct Enemy {
+    float x;
+    float y;
+    float speed;
+};
+
 /* trait Drawable */
 typedef struct {
     void (*draw)(void *, int32_t, int32_t);
@@ -42,13 +61,6 @@ typedef struct {
     void *self;
     const Updatable_vtable *vtable;
 } Updatable;
-
-typedef struct {
-    int32_t x;
-    int32_t y;
-    int32_t w;
-    int32_t h;
-} Sprite;
 
 /* impl Sprite for Drawable */
 void Sprite_draw(Sprite * self, int32_t x, int32_t y) {
@@ -85,12 +97,6 @@ static const Drawable_vtable _pak_Drawable_vtable_Sprite = {
 static inline Drawable Drawable_from_Sprite(Sprite *p) {
     return (Drawable){ .self = (void *)p, .vtable = &_pak_Drawable_vtable_Sprite };
 }
-
-typedef struct {
-    float x;
-    float y;
-    float speed;
-} Enemy;
 
 /* impl Enemy for Updatable */
 void Enemy_update(Enemy * self, float dt) {

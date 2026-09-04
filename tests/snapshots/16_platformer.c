@@ -38,6 +38,82 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
+
+/* -- User type forward declarations -- */
+typedef struct Platform Platform;
+typedef struct Player Player;
+typedef struct Camera Camera;
+typedef struct GameState GameState;
+
+/* -- User types -- */
+typedef enum {
+    PlayerState_idle,
+    PlayerState_running,
+    PlayerState_jumping,
+    PlayerState_falling,
+    PlayerState_landing,
+} PlayerState;
+
+typedef enum {
+    GamePhase_title,
+    GamePhase_playing,
+    GamePhase_paused,
+    GamePhase_gameover,
+} GamePhase;
+
+typedef struct {
+    int32_t field0;
+    int32_t field1;
+} Pickup_coin;
+
+typedef enum {
+    Pickup_tag_coin,
+    Pickup_tag_empty,
+} Pickup_tag;
+
+typedef struct {
+    Pickup_tag tag;
+    union {
+        Pickup_coin coin;
+    } data;
+} Pickup;
+
+struct Platform {
+    int32_t x;
+    int32_t y;
+    int32_t w;
+    int32_t h;
+    bool active;
+};
+
+struct Player {
+    int32_t x;
+    int32_t y;
+    int32_t vx;
+    int32_t vy;
+    PlayerState state;
+    bool on_ground;
+    bool facing_right;
+    int32_t health;
+    int32_t score;
+    int32_t jump_timer;
+    int32_t coyote_time;
+};
+
+struct Camera {
+    int32_t x;
+    int32_t scroll_speed;
+    int32_t offset;
+};
+
+struct GameState {
+    Player player;
+    Camera camera;
+    GamePhase phase;
+    int32_t frame;
+    int32_t coins_collected;
+};
+
 enum { SCREEN_W = 320 };
 
 enum { SCREEN_H = 240 };
@@ -71,74 +147,6 @@ enum { COLOR_COIN = 0xFFDD00FF };
 enum { COLOR_PLATFORM = 0x336633FF };
 
 enum { COLOR_BLACK = 0x000000FF };
-
-typedef enum {
-    PlayerState_idle,
-    PlayerState_running,
-    PlayerState_jumping,
-    PlayerState_falling,
-    PlayerState_landing,
-} PlayerState;
-
-typedef enum {
-    GamePhase_title,
-    GamePhase_playing,
-    GamePhase_paused,
-    GamePhase_gameover,
-} GamePhase;
-
-typedef struct {
-    int32_t field0;
-    int32_t field1;
-} Pickup_coin;
-
-typedef enum {
-    Pickup_tag_coin,
-    Pickup_tag_empty,
-} Pickup_tag;
-
-typedef struct {
-    Pickup_tag tag;
-    union {
-        Pickup_coin coin;
-    } data;
-} Pickup;
-
-typedef struct {
-    int32_t x;
-    int32_t y;
-    int32_t w;
-    int32_t h;
-    bool active;
-} Platform;
-
-typedef struct {
-    int32_t x;
-    int32_t y;
-    int32_t vx;
-    int32_t vy;
-    PlayerState state;
-    bool on_ground;
-    bool facing_right;
-    int32_t health;
-    int32_t score;
-    int32_t jump_timer;
-    int32_t coyote_time;
-} Player;
-
-typedef struct {
-    int32_t x;
-    int32_t scroll_speed;
-    int32_t offset;
-} Camera;
-
-typedef struct {
-    Player player;
-    Camera camera;
-    GamePhase phase;
-    int32_t frame;
-    int32_t coins_collected;
-} GameState;
 
 static Platform platforms[8];
 

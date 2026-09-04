@@ -21,6 +21,21 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
+
+/* -- User type forward declarations -- */
+typedef struct DMAPacket DMAPacket;
+typedef struct CriticalBuffer CriticalBuffer;
+
+/* -- User types -- */
+struct DMAPacket {
+    uint32_t header;
+    uint8_t data[60];
+} __attribute__((aligned(16)));
+
+struct CriticalBuffer {
+    uint8_t data[256];
+} __attribute__((aligned(8)));
+
 __attribute__((hot))
 int32_t sum_scanline(uint8_t * buf, int32_t y, int32_t width) {
     int32_t total = 0;
@@ -30,20 +45,11 @@ int32_t sum_scanline(uint8_t * buf, int32_t y, int32_t width) {
     return total;
 }
 
-typedef struct {
-    uint32_t header;
-    uint8_t data[60];
-} DMAPacket __attribute__((aligned(16)));
-
 static __attribute__((aligned(16))) uint8_t dma_out[4096];
 
 #ifdef DEBUG_MODE
 static int32_t debug_counters[16];
 #endif  /* DEBUG_MODE */
-
-typedef struct {
-    uint8_t data[256];
-} CriticalBuffer __attribute__((aligned(8)));
 
 static int32_t sink = 0;
 

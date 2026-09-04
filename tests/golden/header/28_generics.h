@@ -5,15 +5,18 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct {
+typedef struct Pair Pair;
+typedef struct KeyVal KeyVal;
+
+struct Pair {
     T first;
     T second;
-} Pair;
+};
 
-typedef struct {
+struct KeyVal {
     K key;
     V value;
-} KeyVal;
+};
 
 T identity(T x);
 T max_of(T a, T b);

@@ -38,6 +38,41 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
 
+/* -- User type forward declarations -- */
+typedef struct Star Star;
+typedef struct Cube Cube;
+typedef struct GameState GameState;
+
+/* -- User types -- */
+struct Star {
+    int32_t sx;
+    int32_t sy;
+    float z;
+};
+
+struct Cube {
+    float tx;
+    float ty;
+    float tz;
+    float sc;
+    float ry;
+    float rx;
+    float spy;
+    float spx;
+    uint32_t col0;
+    uint32_t col1;
+    uint32_t col2;
+};
+
+struct GameState {
+    _PakList_Star_64 stars;
+    Cube cube_a;
+    Cube cube_b;
+    int32_t frame;
+    bool running;
+};
+
+
 /* -- Container types -- */
 typedef struct {
     Star data[64];
@@ -67,34 +102,6 @@ static int32_t cf_idx[24] = {0, 1, 2, 3, 5, 4, 7, 6, 4, 0, 3, 7, 1, 5, 6, 2, 3, 
 static uint32_t sky_col[6] = {0x050C14FF, 0x0A1828FF, 0x10243AFF, 0x182F4CFF, 0x1F3A5FFF, 0x2A4A70FF};
 
 static uint32_t gnd_col[8] = {0x3C2B1AFF, 0x352717FF, 0x2E2214FF, 0x281E11FF, 0x221A0EFF, 0x1C160BFF, 0x161208FF, 0x100E06FF};
-
-typedef struct {
-    int32_t sx;
-    int32_t sy;
-    float z;
-} Star;
-
-typedef struct {
-    float tx;
-    float ty;
-    float tz;
-    float sc;
-    float ry;
-    float rx;
-    float spy;
-    float spx;
-    uint32_t col0;
-    uint32_t col1;
-    uint32_t col2;
-} Cube;
-
-typedef struct {
-    _PakList_Star_64 stars;
-    Cube cube_a;
-    Cube cube_b;
-    int32_t frame;
-    bool running;
-} GameState;
 
 static GameState gs;
 
