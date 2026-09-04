@@ -1055,7 +1055,14 @@ oo::class create pak::Codegen {
         if {$method eq "len" && $na == 0} {
             if {[pak::kindof $obj_type] eq "TypeSlice"} { return "($obj).len" }
             if {[pak::kindof $obj_type] eq "TypeArray"} { return "(int32_t)(sizeof($obj)/sizeof(($obj)\[0\]))" }
-            return "($obj).len"
+            # A CStr is char *, which has no .len -- fall through to the string
+            # block below, where len is strlen. Returning ($obj).len here made
+            # cstr.len() a member access on a pointer.
+            if {!($c_type in {"const char *" "char *"} \
+                  || ([pak::kindof $obj_type] eq "TypeName" \
+                      && [pak::fval $obj_type name] in {CStr c_char}))} {
+                return "($obj).len"
+            }
         }
         if {$method eq "free" && $na == 0} {
             if {$c_type in {"T3DMat4FP *" "T3DMat4FP*"}} { return "free_uncached($obj)" }
@@ -1643,7 +1650,16 @@ oo::class create pak::Codegen {
         }
         if {![pak::isnil $typ]} {
             set decl [my gen_array_decl $name $typ]
-            my scope_set $name $typ
+            # `let p: Pair<i32>` declares Pair_int32_t in C, but storing the
+            # generic type here left the scope saying "Pair" -- a name with no
+            # method registry and no monomorph entry, so p.sum_i32() fell all
+            # the way through to member access on the struct. Record the
+            # monomorphized name the declaration actually uses.
+            if {[pak::kindof $typ] eq "TypeGeneric" && [dict exists $generic_structs [pak::fval $typ name]]} {
+                my scope_set $name [pak::N TypeName name [my gen_type $typ]]
+            } else {
+                my scope_set $name $typ
+            }
         } else {
             set decl "__auto_type $name"
             if {[pak::kindof [pak::nfield $s value]] eq "AddrOf"} {
@@ -2843,9 +2859,34 @@ oo::class create pak::Codegen {
 
         lappend out ""
 
+        # An asset name is a handle usable anywhere in the file (LANGUAGE.md
+        # section 14), not just a path string: `rdpq.sprite_blit(bg, ...)`
+        # passes the loaded asset. Emitting only <name>_path left every use of
+        # the bare name undeclared. Typed assets with a known loader get a
+        # lazily-loaded handle -- lazy because the filesystem is not mounted
+        # until the entry block runs, so loading at static-init time is too
+        # early. Untyped assets keep the path alone; there is nothing to load
+        # them with.
+        set asset_loaders [dict create Sprite [list {sprite_t *} sprite_load]]
         foreach asset $assets {
-            lappend out "/* asset: [pak::fval $asset name] from \"[pak::fval $asset path]\" */"
-            lappend out "static const char *[pak::fval $asset name]_path = \"pak:/[pak::fval $asset path]\";"
+            set aname [pak::fval $asset name]
+            set apath [pak::fval $asset path]
+            set atype [pak::nfield $asset asset_type]
+            set tname ""
+            if {![pak::isnil $atype]} {
+                set tname [expr {[pak::kindof $atype] eq "TypeName" ? [pak::fval $atype name] : [pak::sval $atype]}]
+            }
+            lappend out "/* asset: $aname from \"$apath\" */"
+            lappend out "static const char *${aname}_path = \"pak:/${apath}\";"
+            if {[dict exists $asset_loaders $tname]} {
+                lassign [dict get $asset_loaders $tname] ctype loader
+                lappend out "static $ctype _pak_asset_${aname} = 0;"
+                lappend out "static inline $ctype _pak_asset_get_${aname}(void) \{"
+                lappend out "    if (!_pak_asset_${aname}) _pak_asset_${aname} = ${loader}(${aname}_path);"
+                lappend out "    return _pak_asset_${aname};"
+                lappend out "\}"
+                lappend out "#define $aname (_pak_asset_get_${aname}())"
+            }
         }
         if {[llength $assets] > 0} { lappend out "" }
 

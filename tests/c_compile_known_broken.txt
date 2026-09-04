@@ -6,12 +6,8 @@
 # so add one only with the bug it records written down.
 
 13_extern.pk64
-14_assets.pk64
-15_game_loop.pk64
 16_platformer.pk64
 17_annotations.pk64
 26_closures.pk64
-28_generics.pk64
-29_strings.pk64
 30_raycaster.pk64
 31_demo3d.pk64

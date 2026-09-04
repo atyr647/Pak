@@ -44,6 +44,17 @@ proc hal_stub_header {} {
     lappend out "#include <stdbool.h>"
     lappend out "#include <stddef.h>"
     lappend out "/* Declared from MODULE_API -- do not hand-edit. */"
+    lappend out ""
+    lappend out "/* The few libdragon *types* the codegen names in emitted C."
+    lappend out " * Symbols come from MODULE_API above; these do not appear there"
+    lappend out " * because they are types, not functions. Keep this list minimal:"
+    lappend out " * it exists so a missing libdragon header is not mistaken for a"
+    lappend out " * codegen bug, not to reimplement libdragon. */"
+    lappend out "typedef struct { int _pak_opaque; } sprite_t;"
+    lappend out "typedef struct { bool a, b, z, start, l, r, up, down, left, right;"
+    lappend out "                 bool c_up, c_down, c_left, c_right; } joypad_buttons_t;"
+    lappend out "typedef struct { joypad_buttons_t held, pressed, released;"
+    lappend out "                 int stick_x, stick_y; } joypad_status_t;"
     set seen [dict create]
     foreach key [pak::module_api_keys] {
         lassign $key mod fn
@@ -52,6 +63,14 @@ proc hal_stub_header {} {
         # The codegen defines these itself in the generated prelude.
         if {[string match "pak_str_*" $sym] || [string match "pak_arena_*" $sym]} continue
         dict set seen $sym 1
+        if {$sym eq "joypad_get_status"} {
+            lappend out "joypad_status_t ${sym}();"
+            continue
+        }
+        if {$sym eq "sprite_load"} {
+            lappend out "sprite_t *${sym}();"
+            continue
+        }
         lappend out "long ${sym}();"
     }
     return [join $out "\n"]
