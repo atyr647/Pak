@@ -39,6 +39,17 @@ proc pak::strip_parens {s} {
 
 set ::pak::CG_FIXSHIFT [dict create fix16.16 16 fix10.5 5 fix1.15 15]
 
+# C keywords and common typedefs a Pak identifier may legally collide with.
+# `let double: fn(i32) -> i32 = ...` is fine Pak and emitted `... double = ...`,
+# which is a syntax error in C. Colliding names get a trailing underscore, at
+# the declaration and at every use, so the two stay in step.
+set ::pak::CG_C_KEYWORDS {
+    auto break case char const continue default do double else enum extern
+    float for goto if inline int long register restrict return short signed
+    sizeof static struct switch typedef union unsigned void volatile while
+    _Bool _Complex _Imaginary bool complex imaginary
+}
+
 # Mirror codegen._NUMERIC_CAST_METHODS / _FIXPOINT_CAST / _VEC*_INSTANCE / _MAT4_INSTANCE
 set ::pak::CG_NUMERIC_CAST [dict create \
     as_i8 int8_t as_i16 int16_t as_i32 int32_t as_i64 int64_t \
@@ -432,9 +443,26 @@ oo::class create pak::Codegen {
         }
     }
 
+    # C reserves these; a Pak local may legitimately be called `double`.
+    method c_ident {name} {
+        if {$name in $::pak::CG_C_KEYWORDS} { return "${name}_" }
+        return $name
+    }
+
     method gen_array_decl {name t} {
+        set name [my c_ident $name]
         if {[pak::kindof $t] eq "TypeArray"} {
             return "[my gen_type [pak::nfield $t inner]] $name\[[my gen_expr [pak::nfield $t size]]\]"
+        }
+        # A function pointer names itself inside the parens: int32_t (*f)(int32_t).
+        # gen_type returns the abstract form, int32_t (*)(int32_t), which is a
+        # type name and cannot carry a declarator after it.
+        if {[pak::kindof $t] eq "TypeFn"} {
+            set abstract [my gen_type $t]
+            set i [string first "(*)" $abstract]
+            if {$i >= 0} {
+                return "[string range $abstract 0 [expr {$i+1}]]${name}[string range $abstract [expr {$i+2}] end]"
+            }
         }
         return "[my gen_type $t] $name"
     }
@@ -457,7 +485,7 @@ oo::class create pak::Codegen {
             }
             NoneLit      { return "NULL" }
             UndefinedLit { return "/* undefined */" }
-            Ident        { return [pak::fval $e name] }
+            Ident        { return [my c_ident [pak::fval $e name]] }
             DotAccess    { return [my gen_dot $e] }
             IndexAccess {
                 set obj [my gen_expr [pak::nfield $e obj]]
@@ -737,9 +765,57 @@ oo::class create pak::Codegen {
     }
 
     # ── closures (mirror codegen._gen_closure / _emit_closures) ────────────────
+
+    # Every Ident named anywhere under a node.
+    method collect_idents {n acc} {
+        upvar 1 $acc names
+        if {[llength $n] < 2 || [lindex $n 0] ne "node"} { return }
+        if {[pak::kindof $n] eq "Ident"} { dict set names [pak::fval $n name] 1 }
+        # A node is {node Kind FieldsDict Pos}: the fields are one dict at
+        # index 2, not trailing key/value pairs.
+        dict for {k v} [lindex $n 2] {
+            switch -- [lindex $v 0] {
+                node { my collect_idents $v names }
+                seq  { foreach it [pak::items $v] { my collect_idents $it names } }
+            }
+        }
+    }
+
+    # Does this fn literal read a local of the enclosing function? Params and
+    # anything it declares itself do not count, and neither do file-scope names
+    # -- a static or another function is reachable from a hoisted definition.
+    method closure_captures {e} {
+        set names [dict create]
+        my collect_idents [pak::nfield $e body] names
+        set own [dict create]
+        foreach p [pak::items [pak::nfield $e params]] { dict set own [pak::fval $p name] 1 }
+        foreach st [pak::items [pak::nfield [pak::nfield $e body] stmts]] {
+            if {[pak::kindof $st] eq "LetStmt"} { dict set own [pak::fval $st name] 1 }
+        }
+        # Locals of the enclosing function are every scope frame above global.
+        dict for {n _} $names {
+            if {[dict exists $own $n]} continue
+            for {set i [expr {[llength $scopes]-1}]} {$i >= 1} {incr i -1} {
+                if {[dict exists [lindex $scopes $i] $n]} { return 1 }
+            }
+        }
+        return 0
+    }
+
     method gen_closure {e} {
+        # A non-capturing fn literal is just a function: hoisting it to file
+        # scope is ISO C and gives it a name unique across the whole file. Only
+        # a literal that reads an enclosing local still needs a GCC nested
+        # function (a GNU extension -- see NOT_SUPPORTED.md).
+        if {$_in_stmt && ![my closure_captures $e]} {
+            set name "_pak_closure_[llength $closures]"
+            lappend closures [list $name $e]
+            return $name
+        }
         if {$_in_stmt} {
             # Inside a statement: emit as GCC nested function inline (mirrors Python _pending_nested)
+            # The counter spans closures already hoisted plus those pending, so
+            # two nested closures in one function cannot both be _pak_clo_0.
             set name "_pak_clo_[expr {[llength $closures] + [llength $pending_nested]}]"
             lappend pending_nested [list $name $e]
             return $name
@@ -757,7 +833,7 @@ oo::class create pak::Codegen {
             set ret [expr {[pak::isnil $rt] ? "void" : [my gen_type $rt]}]
             set params {}
             foreach p [pak::items [pak::nfield $e params]] {
-                lappend params "[my gen_type [pak::nfield $p type]] [pak::fval $p name]"
+                lappend params [my gen_array_decl [pak::fval $p name] [pak::nfield $p type]]
             }
             set param_str [expr {[llength $params] > 0 ? [join $params {, }] : "void"}]
             lappend lines "static $ret ${name}($param_str) {"
@@ -787,7 +863,7 @@ oo::class create pak::Codegen {
             set ret [expr {[pak::isnil $rt] ? "void" : [my gen_type $rt]}]
             set params {}
             foreach p [pak::items [pak::nfield $e params]] {
-                lappend params "[my gen_type [pak::nfield $p type]] [pak::fval $p name]"
+                lappend params [my gen_array_decl [pak::fval $p name] [pak::nfield $p type]]
             }
             set param_str [expr {[llength $params] > 0 ? [join $params {, }] : "void"}]
             lappend lines "${pad}$ret ${name}($param_str) {"
@@ -2650,7 +2726,7 @@ oo::class create pak::Codegen {
             if {[pak::kindof $pt] eq "TypeArray"} {
                 lappend params [my gen_array_decl [pak::fval $p name] $pt]
             } else {
-                lappend params "[my gen_type $pt] [pak::fval $p name]"
+                lappend params [my gen_array_decl [pak::fval $p name] $pt]
             }
         }
         if {[pak::fval $fn variadic]} {
