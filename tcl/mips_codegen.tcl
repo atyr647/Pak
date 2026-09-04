@@ -2585,7 +2585,16 @@ oo::class create pak::MipsCodegen {
                 set fl [dict create size [dict get $fi size] align [dict get $fi align] \
                     is_float 0 is_signed 1 is_ptr 0 fields {}]
             }
-            my emit_typed_load $dst [dict get $fi offset] $base $fl
+            if {[my type_is_struct_value $type_node]} {
+                set foff [dict get $fi offset]
+                if {$foff != 0} {
+                    $em addiu $dst $base $foff
+                } elseif {$dst ne $base} {
+                    $em move $dst $base
+                }
+            } else {
+                my emit_typed_load $dst [dict get $fi offset] $base $fl
+            }
         } else {
             $em lw $dst 0 $base
         }
@@ -2749,12 +2758,20 @@ oo::class create pak::MipsCodegen {
                 $em addiu $dst {$sp} $off
                 return
             }
+            if {[my type_is_struct_value [my lookup_type_node $name]]} {
+                $em addiu $dst {$sp} $off
+                return
+            }
             my load_from_sp $off $dst $layout
             return
         }
         if {[dict exists $globals $name]} {
             set layout [lindex [dict get $globals $name] 1]
             if {[dict exists $layout is_array] && [dict get $layout is_array]} {
+                $em la $dst $name
+                return
+            }
+            if {[my type_is_struct_value [my lookup_type_node $name]]} {
                 $em la $dst $name
                 return
             }
@@ -2831,6 +2848,16 @@ oo::class create pak::MipsCodegen {
         return [pak::fval $sz value]
     }
 
+    method type_is_struct_value {tn} {
+        set tn [my unwrap_type $tn]
+        if {$tn eq "" || [pak::isnil $tn] || [pak::kindof $tn] ne "TypeName"} { return 0 }
+        set n [pak::fval $tn name]
+        if {![dict exists $tenv_layouts $n]} { return 0 }
+        set lay [dict get $tenv_layouts $n]
+        if {![dict exists $lay fields] || [dict size [dict get $lay fields]] == 0} { return 0 }
+        return [expr {[dict get $lay size] > 4}]
+    }
+
     method slice_type_of {obj} {
         set inner [my unwrap_type [my expr_type $obj]]
         if {$inner eq "" || [pak::isnil $inner]} { return "" }
@@ -2898,7 +2925,11 @@ oo::class create pak::MipsCodegen {
 
     method emit_index_access {expr dst} {
         lassign [my emit_index_addr [pak::nfield $expr obj] [pak::nfield $expr index]] base idx elem
-        my emit_typed_load $dst 0 $base $elem
+        if {[my type_is_struct_value [my expr_type $expr]]} {
+            if {$dst ne $base} { $em move $dst $base }
+        } else {
+            my emit_typed_load $dst 0 $base $elem
+        }
         $ra free_temp $idx
         $ra free_temp $base
     }
@@ -3316,6 +3347,15 @@ oo::class create pak::MipsCodegen {
     }
 
     method emit_assign_target {target val_reg op} {
+        if {$op eq "=" && [my type_is_struct_value [my expr_type $target]]} {
+            set ttn [my unwrap_type [my expr_type $target]]
+            set tsz [dict get [my mips_layout $ttn] size]
+            set dst_ptr [$ra alloc_temp]
+            my emit_place_addr $target $dst_ptr
+            my emit_memcpy $dst_ptr $val_reg $tsz
+            $ra free_temp $dst_ptr
+            return
+        }
         if {$op ne "="} {
             # For float compound assigns: $f12 holds the RHS value.
             # Save RHS to $f14, load target into $f12, apply FPU op, result in $f12.

@@ -349,8 +349,8 @@ main:
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $a1, 180($sp)
-    lw $a0, 164($sp)
+    addiu $a1, $sp, 180
+    addiu $a0, $sp, 164
     sw $t9, 96($sp)
     jal vec2fx_add
     nop
@@ -359,7 +359,7 @@ main:
     sw $t9, 196($sp)
     la $t8, .Lf321
     lwc1 $f12, 0($t8)
-    lw $a0, 180($sp)
+    addiu $a0, $sp, 180
     sw $t9, 96($sp)
     jal vec2fx_scale
     nop

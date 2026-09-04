@@ -397,6 +397,45 @@ check_eq {for q in []Point sums x+y} [word_hex $mw [expr {$DATA + 4}]] 00000021
 check_eq {[2]Point.len} [word_hex $mw [expr {$DATA + 8}]] 00000002
 check_eq {[]Point.len} [word_hex $mw [expr {$DATA + 12}]] 00000002
 
+# ── struct assignment copies fields, not the literal's stack address
+set src9 {
+struct Point {
+    x: i32
+    y: i32
+}
+static pts: [2]Point = undefined
+static lit_sum: i32 = 0
+static idx_sum: i32 = 0
+static sl_sum: i32 = 0
+static copy_sum: i32 = 0
+
+entry {
+    pts[0] = Point { x: 1, y: 10 }
+    pts[1] = Point { x: 2, y: 20 }
+    lit_sum = pts[0].x + pts[0].y + pts[1].x + pts[1].y
+    pts[0] = pts[1]
+    idx_sum = pts[0].x + pts[0].y
+    let s: []mut Point = pts[0..2]
+    s[1] = Point { x: 3, y: 30 }
+    sl_sum = pts[1].x + pts[1].y
+    let mut a: Point = Point { x: 4, y: 40 }
+    let b: Point = Point { x: 5, y: 50 }
+    a = b
+    copy_sum = a.x + a.y
+}
+}
+set lx [pak::Lexer new $src9]
+set ast [pak::parse_tokens [$lx tokenize]]
+set recs [pak::optimize_records [pak::mips_generate_records $ast]]
+set asm [pak::records_to_asm $recs]
+set run [pak::mips_sim_run $asm main 200000]
+set mw [dict get $run mem_w]
+set DATA 0x80300000
+check_eq {pts[i] = Point{...} copies fields} [word_hex $mw $DATA] 00000021
+check_eq {pts[0] = pts[1] copies fields} [word_hex $mw [expr {$DATA + 4}]] 00000016
+check_eq {s[1] = Point{...} copies through slice} [word_hex $mw [expr {$DATA + 8}]] 00000021
+check_eq {a = b copies local structs} [word_hex $mw [expr {$DATA + 12}]] 00000037
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

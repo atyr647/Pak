@@ -206,7 +206,8 @@ wait loops terminate instead of hanging.
   rule; `g.player.init()` is a method, not a module call. `buf[i..j]` of
   `[N]u8` is a fat pointer whose start is scaled by the element size, not
   always ×4. `for x in arr` on `[N]T` uses the compile-time length; struct
-  elements are copied whole so `p.x`/`p.y` both hit. `[N]T.len` is N. Goldens live in
+  elements are copied whole so `p.x`/`p.y` both hit. `[N]T.len` is N.
+  `pts[i] = Point { ... }` memcpy's the literal, not its stack address. Goldens live in
   `tcl/tools/array_addr_test.tcl`.
 * **FPU encodings.** COP1 ops (`add.s`/`sub.s`/`mul.s`/`div.s`, the
   `mov`/`neg`/`abs`/`sqrt` unary group, `cvt.*`, the `c.<cond>.s` compare

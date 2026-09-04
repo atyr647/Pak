@@ -1818,7 +1818,18 @@ init_scene:
     sw $t7, 192($sp)
     addiu $t8, $sp, 152
     la $t7, gs
-    sw $t8, 772($t7)
+    addiu $t7, $t7, 772
+    move $a0, $t7
+    move $a1, $t8
+    li $a2, 44
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
+    jal memcpy
+    nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t9, $t8
     addiu $a0, $sp, 196
     move $a1, $zero
@@ -1863,7 +1874,18 @@ init_scene:
     sw $t7, 236($sp)
     addiu $t8, $sp, 196
     la $t7, gs
-    sw $t8, 816($t7)
+    addiu $t7, $t7, 816
+    move $a0, $t7
+    move $a1, $t8
+    li $a2, 44
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
+    jal memcpy
+    nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
     move $t9, $t8
     li $t8, 0
     la $t7, gs

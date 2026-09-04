@@ -602,12 +602,16 @@ main:
     li $t7, 10
     sw $t7, 268($sp)
     addiu $t8, $sp, 264
-    addiu $t7, $sp, 232
-    li $t6, 0
-    li $t5, 8
-    mul $t6, $t6, $t5
-    addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    addiu $t6, $sp, 232
+    li $t5, 0
+    li $t4, 8
+    mul $t5, $t5, $t4
+    addu $t6, $t6, $t5
+    move $t7, $t6
+    lw $t6, 0($t8)
+    sw $t6, 0($t7)
+    lw $t6, 4($t8)
+    sw $t6, 4($t7)
     move $t9, $t8
     sw $zero, 272($sp)
     sw $zero, 276($sp)
@@ -616,12 +620,16 @@ main:
     li $t7, 20
     sw $t7, 276($sp)
     addiu $t8, $sp, 272
-    addiu $t7, $sp, 232
-    li $t6, 1
-    li $t5, 8
-    mul $t6, $t6, $t5
-    addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    addiu $t6, $sp, 232
+    li $t5, 1
+    li $t4, 8
+    mul $t5, $t5, $t4
+    addu $t6, $t6, $t5
+    move $t7, $t6
+    lw $t6, 0($t8)
+    sw $t6, 0($t7)
+    lw $t6, 4($t8)
+    sw $t6, 4($t7)
     move $t9, $t8
     sw $zero, 280($sp)
     sw $zero, 284($sp)
@@ -630,12 +638,16 @@ main:
     li $t7, 30
     sw $t7, 284($sp)
     addiu $t8, $sp, 280
-    addiu $t7, $sp, 232
-    li $t6, 2
-    li $t5, 8
-    mul $t6, $t6, $t5
-    addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    addiu $t6, $sp, 232
+    li $t5, 2
+    li $t4, 8
+    mul $t5, $t5, $t4
+    addu $t6, $t6, $t5
+    move $t7, $t6
+    lw $t6, 0($t8)
+    sw $t6, 0($t7)
+    lw $t6, 4($t8)
+    sw $t6, 4($t7)
     move $t9, $t8
     sw $zero, 288($sp)
     sw $zero, 292($sp)
@@ -644,12 +656,16 @@ main:
     li $t7, 40
     sw $t7, 292($sp)
     addiu $t8, $sp, 288
-    addiu $t7, $sp, 232
-    li $t6, 3
-    li $t5, 8
-    mul $t6, $t6, $t5
-    addu $t7, $t7, $t6
-    sw $t8, 0($t7)
+    addiu $t6, $sp, 232
+    li $t5, 3
+    li $t4, 8
+    mul $t5, $t5, $t4
+    addu $t6, $t6, $t5
+    move $t7, $t6
+    lw $t6, 0($t8)
+    sw $t6, 0($t7)
+    lw $t6, 4($t8)
+    sw $t6, 4($t7)
     move $t9, $t8
     addiu $t7, $sp, 232
     li $t6, 0

@@ -218,6 +218,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `&arr[i]` / `*u8[i]` / `[]u8` slices | ✅ Full | Slice start is elem-size, not always ×4; `for b in s` loads bytes |
 | `for x in [N]T` | ✅ Full | Length is `[N]`, not the first two words as a fat pointer |
 | `for p in []Point` / `[N]T.len` | ✅ Full | Struct elements memcpy; `.len` is N or the fat-pointer length |
+| `pts[i] = Point { ... }` | ✅ Full | Aggregate `=` memcpy, not a store of the literal's address |
 | `&s.field` / value-struct fields | ✅ Full | Place address of the object, not a spilled copy of the first word |
 | Method `self` (value, `*T`, `obj.field.m()`) | ✅ Full | Pointer receivers pass the pointer; `g.player.init()` is not a module call |
 | `defer` | ✅ Full | |
