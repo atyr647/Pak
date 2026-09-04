@@ -90,6 +90,7 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     rdpq_set_fog_color 1 \
     rdpq_set_env_color 1 \
     rdpq_set_prim_color 1 \
+    rdpq_set_prim_depth 1 \
     rdpq_fill_rectangle 1 \
     rdpq_set_texture_image 1 \
     rdpq_set_tile 1 \
@@ -100,6 +101,7 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     rdpq_load_tlut 1 \
     rdpq_texture_rectangle 1 \
     rdpq_texture_rectangle_scaled 1 \
+    rdpq_texture_rectangle_flip 1 \
     rdpq_triangle 1 \
     rdpq_triangle_z 1 \
     rdpq_triangle_shade 1 \

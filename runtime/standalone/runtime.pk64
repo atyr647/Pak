@@ -422,11 +422,13 @@ const RDP_TRI_SHADE_Z:     u32 = 0x0D
 const RDP_TRI_SHADE_TXTR:  u32 = 0x0E
 const RDP_TRI_SHADE_TXTR_Z: u32 = 0x0F
 const RDP_TEXTURE_RECT:    u32 = 0x24
+const RDP_TEXTURE_RECT_FLIP: u32 = 0x25
 const RDP_SYNC_LOAD:       u32 = 0x26
 const RDP_SYNC_PIPE:       u32 = 0x27
 const RDP_SYNC_TILE:       u32 = 0x28
 const RDP_SYNC_FULL:       u32 = 0x29
 const RDP_SET_SCISSOR:     u32 = 0x2D
+const RDP_SET_PRIM_DEPTH:  u32 = 0x2E
 const RDP_SET_OTHER_MODES: u32 = 0x2F
 const RDP_LOAD_TLUT:       u32 = 0x30
 const RDP_SET_TILE_SIZE:   u32 = 0x32
@@ -659,6 +661,12 @@ fn rdpq_set_prim_color(color: u32) {
     dl_cmd(RDP_SET_PRIM_COLOR << 24, color)
 }
 
+-- Primitive Z and delta-Z. Used when OTHER_MODES samples primitive depth
+-- instead of the per-pixel interpolator. z/dz are 16-bit.
+fn rdpq_set_prim_depth(z: u32, dz: u32) {
+    dl_cmd(RDP_SET_PRIM_DEPTH << 24, (z << 16) | (dz & 0xFFFF))
+}
+
 -- ── primitives ─────────────────────────────────────────────────────────────
 
 -- FILL_RECTANGLE takes an inclusive rectangle; the API bounds are exclusive,
@@ -793,6 +801,19 @@ fn rdpq_texture_rectangle_scaled(tile: u32, x0: i32, y0: i32, x1: i32, y1: i32,
 -- cycle, which the RDP expects as 4<<10 rather than 1<<10.
 fn rdpq_texture_rectangle(tile: u32, x0: i32, y0: i32, x1: i32, y1: i32, s: i32, t: i32) {
     rdpq_texture_rectangle_scaled(tile, x0, y0, x1, y1, s, t, 4096, 1024)
+}
+
+-- TEXTURE_RECTANGLE_FLIP (0x25): same 1:1 blit as texture_rectangle, but T
+-- advances per scanline in the flipped direction the RDP uses for Y-flip.
+fn rdpq_texture_rectangle_flip(tile: u32, x0: i32, y0: i32, x1: i32, y1: i32, s: i32, t: i32) {
+    if x1 <= x0 { return }
+    if y1 <= y0 { return }
+    let w0: u32 = (RDP_TEXTURE_RECT_FLIP << 24) | (to_fx102(x1 - 1) << 12) | to_fx102(y1 - 1)
+    let w1: u32 = ((tile & 7) << 24) | (to_fx102(x0) << 12) | to_fx102(y0)
+    dl_cmd(w0, w1)
+    let w2: u32 = (((s * 32) as u32 & 0xFFFF) << 16) | ((t * 32) as u32 & 0xFFFF)
+    let w3: u32 = (4096 as u32 << 16) | 1024
+    dl_cmd(w2, w3)
 }
 
 -- ── triangles ──────────────────────────────────────────────────────────────

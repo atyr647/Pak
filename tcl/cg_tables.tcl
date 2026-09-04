@@ -109,6 +109,7 @@ set ::pak::CG_API [dict create \
     {rdpq set_mode_standard_z} {rdpq_set_mode_standard_z} \
     {rdpq set_other_modes_raw} {rdpq_set_other_modes_raw} \
     {rdpq set_prim_color} {rdpq_set_prim_color} \
+    {rdpq set_prim_depth} {rdpq_set_prim_depth} \
     {rdpq set_scissor} {rdpq_set_scissor} \
     {rdpq set_tile} {rdpq_set_tile} \
     {rdpq set_tile_mask} {rdpq_set_tile_mask} \
@@ -120,6 +121,7 @@ set ::pak::CG_API [dict create \
     {rdpq sync_tile} {rdpq_sync_tile} \
     {rdpq texture_rectangle} {rdpq_texture_rectangle} \
     {rdpq texture_rectangle_scaled} {rdpq_texture_rectangle_scaled} \
+    {rdpq texture_rectangle_flip} {rdpq_texture_rectangle_flip} \
     {rdpq triangle} {rdpq_triangle} \
     {rdpq triangle_z} {rdpq_triangle_z} \
     {rdpq triangle_shade} {rdpq_triangle_shade} \

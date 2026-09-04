@@ -35,6 +35,7 @@
 	.extern rdpq_set_fog_color
 	.extern rdpq_set_env_color
 	.extern rdpq_set_prim_color
+	.extern rdpq_set_prim_depth
 	.extern rdpq_set_texture_image
 	.extern rdpq_set_tile
 	.extern rdpq_set_tile_mask
@@ -44,6 +45,7 @@
 	.extern rdpq_load_tlut
 	.extern rdpq_texture_rectangle
 	.extern rdpq_texture_rectangle_scaled
+	.extern rdpq_texture_rectangle_flip
 	.extern rdpq_triangle
 	.extern rdpq_triangle_z
 	.extern rdpq_triangle_shade

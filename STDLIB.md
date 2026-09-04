@@ -401,6 +401,7 @@ rejects a no.
 | `rdpq` | `set_mode_standard_z` | `rdpq_set_mode_standard_z` | yes | yes |
 | `rdpq` | `set_other_modes_raw` | `rdpq_set_other_modes_raw` | yes | yes |
 | `rdpq` | `set_prim_color` | `rdpq_set_prim_color` | yes | yes |
+| `rdpq` | `set_prim_depth` | `rdpq_set_prim_depth` | yes | yes |
 | `rdpq` | `set_scissor` | `rdpq_set_scissor` | yes | yes |
 | `rdpq` | `set_texture_image` | `rdpq_set_texture_image` | yes | yes |
 | `rdpq` | `set_tile` | `rdpq_set_tile` | yes | yes |
@@ -413,6 +414,7 @@ rejects a no.
 | `rdpq` | `sync_pipe` | `rdpq_sync_pipe` | yes | yes |
 | `rdpq` | `sync_tile` | `rdpq_sync_tile` | yes | yes |
 | `rdpq` | `texture_rectangle` | `rdpq_texture_rectangle` | yes | yes |
+| `rdpq` | `texture_rectangle_flip` | `rdpq_texture_rectangle_flip` | yes | yes |
 | `rdpq` | `texture_rectangle_scaled` | `rdpq_texture_rectangle_scaled` | yes | yes |
 | `rdpq` | `triangle` | `rdpq_triangle` | yes | yes |
 | `rdpq` | `triangle_shade` | `rdpq_triangle_shade` | yes | yes |
@@ -584,7 +586,7 @@ rejects a no.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**325 functions** across the module surface; **87** exist on the standalone HAL.
+**327 functions** across the module surface; **89** exist on the standalone HAL.
 
 <!-- END GENERATED MODULE API -->
 
@@ -701,12 +703,14 @@ use n64.rdpq             -- #include <rdpq.h> + <rdpq_gfx.h>
 | `rdpq.set_tri_z` | `(z0, z1, z2)` | Vertex Z for the next `triangle_tex_z` / `triangle_shade_tex_z` |
 | `rdpq.triangle_shade_tex_z` | `(tile, x0,y0,c0,s0,t0, x1,..., x2,...)` | Gouraud + ST + Z (RDP 0x0F); call `set_tri_z` first |
 | `rdpq.texture_rectangle` | `(...)` | Blit textured rect (see libdragon) |
+| `rdpq.texture_rectangle_flip` | `(tile, x0,y0,x1,y1,s,t)` | Y-flipped blit (RDP 0x25 TEXTURE_RECTANGLE_FLIP) |
 | `rdpq.texture_rectangle_scaled` | `(...)` | Scaled textured rect (see libdragon) |
 | `rdpq.set_blend_color` | `(color: u32)` | Blend color register |
 | `rdpq.set_fog_color` | `(color: u32)` | Fog color register |
 | `rdpq.set_fill_color` | `(color: u32)` | Fill color register |
 | `rdpq.set_env_color` | `(color: u32)` | Environment color register |
 | `rdpq.set_prim_color` | `(color: u32)` | Primitive color register |
+| `rdpq.set_prim_depth` | `(z: u32, dz: u32)` | Primitive Z / delta-Z (RDP 0x2E) |
 | `rdpq.set_z_image` | `(surface: *surface_t)` | Set Z-buffer image |
 | `rdpq.set_color_image` | `(surface: *surface_t)` | Set color render target |
 | `rdpq.set_tile` | `(tile, fmt, size, line, tmem, palette)` | Tile descriptor, wrap (mask 0) |

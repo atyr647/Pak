@@ -41,6 +41,7 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_set_fog_color \
     rdpq_set_env_color \
     rdpq_set_prim_color \
+    rdpq_set_prim_depth \
     rdpq_set_texture_image \
     rdpq_set_tile \
     rdpq_set_tile_mask \
@@ -50,6 +51,7 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_load_tlut \
     rdpq_texture_rectangle \
     rdpq_texture_rectangle_scaled \
+    rdpq_texture_rectangle_flip \
     rdpq_triangle \
     rdpq_triangle_z \
     rdpq_triangle_shade \
@@ -220,6 +222,7 @@ set ::pak::MIPS_API [dict create \
     {rdpq set_fog_color} {rdpq_set_fog_color} \
     {rdpq set_env_color} {rdpq_set_env_color} \
     {rdpq set_prim_color} {rdpq_set_prim_color} \
+    {rdpq set_prim_depth} {rdpq_set_prim_depth} \
     {rdpq set_texture_image} {rdpq_set_texture_image} \
     {rdpq set_tile} {rdpq_set_tile} \
     {rdpq set_tile_mask} {rdpq_set_tile_mask} \
@@ -229,6 +232,7 @@ set ::pak::MIPS_API [dict create \
     {rdpq load_tlut} {rdpq_load_tlut} \
     {rdpq texture_rectangle} {rdpq_texture_rectangle} \
     {rdpq texture_rectangle_scaled} {rdpq_texture_rectangle_scaled} \
+    {rdpq texture_rectangle_flip} {rdpq_texture_rectangle_flip} \
     {rdpq triangle} {rdpq_triangle} \
     {rdpq triangle_z} {rdpq_triangle_z} \
     {rdpq triangle_shade} {rdpq_triangle_shade} \

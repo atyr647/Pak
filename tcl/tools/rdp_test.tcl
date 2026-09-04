@@ -95,11 +95,16 @@ set EXPECTED {
     30000000 0003C000
     2420C144 001900C8
     00000000 10000400
+    2520C144 001900C8
+    00000000 10000400
     27000000 00000000
     2F000000 00506040
     3C887F10 88FCF279
     3A000000 112233FF
     39000000 445566FF
+    38000000 778899AA
+    3B000000 BBCCDDFF
+    2E000000 7FFF0000
     08000168 00500028
     00640000 FFFF2493
     000A0000 00006000
@@ -240,11 +245,16 @@ set NOTES {
     "LOAD_TLUT         0x30 tile 0, colours 0..15 (10.2 * 4)"
     "TEXTURE_RECTANGLE tile 0, (100,50)-(132,82)"
     "                  s/t = 0, dsdx = 4 texels/cycle, dtdy = 1"
+    "TEXTURE_RECT_FLIP 0x25, same rect as TEXTURE_RECTANGLE"
+    "                  s/t = 0, dsdx = 4 texels/cycle, dtdy = 1"
     "SYNC_PIPE         before the mode change"
     "SET_OTHER_MODES   cycle_type = 1CYCLE, alpha blending"
     "SET_COMBINE       texel passthrough"
     "SET_PRIM_COLOR    0x112233FF"
     "SET_BLEND_COLOR   0x445566FF"
+    "SET_FOG_COLOR     0x778899AA"
+    "SET_ENV_COLOR     0xBBCCDDFF"
+    "SET_PRIM_DEPTH    z=0x7FFF, dz=0"
     "TRIANGLE          sorted (10,10) (100,20) (40,90); YL/YM/YH"
     "                  XL / DxLDy   (lower minor edge)"
     "                  XH / DxHDy   (major edge)"
