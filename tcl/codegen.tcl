@@ -366,6 +366,49 @@ oo::class create pak::Codegen {
         return [my gen_expr $e]
     }
 
+    # Does any field of this declaration use a type the compiler synthesizes a
+    # typedef for (container, Vec, slice, tuple, Result)? Those typedefs are
+    # emitted as one block, so such a declaration has to follow it.
+    method type_uses_generated {t} {
+        if {[pak::isnil $t] || [llength $t] < 2} { return 0 }
+        switch -- [pak::kindof $t] {
+            TypeGeneric {
+                if {[pak::fval $t name] in {FixedList RingBuffer FixedMap Pool Vec List Slice Array}} { return 1 }
+            }
+            TypeSlice - TypeTuple - TypeResult { return 1 }
+        }
+        if {[lindex $t 0] ne "node"} { return 0 }
+        dict for {k v} [lindex $t 2] {
+            switch -- [lindex $v 0] {
+                node { if {[my type_uses_generated $v]} { return 1 } }
+                seq  { foreach it [pak::items $v] { if {[my type_uses_generated $it]} { return 1 } } }
+            }
+        }
+        return 0
+    }
+
+    method decl_needs_generated_type {decl} {
+        # A VariantDecl carries `cases`, each with its own `fields`; a struct or
+        # union carries `fields` directly.
+        set field_lists {}
+        switch -- [pak::kindof $decl] {
+            StructDecl - UnionDecl { lappend field_lists [pak::nfield $decl fields] }
+            VariantDecl {
+                foreach c [pak::items [pak::nfield $decl cases]] {
+                    lappend field_lists [pak::nfield $c fields]
+                }
+            }
+            default { return 0 }
+        }
+        foreach fl $field_lists {
+            foreach field [pak::items $fl] {
+                if {[catch {set ft [pak::nfield $field type]}]} continue
+                if {[my type_uses_generated $ft]} { return 1 }
+            }
+        }
+        return 0
+    }
+
     method type_struct_name {t} {
         if {[pak::kindof $t] eq "TypeName"} { return [pak::fval $t name] }
         if {[pak::kindof $t] eq "TypePointer" && [pak::kindof [pak::nfield $t inner]] eq "TypeName"} {
@@ -377,6 +420,22 @@ oo::class create pak::Codegen {
     method expr_type {e} {
         switch -- [pak::kindof $e] {
             Ident { return [my scope_get [pak::fval $e name]] }
+            Call {
+                # A container's slice()/items() yields the fat-pointer slice of
+                # its element type. Without this a `let ss = xs.slice()` was
+                # __auto_type with no known type, so ss[i] indexed the struct.
+                set fn [pak::nfield $e func]
+                if {[pak::kindof $fn] eq "DotAccess" && [pak::fval $fn field] in {slice items}} {
+                    set ot [my expr_type [pak::nfield $fn obj]]
+                    if {[pak::kindof $ot] eq "TypeGeneric" \
+                            && [pak::fval $ot name] in {FixedList Pool Vec}} {
+                        set gargs [pak::items [pak::nfield $ot args]]
+                        if {[llength $gargs] > 0} {
+                            return [pak::N TypeSlice inner [lindex $gargs 0] mutable 0]
+                        }
+                    }
+                }
+            }
             DotAccess {
                 # Recurse, so gs.cam.pos_x resolves as far as the fields are
                 # known, not just one level from a bare identifier.
@@ -564,7 +623,15 @@ oo::class create pak::Codegen {
                 return "($left $op $right)"
             }
             Assign {
-                return "[my gen_expr [pak::nfield $e target]] [pak::fval $e op] [my gen_expr [pak::nfield $e value]]"
+                set tgt [my gen_expr [pak::nfield $e target]]
+                set val [my gen_expr [pak::nfield $e value]]
+                # FixedList.init() lowers to {0}, which is an initializer, not
+                # an expression: `gs.stars = {0};` does not parse. Zero the
+                # object instead.
+                if {$val eq "{0}" && [pak::fval $e op] eq "="} {
+                    return "memset(&($tgt), 0, sizeof($tgt))"
+                }
+                return "$tgt [pak::fval $e op] $val"
             }
             AddrOf { return "&[my gen_expr [pak::nfield $e expr]]" }
             Deref  { return "*[my gen_expr [pak::nfield $e expr]]" }
@@ -1208,7 +1275,12 @@ oo::class create pak::Codegen {
                     return "({ int32_t _ri = ($a0); ($obj).data\[_ri\] = ($obj).data\[--($obj).len\]; })"
                 }
                 if {$method in {items slice}} {
-                    return "($elem_t \*){ .data = ($obj).data, .len = ($obj).len }"
+                    # A slice is the fat-pointer struct, not a bare pointer:
+                    # `(Star *){ .data = ..., .len = ... }` cast to a pointer
+                    # type and then used designators on it, so the result had
+                    # no .len to read and indexing it went through a pointer.
+                    set td [my slice_typedef [lindex $args 0]]
+                    return "($td)\{ .data = ($obj).data, .len = ($obj).len \}"
                 }
                 if {$method eq "len" && $na == 0} {
                     return "($obj).len"
@@ -1771,6 +1843,9 @@ oo::class create pak::Codegen {
                 my scope_set $name [pak::N TypePointer inner [pak::N TypeName name auto] nullable 0 mutable 0]
             } elseif {[pak::kindof [pak::nfield $s value]] eq "StructLit"} {
                 my scope_set $name [pak::N TypeName name [my struct_lit_c_name [pak::nfield $s value]]]
+            } else {
+                set vt [my expr_type [pak::nfield $s value]]
+                if {$vt ne "" && ![pak::isnil $vt]} { my scope_set $name $vt }
             }
         }
         set val [pak::nfield $s value]
@@ -3002,14 +3077,38 @@ oo::class create pak::Codegen {
         # types by value (a Result carries a LoadError, a fixed list carries
         # Star data[64]), so a user type declared after them is an unknown type
         # name at the point that matters.
+        # The dependency runs both ways: a container typedef embeds a user type
+        # (Star data[64]) and a user struct embeds a container (stars:
+        # FixedList(Star, 64)). So user types split around the container block --
+        # plain ones before it, ones with a container field after it -- giving
+        # Star, then _PakList_Star_64, then GameState.
+        # File-scope statics and consts were never put in scope, so `gs` had no
+        # type and every gs.field.method() call missed dispatch and fell
+        # through to member access. Seed them at the global frame (index 0)
+        # before any body is generated -- frame 0 is also what closure capture
+        # analysis treats as "not a capture", which is right for a global.
+        foreach decl $decls {
+            switch -- [pak::kindof $decl] {
+                StaticDecl - ConstDecl {
+                    set dt [pak::nfield $decl type]
+                    if {![pak::isnil $dt]} { my scope_set [pak::fval $decl name] $dt }
+                }
+            }
+        }
+
         set type_decls {}
+        set late_type_decls {}
         set body {}
         foreach decl $decls {
             if {[pak::kindof $decl] in {UseDecl AssetDecl ModuleDecl}} continue
             set r [my gen_decl $decl]
             if {$r eq ""} continue
             if {[pak::kindof $decl] in {StructDecl EnumDecl VariantDecl UnionDecl}} {
-                lappend type_decls $r; lappend type_decls ""
+                if {[my decl_needs_generated_type $decl]} {
+                    lappend late_type_decls $r; lappend late_type_decls ""
+                } else {
+                    lappend type_decls $r; lappend type_decls ""
+                }
             } else {
                 lappend body $r; lappend body ""
             }
@@ -3161,6 +3260,12 @@ oo::class create pak::Codegen {
             lappend out ""
             lappend out "/* -- Closures -- */"
             foreach cl $closure_lines { lappend out $cl }
+        }
+
+        if {[llength $late_type_decls] > 0} {
+            lappend out ""
+            lappend out "/* -- User types with generated-type fields -- */"
+            foreach l $late_type_decls { lappend out $l }
         }
 
         # Emit monomorphized generic specializations generated during body codegen.

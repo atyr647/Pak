@@ -64,6 +64,17 @@ struct Cube {
     uint32_t col2;
 };
 
+
+typedef struct { Star *data; int32_t len; } PakSlice_Star;
+
+/* -- Container types -- */
+typedef struct {
+    Star data[64];
+    int32_t len;
+} _PakList_Star_64;
+
+
+/* -- User types with generated-type fields -- */
 struct GameState {
     _PakList_Star_64 stars;
     Cube cube_a;
@@ -71,13 +82,6 @@ struct GameState {
     int32_t frame;
     bool running;
 };
-
-
-/* -- Container types -- */
-typedef struct {
-    Star data[64];
-    int32_t len;
-} _PakList_Star_64;
 
 enum { SCREEN_W = 320 };
 
@@ -254,9 +258,9 @@ void render_sky_ground(void) {
 }
 
 void render_stars(void) {
-    __auto_type ss = gs.stars.slice();
+    __auto_type ss = (PakSlice_Star){ .data = (gs.stars).data, .len = (gs.stars).len };
     for (int i = 0; i < (ss).len; i++) {
-        Star s = ss[i];
+        Star s = (ss).data[i];
         uint32_t col = 0x444444FF;
         if (s.z > 0.75f) {
             col = 0xFFFFFFFF;
@@ -277,8 +281,8 @@ void render_stars(void) {
 }
 
 void update(joypad_status_t pad) {
-    gs.cube_a.spin();
-    gs.cube_b.spin();
+    Cube_spin(&gs.cube_a);
+    Cube_spin(&gs.cube_b);
     if (pad.held.l) {
         gs.cube_a.spy -= 0.003f;
     }
@@ -298,11 +302,11 @@ void update(joypad_status_t pad) {
 }
 
 void init_scene(void) {
-    gs.stars = {0};
+    memset(&(gs.stars), 0, sizeof(gs.stars));
     __pak_srand(0xDEAD);
     int32_t cnt = 0;
     while (cnt < 64) {
-        gs.stars.push((Star){.sx = __pak_rand_range(0, 318), .sy = __pak_rand_range(0, 115), .z = __pak_rand_f()});
+        ((gs.stars).len < 64 ? ((gs.stars).data[(gs.stars).len++] = ((Star){.sx = __pak_rand_range(0, 318), .sy = __pak_rand_range(0, 115), .z = __pak_rand_f()}), 1) : 0);
         cnt += 1;
     }
     gs.cube_a = (Cube){.tx = -0.5f, .ty = 0.0f, .tz = 5.5f, .sc = 1.6f, .ry = 0.0f, .rx = 0.5f, .spy = 0.018f, .spx = 0.011f, .col0 = 0xFF5500FF, .col1 = 0xCC3300FF, .col2 = 0xFF8800FF};

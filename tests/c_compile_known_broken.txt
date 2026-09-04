@@ -6,4 +6,3 @@
 # so add one only with the bug it records written down.
 
 13_extern.pk64
-31_demo3d.pk64
