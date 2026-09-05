@@ -239,10 +239,14 @@ binary scan [string range $rom 8 11] Iu entry_pc
 ok "entry point"           [format %#010x $entry_pc] 0x80000400
 ok "title field"           [string trimright [string range $rom 32 51]] TESTROM
 ok "code at 0x1000"        [hexof [string range $rom 0x1000 0x1007]] 03e0000800000000
-# CRC1/CRC2 must be non-zero and stable for a fixed image (CIC-NUS-6102).
-# Golden CIC-NUS-6102 CRC for this exact image; matches the reference packer.
-binary scan [string range $rom 16 23] IuIu crc1 crc2
-ok "CRC1" [format %08X $crc1] FF4A4DEC
+# 0x10 is the payload size, not CRC1. The bootcode Pak ships (libdragon's
+# compat IPL3) reads the number of bytes to copy from ROM 0x1000 out of that
+# field, so pak::n64rom overwrites CRC1 with it after computing the checksum.
+# A zero or out-of-range value there makes the loader fall back to a flat
+# 1 MiB, which silently truncates any image bigger than that.
+binary scan [string range $rom 16 23] IuIu payload crc2
+ok "payload size at 0x10" $payload [string length [dict get $r image]]
+# CRC2 is the real CIC-NUS-6102 checksum for this exact image and is stable.
 ok "CRC2" [format %08X $crc2] 0EAFCDE4
 # Repacking the same image must reproduce the same ROM byte for byte.
 ok "packing is deterministic" [expr {[pak::n64rom [dict get $r image] "TESTROM"] eq $rom}] 1

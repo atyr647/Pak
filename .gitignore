@@ -6,6 +6,9 @@ dist/
 *.z64
 *.pakobj
 *.bin
+# ...except the bootcode. runtime/standalone/ipl3_compat.bin is source, not
+# build output: without it `pak link` produces a ROM that cannot boot.
+!runtime/standalone/ipl3_compat.bin
 
 # Editor / OS
 .DS_Store

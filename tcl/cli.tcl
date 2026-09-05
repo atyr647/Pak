@@ -394,14 +394,21 @@ proc pak::cli_build_mips_rom {parsed root out opts config project_name rom_title
         return -code error $result
     }
     set image [dict get $result image]
-    if {[catch {set rom [pak::n64rom $image $name "" $rom_bytes]} err]} {
+    # `pak build --backend mips -o game.z64` gets the same bootcode as
+    # `pak link`; passing "" here left the IPL3 region zeroed and produced a
+    # ROM that could not boot.
+    if {[catch {set rom [pak::n64rom $image $name [pak::n64rom_default_ipl3] $rom_bytes]} err]} {
         puts stderr "rom error: $err"
         exit 1
     }
     set f [open $out wb]; puts -nonewline $f $rom; close $f
-    binary scan [string range $rom 16 23] IuIu crc1 crc2
-    puts [format "ROM: %s  (%d bytes)  CRC1=%08X  CRC2=%08X" \
-        $out [string length $rom] $crc1 $crc2]
+    # 0x10 carries the payload size, not CRC1 -- libdragon's compat IPL3 reads
+    # it there. Printing it as a CRC named the wrong thing.
+    binary scan [string range $rom 16 23] IuIu payload crc2
+    binary scan [string range $rom 64 67] Iu ipl3_head
+    set boot [expr {$ipl3_head == 0 ? "NO IPL3 (will not boot)" : "IPL3 ok"}]
+    puts [format "ROM: %s  (%d bytes)  payload=%d  CRC2=%08X  %s" \
+        $out [string length $rom] $payload $crc2 $boot]
     # The ROM boots at _start (boot.S), not main: printing main's address here
     # named the wrong symbol as the entry point.
     if {[dict exists $result symbols _start]} {
@@ -737,6 +744,7 @@ proc pak::cmd_link {opts} {
     }
     if {$out ne ""} {
         set ipl3 [pak::n64rom_ipl3_from_z64 [dict get $opts ipl3]]
+        if {$ipl3 eq ""} { set ipl3 [pak::n64rom_default_ipl3] }
         set size_mib [dict get $opts size]
         if {$size_mib eq ""} { set size_mib 4 }
         if {![string is integer -strict $size_mib]} {
@@ -748,9 +756,11 @@ proc pak::cmd_link {opts} {
             exit 1
         }
         set f [open $out wb]; puts -nonewline $f $rom; close $f
-        binary scan [string range $rom 16 23] IuIu crc1 crc2
-        puts [format "ROM: %s  (%d bytes)  CRC1=%08X  CRC2=%08X" \
-            $out [string length $rom] $crc1 $crc2]
+        binary scan [string range $rom 16 23] IuIu payload crc2
+        binary scan [string range $rom 64 67] Iu ipl3_head
+        set boot [expr {$ipl3_head == 0 ? "NO IPL3 (will not boot)" : "IPL3 ok"}]
+        puts [format "ROM: %s  (%d bytes)  payload=%d  CRC2=%08X  %s" \
+            $out [string length $rom] $payload $crc2 $boot]
     }
     set entry [dict get $opts entry]
     if {[dict exists $result symbols $entry]} {

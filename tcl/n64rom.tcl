@@ -107,6 +107,17 @@ proc pak::n64rom_ipl3_from_z64 {path} {
 
 # ── ROM assembly ─────────────────────────────────────────────────────────────
 
+# The bootcode shipped with Pak: libdragon's IPL3, compat build, public domain.
+# See runtime/standalone/ipl3_compat.README.md. Returns "" if the file is
+# missing, which leaves the region zeroed -- a ROM that cannot boot, but a
+# `pak link` that still tells you what it produced.
+proc pak::n64rom_default_ipl3 {} {
+    set f [file join $::pak::CLI_ROOT runtime standalone ipl3_compat.bin]
+    if {![file exists $f]} { return "" }
+    set fh [open $f rb]; set d [read $fh]; close $fh
+    return $d
+}
+
 proc pak::n64rom {prog_bytes title {ipl3 ""} {rom_size ""}} {
     if {[string length $ipl3] > $::pak::ROM_IPL3_SIZE} {
         set ipl3 [string range $ipl3 0 [expr {$::pak::ROM_IPL3_SIZE - 1}]]
@@ -128,6 +139,15 @@ proc pak::n64rom {prog_bytes title {ipl3 ""} {rom_size ""}} {
 
     lassign [pak::n64_crc $rom] crc1 crc2
     set rom [string replace $rom 16 23 [binary format II $crc1 $crc2]]
+
+    # libdragon's compat IPL3 reads the payload size from 0x10, the field a
+    # conventional ROM uses for CRC1. It does not check the header CRC -- the
+    # CIC checks the IPL3, not the header -- and given a zero or out-of-range
+    # value it falls back to copying a flat 1 MiB, which truncates any image
+    # larger than that. So the size goes in, after the CRC is computed over
+    # the real bytes. CRC2 at 0x14 is left alone.
+    set payload [expr {[string length $prog_bytes]}]
+    set rom [string replace $rom 16 19 [binary format I $payload]]
 
     # Cart-size pad. Flashcarts (and FZ) crash on a 2.9 MB image; only
     # 4/8/16/32/64 MiB are valid. CRC is already baked and does not cover this.
