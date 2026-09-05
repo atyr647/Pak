@@ -22,7 +22,7 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
-int32_t abs(int32_t x) {
+int32_t abs_i32(int32_t x) {
     if (x < 0) {
         return -x;
     }
@@ -79,7 +79,7 @@ int main(void) {
         }
         sum += k;
     }
-    sink = (((((abs(-3) + sign(x)) + count) + n) + i) + sum);
+    sink = (((((abs_i32(-3) + sign(x)) + count) + n) + i) + sum);
     return 0;
 }
 

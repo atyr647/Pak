@@ -57,10 +57,19 @@ oo::class create pak::Checker {
     method check_libdragon_collision {decl} {
         if {$backend ne "c"} return
         set name [pak::fval $decl name]
-        if {![dict exists $::pak::LIBDRAGON_RESERVED $name]} return
-        my warn W004 "'$name' is already defined by libdragon" \
-            "libdragon's headers declare '$name' (a deprecated shim), so the\
-             generated C will not compile. Rename the function." $decl
+        if {[dict exists $::pak::LIBDRAGON_RESERVED $name]} {
+            my warn W004 "'$name' is already defined by libdragon" \
+                "libdragon's headers declare '$name' (a deprecated shim), so the\
+                 generated C will not compile. Rename the function." $decl
+            return
+        }
+        if {[dict exists $::pak::LIBC_RESERVED $name]} {
+            my warn W004 "'$name' is already defined by the C standard library" \
+                "newlib declares '$name', and libdragon.h pulls it in. It may\
+                 appear to work on a host compiler and conflict when\
+                 cross-compiled, because i32 is `long` on mips64-elf and `int`\
+                 on a 64-bit host. Rename the function." $decl
+        }
     }
 
     # ── top-level program walk ────────────────────────────────────────────────

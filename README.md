@@ -311,6 +311,10 @@ REGEN=1 tclsh tcl/tools/golden_test.tcl   # re-bless the goldens (read them firs
 tclsh tcl/tools/n64enc_test.tcl           # MIPS instruction encodings
 tclsh tcl/tools/n64link_test.tcl          # linker + ROM packer
 tclsh tcl/tools/libdragon_api_test.tcl    # generated C vs libdragon's REAL headers
+tclsh tcl/tools/libdragon_symbols.tcl     # STDLIB's libdragon column is the truth
+tools/build_n64_toolchain.sh /opt/pak-n64 # mips64-elf gcc (~40 min, once)
+N64_INST=/opt/pak-n64 tools/build_libdragon.sh
+N64_INST=/opt/pak-n64 tclsh tcl/tools/libdragon_link_test.tcl   # real ROM
 tclsh tcl/tools/dlist_test.tcl            # the RDP disassembler behind `pak dlist`
 tclsh tcl/tools/pixel_test.tcl            # render on angrylion, compare pixels
 bash  tcl/tools/lint.sh                   # nagelfar static lint
@@ -332,13 +336,25 @@ linker, objgen for every canonical example, the RDP display-list disassembler,
 a pixel-level render against the angrylion reference, and a full
 source-to-`.z64` build), and nagelfar lint.
 
-The libdragon gate is the one that answers "would this actually build?".
+There are three libdragon gates, and each answers a question the one before
+it structurally cannot.
 `tcl/tools/c_compile_test.tcl` stubs libdragon, declaring every symbol as
 `long sym();` — an unprototyped declaration that accepts any argument count and
 any types — so a missing header, a renamed function, the wrong arity and the
 wrong argument types all compile clean there and fail at a user's `make`.
 `tcl/tools/libdragon_api_test.tcl` compiles the same C against real headers
 pinned by `tools/fetch_libdragon.sh`, and keeps a shrinking debt list.
+
+That still runs the *host* compiler, so it cannot see anything the target
+decides — on `mips64-elf` a `long` is 32 bits, which is why `fn abs(x: i32)`
+matched C's `abs(int)` on the host and conflicted when cross-compiled — and it
+never links. `tcl/tools/libdragon_link_test.tcl` builds every example with the
+real `mips64-elf-gcc` under libdragon's own `-Werror` flags, then takes
+`pak init` → `pak build` → `make` all the way to a bootable `.z64` and checks
+its header and IPL3. `tools/build_n64_toolchain.sh` builds the toolchain
+(binutils 2.45, gcc 16.2.0, newlib 4.4.0 — libdragon's own pinned versions);
+both gates skip cleanly when it is absent rather than failing CI over a
+40-minute build.
 
 The fuzzer mutates the corpus and demands the compiler answer with a
 diagnostic, never a Tcl stack trace: the lexer may raise `LEXERROR`, the parser

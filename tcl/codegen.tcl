@@ -2134,6 +2134,16 @@ oo::class create pak::Codegen {
     # the C is __auto_type), fall back to the arms: every case name resolves to
     # exactly one variant or enum. Without this the switch is on the struct
     # rather than its tag, which no compiler accepts.
+    # Does this match already spell a catch-all (`_`)? Then C has a real
+    # default and must not be given a second one.
+    method match_has_default {arms} {
+        foreach arm $arms {
+            set pat [pak::nfield $arm pattern]
+            if {[pak::kindof $pat] eq "Ident" && [pak::fval $pat name] eq "_"} { return 1 }
+        }
+        return 0
+    }
+
     method match_type_from_arms {arms} {
         foreach arm $arms {
             set pat [pak::nfield $arm pattern]
@@ -2477,6 +2487,17 @@ oo::class create pak::Codegen {
             my scope_pop
             lappend lines "${inner2_pad}break;"
             lappend lines "${inner_pad}}"
+        }
+        # Pak's checker proves a match exhaustive (E301); C's switch cannot
+        # know that, because an enum variable may legally hold any value of
+        # its underlying type. Without this GCC reports "control reaches end
+        # of non-void function" for a match whose every arm returns -- and
+        # libdragon builds with -Werror, so that is a hard failure in a real
+        # project. Saying the gap is unreachable is exactly what the checker
+        # already guarantees. A match that already has a `_` arm has a real
+        # default, so it is left alone.
+        if {![my match_has_default $arms]} {
+            lappend lines "${inner_pad}default: __builtin_unreachable();"
         }
         lappend lines "${pad}}"
         return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]

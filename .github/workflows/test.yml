@@ -118,6 +118,32 @@ jobs:
           bash tools/fetch_tiny3d.sh
           tclsh tcl/tools/libdragon_symbols.tcl
 
+      # Everything above runs the HOST compiler, so it cannot see anything the
+      # TARGET decides -- a 32-bit long where the host's is 64, struct layout,
+      # alignment -- and it never links. This builds the real mips64-elf
+      # toolchain and libdragon, then cross-compiles every example with
+      # libdragon's own -Werror flags and takes a scaffolded project all the
+      # way to a bootable .z64.
+      #
+      # The toolchain is ~40 minutes and 9 GB, so it is cached; the gate skips
+      # cleanly when the cache is cold rather than failing.
+      - name: Cache mips64-elf toolchain + libdragon
+        id: n64-toolchain
+        uses: actions/cache@v4
+        with:
+          path: /opt/pak-n64
+          key: n64-toolchain-binutils2.45-gcc16.2.0-newlib4.4.0-libdragon-c4a7e119e
+
+      - name: Build mips64-elf toolchain (cold cache only)
+        if: steps.n64-toolchain.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get install -y libgmp-dev libmpfr-dev libmpc-dev texinfo bison flex
+          bash tools/build_n64_toolchain.sh /opt/pak-n64
+          N64_INST=/opt/pak-n64 bash tools/build_libdragon.sh
+
+      - name: Cross-compile and link a real ROM
+        run: N64_INST=/opt/pak-n64 tclsh tcl/tools/libdragon_link_test.tcl
+
       # Every diagnostic the corpus exercises is a mistake someone thought to
       # write down. This finds the ones nobody did: mutated sources that must
       # still come back as an error message with a line number rather than as

@@ -186,9 +186,9 @@
 
 
 	.section .text
-	.globl abs
-	.type abs, @function
-abs:
+	.globl abs_i32
+	.type abs_i32, @function
+abs_i32:
     addiu $sp, $sp, -320
     sw $ra, 316($sp)
     sw $fp, 312($sp)
@@ -201,19 +201,19 @@ abs:
     nop
     lw $t9, 136($sp)
     subu $v0, $zero, $t9
-    j .Labs_ret_0
+    j .Labs_i32_ret_0
     nop
 .Lif_end_1:
     lw $v0, 136($sp)
-    j .Labs_ret_0
+    j .Labs_i32_ret_0
     nop
-.Labs_ret_0:
+.Labs_i32_ret_0:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
     jr $ra
     nop
-	.size abs, . - abs
+	.size abs_i32, . - abs_i32
 
 	.section .text
 	.globl sign
@@ -404,7 +404,7 @@ main:
     sw $t5, 112($sp)
     sw $t4, 116($sp)
     sw $t3, 120($sp)
-    jal abs
+    jal abs_i32
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)

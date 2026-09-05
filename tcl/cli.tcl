@@ -841,7 +841,8 @@ entry {
         -- Poll once per frame, BEFORE reading. Without this the buttons never
         -- change: read() returns whatever the last poll captured.
         controller.poll()
-        let input = controller.read(0)
+        let pad = controller.read(0)
+        if pad.held.start { break }
 
         -- Begin frame
         let disp = display.get()

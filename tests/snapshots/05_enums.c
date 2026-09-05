@@ -67,6 +67,7 @@ Direction opposite(Direction dir) {
             return Direction_east;
             break;
         }
+        default: __builtin_unreachable();
     }
 }
 
@@ -96,6 +97,7 @@ int main(void) {
             sink = 3;
             break;
         }
+        default: __builtin_unreachable();
     }
     switch (dir) {
         case Direction_north:

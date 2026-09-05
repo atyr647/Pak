@@ -356,6 +356,7 @@ void Player_collect_pickups(Player * self) {
             {
                 break;
             }
+            default: __builtin_unreachable();
         }
         i += 1;
     }
@@ -442,6 +443,7 @@ void draw_player(Player * p, int32_t cam_x) {
             color = 0xFFFFAAFF;
             break;
         }
+        default: __builtin_unreachable();
     }
     pak_rdpq_set_fill_color(color);
     rdpq_fill_rectangle(sx, py, (sx + PLAYER_W), (py + PLAYER_H));
@@ -472,6 +474,7 @@ void draw_pickup(Pickup p, int32_t cam_x) {
         {
             break;
         }
+        default: __builtin_unreachable();
     }
 }
 
@@ -563,6 +566,7 @@ void update(GameState * gs, pak_joypad_status_t pad) {
             update_gameover(gs, pad);
             break;
         }
+        default: __builtin_unreachable();
     }
 }
 
@@ -636,6 +640,7 @@ void render(GameState * gs) {
             render_gameover();
             break;
         }
+        default: __builtin_unreachable();
     }
     rdpq_detach_show();
 }

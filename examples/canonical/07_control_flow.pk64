@@ -1,7 +1,7 @@
 -- 07_control_flow.pk64
 -- Demonstrates: if/elif/else, loop, while, do-while, for, break, continue.
 
-fn abs(x: i32) -> i32 {
+fn abs_i32(x: i32) -> i32 {
     if x < 0 { return -x }
     return x
 }
@@ -61,5 +61,5 @@ entry {
     }
 
     -- use results
-    sink = abs(-3) + sign(x) + count + n + i + sum
+    sink = abs_i32(-3) + sign(x) + count + n + i + sum
 }

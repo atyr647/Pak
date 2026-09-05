@@ -5,17 +5,22 @@
 #   make run      — build and launch in ares emulator
 #   make clean    — remove build artifacts
 
+# BUILD_DIR has to be set BEFORE n64.mk is included: it defaults to `.` there,
+# and every rule below is written in terms of it.
+BUILD_DIR       = build
+
 include $(N64_INST)/include/n64.mk
 
 PROJECT_NAME    = mygame
-ROM_TITLE       = 'My Cool Game'
-SAVE_TYPE       = EEPROM_4K
+
+# n64.mk's own names for these -- its %.z64 rule reads them.
+N64_ROM_TITLE   = 'My Cool Game'
+N64_ROM_SAVETYPE = 
 
 RESOLUTION      = RESOLUTION_320x240
 BIT_DEPTH       = DEPTH_16_BPP
 FRAMEBUFFERS    = 3
 
-BUILD_DIR       = build
 RUNTIME_DIR     = $(shell pak --runtime-dir 2>/dev/null || echo runtime)
 
 
@@ -39,18 +44,14 @@ LDFLAGS +=
 
 all: $(PROJECT_NAME).z64
 
-# Link
-$(PROJECT_NAME).elf: $(OBJS)
-	$(CC) $(OBJS) $(LDFLAGS) $(N64_LDFLAGS) -o $@
+# n64.mk supplies the %.elf and %.z64 rules; these just declare what they are
+# made of. Reimplementing them here is what made every generated project fail
+# to link: N64_LDFLAGS holds raw linker options (--gc-sections, --wrap
+# __do_global_ctors) which have to reach the linker as -Wl, and the link has
+# to go through the C++ driver with -lc -mabi=o64, which is what n64.mk does.
+$(BUILD_DIR)/$(PROJECT_NAME).elf: $(OBJS)
 
-# ROM
-$(PROJECT_NAME).z64: $(PROJECT_NAME).elf
-	$(N64TOOL) \
-	    --title $(ROM_TITLE) \
-	    --savetype $(SAVE_TYPE) \
-	    --output $@ \
-	    --header $(N64_INST)/mips64-elf/lib/header \
-	    $<
+$(PROJECT_NAME).z64: $(BUILD_DIR)/$(PROJECT_NAME).elf
 
 # Compile C sources
 $(BUILD_DIR)/%.o: %.c
@@ -92,17 +93,22 @@ clean:
 #   make run      — build and launch in ares emulator
 #   make clean    — remove build artifacts
 
+# BUILD_DIR has to be set BEFORE n64.mk is included: it defaults to `.` there,
+# and every rule below is written in terms of it.
+BUILD_DIR       = build
+
 include $(N64_INST)/include/n64.mk
 
 PROJECT_NAME    = g2
-ROM_TITLE       = 'A Very Long Title Th'
-SAVE_TYPE       = EEPROM_16K
+
+# n64.mk's own names for these -- its %.z64 rule reads them.
+N64_ROM_TITLE   = 'A Very Long Title Th'
+N64_ROM_SAVETYPE = eeprom16k
 
 RESOLUTION      = RESOLUTION_640x480
 BIT_DEPTH       = DEPTH_32_BPP
 FRAMEBUFFERS    = 2
 
-BUILD_DIR       = build
 RUNTIME_DIR     = $(shell pak --runtime-dir 2>/dev/null || echo runtime)
 
 DFS_FILE        = filesystem/g2.pakfs
@@ -126,18 +132,14 @@ LDFLAGS +=
 
 all: $(PROJECT_NAME).z64
 
-# Link
-$(PROJECT_NAME).elf: $(OBJS)
-	$(CC) $(OBJS) $(LDFLAGS) $(N64_LDFLAGS) -o $@
+# n64.mk supplies the %.elf and %.z64 rules; these just declare what they are
+# made of. Reimplementing them here is what made every generated project fail
+# to link: N64_LDFLAGS holds raw linker options (--gc-sections, --wrap
+# __do_global_ctors) which have to reach the linker as -Wl, and the link has
+# to go through the C++ driver with -lc -mabi=o64, which is what n64.mk does.
+$(BUILD_DIR)/$(PROJECT_NAME).elf: $(OBJS)
 
-# ROM
-$(PROJECT_NAME).z64: $(PROJECT_NAME).elf $(DFS_FILE)
-	$(N64TOOL) \
-	    --title $(ROM_TITLE) \
-	    --savetype $(SAVE_TYPE) \
-	    --output $@ \
-	    --header $(N64_INST)/mips64-elf/lib/header \
-	    $< $(DFS_FILE)
+$(PROJECT_NAME).z64: $(BUILD_DIR)/$(PROJECT_NAME).elf $(DFS_FILE)
 
 # Compile C sources
 $(BUILD_DIR)/%.o: %.c
@@ -196,6 +198,10 @@ clean:
 #   make run      — build and launch in ares emulator
 #   make clean    — remove build artifacts
 
+# BUILD_DIR has to be set BEFORE n64.mk is included: it defaults to `.` there,
+# and every rule below is written in terms of it.
+BUILD_DIR       = build
+
 include $(N64_INST)/include/n64.mk
 
 ifndef TINY3D_INST
@@ -207,14 +213,15 @@ TINY3D_CFLAGS  := -I$(TINY3D_INST)/include -DPAK_HAS_TINY3D=1
 TINY3D_LDFLAGS := -L$(TINY3D_INST)/lib -lt3d
 
 PROJECT_NAME    = m3
-ROM_TITLE       = "It's Mine"
-SAVE_TYPE       = EEPROM_4K
+
+# n64.mk's own names for these -- its %.z64 rule reads them.
+N64_ROM_TITLE   = "It's Mine"
+N64_ROM_SAVETYPE = 
 
 RESOLUTION      = RESOLUTION_320x240
 BIT_DEPTH       = DEPTH_16_BPP
 FRAMEBUFFERS    = 3
 
-BUILD_DIR       = build
 RUNTIME_DIR     = $(shell pak --runtime-dir 2>/dev/null || echo runtime)
 
 DFS_FILE        = filesystem/m3.pakfs
@@ -243,18 +250,14 @@ LDFLAGS += $(TINY3D_LDFLAGS)
 
 all: $(PROJECT_NAME).z64
 
-# Link
-$(PROJECT_NAME).elf: $(OBJS)
-	$(CC) $(OBJS) $(LDFLAGS) $(N64_LDFLAGS) -o $@
+# n64.mk supplies the %.elf and %.z64 rules; these just declare what they are
+# made of. Reimplementing them here is what made every generated project fail
+# to link: N64_LDFLAGS holds raw linker options (--gc-sections, --wrap
+# __do_global_ctors) which have to reach the linker as -Wl, and the link has
+# to go through the C++ driver with -lc -mabi=o64, which is what n64.mk does.
+$(BUILD_DIR)/$(PROJECT_NAME).elf: $(OBJS)
 
-# ROM
-$(PROJECT_NAME).z64: $(PROJECT_NAME).elf $(DFS_FILE)
-	$(N64TOOL) \
-	    --title $(ROM_TITLE) \
-	    --savetype $(SAVE_TYPE) \
-	    --output $@ \
-	    --header $(N64_INST)/mips64-elf/lib/header \
-	    $< $(DFS_FILE)
+$(PROJECT_NAME).z64: $(BUILD_DIR)/$(PROJECT_NAME).elf $(DFS_FILE)
 
 # Assemble MIPS sources (.s)
 $(BUILD_DIR)/%.o: %.s
@@ -326,6 +329,10 @@ clean:
 #   make run      — build and launch in ares emulator
 #   make clean    — remove build artifacts
 
+# BUILD_DIR has to be set BEFORE n64.mk is included: it defaults to `.` there,
+# and every rule below is written in terms of it.
+BUILD_DIR       = build
+
 include $(N64_INST)/include/n64.mk
 
 ifndef TINY3D_INST
@@ -337,14 +344,15 @@ TINY3D_CFLAGS  := -I$(TINY3D_INST)/include -DPAK_HAS_TINY3D=1
 TINY3D_LDFLAGS := -L$(TINY3D_INST)/lib -lt3d
 
 PROJECT_NAME    = m4
-ROM_TITLE       = '3D Demo'
-SAVE_TYPE       = FLASHRAM
+
+# n64.mk's own names for these -- its %.z64 rule reads them.
+N64_ROM_TITLE   = '3D Demo'
+N64_ROM_SAVETYPE = flashram
 
 RESOLUTION      = RESOLUTION_320x240
 BIT_DEPTH       = DEPTH_16_BPP
 FRAMEBUFFERS    = 3
 
-BUILD_DIR       = build
 RUNTIME_DIR     = $(shell pak --runtime-dir 2>/dev/null || echo runtime)
 
 
@@ -371,18 +379,14 @@ LDFLAGS += $(TINY3D_LDFLAGS)
 
 all: $(PROJECT_NAME).z64
 
-# Link
-$(PROJECT_NAME).elf: $(OBJS)
-	$(CC) $(OBJS) $(LDFLAGS) $(N64_LDFLAGS) -o $@
+# n64.mk supplies the %.elf and %.z64 rules; these just declare what they are
+# made of. Reimplementing them here is what made every generated project fail
+# to link: N64_LDFLAGS holds raw linker options (--gc-sections, --wrap
+# __do_global_ctors) which have to reach the linker as -Wl, and the link has
+# to go through the C++ driver with -lc -mabi=o64, which is what n64.mk does.
+$(BUILD_DIR)/$(PROJECT_NAME).elf: $(OBJS)
 
-# ROM
-$(PROJECT_NAME).z64: $(PROJECT_NAME).elf
-	$(N64TOOL) \
-	    --title $(ROM_TITLE) \
-	    --savetype $(SAVE_TYPE) \
-	    --output $@ \
-	    --header $(N64_INST)/mips64-elf/lib/header \
-	    $<
+$(PROJECT_NAME).z64: $(BUILD_DIR)/$(PROJECT_NAME).elf
 
 # Assemble MIPS sources (.s)
 $(BUILD_DIR)/%.o: %.s

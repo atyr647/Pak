@@ -123,10 +123,14 @@ proc pak::generate_makefile {project_name rom_title c_files pakfs_archive \
     set res_define "RESOLUTION_${res_w}x${res_h}"
     set depth_define "DEPTH_${bit_depth}_BPP"
 
-    set save_map [dict create none EEPROM_4K eeprom4k EEPROM_4K eeprom16k EEPROM_16K \
-        sram256k SRAM_256K sram768k SRAM_768K flashram FLASHRAM]
+    # n64tool's savetype names, which are lowercase and not the EEPROM_4K-style
+    # constants this used to emit. `none` is the ABSENCE of a savetype:
+    # n64.mk passes --savetype only when N64_ROM_SAVETYPE is non-empty, and
+    # n64tool rejects the literal string "none".
+    set save_map [dict create none {} eeprom4k eeprom4k eeprom16k eeprom16k \
+        sram256k sram256k sram768k sram768k sram1m sram1m flashram flashram]
     set st [string tolower $save_type]
-    set save_str [expr {[dict exists $save_map $st] ? [dict get $save_map $st] : "EEPROM_4K"}]
+    set save_str [expr {[dict exists $save_map $st] ? [dict get $save_map $st] : ""}]
 
     set asset_rules [pak::_mf_asset_rules $use_tiny3d]
     set pakfs_rule [expr {$pakfs_archive ne "" ? [pak::_mf_pakfs_rule $project_name] : ""}]
@@ -162,17 +166,22 @@ TINY3D_LDFLAGS := -L\$(TINY3D_INST)/lib -lt3d
 #   make run      — build and launch in ares emulator
 #   make clean    — remove build artifacts
 
+# BUILD_DIR has to be set BEFORE n64.mk is included: it defaults to `.` there,
+# and every rule below is written in terms of it.
+BUILD_DIR       = build
+
 include \$(N64_INST)/include/n64.mk
 $tiny3d_check
 PROJECT_NAME    = $project_name
-ROM_TITLE       = $rom_title_repr
-SAVE_TYPE       = $save_str
+
+# n64.mk's own names for these -- its %.z64 rule reads them.
+N64_ROM_TITLE   = $rom_title_repr
+N64_ROM_SAVETYPE = $save_str
 
 RESOLUTION      = $res_define
 BIT_DEPTH       = $depth_define
 FRAMEBUFFERS    = $framebuffers
 
-BUILD_DIR       = build
 RUNTIME_DIR     = \$(shell pak --runtime-dir 2>/dev/null || echo runtime)
 $dfs_include
 
@@ -193,18 +202,14 @@ LDFLAGS += $tiny3d_ldflags
 
 all: \$(PROJECT_NAME).z64
 
-# Link
-\$(PROJECT_NAME).elf: \$(OBJS)
-\t\$(CC) \$(OBJS) \$(LDFLAGS) \$(N64_LDFLAGS) -o \$@
+# n64.mk supplies the %.elf and %.z64 rules; these just declare what they are
+# made of. Reimplementing them here is what made every generated project fail
+# to link: N64_LDFLAGS holds raw linker options (--gc-sections, --wrap
+# __do_global_ctors) which have to reach the linker as -Wl, and the link has
+# to go through the C++ driver with -lc -mabi=o64, which is what n64.mk does.
+\$(BUILD_DIR)/\$(PROJECT_NAME).elf: \$(OBJS)
 
-# ROM
-\$(PROJECT_NAME).z64: \$(PROJECT_NAME).elf$dfs_dep
-\t\$(N64TOOL) \\
-\t    --title \$(ROM_TITLE) \\
-\t    --savetype \$(SAVE_TYPE) \\
-\t    --output \$@ \\
-\t    --header \$(N64_INST)/mips64-elf/lib/header \\
-\t    \$<$dfs_dep
+\$(PROJECT_NAME).z64: \$(BUILD_DIR)/\$(PROJECT_NAME).elf$dfs_dep
 
 $compile_rules
 

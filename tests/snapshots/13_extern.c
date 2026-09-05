@@ -38,6 +38,7 @@ static uint32_t sink = 0;
 int main(void) {
     memset(&buf[0], 0, 64);
     uint8_t src[8]; /* undefined */
+    memset(&src[0], 0xA5, 8);
     memcpy(&buf[0], &src[0], 8);
     char * msg = "hello";
     sink = strlen(msg);

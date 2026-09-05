@@ -362,6 +362,7 @@ void render_screen(GameState * gs) {
             rdpq_fill_rectangle(0, 0, SCREEN_W, SCREEN_H);
             break;
         }
+        default: __builtin_unreachable();
     }
     rdpq_detach_show();
 }
@@ -419,6 +420,7 @@ int main(void) {
                 }
                 break;
             }
+            default: __builtin_unreachable();
         }
         render_screen(&gs);
         gs.frame += 1;

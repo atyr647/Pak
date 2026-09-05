@@ -71,6 +71,7 @@ int main(void) {
                 sink = -3;
                 break;
             }
+            default: __builtin_unreachable();
         }
     }
     __auto_type d = divide(10, 2);
