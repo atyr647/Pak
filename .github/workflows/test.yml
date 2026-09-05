@@ -162,6 +162,15 @@ jobs:
       - name: Flat linker matches GNU ld, byte for byte
         run: PATH=/opt/pak-n64/bin:$PATH tclsh tcl/tools/n64link_gas_test.tcl
 
+      # Every other simulator test runs the codegen's RECORDS from `main`, so
+      # runtime/standalone/boot.S had never executed -- not the stack pointer,
+      # not the .bss zero-fill, not the exception-vector install, not the
+      # handoff to main -- and neither had the encoded bytes. This links the
+      # image, disassembles it with objdump (the bytes Pak produced, at the
+      # addresses Pak assigned), and runs it from _start.
+      - name: The linked image runs from _start
+        run: PATH=/opt/pak-n64/bin:$PATH tclsh tcl/tools/rom_exec_test.tcl
+
       # Every diagnostic the corpus exercises is a mistake someone thought to
       # write down. This finds the ones nobody did: mutated sources that must
       # still come back as an error message with a line number rather than as

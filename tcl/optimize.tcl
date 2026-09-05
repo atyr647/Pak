@@ -95,6 +95,14 @@ proc pak::opt::regs_written {op ops} {
     if {[in $op {mult multu div divu}]} {
         return {HI LO}
     }
+    # An FP compare writes the coprocessor condition bit, which bc1t/bc1f read
+    # and nothing else names. Without saying so, the delay-slot filler put
+    # `c.lt.s` in the delay slot of the `bc1f` that tests it -- the branch was
+    # decided on the previous comparison's result, so `if a < b` took the wrong
+    # arm -- and the scheduler was free to move one across the other.
+    if {[regexp {^c\.[a-z]+\.[sd]$} $op]} {
+        return {FCC}
+    }
     if {[in $op {jal jalr}]} {
         return {{$ra} {$v0} {$v1} {$a0}}
     }
@@ -106,6 +114,7 @@ proc pak::opt::regs_written {op ops} {
 
 # Return a list (deduped, in first-seen order) of registers read.
 proc pak::opt::regs_read {op ops} {
+    if {[in $op {bc1t bc1f}]} { return {FCC} }
     set regs [regs_in $ops]
     foreach w [regs_written $op $ops] { set regs [drop_reg $regs $w] }
     return $regs

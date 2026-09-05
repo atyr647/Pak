@@ -405,10 +405,12 @@ main:
     move $t9, $v0
     lw $t6, 144($sp)
     lwc1 $f12, 136($sp)
-    move $t5, $t4
+    cvt.w.s $f12, $f12
+    mfc1 $t5, $f12
     addu $t7, $t6, $t5
     lwc1 $f12, 140($sp)
-    move $t6, $t5
+    cvt.w.s $f12, $f12
+    mfc1 $t6, $f12
     addu $t8, $t7, $t6
     la $t7, result_sink
     sw $t8, 0($t7)

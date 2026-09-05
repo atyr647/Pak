@@ -372,7 +372,8 @@ main:
     move $t9, $v0
     addiu $t6, $sp, 168
     lwc1 $f12, 0($t6)
-    move $t8, $t7
+    cvt.w.s $f12, $f12
+    mfc1 $t8, $f12
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8

@@ -27,6 +27,7 @@ array set REGNUM {
     t0 8    t1 9   t2 10 t3 11 t4 12 t5 13 t6 14 t7 15
     s0 16   s1 17  s2 18 s3 19 s4 20 s5 21 s6 22 s7 23
     t8 24   t9 25  k0 26 k1 27 gp 28 sp 29 fp 30 ra 31
+    s8 30
 }
 
 proc rn {name} {
@@ -44,6 +45,21 @@ proc s32 {v} {
     if {$u >= 0x80000000} { return [expr {$u - 0x100000000}] }
     return $u
 }
+# ── single-precision floating point ──────────────────────────────────────────
+# FP registers hold the 32-bit IEEE-754 bit pattern, the way the hardware does,
+# so a value that moves through mtc1/mfc1 or lwc1/swc1 round-trips exactly.
+# Arithmetic converts out to a Tcl double and back, which rounds to nearest --
+# the VR4300's default rounding mode.
+proc fbits_to_double {bits} {
+    binary scan [binary format Iu [expr {$bits & 0xFFFFFFFF}]] R v
+    return $v
+}
+proc double_to_fbits {v} {
+    if {[catch {set b [binary format R $v]}]} { return 0 }
+    binary scan $b Iu bits
+    return $bits
+}
+
 proc trunc_div {a b} {
     if {$b == 0} { return 0 }
     set sign [expr {($a < 0) ^ ($b < 0)}]
@@ -233,11 +249,98 @@ proc parse_asm {text} {
 #          "done"   → halt simulation
 #          "jmp:L"  → branch/jump taken; caller executes delay slot then jumps
 
+# An FP register's raw bits, and its value as a double. Reading an untouched
+# register gives zero rather than an error, matching every other register file
+# in this simulator.
+proc fp {n} {
+    upvar 1 F F
+    if {[info exists F($n)]} { return $F($n) }
+    return 0
+}
+proc fpv {n} {
+    upvar 1 F F
+    if {[info exists F($n)]} { return [fbits_to_double $F($n)] }
+    return 0.0
+}
+
 proc exec_insn {op args} {
-    upvar 1 R R  HI HI  LO LO  mb mb  mh mh  mw mw  dsyms dsyms  labels labels  mseq mseq  mseqi mseqi  cart cart  dp_kicks dp_kicks
+    upvar 1 R R  HI HI  LO LO  mb mb  mh mh  mw mw  dsyms dsyms  labels labels  mseq mseq  mseqi mseqi  cart cart  dp_kicks dp_kicks  F F  FCC FCC  C0 C0
 
     switch -- $op {
         nop - sync { return "" }
+
+        mfc0 {
+            # CP0: Status, Cause and friends. Nothing here changes how the
+            # simulator runs -- no interrupts, no TLB -- but boot.S reads
+            # Status, masks BEV and IE and writes it back, and a no-op mfc0
+            # would hand it whatever was already in the destination register.
+            set n [lindex $args 0]
+            set c [expr {[lindex $args 1]}]
+            if {$n} { set R($n) [expr {[dict exists $C0 $c] ? [dict get $C0 $c] : 0}] }
+        }
+        mtc0 {
+            dict set C0 [expr {[lindex $args 1]}] $R([lindex $args 0])
+        }
+
+        mtc1 {
+            # FPU, single precision. Registers are addressed by number, so the
+            # codegen's habit of writing a GPR name in an FP slot ($a0 meaning
+            # $f4, which is what gas makes of it) resolves the same way here as
+            # it does in the encoder.
+            set F([lindex $args 1]) $R([lindex $args 0])
+        }
+        mfc1 {
+            set n [lindex $args 0]
+            if {$n} { set R($n) [fp [lindex $args 1]] }
+        }
+        mov.s { set F([lindex $args 0]) [fp [lindex $args 1]] }
+        neg.s { set F([lindex $args 0]) [double_to_fbits [expr {-[fpv [lindex $args 1]]}]] }
+        abs.s { set F([lindex $args 0]) [double_to_fbits [expr {abs([fpv [lindex $args 1]])}]] }
+        sqrt.s {
+            set v [fpv [lindex $args 1]]
+            set F([lindex $args 0]) [double_to_fbits [expr {$v < 0 ? 0.0 : sqrt($v)}]]
+        }
+        add.s - sub.s - mul.s - div.s {
+            set a [fpv [lindex $args 1]]
+            set b [fpv [lindex $args 2]]
+            switch -- $op {
+                add.s { set r [expr {$a + $b}] }
+                sub.s { set r [expr {$a - $b}] }
+                mul.s { set r [expr {$a * $b}] }
+                div.s { if {$b == 0.0} { set r 0.0 } else { set r [expr {$a / $b}] } }
+            }
+            set F([lindex $args 0]) [double_to_fbits $r]
+        }
+        cvt.s.w {
+            set w [fp [lindex $args 1]]
+            if {$w >= 0x80000000} { set w [expr {$w - 0x100000000}] }
+            set F([lindex $args 0]) [double_to_fbits [expr {double($w)}]]
+        }
+        cvt.w.s {
+            set v [fpv [lindex $args 1]]
+            set F([lindex $args 0]) [expr {int($v) & 0xFFFFFFFF}]
+        }
+        c.eq.s - c.lt.s - c.le.s {
+            set a [fpv [lindex $args 0]]
+            set b [fpv [lindex $args 1]]
+            switch -- $op {
+                c.eq.s { set FCC [expr {$a == $b}] }
+                c.lt.s { set FCC [expr {$a <  $b}] }
+                c.le.s { set FCC [expr {$a <= $b}] }
+            }
+        }
+        bc1t { if {$FCC}  { return "jmp:[lindex $args 0]" } }
+        bc1f { if {!$FCC} { return "jmp:[lindex $args 0]" } }
+        lwc1 {
+            lassign [lindex $args 1] off base
+            set a [expr {($R($base) + $off) & 0xFFFFFFFF}]
+            set F([lindex $args 0]) [expr {[dict exists $mw $a] ? [dict get $mw $a] : 0}]
+        }
+        swc1 {
+            lassign [lindex $args 1] off base
+            set a [expr {($R($base) + $off) & 0xFFFFFFFF}]
+            dict set mw $a [fp [lindex $args 0]]
+        }
 
         li {
             set n [lindex $args 0]
@@ -610,6 +713,23 @@ proc exec_insn {op args} {
     return ""
 }
 
+# What a call leaves in $ra: an instruction index, or the address of that
+# instruction when the listing came from a linked image.
+proc ret_slot {text_base idx} {
+    if {$text_base eq ""} { return $idx }
+    return [expr {($text_base + $idx * 4) & 0xFFFFFFFF}]
+}
+
+# The instruction index a jump target names. "" when the value is not an
+# instruction in this listing, which ends the run rather than jumping wild.
+proc to_index {text_base v} {
+    if {![string is integer -strict $v]} { return "" }
+    if {$text_base eq ""} { return $v }
+    set off [expr {($v & 0xFFFFFFFF) - $text_base}]
+    if {$off < 0 || ($off & 3)} { return "" }
+    return [expr {$off / 4}]
+}
+
 # ── public run procedure ──────────────────────────────────────────────────────
 
 # Copy `len` bytes out of the cart image into simulated RDRAM, as the PI does.
@@ -632,7 +752,12 @@ proc pi_dma_read {mwVar cart dram cart_addr len} {
     }
 }
 
-proc run {text {start "main"} {limit 20000000} {preset {}} {cart ""}} {
+# `text_base`, when given, says the listing is a disassembly of a linked image:
+# instruction N lives at text_base + 4*N. With it, $ra holds a real return
+# ADDRESS rather than an instruction index, so `jalr` through a pointer loaded
+# by `la` lands on the right instruction. Without it the simulator behaves
+# exactly as before -- $ra is an index and only direct calls work.
+proc run {text {start "main"} {limit 20000000} {preset {}} {cart ""} {text_base ""}} {
     lassign [parse_asm $text] labels insns dsyms dimage
     set n_insns [llength $insns]
 
@@ -648,6 +773,9 @@ proc run {text {start "main"} {limit 20000000} {preset {}} {cart ""}} {
     set R(29) [expr {0x80380000}]   ;# $sp — RDRAM top
     set R(31) 0xFFFFFFFF            ;# $ra — invalid, so the outermost jr halts
     set HI 0;  set LO 0
+    array set F {}         ;# FP registers, as 32-bit IEEE-754 bit patterns
+    set FCC 0              ;# the FPU condition bit bc1t/bc1f test
+    set C0 [dict create]   ;# CP0 registers, by number
     set mh [dict create]   ;# sh stores
     set mb [dict create]   ;# sb stores
     # Seed memory with the data sections so a static's initialiser is readable,
@@ -687,17 +815,17 @@ proc run {text {start "main"} {limit 20000000} {preset {}} {cart ""}} {
             set ds [lindex $insns [expr {$pc + 1}]]
             if {[llength $ds]} { incr count; exec_insn {*}$ds }
             if {[string match "callidx:*" $result]} {
-                set R(31) [expr {$pc + 2}]
+                set R(31) [ret_slot $text_base [expr {$pc + 2}]]
                 set new_pc [string range $result 8 end]
                 if {![string is integer -strict $new_pc]} break
-                set new_pc [expr {$new_pc}]
-                if {$new_pc < 0 || $new_pc >= $n_insns} break
+                set new_pc [to_index $text_base $new_pc]
+                if {$new_pc eq "" || $new_pc < 0 || $new_pc >= $n_insns} break
                 if {$new_pc == $pc} break
                 set pc $new_pc
                 continue
             }
             if {[string match "call:*" $result]} {
-                set R(31) [expr {$pc + 2}]
+                set R(31) [ret_slot $text_base [expr {$pc + 2}]]
                 set lbl [string range $result 5 end]
             } else {
                 set lbl [string range $result 4 end]
@@ -709,7 +837,8 @@ proc run {text {start "main"} {limit 20000000} {preset {}} {cart ""}} {
         } elseif {[string match "ret:*" $result]} {
             set ds [lindex $insns [expr {$pc + 1}]]
             if {[llength $ds]} { incr count; exec_insn {*}$ds }
-            set pc [string range $result 4 end]
+            set pc [to_index $text_base [string range $result 4 end]]
+            if {$pc eq ""} break
         } else {
             incr pc
         }
@@ -718,8 +847,12 @@ proc run {text {start "main"} {limit 20000000} {preset {}} {cart ""}} {
     # `halted` distinguishes a program that ran to completion from one the
     # instruction limit cut off mid-flight. A test that only reads registers
     # passes either way, which is how a hung DMA went unnoticed.
+    # Registers come back too: a test that runs a whole boot sequence has to be
+    # able to ask what $sp ended up as, and nothing else in the result says.
+    set regs [dict create]
+    for {set i 0} {$i < 32} {incr i} { dict set regs $i $R($i) }
     return [dict create mem_b $mb mem_h $mh mem_w $mw insns $count data_syms $dsyms \
-                        dp_kicks $dp_kicks halted [expr {$count < $limit}]]
+                        dp_kicks $dp_kicks halted [expr {$count < $limit}] regs $regs]
 }
 
 } ;# namespace eval pak::mipsim

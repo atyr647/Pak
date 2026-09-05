@@ -2524,7 +2524,8 @@ oo::class create pak::MipsCodegen {
                 set src [$ra alloc_temp]
                 set src_expr [pak::nfield $expr expr]
                 my emit_expr $src_expr $src
-                my emit_cast $src $dst [pak::nfield $expr type] [my infer_frac_bits $src_expr]
+                my emit_cast $src $dst [pak::nfield $expr type] \
+                    [my infer_frac_bits $src_expr] [my infer_is_float $src_expr]
                 $ra free_temp $src
             }
             StructLit { my emit_struct_lit $expr $dst }
@@ -3740,9 +3741,23 @@ oo::class create pak::MipsCodegen {
         $ra free_temp $base
     }
 
-    method emit_cast {src dst type_node {from_frac 0}} {
+    method emit_cast {src dst type_node {from_frac 0} {from_float 0}} {
         set to [my mips_layout $type_node]
         set frac [expr {[dict exists $to frac_bits] ? [dict get $to frac_bits] : 0}]
+        if {$from_float && ![dict get $to is_float]} {
+            # float -> integer. A float expression leaves its value in $f12, not
+            # in $src, so without this the cast fell through to the integer
+            # narrowing below and truncated whatever happened to be in the
+            # source register: `f as i32` compiled to a `move` from an
+            # unrelated temporary. Truncation toward zero, and no scaling for a
+            # fixed-point target, matches what the C backend emits ((int32_t)f).
+            $em cvt_w_s {$f12} {$f12}
+            $em mfc1 $dst {$f12}
+            if {[dict get $to size] < 4} {
+                pak::emit_int_cast $em $dst $dst [dict get $to size] [dict get $to is_signed]
+            }
+            return
+        }
         if {$frac > 0 && $from_frac == 0} {
             # int → fixed: shift left by frac_bits
             $em sll $dst $src $frac

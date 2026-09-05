@@ -285,5 +285,74 @@ entry {
 } out 00000001
 
 puts ""
+puts "== floating point actually computes =="
+
+# The simulator had no FPU at all: mtc1, cvt.s.w, add.s and the rest fell
+# through its switch and became no-ops, so a float program "ran" and left its
+# destination register holding whatever was there before. Every one of these
+# passed trivially before there was an FPU to run them.
+
+chk "f32 add" {
+static out: f32 = 0.0
+entry {
+    let a: f32 = 1.5
+    let b: f32 = 2.25
+    out = a + b
+}
+} out 40700000
+
+chk "f32 multiply" {
+static out: f32 = 0.0
+entry {
+    let a: f32 = 3.0
+    let b: f32 = 0.5
+    out = a * b
+}
+} out 3FC00000
+
+chk "f32 divide" {
+static out: f32 = 0.0
+entry {
+    let a: f32 = 7.0
+    let b: f32 = 2.0
+    out = a / b
+}
+} out 40600000
+
+chk "f32 subtract crosses zero" {
+static out: f32 = 0.0
+entry {
+    let a: f32 = 1.0
+    let b: f32 = 4.0
+    out = a - b
+}
+} out C0400000
+
+chk "i32 to f32 conversion" {
+static out: f32 = 0.0
+entry {
+    let n: i32 = -5
+    out = n as f32
+}
+} out C0A00000
+
+chk "f32 to i32 truncates toward zero" {
+static out: i32 = 0
+entry {
+    let f: f32 = 3.75
+    out = f as i32
+}
+} out 00000003
+
+chk "f32 comparison picks the branch" {
+static out: i32 = 0
+entry {
+    let a: f32 = 1.5
+    let b: f32 = 2.5
+    if a < b { out = 7 } else { out = 9 }
+}
+} out 00000007
+
+puts ""
 puts "PASS=$pass  FAIL=$fail"
 exit [expr {$fail > 0 ? 1 : 0}]
