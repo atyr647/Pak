@@ -542,7 +542,7 @@ level:
 	.byte 1
 
 	.section .bss
-	.align 0
+	.align 3
 	.globl eeprom_buf
 eeprom_buf:
 	.space 8

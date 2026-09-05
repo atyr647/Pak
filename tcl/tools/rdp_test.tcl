@@ -106,7 +106,7 @@ set EXPECTED {
     2428C144 001900C8
     00000000 02000400
     27000000 00000000
-    2F000000 00506040
+    2F000C00 00506040
     3C887F10 88FCF279
     3A000000 112233FF
     39000000 445566FF
@@ -146,7 +146,7 @@ set EXPECTED {
     364FC3BC 00000000
     3F10013F 00200000
     27000000 00000000
-    2F000000 00506070
+    2F000C00 00506070
     3C887F10 88FCF279
     0C800168 00500028
     00640000 FFFF2493
@@ -261,7 +261,7 @@ set NOTES {
     "TEXTURE_RECTANGLE 0x24 scaled (100,50)-(164,82)"
     "                  s/t = 0, dsdx = 0.5 texel/pixel, dtdy = 1"
     "SYNC_PIPE         before the mode change"
-    "SET_OTHER_MODES   cycle_type = 1CYCLE, alpha blending"
+    "SET_OTHER_MODES   1CYCLE + bi_lerp0|1, alpha blending"
     "SET_COMBINE       texel passthrough"
     "SET_PRIM_COLOR    0x112233FF"
     "SET_BLEND_COLOR   0x445566FF"
@@ -301,7 +301,7 @@ set NOTES {
     "FILL_RECTANGLE    full screen into Z"
     "SET_COLOR_IMAGE   restore colour target 0x00200000"
     "SYNC_PIPE         before 1-cycle + Z"
-    "SET_OTHER_MODES   1CYCLE + z_compare_en + z_update_en (0x30)"
+    "SET_OTHER_MODES   1CYCLE + bi_lerp0|1 + z_compare_en + z_update_en (0x30)"
     "SET_COMBINE       texel passthrough"
     "TRI_SHADE         0x0C Gouraud, same edges as TRIANGLE"
     "                  XL / DxLDy"

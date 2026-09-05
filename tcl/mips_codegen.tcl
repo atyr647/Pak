@@ -456,9 +456,25 @@ proc pak::mips_annlist {node} {
     return $out
 }
 
+# Raise an alignment to whatever the annotations demand. The lexer keeps the
+# leading @ on an annotation, so the pattern has to allow it -- matching bare
+# "aligned(*" silently ignored every @aligned(16) and left DMA landing pads
+# on a 1-byte boundary, which the PI rejects at run time.
+proc pak::mips_ann_align {anns cur} {
+    foreach ann $anns {
+        if {[string match "@aligned(*" $ann] || [string match "aligned(*" $ann]} {
+            set n [string range $ann [expr {[string first ( $ann]+1}] [expr {[string first ) $ann]-1}]]
+            if {[string is integer -strict $n] && $n > $cur} { set cur $n }
+        } elseif {$ann eq "@dma_safe"} {
+            if {16 > $cur} { set cur 16 }
+        }
+    }
+    return $cur
+}
+
 # ── orchestrator ────────────────────────────────────────────────────────────
 oo::class create pak::MipsCodegen {
-    variable em pool ra ret_label scopes defers next_local loop_header loop_exit loop_defer_depth \
+    variable em pool ra ret_label scopes defers next_local frame_align loop_header loop_exit loop_defer_depth \
              loop_result sret_off sret_size \
              globals consts float_consts label_n fmtstr_counter \
              tenv_layouts tenv_enum_values tenv_variant_decls fn_decls \
@@ -473,6 +489,7 @@ oo::class create pak::MipsCodegen {
         set scopes {}
         set defers {}
         set next_local 16
+        set frame_align 8
         set loop_header {}
         set loop_exit {}
         set loop_defer_depth {}
@@ -687,12 +704,7 @@ oo::class create pak::MipsCodegen {
             incr offset [dict get $fl size]
         }
 
-        foreach ann [pak::mips_annlist $decl] {
-            if {[string match "aligned(*" $ann]} {
-                set n [string range $ann [expr {[string first ( $ann]+1}] [expr {[string first ) $ann]-1}]]
-                if {[string is integer -strict $n] && $n > $max_align} { set max_align $n }
-            }
-        }
+        set max_align [pak::mips_ann_align [pak::mips_annlist $decl] $max_align]
 
         set total [expr {($offset + $max_align - 1) & ~($max_align - 1)}]
         if {$total == 0} { set total $max_align }
@@ -1092,8 +1104,13 @@ oo::class create pak::MipsCodegen {
             }
         }
     }
-    method declare_local {name layout {type_node ""}} {
-        set align [dict get $layout align]
+    # `anns` is the declaration's annotation list, if it has one. Without it a
+    # @aligned(16) local got only its element type's alignment -- 1 for a byte
+    # array -- so a stack DMA buffer the checker had passed under E202 landed
+    # on an odd offset and the PI rejected it.
+    method declare_local {name layout {type_node ""} {anns {}}} {
+        set align [pak::mips_ann_align $anns [dict get $layout align]]
+        if {$align > $frame_align} { set frame_align $align }
         set next_local [expr {($next_local + $align - 1) & ~($align - 1)}]
         set off $next_local
         set next_local [expr {$next_local + [dict get $layout size]}]
@@ -1243,12 +1260,7 @@ oo::class create pak::MipsCodegen {
         set v [pak::nfield $decl value]
         if {![pak::isnil $v]} { set init [my eval_const_expr $v] }
         set align [dict get $layout align]
-        foreach ann [pak::mips_annlist $decl] {
-            if {[string match "aligned(*" $ann]} {
-                set n [string range $ann [expr {[string first ( $ann]+1}] [expr {[string first ) $ann]-1}]]
-                if {[string is integer -strict $n] && $n > $align} { set align $n }
-            }
-        }
+        set align [pak::mips_ann_align [pak::mips_annlist $decl] $align]
         $pool add_static [pak::fval $decl name] [dict get $layout size] $align $init
         dict set globals [pak::fval $decl name] [list 0 $layout]
         if {![pak::isnil $typ]} { dict set type_nodes [pak::fval $decl name] $typ }
@@ -1282,6 +1294,7 @@ oo::class create pak::MipsCodegen {
         set sret_off ""
         set sret_size 0
         set next_local [expr {$::pak::CALL_SAVE_BASE + 10 * 4}]
+        set frame_align 8
         my push_scope
         if {[my type_passed_by_addr $ret_type]} {
             set sret_size [dict get [my mips_layout $ret_type] size]
@@ -1420,9 +1433,14 @@ oo::class create pak::MipsCodegen {
 
     # Default frame is 320 bytes. Grow (8-byte aligned) when locals would
     # overlap $fp/$ra and any callee-saved GPRs parked at the top.
+    # A slot offset is only as aligned as $sp is, and $sp moves by the frame
+    # size, so a frame holding a 16-byte-aligned local has to be a multiple of
+    # 16 itself -- otherwise the alignment survives in this function and is
+    # lost in everything it calls.
     method frame_size_for_locals {local_top callee} {
         set save_bytes [expr {8 + 4 * [llength $callee]}]
-        set need [expr {($local_top + $save_bytes + 7) & ~7}]
+        set a [expr {$frame_align < 8 ? 8 : $frame_align}]
+        set need [expr {($local_top + $save_bytes + $a - 1) & ~($a - 1)}]
         if {$need < 320} { return 320 }
         return $need
     }
@@ -1654,7 +1672,7 @@ oo::class create pak::MipsCodegen {
                     }
                     return
                 }
-                set off [my declare_local [pak::fval $stmt name] $layout $tn]
+                set off [my declare_local [pak::fval $stmt name] $layout $tn [pak::mips_annlist $stmt]]
                 if {![pak::isnil $v]} {
                     # loop-as-expression: let x = loop { ... break val ... }
                     if {[pak::kindof $v] in {LoopStmt WhileStmt}} {
@@ -4715,7 +4733,7 @@ oo::class create pak::MipsCodegen {
     # outer ra is detached (set to "") so emit_fn won't destroy it.
     method save_fn_state {} {
         set s [dict create ra $ra scopes $scopes defers $defers \
-            next_local $next_local ret_label $ret_label \
+            next_local $next_local frame_align $frame_align ret_label $ret_label \
             loop_header $loop_header loop_exit $loop_exit \
             loop_defer_depth $loop_defer_depth loop_result $loop_result \
             sret_off $sret_off sret_size $sret_size]
@@ -4732,6 +4750,7 @@ oo::class create pak::MipsCodegen {
         set scopes [dict get $s scopes]
         set defers [dict get $s defers]
         set next_local [dict get $s next_local]
+        set frame_align [dict get $s frame_align]
         set ret_label [dict get $s ret_label]
         set loop_header [dict get $s loop_header]
         set loop_exit [dict get $s loop_exit]

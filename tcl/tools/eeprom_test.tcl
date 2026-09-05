@@ -7,7 +7,9 @@
 #      (skip 0–3, tx=1 rx=3 cmd=0x00, 0xFE, run-bit) and DMA it through SI.
 #   2. eeprom.read / eeprom.write emit cmd 0x04 / 0x05 with the block index.
 #   3. present() is 0 when PIF does not reply (no hardware).
-#   4. dma.read stores PI_DRAM_ADDR, PI_CART_ADDR, PI_WR_LEN (len-1) in order.
+#   4. dma.read stores PI_DRAM_ADDR, PI_CART_ADDR, PI_WR_LEN (len-1) in order,
+#      and returns rather than spinning on PI_STATUS.
+#   5. @aligned(16) on a *local* survives into the address the PI is handed.
 #
 # sb capture (mem_b) is how the PIF command bytes become visible; the
 # simulator does not model PIF RAM.
@@ -183,6 +185,39 @@ ok "PI_CART_ADDR cart" [word_hex $mw 0xA4600004] 10040000
 ok "PI_WR_LEN len-1"   [word_hex $mw 0xA460000C] 0000003F
 ok "PI_STATUS clr"     [word_hex $mw 0xA4600010] 00000002
 ok "PI_DRAM_ADDR phys" [word_hex $mw 0xA4600000] 00300100
+
+# The four assertions above are all stores, and every one of them happens
+# before dma_wait's poll loop. They passed for as long as the simulator read
+# PI_STATUS back as the 0x02 dma_read had just written it, which left
+# dma_wait spinning until the instruction limit. This is the assertion that
+# notices: dma_read has to return.
+ok_true "dma_read returns (PI_STATUS reads as idle)" [dict get $r halted] \
+    " (ran the full [dict get $r insns]-instruction budget)"
+
+# A stack DMA buffer. E202 accepts @aligned(16) on a local, so the codegen has
+# to actually give it a 16-aligned slot -- it used to hand it the element
+# type's alignment (1 for a byte array), and the address that reached
+# PI_DRAM_ADDR was whatever offset the frame happened to have free.
+puts ""
+puts "== @aligned(16) on a local reaches the PI aligned =="
+
+set driver {
+static sink: i32 = 0
+entry {
+    let pad: i32 = 1
+    @aligned(16)
+    let buf: [64]u8 = undefined
+    data_cache_hit_writeback(&buf[0], 64)
+    dma_read(&buf[0], 0x10040000, 64)
+    data_cache_hit_invalidate(&buf[0], 64)
+    sink = pad + buf[0] as i32
+}
+}
+set r [compile_sim $driver]
+set mw [dict get $r mem_w]
+set dram [word_hex $mw 0xA4600000]
+ok_true "PI_DRAM_ADDR is 16-byte aligned" \
+    [expr {$dram ne "<unwritten>" && ("0x$dram" & 15) == 0}] " ($dram)"
 
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"

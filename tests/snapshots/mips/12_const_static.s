@@ -262,7 +262,7 @@ game_running:
 	.globl score_table
 score_table:
 	.space 64
-	.align 0
+	.align 4
 	.globl dma_buffer
 dma_buffer:
 	.space 4096

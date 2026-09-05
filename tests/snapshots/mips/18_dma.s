@@ -249,7 +249,7 @@ main:
 	.size main, . - main
 
 	.section .bss
-	.align 0
+	.align 4
 	.globl rx_buffer
 rx_buffer:
 	.space 4096

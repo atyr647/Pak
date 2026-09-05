@@ -100,7 +100,8 @@ pak run src/main.pk64                # build, then launch in the ares emulator
 ```
 
 `pak build` emits C and a libdragon Makefile. To go all the way to a `.z64`
-you need a libdragon toolchain (Path A below) **or** nothing at all (Path B).
+you need a libdragon toolchain (the **libdragon path** below) **or** nothing at
+all (the **standalone path**).
 
 ---
 
@@ -115,25 +116,25 @@ you need a libdragon toolchain (Path A below) **or** nothing at all (Path B).
                    ▼           ▼
               clean C      MIPS assembly
                    │           │
-    Path A         │           │ Path B
+  libdragon path   │           │ standalone path
     + libdragon    │           │ in-compiler:
     + make ──▶.z64 │           │  n64enc.tcl  ──▶ object
                                │  n64link.tcl ──▶ image
                                │  n64rom.tcl  ──▶ .z64
 ```
 
-**Path A — libdragon (full-featured).**
+**The libdragon path (full-featured).**
 The generated C uses the libdragon API (`display_*`, `rdpq_*`, `joypad_*`, …).
 `pak build` writes a libdragon-compatible Makefile; `make` produces the ROM.
 This is the path for serious games — full RDP/RSP, audio mixer, filesystem.
 
 ```bash
-# Path A
+# libdragon path
 export N64_INST=/opt/libdragon
 pak build && make
 ```
 
-**Path B — fully standalone (no external toolchain).**
+**The standalone path (no external toolchain).**
 The Tcl backend contains a complete MIPS pipeline with no external dependencies:
 
 - **`tcl/mips_codegen.tcl`** — AST → VR4300 MIPS-III assembly (o32 ABI, with

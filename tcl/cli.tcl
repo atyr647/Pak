@@ -809,14 +809,14 @@ proc pak::cli_main {argv} {
 proc pak::cli_help {} {
     puts "usage: pak \[--version\] COMMAND ..."
     puts "commands:"
-    puts "  build   [--backend c|mips] [-o FILE.z64] [--size 4|8|16|32|64]"
-    puts "          libdragon: emit C + Makefile. standalone: if -o is given,"
-    puts "          objgen + link a padded .z64 in one step (boot + HAL + game)."
-    puts "  check   [--backend c|mips] [FILE...]     semantic check (E010 HAL gate)"
-    puts "  explain [--backend c|mips] FILE          dump C or MIPS"
-    puts "  objgen  FILE [-o FILE.pakobj]            MIPS records -> object"
-    puts "  asmobj  FILE.S [-o FILE.pakobj]          assemble crt0 / boot.S"
-    puts "  link    OBJS... -o FILE.z64 [--size MiB] [--name TITLE]"
+    puts {  build   [--backend c|mips] [-o FILE.z64] [--size 4|8|16|32|64]}
+    puts {          libdragon: emit C + Makefile. standalone: if -o is given,}
+    puts {          objgen + link a padded .z64 in one step (boot + HAL + game).}
+    puts {  check   [--backend c|mips] [FILE...]     semantic check (E010 HAL gate)}
+    puts {  explain [--backend c|mips] FILE          dump C or MIPS}
+    puts {  objgen  FILE [-o FILE.pakobj]            MIPS records -> object}
+    puts {  asmobj  FILE.S [-o FILE.pakobj]          assemble crt0 / boot.S}
+    puts {  link    OBJS... -o FILE.z64 [--size MiB] [--name TITLE]}
     puts "  run / init / clean / pack"
 }
 # Tiny flag parser: positionals fill 'file'/'name'/'files'; flags set keys.

@@ -43,6 +43,11 @@ if {![file executable $RDPRUN]} {
 set ::pass 0
 set ::fail 0
 
+proc ok_true {name cond {detail ""}} {
+    if {$cond} { incr ::pass; puts "ok    $name$detail" } \
+    else { incr ::fail; puts "FAIL  $name$detail" }
+}
+
 # ── run a Pak driver, hand its display list to the reference RDP ─────────────
 
 # The framebuffer, the display list and any texture all live in the simulated
@@ -60,7 +65,7 @@ proc render {driver_src} {
         return [list err [lindex [split $asm "\n"] 0]]
     }
     # DP idle, VI past the active region, PI idle.
-    set preset [dict create 0xA410000C 0 0xA4400010 {0x1E0 0x000} 0xA4600010 {0 0 0 0 0 0 0 0}]
+    set preset [dict create 0xA410000C 0 0xA4400010 {0x1E0 0x000}]
     set r [pak::mips_sim_run $asm main 20000000 $preset]
     set mw [dict get $r mem_w]
 
@@ -222,12 +227,14 @@ entry {
     rdpq.load_tile(0, 0, 0, 32, 32)
     rdpq.set_tile_size(0, 0, 0, 32, 32)
     rdpq.sync_tile()
-    rdpq.set_mode_copy()
-    rdpq.texture_rectangle(0, 60, 40, 220, 200, 0, 0)
+    SETMODE
+    RECT
     rdpq.detach_show()
 }}
 
-lassign [render $tex_src] st res
+set copy_src [string map {SETMODE "rdpq.set_mode_copy()" \
+                          RECT "rdpq.texture_rectangle(0, 60, 40, 220, 200, 0, 0)"} $tex_src]
+lassign [render $copy_src] st res
 if {$st eq "err"} {
     puts "FAIL  texture rectangle: $res"
     incr ::fail
@@ -253,6 +260,111 @@ if {$st eq "err"} {
     } else {
         incr ::fail
         puts "FAIL  texels come back red and blue red=$red blue=$blue other=$other"
+    }
+}
+
+# A 1:1 blit in 1-cycle mode. The S step is s5.10 texels per pixel, and COPY
+# wants it written 4x because the RDP retires four pixels per cycle there.
+# Hardcoding the COPY constant made every 1-cycle blit walk S four times too
+# fast, consuming a 32-texel page in eight pixels; the COPY test above cannot
+# see that, because there the value is right.
+puts ""
+puts "== a 1-cycle blit steps one texel per pixel =="
+
+set blit1_src [string map {SETMODE "rdpq.set_mode_standard()" \
+                           RECT "rdpq.texture_rectangle(0, 100, 100, 132, 132, 0, 0)"} $tex_src]
+lassign [render $blit1_src] st res
+if {$st eq "err"} {
+    puts "FAIL  1-cycle blit: $res"
+    incr ::fail
+} else {
+    set drawn [drawn_pixels $res]
+    set red 0 ; set blue 0
+    dict for {k v} $drawn {
+        lassign $v r g b
+        if {$r > 200 && $b < 80} { incr red } elseif {$b > 200 && $r < 80} { incr blue }
+    }
+    # 32x32 pixels over a 32x32 page at 1:1 is the page exactly: 16 red columns
+    # and 16 blue, 32 rows each.
+    ok_true "32x32 blit covers 1024 pixels" [expr {[dict size $drawn] == 1024}] \
+        " (drawn=[dict size $drawn])"
+    ok_true "one texel per pixel, half red half blue" [expr {$red == 512 && $blue == 512}] \
+        " (red=$red blue=$blue)"
+}
+
+# ── 3. a textured triangle samples the texture across its surface ────────────
+
+puts ""
+puts "== a textured triangle maps the texture across itself =="
+
+# The same half-red/half-blue page, drawn through TRI_TEX in 1-cycle mode with
+# ST spanning the whole page. This is the case the roadmap called the real
+# gate, and it is the one that stayed broken longest: with bi_lerp clear the
+# RDP sends every texel through the YUV convert path and the triangle comes
+# out untextured, while every command word still looks right.
+set tri_src {
+@aligned(16)
+static page: [2048]u8 = undefined
+
+fn fill_page() {
+    let base: u32 = (&page[0] as u32) | 0xA000_0000
+    let mut i: i32 = 0
+    loop {
+        if i >= 1024 { break }
+        let s: i32 = i % 32
+        let p: *volatile u16 = (base + (i * 2) as u32) as *volatile u16
+        if s < 16 { *p = 0xF801 as u16 } else { *p = 0x003F as u16 }
+        i = i + 1
+    }
+}
+
+entry {
+    rdpq.init()
+    fill_page()
+    rdpq.attach_clear(0xA0200000, 0x0000_0001)
+    rdpq.set_texture_image((&page[0] as u32) | 0xA000_0000, 0, 2, 32)
+    rdpq.set_tile_mask(0, 0, 2, 8, 0, 0, 2, 2, 5, 5)
+    rdpq.load_tile(0, 0, 0, 32, 32)
+    rdpq.set_tile_size(0, 0, 0, 32, 32)
+    rdpq.sync_tile()
+    rdpq.set_mode_standard()
+    rdpq.triangle_tex(0, 40, 40, 0, 0, 200, 60, 32, 0, 80, 180, 0, 32)
+    rdpq.detach_show()
+}}
+
+lassign [render $tri_src] st res
+if {$st eq "err"} {
+    puts "FAIL  textured triangle: $res"
+    incr ::fail
+} else {
+    set drawn [drawn_pixels $res]
+    set red 0 ; set blue 0 ; set other 0
+    set redx 0 ; set bluex 0
+    dict for {k v} $drawn {
+        lassign $v r g b
+        lassign [split $k ,] x y
+        if {$r > 200 && $b < 80} { incr red ; incr redx $x } \
+        elseif {$b > 200 && $r < 80} { incr blue ; incr bluex $x } \
+        else { incr other }
+    }
+    set n [dict size $drawn]
+    # The filled triangle of the same vertices covers 10800 by area; a textured
+    # one must cover essentially the same, not a handful of pixels.
+    ok_true "textured triangle covers its geometry" [expr {$n > 10000 && $n < 11500}] \
+        " (drawn=$n, area=10800)"
+    ok_true "it is textured, not flat" [expr {$red > 1000 && $blue > 1000}] \
+        " (red=$red blue=$blue other=$other)"
+    # S runs 0..32 left-to-right across the triangle, so the red half (S<16)
+    # must sit to the left of the blue half. If ST were ignored or constant
+    # this would not hold.
+    if {$red > 0 && $blue > 0} {
+        set rmean [expr {double($redx) / $red}]
+        set bmean [expr {double($bluex) / $blue}]
+        ok_true "the S axis runs the right way" [expr {$rmean < $bmean}] \
+            [format " (mean x: red %.1f < blue %.1f)" $rmean $bmean]
+    } else {
+        incr ::fail
+        puts "FAIL  the S axis runs the right way (one colour missing)"
     }
 }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env tclsh
 # tcl/tools/church_test.tcl — the CHROMA nave, end to end, on generated MIPS.
 #
-# examples/chroma/church.pk64 is the standalone "Path A": no libdragon, no RSP.
+# examples/chroma/church.pk64 is the FZ "Path A": no libdragon, no RSP.
 # This runs the runtime plus that scene in tcl/mips_sim.tcl and asserts the
 # three things the architecture rests on.
 #
@@ -15,14 +15,12 @@
 #      appear in the display list the DP is handed, and the tile words are
 #      byte-identical to the encodings tcl/tools/rdp_test.tcl already asserts.
 #
-# THE PRESET MATTERS. dma_read writes PI_STATUS to clear the interrupt, then
-# dma_wait reads PI_STATUS back. On hardware those are different things: the
-# write clears an interrupt, the read reports busy bits. The simulator's memory
-# is flat, so without a preset the read returns the 0x02 that was just written,
-# dma_wait spins on IO_BUSY and never returns. Presetting PI_STATUS as a
-# sequence models an idle PI. (tcl/tools/eeprom_test.tcl does not do this; it
-# only asserts the register STORES, which all happen before the spin, so it
-# passes without noticing dma_read never returns.)
+# dma_read writes PI_STATUS to clear the interrupt, then dma_wait reads
+# PI_STATUS back. On hardware those are different things: the write clears an
+# interrupt, the read reports busy bits. The simulator used to hand back the
+# 0x02 that was just written, so dma_wait spun on IO_BUSY forever; it now
+# models the read side (see the lw handler in tcl/mips_sim.tcl) and the DP/VI
+# presets below are the only ones a scene still needs.
 
 set HERE [file dirname [file normalize [info script]]]
 set REPO [file normalize [file join $HERE .. ..]]
@@ -159,11 +157,10 @@ proc run_scene {budget} {
     if {[string match "UNPORTED*" $asm] || [string match "ERROR*" $asm]} {
         return [list err [lindex [split $asm "\n"] 0]]
     }
-    # DP idle, VI past the active region, PI idle (see the header).
+    # DP idle, VI past the active region.
     set preset [dict create \
         0xA410000C 0 \
-        0xA4400010 {0x1E0 0x000} \
-        0xA4600010 {0 0 0 0 0 0 0 0}]
+        0xA4400010 {0x1E0 0x000}]
     return [list ok [pak::mips_sim_run $asm main $budget $preset]]
 }
 

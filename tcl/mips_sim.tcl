@@ -234,7 +234,7 @@ proc parse_asm {text} {
 #          "jmp:L"  → branch/jump taken; caller executes delay slot then jumps
 
 proc exec_insn {op args} {
-    upvar 1 R R  HI HI  LO LO  mb mb  mh mh  mw mw  dsyms dsyms  labels labels  mseq mseq  mseqi mseqi
+    upvar 1 R R  HI HI  LO LO  mb mb  mh mh  mw mw  dsyms dsyms  labels labels  mseq mseq  mseqi mseqi  cart cart  dp_kicks dp_kicks
 
     switch -- $op {
         nop - sync { return "" }
@@ -419,7 +419,45 @@ proc exec_insn {op args} {
 
         sw {
             lassign [lindex $args 1] off base
-            dict set mw [expr {($R($base) + $off) & 0xFFFFFFFF}] $R([lindex $args 0])
+            set _a [expr {($R($base) + $off) & 0xFFFFFFFF}]
+            dict set mw $_a $R([lindex $args 0])
+            # PI_WR_LEN is the register that starts a cart -> RDRAM transfer.
+            # Without moving the bytes, a program that streams from the
+            # cartridge reads whatever was already in RDRAM -- which for a
+            # texture page means it samples zeros and renders black, with every
+            # PI register still holding exactly the right value.
+            # DPC_END starts the DP on [DPC_START, DPC_END). A program that
+            # builds more commands than the display list holds submits several
+            # times per frame, each time refilling the buffer from the top, so
+            # reading that buffer once at the end sees only the last fragment.
+            # Recording each kick's bytes as it happens keeps the whole frame.
+            if {$_a == [expr {0xA4100004}]} {
+                set _st [expr {0xA4100000}]
+                if {[dict exists $mw $_st]} {
+                    set _s [dict get $mw $_st]
+                    set _e [expr {$R([lindex $args 0]) & 0xFFFFFFFF}]
+                    if {$_e > $_s} {
+                        set _bytes ""
+                        for {set _p $_s} {$_p < $_e} {incr _p 4} {
+                            set _va [expr {($_p & 0x1FFFFFFF) | 0xA0000000}]
+                            set _wv 0
+                            if {[dict exists $mw $_va]} { set _wv [dict get $mw $_va] }
+                            append _bytes [binary format I [expr {$_wv & 0xFFFFFFFF}]]
+                        }
+                        lappend dp_kicks $_bytes
+                    }
+                }
+            }
+            if {$_a == 0xA460000C && $cart ne ""} {
+                # The dict is keyed by integer addresses, so the hex literal
+                # has to be evaluated before it is used as a key.
+                set _pd [expr {0xA4600000}]
+                set _pc [expr {0xA4600004}]
+                pi_dma_read mw $cart \
+                    [expr {[dict exists $mw $_pd] ? [dict get $mw $_pd] : 0}] \
+                    [expr {[dict exists $mw $_pc] ? [dict get $mw $_pc] : 0}] \
+                    [expr {($R([lindex $args 0]) & 0xFFFFFF) + 1}]
+            }
         }
         sh {
             lassign [lindex $args 1] off base
@@ -452,6 +490,14 @@ proc exec_insn {op args} {
                 set i [dict get $mseqi $addr]
                 if {$n} { set R($n) [lindex $vals $i] }
                 if {$i + 1 < [llength $vals]} { dict set mseqi $addr [expr {$i + 1}] }
+            } elseif {$addr == [expr {0xA4600010}]} {
+                # PI_STATUS is not a latch: a write means "clear interrupt" or
+                # "reset controller", a read means "these are the busy bits".
+                # Reading back the written word made dma_wait() spin on the
+                # IO_BUSY bit of its own PI_STATUS_CLR_INTR store, so every
+                # DMA in the simulator hung until the instruction limit. The
+                # simulated transfer is instantaneous, so nothing is busy.
+                if {$n} { set R($n) 0 }
             } elseif {$n} {
                 set R($n) [expr {[dict exists $mw $addr] ? [dict get $mw $addr] : 0}]
             }
@@ -549,7 +595,27 @@ proc exec_insn {op args} {
 
 # ── public run procedure ──────────────────────────────────────────────────────
 
-proc run {text {start "main"} {limit 20000000} {preset {}}} {
+# Copy `len` bytes out of the cart image into simulated RDRAM, as the PI does.
+# dram is the physical address the program wrote to PI_DRAM_ADDR; the CPU sees
+# that memory through KSEG0, which is where the words are stored.
+proc pi_dma_read {mwVar cart dram cart_addr len} {
+    upvar 1 $mwVar mw
+    set src [expr {$cart_addr & 0x0FFFFFFF}]
+    set dst [expr {($dram & 0x00FFFFFF) | 0x80000000}]
+    set have [string length $cart]
+    for {set i 0} {$i < $len} {incr i 4} {
+        set w 0
+        for {set b 0} {$b < 4} {incr b} {
+            set o [expr {$src + $i + $b}]
+            set byte 0
+            if {$o < $have} { binary scan [string index $cart $o] cu byte }
+            set w [expr {($w << 8) | $byte}]
+        }
+        dict set mw [expr {($dst + $i) & 0xFFFFFFFF}] $w
+    }
+}
+
+proc run {text {start "main"} {limit 20000000} {preset {}} {cart ""}} {
     lassign [parse_asm $text] labels insns dsyms dimage
     set n_insns [llength $insns]
 
@@ -574,6 +640,8 @@ proc run {text {start "main"} {limit 20000000} {preset {}}} {
     set mw $dimage
     set mseq  [dict create]
     set mseqi [dict create]
+    set dp_kicks {}
+    # `cart` is read by the sw handler through upvar, like mw/mh/mb.
     dict for {a v} $preset {
         set addr [expr {$a}]
         if {[llength $v] > 1} {
@@ -630,7 +698,11 @@ proc run {text {start "main"} {limit 20000000} {preset {}}} {
         }
     }
 
-    return [dict create mem_b $mb mem_h $mh mem_w $mw insns $count data_syms $dsyms]
+    # `halted` distinguishes a program that ran to completion from one the
+    # instruction limit cut off mid-flight. A test that only reads registers
+    # passes either way, which is how a hung DMA went unnoticed.
+    return [dict create mem_b $mb mem_h $mh mem_w $mw insns $count data_syms $dsyms \
+                        dp_kicks $dp_kicks halted [expr {$count < $limit}]]
 }
 
 } ;# namespace eval pak::mipsim

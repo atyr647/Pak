@@ -58,6 +58,15 @@ writing them bare (e.g. `display.init(RESOLUTION_320x240, …)`) fails with
 `512x480` and `256x480` exist in libdragon as further interlaced modes; pass
 the corresponding integer from your libdragon headers if you need them.
 
+**On the standalone backend (`--backend mips`) only `0` (320x240) and a
+`bit_depth` of `2` work.** The toolchain-free HAL carves three fixed
+320x240x16 framebuffers out of RDRAM at fixed addresses, with the Z buffer and
+the display list immediately after them, so another resolution or depth would
+move every one of those. `display.init` panics (red screen, halt) rather than
+letting a scene render into a wrong-sized buffer. `num_buffers` (1-3), `gamma`
+and `filters` are all honoured. The libdragon backend (`--backend c`) supports
+the full table.
+
 **Typical game setup:**
 ```pak
 -- display.init(resolution, bit_depth, num_buffers, gamma, filters)

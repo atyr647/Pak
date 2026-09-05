@@ -10,7 +10,7 @@
 # The internal dict returned by encode is:
 #   sections   : ordered list of section names that received content
 #   <sec>      : dict {bytes <bytelist> syms <name->off> relocs <list of {off kind sym}>
-#                      size <bytes-emitted>}
+#                      align <strongest .align seen, in bytes> size <bytes-emitted>}
 #   globals    : list of names marked .globl
 #   externs    : list of names marked .extern
 #   symsizes   : dict name -> size-expr (from .size)
@@ -150,7 +150,7 @@ proc pak::enc::new_section {ctxVar name} {
     if {![dict exists $ctx sections]} { dict set ctx sections {} }
     if {![dict exists $ctx secdata $name]} {
         dict lappend ctx sections $name
-        dict set ctx secdata $name [dict create bytes {} syms {} relocs {} branches {}]
+        dict set ctx secdata $name [dict create bytes {} syms {} relocs {} branches {} align 4]
     }
 }
 
@@ -555,7 +555,15 @@ proc pak::enc::do_directive {ctxVar args} {
         }
         align {
             set exp [lindex $rest 0]
+            set a [expr {1 << $exp}]
             pad_to ctx [expr {1 << $exp}]
+            # Padding inside the section is only half of it. The linker has to
+            # know the section itself needs that alignment, or a 16-byte-aligned
+            # DMA buffer lands wherever the section base happened to fall.
+            set sec [dict get $ctx cur]
+            if {$a > [dict get $ctx secdata $sec align]} {
+                dict set ctx secdata $sec align $a
+            }
         }
         word {
             lassign [data_val [lindex $rest 0]] vk vv
@@ -692,6 +700,7 @@ proc pak::enc::format_object {ctx} {
     set out "# pak object v1\n"
     foreach sec [dict get $ctx sections] {
         append out "section $sec\n"
+        append out "align [dict get $ctx secdata $sec align]\n"
         set syms [dict get $ctx secdata $sec syms]
         foreach name [dict keys $syms] {
             append out "sym $name [dict get $syms $name]\n"

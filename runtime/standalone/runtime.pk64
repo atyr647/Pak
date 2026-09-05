@@ -38,10 +38,14 @@ const FB0: u32 = 0xA0200000
 const FB1: u32 = 0xA0225800
 const FB2: u32 = 0xA024B000
 const ZB:  u32 = 0xA0271000        -- 320×240×16-bit Z, after FB2
-const NUM_BUFS: i32 = 3
+const MAX_BUFS: i32 = 3        -- FB0..FB2; the map has room for no more
 
 static g_draw: i32       = 1
 static g_shown: i32      = 0
+-- How many of FB0..FB2 display.init asked for. 3 until it says otherwise.
+static g_nbufs: i32      = 3
+-- The VI_CTRL word display.init assembled from its gamma/filters arguments.
+static g_vi_ctrl: u32    = 0x00003202
 
 -- ── MMIO helpers ───────────────────────────────────────────────────────────
 fn vi_write(reg: u32, val: u32) {
@@ -98,14 +102,14 @@ fn vi_program() {
     vi_write(VI_V_BURST, 0x000E0204)
     vi_write(VI_X_SCALE, 0x00000200)
     vi_write(VI_Y_SCALE, 0x00000400)
-    vi_write(VI_CTRL,    VI_CTRL_16BPP)
+    vi_write(VI_CTRL,    g_vi_ctrl)
 }
 
 fn vi_init() {
     vi_program()
     fb_fill(FB0, 0x0000 as u16)
-    fb_fill(FB1, 0x0000 as u16)
-    fb_fill(FB2, 0x0000 as u16)
+    if g_nbufs > 1 { fb_fill(FB1, 0x0000 as u16) }
+    if g_nbufs > 2 { fb_fill(FB2, 0x0000 as u16) }
 }
 
 fn vi_wait_vblank() {
@@ -127,11 +131,52 @@ fn vi_show(fb: u32) {
     if fb == FB0 { g_shown = 0 }
     elif fb == FB1 { g_shown = 1 }
     else { g_shown = 2 }
-    g_draw = (g_shown + 1) % NUM_BUFS
+    g_draw = (g_shown + 1) % g_nbufs
 }
 
 -- ── display API (called by generated game code) ────────────────────────────
+-- VI_CTRL fields. aa_mode lives in bits 8-9, the gamma pair in bits 2-3, and
+-- the dither filter in bit 16. pixel_advance (bits 12-15) is 3 for RDRAM.
+const VI_CTRL_BASE: u32       = 0x00003000   -- pixel_advance = 3
+const VI_CTRL_TYPE_16BPP: u32 = 0x00000002
+const VI_CTRL_GAMMA: u32      = 0x00000008
+const VI_CTRL_GAMMA_DITHER: u32 = 0x00000004
+const VI_CTRL_DITHER_FILTER: u32 = 0x00010000
+
+-- filters -> aa_mode. 0 = AA + resample always fetch, 1 = AA + resample fetch
+-- when needed, 2 = resample only, 3 = neither (replicate pixels).
+fn vi_aa_mode(filters: i32) -> u32 {
+    if filters == 0 { return 3 }        -- FILTERS_DISABLED
+    if filters == 1 { return 2 }        -- FILTERS_RESAMPLE
+    if filters == 2 { return 3 }        -- FILTERS_DEDITHER
+    if filters == 3 { return 1 }        -- FILTERS_RESAMPLE_ANTIALIAS
+    return 0                            -- ..._ANTIALIAS_DEDITHER
+}
+
+-- The standalone HAL carves three fixed 320x240x16 framebuffers out of RDRAM
+-- (FB0..FB2, then the Z buffer and the display list). Another resolution or
+-- bit depth would move every one of those addresses, so it is refused rather
+-- than silently ignored -- rendering a 640x480 scene into a 320x240 buffer
+-- produces garbage that looks like a game bug.
 fn display_init(res: i32, bpp: i32, bufs: i32, gamma: i32, filters: i32) {
+    if res != 0 { __pak_panic() }
+    if bpp != 2 { __pak_panic() }
+    if bufs < 1 or bufs > MAX_BUFS { __pak_panic() }
+
+    g_nbufs = bufs
+    -- Draw into the buffer the VI is not showing. With one buffer there is no
+    -- other one, so drawing and scanout share it.
+    g_shown = 0
+    g_draw  = 0
+    if bufs > 1 { g_draw = 1 }
+
+    let mut ctrl: u32 = VI_CTRL_BASE | VI_CTRL_TYPE_16BPP
+    ctrl = ctrl | (vi_aa_mode(filters) << 8)
+    if filters == 2 or filters == 4 { ctrl = ctrl | VI_CTRL_DITHER_FILTER }
+    if gamma != 0 { ctrl = ctrl | VI_CTRL_GAMMA }
+    if gamma >= 2 { ctrl = ctrl | VI_CTRL_GAMMA_DITHER }
+    g_vi_ctrl = ctrl
+
     vi_init()
 }
 
@@ -206,10 +251,25 @@ struct ControllerState {
     stick_y:  i32
 }
 
+-- One block per port. controller.read is documented for ports 0-3, so all
+-- four are polled and all four have their own state; the HAL used to poll
+-- channel 0 only and hand every port port 0's buttons.
 static g_held_0:     ButtonState
 static g_pressed_0:  ButtonState
 static g_released_0: ButtonState
 static g_cs_0:       ControllerState
+static g_held_1:     ButtonState
+static g_pressed_1:  ButtonState
+static g_released_1: ButtonState
+static g_cs_1:       ControllerState
+static g_held_2:     ButtonState
+static g_pressed_2:  ButtonState
+static g_released_2: ButtonState
+static g_cs_2:       ControllerState
+static g_held_3:     ButtonState
+static g_pressed_3:  ButtonState
+static g_released_3: ButtonState
+static g_cs_3:       ControllerState
 
 -- D-cache helpers — inline asm uses $a0/$a1 directly (avoids the parameter
 -- save/load offset bug; prologue does not clobber argument registers).
@@ -259,37 +319,55 @@ fn si_exec() {
     data_cache_hit_invalidate(b as *u8, 64)
 }
 
--- Initialise the ControllerState pointer fields for port 0.
--- Uses *u32 index (element size = 4, which is correct for pointer-sized fields).
-fn joypad_init() {
-    let cs0: *u32 = &g_cs_0 as *u32
-    cs0[0] = (&g_held_0    as u32)
-    cs0[1] = (&g_pressed_0 as u32)
-    cs0[2] = (&g_released_0 as u32)
+-- Per-port state block addresses. Four separate statics rather than an array
+-- so each address stays a link-time constant.
+fn held_addr(port: i32) -> u32 {
+    if port == 1 { return &g_held_1 as u32 }
+    if port == 2 { return &g_held_2 as u32 }
+    if port == 3 { return &g_held_3 as u32 }
+    return &g_held_0 as u32
 }
 
-fn joypad_poll() {
-    -- Build PIF command buffer in g_pif_buf via poke8 (real `sb` to the
-    -- buffer, not the stack). Byte 0: tx=1, byte 1: rx=4, byte 2: cmd=0x01.
-    -- Byte 7: 0xFE (end channels). Byte 63: 0x01 (execute PIF).
-    let b: u32 = pif_addr()
-    poke8(b + 0, 0x01)
-    poke8(b + 1, 0x04)
-    poke8(b + 2, 0x01)
-    poke8(b + 7, 0xFE)
-    poke8(b + 63, 0x01)
+fn pressed_addr(port: i32) -> u32 {
+    if port == 1 { return &g_pressed_1 as u32 }
+    if port == 2 { return &g_pressed_2 as u32 }
+    if port == 3 { return &g_pressed_3 as u32 }
+    return &g_pressed_0 as u32
+}
 
-    si_exec()
+fn released_addr(port: i32) -> u32 {
+    if port == 1 { return &g_released_1 as u32 }
+    if port == 2 { return &g_released_2 as u32 }
+    if port == 3 { return &g_released_3 as u32 }
+    return &g_released_0 as u32
+}
 
-    -- Response: bytes 3=buttons_hi, 4=buttons_lo, 5=stick_x, 6=stick_y.
-    let bhi: u32 = peek8(b + 3)
-    let blo: u32 = peek8(b + 4)
-    let cur: u32 = (bhi << 8) | blo
-    let sx:  i32 = peek8(b + 5) as i32
-    let sy:  i32 = peek8(b + 6) as i32
+fn cs_addr(port: i32) -> u32 {
+    if port == 1 { return &g_cs_1 as u32 }
+    if port == 2 { return &g_cs_2 as u32 }
+    if port == 3 { return &g_cs_3 as u32 }
+    return &g_cs_0 as u32
+}
+
+-- Point each port's ControllerState at its own three button blocks. Indexed
+-- as *u32 (element size 4, which is what the pointer fields are).
+fn joypad_init() {
+    let mut p: i32 = 0
+    while p < 4 {
+        let cs: *u32 = cs_addr(p) as *u32
+        cs[0] = held_addr(p)
+        cs[1] = pressed_addr(p)
+        cs[2] = released_addr(p)
+        p = p + 1
+    }
+}
+
+-- Fold one port's PIF response into its held/pressed/released blocks.
+-- `cur` is the 16-bit button word; sx/sy are the already-signed stick axes.
+fn joypad_store(port: i32, cur: u32, sx: i32, sy: i32) {
+    let hb: u32 = held_addr(port)
 
     -- Read previous held state per-button (each field = one bool byte, 0 or 1).
-    let hb: u32 = &g_held_0 as u32
     let prev_a:     u32 = (*((hb + 0)  as *volatile u8)) as u32
     let prev_b:     u32 = (*((hb + 1)  as *volatile u8)) as u32
     let prev_z:     u32 = (*((hb + 2)  as *volatile u8)) as u32
@@ -321,7 +399,7 @@ fn joypad_poll() {
     let cur_clt:   u32 = ((cur & 0x0002) != 0) as u32
     let cur_crt:   u32 = ((cur & 0x0001) != 0) as u32
 
-    -- Write g_held_0.
+    -- Write held.
     *((hb + 0)  as *volatile u8) = cur_a     as u8
     *((hb + 1)  as *volatile u8) = cur_b     as u8
     *((hb + 2)  as *volatile u8) = cur_z     as u8
@@ -337,9 +415,9 @@ fn joypad_poll() {
     *((hb + 12) as *volatile u8) = cur_clt   as u8
     *((hb + 13) as *volatile u8) = cur_crt   as u8
 
-    -- Write g_pressed_0: pressed = (cur=1) & (prev=0) = cur & (1-prev).
+    -- Write pressed: pressed = (cur=1) & (prev=0) = cur & (1-prev).
     -- For single-bit 0/1 values this is equivalent to cur & ~prev.
-    let pb: u32 = &g_pressed_0 as u32
+    let pb: u32 = pressed_addr(port)
     *((pb + 0)  as *volatile u8) = (cur_a     & (1 - prev_a))     as u8
     *((pb + 1)  as *volatile u8) = (cur_b     & (1 - prev_b))     as u8
     *((pb + 2)  as *volatile u8) = (cur_z     & (1 - prev_z))     as u8
@@ -355,8 +433,8 @@ fn joypad_poll() {
     *((pb + 12) as *volatile u8) = (cur_clt   & (1 - prev_clt))   as u8
     *((pb + 13) as *volatile u8) = (cur_crt   & (1 - prev_crt))   as u8
 
-    -- Write g_released_0: released = (cur=0) & (prev=1) = (1-cur) & prev.
-    let rbase: u32 = &g_released_0 as u32
+    -- Write released: released = (cur=0) & (prev=1) = (1-cur) & prev.
+    let rbase: u32 = released_addr(port)
     *((rbase + 0)  as *volatile u8) = ((1 - cur_a)     & prev_a)     as u8
     *((rbase + 1)  as *volatile u8) = ((1 - cur_b)     & prev_b)     as u8
     *((rbase + 2)  as *volatile u8) = ((1 - cur_z)     & prev_z)     as u8
@@ -372,14 +450,67 @@ fn joypad_poll() {
     *((rbase + 12) as *volatile u8) = ((1 - cur_clt)   & prev_clt)   as u8
     *((rbase + 13) as *volatile u8) = ((1 - cur_crt)   & prev_crt)   as u8
 
-    -- Update stick axes in g_cs_0 at offsets 12 and 16.
-    let cs_base: u32 = &g_cs_0 as u32
+    -- Update stick axes in the ControllerState at offsets 12 and 16.
+    let cs_base: u32 = cs_addr(port)
     let p_sx: *volatile i32 = (cs_base + 12) as *volatile i32; *p_sx = sx
     let p_sy: *volatile i32 = (cs_base + 16) as *volatile i32; *p_sy = sy
 }
 
+-- The stick axes are int8 on the wire. Reading them as unsigned made a
+-- left push (0x80..0xFF) look like a hard right.
+fn si_s8(v: u32) -> i32 {
+    let b: i32 = (v & 0xFF) as i32
+    if b > 127 { return b - 256 }
+    return b
+}
+
+fn joypad_poll() {
+    -- Build the PIF command buffer in g_pif_buf via poke8 (real `sb` to the
+    -- buffer, not the stack). One read-controller command per port, back to
+    -- back: [tx=1][rx=4][cmd=0x01][4 result bytes] is 7 bytes and advances
+    -- one channel, so four of them cover ports 0-3 and end at byte 28.
+    -- Byte 28: 0xFE (end channels). Byte 63: 0x01 (execute PIF).
+    let b: u32 = pif_addr()
+    let mut p: i32 = 0
+    while p < 4 {
+        let c: u32 = (p * 7) as u32
+        poke8(b + c + 0, 0x01)
+        poke8(b + c + 1, 0x04)
+        poke8(b + c + 2, 0x01)
+        poke8(b + c + 3, 0xFF)
+        poke8(b + c + 4, 0xFF)
+        poke8(b + c + 5, 0xFF)
+        poke8(b + c + 6, 0xFF)
+        p = p + 1
+    }
+    poke8(b + 28, 0xFE)
+    poke8(b + 63, 0x01)
+
+    si_exec()
+
+    -- Response per port: bytes +3=buttons_hi, +4=buttons_lo, +5=stick_x,
+    -- +6=stick_y. The PIF ORs an error code into the rx byte -- 0x80 for no
+    -- device, 0x40 for a timeout -- and the result bytes are junk when it does,
+    -- so an empty port reads as all-buttons-up rather than as noise.
+    p = 0
+    while p < 4 {
+        let c: u32 = (p * 7) as u32
+        let rx: u32 = peek8(b + c + 1)
+        let mut cur: u32 = 0
+        let mut sx: i32 = 0
+        let mut sy: i32 = 0
+        if (rx & 0xC0) == 0 {
+            cur = (peek8(b + c + 3) << 8) | peek8(b + c + 4)
+            sx = si_s8(peek8(b + c + 5))
+            sy = si_s8(peek8(b + c + 6))
+        }
+        joypad_store(p, cur, sx, sy)
+        p = p + 1
+    }
+}
+
 fn joypad_get_status(port: i32) -> *ControllerState {
-    return &g_cs_0 as *ControllerState
+    return cs_addr(port) as *ControllerState
 }
 
 -- ── RDP (Display Processor) ─────────────────────────────────────────────────
@@ -454,6 +585,13 @@ const CYCLE_1CYCLE: u32 = 0
 const CYCLE_2CYCLE: u32 = 1
 const CYCLE_COPY:   u32 = 2
 const CYCLE_FILL:   u32 = 3
+
+-- The cycle type the last mode setter selected. texture_rectangle needs it:
+-- in COPY the RDP retires four pixels per cycle and the S step is written 4x,
+-- which is the convention every GBI blit uses. In 1- or 2-cycle the same value
+-- advances S four texels per pixel, so a 32-texel page is consumed in eight
+-- pixels and everything past that samples unloaded TMEM.
+static g_cycle: u32 = 3
 
 static g_current_fb: u32 = 0
 static g_fill_color: u16 = 0xFFFF
@@ -585,6 +723,7 @@ fn rdpq_detach_show() {
 -- instead of a CPU loop over 76 800 uncached halfword stores.
 fn rdpq_set_mode_fill(color: u32) {
     dl_cmd(RDP_SYNC_PIPE << 24, 0)
+    g_cycle = CYCLE_FILL
     rdpq_set_other_modes_raw(CYCLE_FILL << 20, 0)
     rdpq_set_fill_color(color)
 }
@@ -594,6 +733,7 @@ fn rdpq_set_mode_fill(color: u32) {
 fn rdpq_set_mode_copy() {
     dl_cmd(RDP_SYNC_PIPE << 24, 0)
     -- alpha_compare_en (bit 0) so fully transparent texels are dropped.
+    g_cycle = CYCLE_COPY
     rdpq_set_other_modes_raw(CYCLE_COPY << 20, 0x00000001)
 }
 
@@ -611,7 +751,13 @@ fn rdp_set_mode_1cycle(zbuf: i32) {
     let blend: u32 = (1 << 22) | (1 << 20)
     let mut lo: u32 = blend | 0x00006040
     if zbuf != 0 { lo = lo | 0x30 }
-    rdpq_set_other_modes_raw(CYCLE_1CYCLE << 20, lo)
+    g_cycle = CYCLE_1CYCLE
+    -- bi_lerp0 (bit 11) and bi_lerp1 (bit 10) put the texture filter unit in
+    -- bilerp mode. With them clear the RDP runs every texel through the YUV
+    -- colour-convert path instead, which returns black for an RGBA texture --
+    -- so every textured triangle and every 1-cycle blit came out untextured.
+    let filt: u32 = (1 << 11) | (1 << 10)
+    rdpq_set_other_modes_raw((CYCLE_1CYCLE << 20) | filt, lo)
     -- Combiner (A-B)*C+D with A=B=C=0 and D=TEX0, for colour and alpha, in
     -- both cycles: sub_A=0, sub_B=0, mul=0, add=TEX0.
     rdpq_set_combiner_raw(0x00887F10, 0x88FCF279)
@@ -631,6 +777,7 @@ fn rdpq_clear_z() {
     let fb: u32 = g_current_fb
     rdpq_set_color_image(ZB, 0, 2, SCREEN_W)
     dl_cmd(RDP_SYNC_PIPE << 24, 0)
+    g_cycle = CYCLE_FILL
     rdpq_set_other_modes_raw(CYCLE_FILL << 20, 0)
     dl_cmd(RDP_SET_FILL_COLOR << 24, 0xFFFCFFFC)
     rdpq_fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
@@ -824,7 +971,13 @@ fn rdpq_texture_rectangle_scaled(tile: u32, x0: i32, y0: i32, x1: i32, y1: i32,
                                  s: i32, t: i32, dsdx: i32, dtdy: i32) {
     if x1 <= x0 { return }
     if y1 <= y0 { return }
-    let w0: u32 = (RDP_TEXTURE_RECT << 24) | (to_fx102(x1 - 1) << 12) | to_fx102(y1 - 1)
+    -- XL/YL are the last pixel in COPY and FILL, but one past it in 1- and
+    -- 2-cycle. Using the COPY form everywhere dropped the right column and the
+    -- bottom row of every 1-cycle blit.
+    let mut xl: i32 = x1
+    let mut yl: i32 = y1
+    if g_cycle == CYCLE_COPY { xl = x1 - 1; yl = y1 - 1 }
+    let w0: u32 = (RDP_TEXTURE_RECT << 24) | (to_fx102(xl) << 12) | to_fx102(yl)
     let w1: u32 = ((tile & 7) << 24) | (to_fx102(x0) << 12) | to_fx102(y0)
     dl_cmd(w0, w1)
     let w2: u32 = (((s * 32) as u32 & 0xFFFF) << 16) | ((t * 32) as u32 & 0xFFFF)
@@ -832,10 +985,14 @@ fn rdpq_texture_rectangle_scaled(tile: u32, x0: i32, y0: i32, x1: i32, y1: i32,
     dl_cmd(w2, w3)
 }
 
--- 1:1 blit: one texel per pixel. In COPY cycle the S step is four texels per
--- cycle, which the RDP expects as 4<<10 rather than 1<<10.
+-- A 1:1 blit. The S step is s5.10 texels per pixel: 1024 is one texel, and
+-- COPY wants it written 4x because the RDP retires four pixels per cycle
+-- there. Hardcoding the COPY value made every 1-cycle blit walk S four times
+-- too fast.
 fn rdpq_texture_rectangle(tile: u32, x0: i32, y0: i32, x1: i32, y1: i32, s: i32, t: i32) {
-    rdpq_texture_rectangle_scaled(tile, x0, y0, x1, y1, s, t, 4096, 1024)
+    let mut dsdx: i32 = 1024
+    if g_cycle == CYCLE_COPY { dsdx = 4096 }
+    rdpq_texture_rectangle_scaled(tile, x0, y0, x1, y1, s, t, dsdx, 1024)
 }
 
 -- TEXTURE_RECTANGLE_FLIP (0x25): same 1:1 blit as texture_rectangle, but T
@@ -847,7 +1004,9 @@ fn rdpq_texture_rectangle_flip(tile: u32, x0: i32, y0: i32, x1: i32, y1: i32, s:
     let w1: u32 = ((tile & 7) << 24) | (to_fx102(x0) << 12) | to_fx102(y0)
     dl_cmd(w0, w1)
     let w2: u32 = (((s * 32) as u32 & 0xFFFF) << 16) | ((t * 32) as u32 & 0xFFFF)
-    let w3: u32 = (4096 as u32 << 16) | 1024
+    let mut step: u32 = 1024
+    if g_cycle == CYCLE_COPY { step = 4096 }
+    let w3: u32 = (step << 16) | 1024
     dl_cmd(w2, w3)
 }
 
