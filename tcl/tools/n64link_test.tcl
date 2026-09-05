@@ -230,7 +230,9 @@ set r [link_texts [list "section .text
 sym _start 0
 data 03e00008 00000000
 "]]
-set rom [pak::n64rom [dict get $r image] "TESTROM"]
+# `pak link` and `pak build --backend mips` both pass this, so the default is
+# what a user's ROM actually gets.
+set rom [pak::n64rom [dict get $r image] "TESTROM" [pak::n64rom_default_ipl3]]
 ok "rom is word-aligned"  [expr {[string length $rom] % 4}] 0
 ok "rom is 4 MiB"          [string length $rom] 4194304
 ok "rom covers CRC window" [expr {[string length $rom] >= 0x101000}] 1
@@ -248,8 +250,23 @@ binary scan [string range $rom 16 23] IuIu payload crc2
 ok "payload size at 0x10" $payload [string length [dict get $r image]]
 # CRC2 is the real CIC-NUS-6102 checksum for this exact image and is stable.
 ok "CRC2" [format %08X $crc2] 0EAFCDE4
+
+# Bootcode. A ROM with a zeroed 0x40..0xFFF is structurally valid -- right
+# magic, right entry point, right checksum -- and boots on nothing, which is
+# what every ROM this linker produced used to be.
+set ipl3 [pak::n64rom_default_ipl3]
+ok "the shipped IPL3 is the full 4032-byte region" [string length $ipl3] \
+    [expr {$::pak::ROM_IPL3_SIZE}]
+ok "the ROM carries it verbatim" \
+    [string equal [string range $rom 64 [expr {64 + $::pak::ROM_IPL3_SIZE - 1}]] $ipl3] 1
+ok "the IPL3 region is not zero-filled" \
+    [expr {[string trim [string range $rom 64 4095] "\x00"] ne ""}] 1
+# The loader reads the entry point from 0x08 and jumps to it; it has to be the
+# address the linker actually placed .text at.
+ok "the entry point is the link base" $entry_pc [expr {$::pak::LINK_BASE_ADDR}]
 # Repacking the same image must reproduce the same ROM byte for byte.
-ok "packing is deterministic" [expr {[pak::n64rom [dict get $r image] "TESTROM"] eq $rom}] 1
+ok "packing is deterministic" \
+    [expr {[pak::n64rom [dict get $r image] "TESTROM" $ipl3] eq $rom}] 1
 # A different title changes the ROM (title is inside the CRC-free header) but
 # not the code region.
 set rom2 [pak::n64rom [dict get $r image] "OTHER"]

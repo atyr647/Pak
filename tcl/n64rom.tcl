@@ -111,8 +111,17 @@ proc pak::n64rom_ipl3_from_z64 {path} {
 # See runtime/standalone/ipl3_compat.README.md. Returns "" if the file is
 # missing, which leaves the region zeroed -- a ROM that cannot boot, but a
 # `pak link` that still tells you what it produced.
+# Where this file lives, captured at load time -- `info script` inside a proc
+# names whatever is being sourced when the proc runs, not where it was written.
+set ::pak::_n64rom_dir [file dirname [file normalize [info script]]]
+
 proc pak::n64rom_default_ipl3 {} {
-    set f [file join $::pak::CLI_ROOT runtime standalone ipl3_compat.bin]
+    # Located from this file rather than from $::pak::CLI_ROOT: the packer is
+    # sourced directly by tests and tools that never set that global, and a
+    # missing bootcode is not something to discover as an empty string.
+    set root [file dirname $::pak::_n64rom_dir]
+    if {[info exists ::pak::CLI_ROOT]} { set root $::pak::CLI_ROOT }
+    set f [file join $root runtime standalone ipl3_compat.bin]
     if {![file exists $f]} { return "" }
     set fh [open $f rb]; set d [read $fh]; close $fh
     return $d
