@@ -235,7 +235,7 @@ div_rem:
     sw $a1, 140($sp)
     lw $t8, 136($sp)
     lw $t7, 140($sp)
-    div $t8, $t7
+    div $zero, $t8, $t7
     mflo $t9
     sw $t9, 144($sp)
     lw $t8, 136($sp)

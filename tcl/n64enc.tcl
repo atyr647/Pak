@@ -238,8 +238,18 @@ proc pak::enc::emit_real {ctxVar mnem args} {
         emit_word ctx [R 0 0 [gpr $t] [gpr $d] [imm $sa] [dict get $::pak::enc::RCSHIFT $mnem]]
         return
     }
-    # mult/multu/div/divu: rs,rt
+    # mult/multu/div/divu: rs,rt -- or, for div/divu, the three-operand
+    # `div $zero, rs, rt` GNU as requires to mean the bare instruction rather
+    # than its checked macro. $zero is the only destination accepted: any other
+    # would be the macro form, which this encoder does not implement.
     if {[dict exists $::pak::enc::RHILO $mnem]} {
+        if {[llength $ops] == 3} {
+            set d [string trim [lindex $ops 0] ,]
+            if {[gpr $d] != 0} {
+                error "n64enc: '$mnem $d, ...' is GNU as's checked macro form, not supported; write '$mnem \$zero, rs, rt'"
+            }
+            set ops [lrange $ops 1 2]
+        }
         lassign $ops s t
         emit_word ctx [R 0 [gpr $s] [gpr $t] 0 0 [dict get $::pak::enc::RHILO $mnem]]
         return
@@ -428,14 +438,24 @@ proc pak::enc::expand {mnem ops} {
             return [list [list sll {$zero} {$zero} 0]]
         }
         move {
-            # move $d,$s -> addu $d,$s,$zero  (rs=$s, rt=$zero).
-            # Golden: move $t0,$t1 = 0x01204021 (rs=9,rt=0,rd=8), i.e. $s in rs.
+            # move $d,$s -> or $d,$s,$zero  (rs=$s, rt=$zero), which is what
+            # GNU as emits. `addu $d,$s,$zero` also copies, but it sign-extends
+            # the low 32 bits into the VR4300's 64-bit register, so the two
+            # spellings can disagree once a value reaches a 64-bit-wide
+            # comparison such as sltu. Match the assembler everyone else uses.
+            # Golden: move $t0,$t1 = 0x01204025 (rs=9,rt=0,rd=8), i.e. $s in rs.
             lassign $ops d s
-            return [list [list addu $d $s {$zero}]]
+            return [list [list or $d $s {$zero}]]
         }
         li {
             lassign $ops d im
             set v [imm $im]
+            # Normalise to a signed 32-bit value first. The codegen writes
+            # masks as unsigned hex (0xFFFFFFF8), and without this they miss
+            # the addiu case that GNU as takes for the same constant, costing
+            # a word and putting the two assemblers out of step.
+            set v [expr {$v & 0xFFFFFFFF}]
+            if {$v >= 0x80000000} { set v [expr {$v - 0x100000000}] }
             if {$v >= -32768 && $v <= 32767} {
                 return [list [list addiu $d {$zero} $v]]
             } elseif {$v >= 0 && $v <= 65535} {
@@ -443,6 +463,12 @@ proc pak::enc::expand {mnem ops} {
             } else {
                 set hi [expr {($v >> 16) & 0xffff}]
                 set lo [expr {$v & 0xffff}]
+                # A constant whose low half is zero needs no `ori`, and GNU as
+                # drops it. Most of the N64 MMIO bases (0xA4000000, 0xA4400000,
+                # 0xA0100000 ...) are exactly that shape, so this is not a rare
+                # case -- and one word instead of two also means such a `li` is
+                # legal in a branch delay slot again.
+                if {$lo == 0} { return [list [list lui $d $hi]] }
                 return [list [list lui $d $hi] [list ori $d $d $lo]]
             }
         }
@@ -470,21 +496,46 @@ proc pak::enc::expand {mnem ops} {
             lassign $ops d s1 s2
             return [list [list slt $d $s2 $s1]]
         }
+        sleu {
+            lassign $ops d s1 s2
+            return [list [list sltu $d $s2 $s1] [list xori $d $d 1]]
+        }
+        sgtu {
+            lassign $ops d s1 s2
+            return [list [list sltu $d $s2 $s1]]
+        }
+        sgeu {
+            lassign $ops d s1 s2
+            return [list [list sltu $d $s1 $s2] [list xori $d $d 1]]
+        }
         sge {
             lassign $ops d s1 s2
             return [list [list slt $d $s1 $s2] [list xori $d $d 1]]
         }
         seq {
+            # xor, not subu: GNU as uses xor, and on the VR4300's 64-bit
+            # registers subu sign-extends its 32-bit result where xor does not.
+            # Both are zero exactly when the operands are equal, so the choice
+            # only matters for matching the assembler -- which is the point.
             lassign $ops d s1 s2
-            return [list [list subu $d $s1 $s2] [list sltiu $d $d 1]]
+            # Comparing against zero needs no xor: the value is already the
+            # difference. GNU as folds this, so folding it here keeps the two
+            # in step -- and `x == 0` is the commonest comparison there is.
+            if {[gpr $s2] == 0} { return [list [list sltiu $d $s1 1]] }
+            if {[gpr $s1] == 0} { return [list [list sltiu $d $s2 1]] }
+            return [list [list xor $d $s1 $s2] [list sltiu $d $d 1]]
         }
         sne {
             lassign $ops d s1 s2
-            return [list [list subu $d $s1 $s2] [list sltu $d {$zero} $d]]
+            if {[gpr $s2] == 0} { return [list [list sltu $d {$zero} $s1]] }
+            if {[gpr $s1] == 0} { return [list [list sltu $d {$zero} $s2]] }
+            return [list [list xor $d $s1 $s2] [list sltu $d {$zero} $d]]
         }
         mul {
+            # multu, not mult: the low 32 bits are the same either way, and
+            # multu is what GNU as emits for this macro.
             lassign $ops d s1 s2
-            return [list [list mult $s1 $s2] [list mflo $d]]
+            return [list [list multu $s1 $s2] [list mflo $d]]
         }
     }
     return ""  ;# not a pseudo
@@ -492,7 +543,7 @@ proc pak::enc::expand {mnem ops} {
 
 # Is this mnemonic a pseudo we expand here?
 proc pak::enc::is_pseudo {mnem} {
-    return [expr {$mnem in {nop move li la beqz bnez bge sle sgt sge seq sne mul}}]
+    return [expr {$mnem in {nop move li la beqz bnez bge sle sgt sge sleu sgtu sgeu seq sne mul}}]
 }
 
 # ── Data-directive value: number or label ────────────────────────────────────

@@ -185,5 +185,105 @@ entry {
 } out 00000002
 
 puts ""
+puts "== unsigned arithmetic uses the unsigned instructions =="
+
+# emit_binop was type-blind. Every one of these produced the signed
+# instruction -- srav, div, slt -- and every one of them is a shape that
+# actually turns up on an N64: a cached address, a packed colour, a size
+# compared against a hardware limit. The constants below all have bit 31 set,
+# which is exactly where the signed and unsigned answers part company.
+
+chk "u32 >> is a logical shift" {
+static out: u32 = 0
+entry {
+    let a: u32 = 0xA0100000
+    let s: u32 = 4
+    out = a >> s
+}
+} out 0A010000
+
+chk "u32 / is an unsigned divide" {
+static out: u32 = 0
+entry {
+    let a: u32 = 0xA0000000
+    let b: u32 = 2
+    out = a / b
+}
+} out 50000000
+
+chk "u32 % is an unsigned remainder" {
+static out: u32 = 0
+entry {
+    let a: u32 = 0xA0000001
+    let b: u32 = 16
+    out = a % b
+}
+} out 00000001
+
+chk "u32 < compares unsigned" {
+static out: u32 = 0
+entry {
+    let a: u32 = 0xA0000000
+    let b: u32 = 1
+    if a < b { out = 1 } else { out = 0 }
+}
+} out 00000000
+
+chk "u32 > compares unsigned" {
+static out: u32 = 0
+entry {
+    let a: u32 = 0xA0000000
+    let b: u32 = 1
+    if a > b { out = 1 } else { out = 0 }
+}
+} out 00000001
+
+chk "u32 >= compares unsigned" {
+static out: u32 = 0
+entry {
+    let a: u32 = 0x80000000
+    let b: u32 = 0x7FFFFFFF
+    if a >= b { out = 1 } else { out = 0 }
+}
+} out 00000001
+
+chk "u32 <= compares unsigned" {
+static out: u32 = 0
+entry {
+    let a: u32 = 0x80000000
+    let b: u32 = 0x7FFFFFFF
+    if a <= b { out = 1 } else { out = 0 }
+}
+} out 00000000
+
+# The signed operators must keep working: i32 >> stays arithmetic.
+chk "i32 >> stays an arithmetic shift" {
+static out: i32 = 0
+entry {
+    let a: i32 = -256
+    let s: i32 = 4
+    out = a >> s
+}
+} out FFFFFFF0
+
+chk "i32 / stays a signed divide" {
+static out: i32 = 0
+entry {
+    let a: i32 = -100
+    let b: i32 = 8
+    out = a / b
+}
+} out FFFFFFF4
+
+chk "i32 < stays a signed compare" {
+static out: i32 = 0
+entry {
+    let a: i32 = -1
+    let b: i32 = 1
+    if a < b { out = 1 } else { out = 0 }
+}
+} out 00000001
+
+puts ""
 puts "PASS=$pass  FAIL=$fail"
 exit [expr {$fail > 0 ? 1 : 0}]

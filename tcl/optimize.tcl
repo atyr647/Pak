@@ -10,6 +10,11 @@ namespace eval pak::opt {}
 if {[info exists ::pak::_optimize_loaded]} { return }
 set ::pak::_optimize_loaded 1
 
+# The delay-slot filler has to know which mnemonics are pseudo-instructions
+# that expand to more than one machine word, and tcl/n64enc.tcl is where that
+# is decided. Asking it directly is the only way the two stay in agreement.
+source [file join [file dirname [file normalize [info script]]] n64enc.tcl]
+
 # ── Instruction pattern tables ───────────────────────────────────────────────
 set ::pak::opt::BRANCH_OPS {beq bne beqz bnez bgez bgtz blez bltz bge bgt ble blt bc1t bc1f}
 set ::pak::opt::JUMP_OPS {j jal jr jalr}
@@ -19,8 +24,8 @@ set ::pak::opt::DIV_OPS {div divu}
 set ::pak::opt::MFHILO_OPS {mflo mfhi}
 # Ops whose first operand is the destination (written, not read).
 set ::pak::opt::DST_FIRST {li la lui move addiu addi addu subu mul and or xor nor \
-    sll srl sra slt sltu slti seq sne sle sge sgt not sllv srav srlv andi ori xori \
-    sltiu mflo mfhi}
+    sll srl sra slt sltu slti seq sne sle sge sgt sleu sgtu sgeu not sllv srav srlv \
+    andi ori xori sltiu mflo mfhi}
 set ::pak::opt::FPU_DST_FIRST {
     add.s sub.s mul.s div.s mov.s neg.s abs.s sqrt.s
     add.d sub.d mul.d div.d mov.d neg.d abs.d sqrt.d
@@ -39,6 +44,24 @@ proc pak::opt::ops {rec} { lrange $rec 2 end }
 proc pak::opt::label_name {rec} {
     if {[lindex $rec 0] eq "label"} { return [lindex $rec 1] }
     return ""
+}
+
+# How many machine words this record assembles to. Anything above one must
+# never go in a branch delay slot: the delay slot is one word, so the rest of
+# the expansion sits at the branch target's expense and is skipped whenever the
+# branch is taken. `seq $v0,$t5,$t4` after a `j` left $v0 holding the raw
+# difference instead of 0/1, and `li $v0, 0xA0125800` left the low half
+# unwritten -- both silently, because the simulator runs records, not words.
+proc pak::opt::expansion_words {rec} {
+    if {![is_instr $rec]} { return 1 }
+    set op [mnem $rec]
+    # `la` is always lui+addiu (each half needs its own relocation), and
+    # pak::enc::expand refuses to expand it outside the encoder.
+    if {$op eq "la"} { return 2 }
+    if {![pak::enc::is_pseudo $op]} { return 1 }
+    if {[catch {set exp [pak::enc::expand $op [ops $rec]]}]} { return 2 }
+    if {[llength $exp] == 0} { return 1 }
+    return [llength $exp]
 }
 
 proc pak::opt::is_branch_or_jump {op} {
@@ -231,6 +254,7 @@ proc pak::opt::fill_delay_slots {recs} {
                 set prev_op [mnem $prev]
                 if {![is_branch_or_jump $prev_op] \
                         && ![in $prev_op {nop mult multu div divu jal jalr sync}] \
+                        && [expansion_words $prev] == 1 \
                         && ![string match ".*" $prev_op]} {
                     set prev_writes [regs_written $prev_op [ops $prev]]
                     set branch_reads [regs_read [mnem $br] [ops $br]]
@@ -260,7 +284,7 @@ proc pak::opt::is_independent {rec_a rec_b} {
     set op_b [mnem $rec_b]
     set operands_a [ops $rec_a]
     set operands_b [ops $rec_b]
-    if {[is_branch_or_jump $op_b] || [in $op_b {nop sync syscall mult multu div divu mflo mfhi}]} {
+    if {[is_branch_or_jump $op_b] || [in $op_b {nop sync syscall mul mult multu div divu mflo mfhi}]} {
         return 0
     }
     # Memory ordering. The scheduler compares registers only, so it cannot tell

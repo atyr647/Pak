@@ -95,7 +95,14 @@ oo::class create pak::Emitter {
     method subu {d s1 s2} { my instr "subu" "$d," "$s1," $s2 }
     method mul {d s1 s2}  { my instr "mul" "$d," "$s1," $s2 }
     method mult {s1 s2}   { my instr "mult" "$s1," $s2 }
-    method div {s1 s2}    { my instr "div" "$s1," $s2 }
+    # `div $s1, $s2` means "divide and check" to GNU as: it expands the
+    # two-operand form into a ten-instruction sequence with divide-by-zero and
+    # overflow traps, and takes $s1 as the destination. `div $zero, $s1, $s2`
+    # is the documented spelling for the bare instruction, so emit that -- it
+    # keeps `pak explain --backend mips` output assemblable by binutils and
+    # lets tcl/tools/n64enc_gas_test.tcl compare it.
+    method div {s1 s2}    { my instr "div" {$zero,} "$s1," $s2 }
+    method divu {s1 s2}   { my instr "divu" {$zero,} "$s1," $s2 }
     method mflo {d}       { my instr "mflo" $d }
     method mfhi {d}       { my instr "mfhi" $d }
     method and_ {d s1 s2} { my instr "and" "$d," "$s1," $s2 }
@@ -105,6 +112,7 @@ oo::class create pak::Emitter {
     method not_ {d s}     { my instr "nor" "$d," "$s," {$zero} }
     method sllv {d s sh}  { my instr "sllv" "$d," "$s," $sh }
     method srav {d s sh}  { my instr "srav" "$d," "$s," $sh }
+    method srlv {d s sh}  { my instr "srlv" "$d," "$s," $sh }
     method sll {d s sh}   { my instr "sll" "$d," "$s," $sh }
     method srl {d s sh}   { my instr "srl" "$d," "$s," $sh }
     method sra {d s sh}   { my instr "sra" "$d," "$s," $sh }
@@ -118,6 +126,9 @@ oo::class create pak::Emitter {
     method seq {d s1 s2}  { my instr "seq" "$d," "$s1," $s2 }
     method sne {d s1 s2}  { my instr "sne" "$d," "$s1," $s2 }
     method sltu {d s1 s2} { my instr "sltu" "$d," "$s1," $s2 }
+    method sleu {d s1 s2} { my instr "sleu" "$d," "$s1," $s2 }
+    method sgtu {d s1 s2} { my instr "sgtu" "$d," "$s1," $s2 }
+    method sgeu {d s1 s2} { my instr "sgeu" "$d," "$s1," $s2 }
     method sltiu {d s imm} { my instr "sltiu" "$d," "$s," $imm }
     # branches
     method beqz {r lbl}   { my instr "beqz" "$r," $lbl }
@@ -3848,6 +3859,51 @@ oo::class create pak::MipsCodegen {
         }
     }
 
+    # Returns 1 if the expression's type is an unsigned integer (or a pointer).
+    # The binop lowering below is otherwise type-blind, and every arithmetic
+    # operator whose meaning depends on signedness -- /, %, >>, and the four
+    # ordered comparisons -- was emitting the signed instruction for u8/u16/
+    # u32/u64 as well. On the N64 that is not a corner case: addresses, MMIO
+    # words and packed colours are all u32 with the top bit set, and
+    # `0xA0100000 >> 2` came out as 0xE8040000.
+    #
+    # An unknown type answers 0 (signed), which is what the backend did before,
+    # so nothing that used to work changes meaning.
+    method infer_is_unsigned {expr} {
+        if {$expr eq "" || [pak::isnil $expr]} { return 0 }
+        switch -- [pak::kindof $expr] {
+            IntLit - FloatLit - BoolLit { return 0 }
+            Ident {
+                set n [pak::fval $expr name]
+                set local [my lookup_local $n]
+                if {$local ne ""} { return [my layout_is_unsigned [lindex $local 1]] }
+                if {[dict exists $globals $n]} {
+                    return [my layout_is_unsigned [lindex [dict get $globals $n] 1]]
+                }
+                return 0
+            }
+            BinaryOp {
+                # A comparison or logical connective yields 0/1, which is not
+                # an unsigned value in any interesting sense.
+                if {[pak::fval $expr op] in {== != < <= > >= && || and or}} { return 0 }
+                if {[my infer_is_unsigned [pak::nfield $expr left]]} { return 1 }
+                return [my infer_is_unsigned [pak::nfield $expr right]]
+            }
+        }
+        # Anything else (Cast, DotAccess, Call, IndexAccess, ...) goes through
+        # the shared type inference.
+        if {[catch {set t [my expr_type $expr]}]} { return 0 }
+        if {$t eq "" || [pak::isnil $t]} { return 0 }
+        if {[catch {set lay [my mips_layout $t]}]} { return 0 }
+        return [my layout_is_unsigned $lay]
+    }
+
+    method layout_is_unsigned {lay} {
+        if {![dict exists $lay is_signed]} { return 0 }
+        if {[dict exists $lay is_float] && [dict get $lay is_float]} { return 0 }
+        return [expr {[dict get $lay is_signed] ? 0 : 1}]
+    }
+
     # Returns 1 if the expression has float type (f32).
     method infer_is_float {expr} {
         switch -- [pak::kindof $expr] {
@@ -4153,23 +4209,28 @@ oo::class create pak::MipsCodegen {
             $ra free_temp $rhs; $ra free_temp $lhs
             return
         }
+        # C's usual arithmetic conversions: the operation is unsigned if either
+        # operand is. +, -, *, &, |, ^ and << give the same 32 bits either way,
+        # so only the six below change.
+        set uns [expr {[my infer_is_unsigned $left_expr] \
+                       || [my infer_is_unsigned $right_expr]}]
         switch -- $op {
             +  { $em addu $dst $lhs $rhs }
             -  { $em subu $dst $lhs $rhs }
             *  { $em mul $dst $lhs $rhs }
-            /  { $em div $lhs $rhs; $em mflo $dst }
-            %  { $em div $lhs $rhs; $em mfhi $dst }
+            /  { if {$uns} { $em divu $lhs $rhs } else { $em div $lhs $rhs }; $em mflo $dst }
+            %  { if {$uns} { $em divu $lhs $rhs } else { $em div $lhs $rhs }; $em mfhi $dst }
             &  { $em and_ $dst $lhs $rhs }
             |  { $em or_ $dst $lhs $rhs }
             ^  { $em xor $dst $lhs $rhs }
             <<  { $em sllv $dst $lhs $rhs }
-            >>  { $em srav $dst $lhs $rhs }
+            >>  { if {$uns} { $em srlv $dst $lhs $rhs } else { $em srav $dst $lhs $rhs } }
             ==  { $em seq $dst $lhs $rhs }
             !=  { $em sne $dst $lhs $rhs }
-            <   { $em slt $dst $lhs $rhs }
-            <=  { $em sle $dst $lhs $rhs }
-            >   { $em sgt $dst $lhs $rhs }
-            >=  { $em sge $dst $lhs $rhs }
+            <   { if {$uns} { $em sltu $dst $lhs $rhs } else { $em slt $dst $lhs $rhs } }
+            <=  { if {$uns} { $em sleu $dst $lhs $rhs } else { $em sle $dst $lhs $rhs } }
+            >   { if {$uns} { $em sgtu $dst $lhs $rhs } else { $em sgt $dst $lhs $rhs } }
+            >=  { if {$uns} { $em sgeu $dst $lhs $rhs } else { $em sge $dst $lhs $rhs } }
             && {
                 set tmp [$ra alloc_temp]
                 $em sltiu $tmp $lhs 1
@@ -4276,14 +4337,15 @@ oo::class create pak::MipsCodegen {
                     $em la $cur __cur
                     $em lw $cur 0 $cur
                 }
+                set uns [my infer_is_unsigned $target]
                 switch -- $op {
                     +=  { $em addu $val_reg $cur $val_reg }
                     -=  { $em subu $val_reg $cur $val_reg }
                     *=  { $em mul $val_reg $cur $val_reg }
-                    /=  { $em div $cur $val_reg; $em mflo $val_reg }
-                    %=  { $em div $cur $val_reg; $em mfhi $val_reg }
+                    /=  { if {$uns} { $em divu $cur $val_reg } else { $em div $cur $val_reg }; $em mflo $val_reg }
+                    %=  { if {$uns} { $em divu $cur $val_reg } else { $em div $cur $val_reg }; $em mfhi $val_reg }
                     <<= { $em sllv $val_reg $cur $val_reg }
-                    >>= { $em srav $val_reg $cur $val_reg }
+                    >>= { if {$uns} { $em srlv $val_reg $cur $val_reg } else { $em srav $val_reg $cur $val_reg } }
                     &=  { $em and_ $val_reg $cur $val_reg }
                     |=  { $em or_ $val_reg $cur $val_reg }
                     ^=  { $em xor $val_reg $cur $val_reg }

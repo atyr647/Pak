@@ -198,11 +198,11 @@ gen_sample:
     sw $t9, 140($sp)
     lw $t7, 136($sp)
     lw $t6, 140($sp)
-    div $t7, $t6
+    div $zero, $t7, $t6
     mfhi $t8
     lw $t6, 140($sp)
     li $t5, 2
-    div $t6, $t5
+    div $zero, $t6, $t5
     mflo $t7
     slt $t9, $t8, $t7
     beqz $t9, .Lif_end_1
@@ -266,7 +266,7 @@ fill_audio_buffer:
     mul $t8, $t7, $t6
     lw $t6, 140($sp)
     li $t5, 2
-    div $t6, $t5
+    div $zero, $t6, $t5
     mflo $t7
     addu $a0, $t8, $t7
     sw $t9, 96($sp)

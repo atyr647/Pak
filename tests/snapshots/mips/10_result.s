@@ -275,7 +275,7 @@ divide:
     sb $t9, 156($sp)
     lw $t7, 140($sp)
     lw $t6, 144($sp)
-    div $t7, $t6
+    div $zero, $t7, $t6
     mflo $t8
     sw $t8, 160($sp)
     addiu $t9, $sp, 156

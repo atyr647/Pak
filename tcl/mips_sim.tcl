@@ -342,6 +342,19 @@ proc exec_insn {op args} {
             set n [lindex $args 0]
             if {$n} { set R($n) [expr {$R([lindex $args 1]) < $R([lindex $args 2]) ? 1 : 0}] }
         }
+        sleu - sgtu - sgeu {
+            # The unsigned counterparts of sle/sgt/sge. R() already holds the
+            # unsigned 32-bit value, so these need no sign fixup.
+            set n [lindex $args 0]
+            if {$n} {
+                set a $R([lindex $args 1]);  set b $R([lindex $args 2])
+                switch -- $op {
+                    sleu { set R($n) [expr {$a <= $b ? 1 : 0}] }
+                    sgtu { set R($n) [expr {$a >  $b ? 1 : 0}] }
+                    sgeu { set R($n) [expr {$a >= $b ? 1 : 0}] }
+                }
+            }
+        }
         slti {
             set n [lindex $args 0];  set s [lindex $args 1];  set i [lindex $args 2]
             if {$i > 32767} { set i [expr {$i - 65536}] }
@@ -394,6 +407,9 @@ proc exec_insn {op args} {
         }
 
         div {
+            # `div $zero, rs, rt` -- the three-operand spelling that keeps GNU
+            # as from expanding its checked macro. The dest is always $zero.
+            if {[llength $args] == 3} { set args [lrange $args 1 2] }
             set a $R([lindex $args 0]); if {$a >= 0x80000000} { set a [expr {$a - 0x100000000}] }
             set b $R([lindex $args 1]); if {$b >= 0x80000000} { set b [expr {$b - 0x100000000}] }
             if {$b != 0} {
@@ -409,6 +425,7 @@ proc exec_insn {op args} {
             }
         }
         divu {
+            if {[llength $args] == 3} { set args [lrange $args 1 2] }
             set a $R([lindex $args 0]);  set b $R([lindex $args 1])
             if {$b} { set LO [expr {$a / $b}];  set HI [expr {$a % $b}] }
         }

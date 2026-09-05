@@ -144,6 +144,16 @@ jobs:
       - name: Cross-compile and link a real ROM
         run: N64_INST=/opt/pak-n64 tclsh tcl/tools/libdragon_link_test.tcl
 
+      # tcl/n64enc.tcl is a from-scratch MIPS assembler, and the only thing
+      # that checked it was a table of encodings a human worked out by hand --
+      # so a misreading of the manual was baked into both sides. This assembles
+      # the same text with binutils and compares the bytes. It found four
+      # encoding divergences and one silent miscompile: pseudo-instructions
+      # that expand to two words were being scheduled into branch delay slots,
+      # where the second word is skipped whenever the branch is taken.
+      - name: MIPS encoder matches GNU as, byte for byte
+        run: PATH=/opt/pak-n64/bin:$PATH tclsh tcl/tools/n64enc_gas_test.tcl
+
       # Every diagnostic the corpus exercises is a mistake someone thought to
       # write down. This finds the ones nobody did: mutated sources that must
       # still come back as an error message with a line number rather than as

@@ -61,7 +61,7 @@ check {i and {$t0} {$t1} {$t2}}    0x012A4024
 check {i or {$t0} {$t1} {$t2}}     0x012A4025
 check {i slt {$t0} {$t1} {$t2}}    0x012A402A
 check {i nop}                      0x00000000
-check {i move {$t0} {$t1}}         0x01204021
+check {i move {$t0} {$t1}}         0x01204025
 check {i mult {$t0} {$t1}}         0x01090018
 check {i mflo {$t0}}               0x00004012
 check {i li {$t0} 5}               0x24080005
@@ -95,8 +95,8 @@ set ctx [pak::enc::encode {
 }]
 set bytes [dict get $ctx secdata .text bytes]
 check_eq "seq expands to 2 words (8 bytes)" [llength $bytes] 8
-check_eq "seq word0 (subu \$t0,\$t1,\$t2)" \
-    [format 0x%08X [word_at $ctx .text 0]] 0x012A4023
+check_eq "seq word0 (xor \$t0,\$t1,\$t2)" \
+    [format 0x%08X [word_at $ctx .text 0]] 0x012A4026
 check_eq "seq word1 (sltiu \$t0,\$t0,1)" \
     [format 0x%08X [word_at $ctx .text 1]] 0x2D080001
 
