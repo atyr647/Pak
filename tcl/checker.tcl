@@ -137,7 +137,14 @@ oo::class create pak::Checker {
     # ── use declarations ──────────────────────────────────────────────────────
     method check_use {decl} {
         set parts [split [pak::fval $decl path] .]
-        if {[llength $parts] < 2} return
+        # `use t3d` is the spelling the Tiny3D demos actually use, and it has
+        # one part, so it fell out here before registering anything -- which
+        # silently disabled every check on `t3d.*` calls, E010 included. A
+        # gate a user can bypass by how they spell an import is not a gate.
+        if {[llength $parts] == 1} {
+            if {[lindex $parts 0] eq "t3d"} { dict set used_modules t3d t3d }
+            return
+        }
         set prefix [lindex $parts 0]
         if {$prefix eq "n64"} {
             set mod [lindex $parts 1]
@@ -381,6 +388,21 @@ oo::class create pak::Checker {
                 "Not defined in runtime/standalone/runtime.pk64. Use the libdragon backend, or implement it in the HAL." \
                 $call
             return
+        }
+        if {$backend eq "c"} {
+            switch -- [pak::libdragon_class $mod $fn] {
+                missing {
+                    my warn W005 "'$mod.$fn' is not implemented on the libdragon backend" \
+                        "Pak names it but neither libdragon nor Tiny3D defines it, so the\
+                         generated C will not compile. It exists on the standalone HAL:\
+                         build with --backend mips. See STDLIB.md." $call
+                }
+                tiny3d {
+                    my warn W006 "'$mod.$fn' needs Tiny3D" \
+                        "Set `tiny3d = true` under \[dependencies\] in pak.toml and point\
+                         TINY3D_INST at your Tiny3D installation." $call
+                }
+            }
         }
         my check_rdp_cached_addr $call $mod $fn
         # Arity (E105) stays on the fully-qualified `n64.mod.fn(...)` form the

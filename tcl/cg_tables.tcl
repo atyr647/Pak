@@ -10,7 +10,6 @@ set ::pak::_cg_tables_loaded 1
 set ::pak::CG_API [dict create \
     {audio can_write} {audio_can_write} \
     {audio close} {audio_close} \
-    {audio get_buffer} {audio_get_buffer} \
     {audio get_frequency} {audio_get_frequency} \
     {audio init} {audio_init} \
     {audio set_buffer_num} {audio_set_buffer_num} \
@@ -247,6 +246,7 @@ set ::pak::CG_API [dict create \
 set ::pak::CG_API_LAMBDA [dict create \
     {arena alloc} {1} \
     {arena reset} {1} \
+    {audio get_buffer} {1} \
     {controller read} {1} \
     {display init} {1} \
     {rdpq attach_clear} {1} \

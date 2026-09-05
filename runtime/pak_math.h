@@ -21,6 +21,19 @@
 #include <stdint.h>
 #include <math.h>
 
+/* ── scalar helpers ───────────────────────────────────────────────────────── */
+/* These need nothing but <stdint.h>, so they sit outside the Tiny3D guard.
+ * The C backend used to emit MIN()/MAX() for math.min_i32 / math.max_i32 --
+ * macros that libdragon does not define and nothing else did either, so the
+ * call was an implicit declaration that only a warning flagged. Inline
+ * functions also evaluate each argument exactly once, which a macro would
+ * not. */
+
+static inline int32_t pak_min_i32(int32_t a, int32_t b) { return a < b ? a : b; }
+static inline int32_t pak_max_i32(int32_t a, int32_t b) { return a > b ? a : b; }
+static inline float   pak_min_f(float a, float b)       { return a < b ? a : b; }
+static inline float   pak_max_f(float a, float b)       { return a > b ? a : b; }
+
 #if !defined(PAK_HAS_TINY3D) && defined(__has_include)
 #  if __has_include(<t3d/t3d.h>)
 #    define PAK_HAS_TINY3D 1

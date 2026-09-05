@@ -42,7 +42,7 @@ int16_t gen_sample(int32_t t) {
 }
 
 void fill_audio_buffer(void) {
-    int16_t * buf = audio_get_buffer();
+    int16_t * buf = pak_audio_get_buffer();
     if (buf == NULL) {
         return;
     }

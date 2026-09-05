@@ -28,9 +28,16 @@
 #
 # The host compiler is not a cross-compiler, so this cannot speak to ABI, type
 # sizes or alignment. It is not trying to: it is checking that the CALLS match
-# the DECLARATIONS. -w is on because libdragon's own headers warn under a
-# 64-bit `long` (%ld against int32_t), which is an artefact of compiling for
-# the host and says nothing about Pak.
+# the DECLARATIONS.
+#
+# The warning flags are the gate, not decoration. Calling a function libdragon
+# does not have is only a WARNING in C17, so a blanket -w -- which the first
+# version of this file used, to silence libdragon's own %ld-against-int32_t
+# noise under a 64-bit host `long` -- hid exactly the class this gate exists
+# to catch: rdpq.triangle_z and 20 other MODULE_API entries name functions
+# libdragon has never had, and they compiled clean. -w is gone; the specific
+# host-artefact warnings are disabled by name and everything that indicates a
+# real mismatch is an error.
 #
 # tests/libdragon_api_known_broken.txt is the debt. The gate fails in BOTH
 # directions: a file off the list that stops compiling is a regression, and a
@@ -44,6 +51,19 @@ set KNOWN [file join $REPO tests libdragon_api_known_broken.txt]
 set CC    [expr {[info exists ::env(CC)] ? $::env(CC) : "cc"}]
 set CACHE [expr {[info exists ::env(TMPDIR)] ? $::env(TMPDIR) : "/tmp"}]
 set LDINC [file join $CACHE pak-libdragon libdragon include]
+
+# Errors: every way a call can fail to match its declaration.
+# Disabled: warnings that are artefacts of compiling for the host rather than
+# for MIPS -- libdragon asserts with %ld against an int32_t, which is correct
+# on a 32-bit-long target and noisy here.
+set ::CFLAGS [list \
+    -Werror=implicit-function-declaration \
+    -Werror=implicit-int \
+    -Werror=int-conversion \
+    -Werror=incompatible-pointer-types \
+    -Werror=return-type \
+    -Wno-format \
+    -Wno-builtin-declaration-mismatch]
 
 set MODE gate
 foreach a $argv {
@@ -98,7 +118,7 @@ foreach src [lsort [glob -nocomplain [file join $REPO examples canonical *.pk64]
     set rc 0
     set err ""
     if {[catch {
-        exec $CC -fsyntax-only -w -I$LDINC -I[file join $REPO runtime] $cfile 2>@1
+        exec $CC -fsyntax-only {*}$::CFLAGS -I$LDINC -I[file join $REPO runtime] $cfile 2>@1
     } err]} { set rc 1 }
     dict set results $name [list $rc $err]
 }

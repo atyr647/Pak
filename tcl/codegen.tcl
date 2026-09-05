@@ -3366,6 +3366,11 @@ proc pak::cg_arg_or {arglist i default} {
 
 proc pak::cg_api_lambda {mod fn arglist} {
     switch -- "$mod $fn" {
+        "audio get_buffer" {
+            # libdragon has audio_write_begin(), which assumes the caller
+            # already checked audio_can_write(); the shim is that pair.
+            return "pak_audio_get_buffer()"
+        }
         "controller read" {
             # libdragon has no one call returning held/pressed/released; the
             # shim in runtime/pak_libdragon.h composes its four into the one
@@ -3426,8 +3431,8 @@ proc pak::cg_api_lambda {mod fn arglist} {
         "t3d quat_slerp" { return "t3d_quat_slerp([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2], [lindex $arglist 3])" }
         "t3d fog_set_enabled" { return "t3d_fog_set_enabled([expr {[llength $arglist] > 0 ? [lindex $arglist 0] : "true"}])" }
         "math abs_i32"   { return "abs([lindex $arglist 0])" }
-        "math min_i32"   { return "MIN([lindex $arglist 0], [lindex $arglist 1])" }
-        "math max_i32"   { return "MAX([lindex $arglist 0], [lindex $arglist 1])" }
+        "math min_i32"   { return "pak_min_i32([lindex $arglist 0], [lindex $arglist 1])" }
+        "math max_i32"   { return "pak_max_i32([lindex $arglist 0], [lindex $arglist 1])" }
         "math clamp_i32" { return "CLAMP([lindex $arglist 0], [lindex $arglist 1], [lindex $arglist 2])" }
         "math sin_f"     { return "sinf([lindex $arglist 0])" }
         "math cos_f"     { return "cosf([lindex $arglist 0])" }

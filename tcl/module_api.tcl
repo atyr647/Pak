@@ -23,6 +23,38 @@ namespace eval pak {}
 if {[info exists ::pak::_module_api_loaded]} { return }
 set ::pak::_module_api_loaded 1
 
+# ── what the libdragon backend can actually lower ────────────────────────────
+#
+# tests/libdragon_symbols.txt is computed by tcl/tools/libdragon_symbols.tcl,
+# which compiles a call to every directly-lowered symbol against the real
+# libdragon and Tiny3D headers. `missing` means Pak names a function that
+# nothing implements: the generated C does not compile. Loaded here so the
+# checker can say so at `pak check` instead of leaving it to the user's
+# `make`, mirroring what MIPS_HAL_SYMBOLS does for the standalone backend.
+set ::pak::LIBDRAGON_CLASS [dict create]
+set _lc_file [file join $_modapi_here .. tests libdragon_symbols.txt]
+if {[file exists $_lc_file]} {
+    set _lc_fh [open $_lc_file r]; set _lc_txt [read $_lc_fh]; close $_lc_fh
+    foreach _lc_line [split $_lc_txt "\n"] {
+        set _lc_line [string trim $_lc_line]
+        if {$_lc_line eq "" || [string index $_lc_line 0] eq "#"} continue
+        lassign [split $_lc_line " "] _lc_verdict _lc_key
+        dict set ::pak::LIBDRAGON_CLASS $_lc_key $_lc_verdict
+    }
+    unset -nocomplain _lc_fh _lc_txt _lc_line _lc_verdict _lc_key
+}
+unset -nocomplain _lc_file
+
+# "libdragon", "tiny3d", "missing", or "" when the entry is lowered to an
+# inline expression rather than a bare call (those are checked by compiling,
+# in tcl/tools/libdragon_api_test.tcl).
+proc pak::libdragon_class {mod fn} {
+    if {[dict exists $::pak::LIBDRAGON_CLASS "$mod.$fn"]} {
+        return [dict get $::pak::LIBDRAGON_CLASS "$mod.$fn"]
+    }
+    return ""
+}
+
 # ── MODULE_API: {mod fn} -> {symbol backends...} ─────────────────────────────
 
 proc pak::module_api_has {mod fn} {

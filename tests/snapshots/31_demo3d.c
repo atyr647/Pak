@@ -141,8 +141,8 @@ int32_t edge_x_at(int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t y) {
 
 __attribute__((hot))
 void fill_quad(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t x2, int32_t y2, int32_t x3, int32_t y3, uint32_t col) {
-    int32_t ymin = MIN(MIN(y0, y1), MIN(y2, y3));
-    int32_t ymax = MAX(MAX(y0, y1), MAX(y2, y3));
+    int32_t ymin = pak_min_i32(pak_min_i32(y0, y1), pak_min_i32(y2, y3));
+    int32_t ymax = pak_max_i32(pak_max_i32(y0, y1), pak_max_i32(y2, y3));
     if (ymin < 0) {
         ymin = 0;
     }

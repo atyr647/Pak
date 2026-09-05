@@ -1,0 +1,1 @@
+(W006 warning "'t3d.fog_set_range' needs Tiny3D" "Set `tiny3d = true` under [dependencies] in pak.toml and point TINY3D_INST at your Tiny3D installation.")

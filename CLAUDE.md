@@ -122,6 +122,8 @@ When the compiler reports an error, use this table to understand it:
 | E603 | Method signature mismatch — wrong number of parameters in trait impl |
 | W001–W003 | Style warnings (naming conventions) |
 | W004 | Function name collides with a libdragon symbol (rename it) |
+| W005 | Module function is standalone-only — not implemented on libdragon |
+| W006 | Module function needs Tiny3D (`tiny3d = true` in pak.toml) |
 
 ---
 

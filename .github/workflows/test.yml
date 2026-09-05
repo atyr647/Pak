@@ -108,6 +108,16 @@ jobs:
           bash tools/fetch_libdragon.sh
           tclsh tcl/tools/libdragon_api_test.tcl
 
+      # STDLIB.md's libdragon column used to be the hardcoded string "yes" for
+      # all 330 entries. It was not true for 82 of them. This recomputes the
+      # classification by compiling a call to every directly-lowered symbol
+      # against libdragon and Tiny3D, and fails if the checked-in list drifts.
+      - name: MODULE_API entries resolve where STDLIB says they do
+        run: |
+          bash tools/fetch_libdragon.sh
+          bash tools/fetch_tiny3d.sh
+          tclsh tcl/tools/libdragon_symbols.tcl
+
       # Every diagnostic the corpus exercises is a mistake someone thought to
       # write down. This finds the ones nobody did: mutated sources that must
       # still come back as an error message with a line number rather than as

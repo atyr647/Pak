@@ -125,6 +125,18 @@ static inline pak_joypad_status_t pak_joypad_get_status(int port)
     return s;
 }
 
+/* ── audio ────────────────────────────────────────────────────────────────── */
+
+/**
+ * Pak's `audio.get_buffer()`, which N64_HARDWARE.md documents as returning
+ * `none` when a buffer is not ready. libdragon has no audio_get_buffer; it has
+ * audio_write_begin(), which assumes the caller already checked
+ * audio_can_write(). This is that pair, with Pak's documented contract.
+ */
+static inline short *pak_audio_get_buffer(void) {
+    return audio_can_write() ? audio_write_begin() : (short *)0;
+}
+
 /* ── colours ──────────────────────────────────────────────────────────────── */
 /* Pak passes a packed 0xRRGGBBAA; rdpq takes a color_t. */
 

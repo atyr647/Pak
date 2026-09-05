@@ -10,10 +10,10 @@
 #   <!-- END GENERATED MODULE API -->
 
 set HERE [file dirname [file normalize [info script]]]
-set REPO [file normalize [file join $HERE .. ..]]
+set ::REPO [file normalize [file join $HERE .. ..]]
 source [file join $HERE .. module_api.tcl]
 
-set STDLIB [file join $REPO STDLIB.md]
+set STDLIB [file join $::REPO STDLIB.md]
 set BEGIN "<!-- BEGIN GENERATED MODULE API -->"
 set END   "<!-- END GENERATED MODULE API -->"
 
@@ -28,21 +28,62 @@ proc pak::gen_stdlib_block {} {
     lappend lines "defined in `runtime/standalone/runtime.pk64`; `pak check --backend mips`"
     lappend lines "rejects a no."
     lappend lines ""
+    lappend lines "The **libdragon** column comes from `tests/libdragon_symbols.txt`,"
+    lappend lines "which `tcl/tools/libdragon_symbols.tcl` computes by compiling a call to"
+    lappend lines "each symbol against the real libdragon and Tiny3D headers:"
+    lappend lines ""
+    lappend lines "* `yes` — declared by libdragon"
+    lappend lines "* `tiny3d` — needs `tiny3d = true` in `pak.toml`"
+    lappend lines "* `no` — Pak names it and nothing implements it; the generated C"
+    lappend lines "  will not compile. These are standalone-only where the standalone"
+    lappend lines "  column says yes."
+    lappend lines ""
+    lappend lines "A function lowered to an inline expression rather than a bare call"
+    lappend lines "reads `yes*`: `tcl/tools/libdragon_api_test.tcl` checks those by"
+    lappend lines "compiling the examples that use them."
+    lappend lines ""
     lappend lines "| Module | Function | C symbol | libdragon | standalone |"
     lappend lines "|--------|----------|----------|-----------|------------|"
 
+    # The computed classification. Absent (no list yet) degrades to the old
+    # unconditional "yes" rather than inventing an answer.
+    set cls [dict create]
+    set listfile [file join $::REPO tests libdragon_symbols.txt]
+    if {[file exists $listfile]} {
+        set fh [open $listfile r]; set txt [read $fh]; close $fh
+        foreach line [split $txt "\n"] {
+            set line [string trim $line]
+            if {$line eq "" || [string index $line 0] eq "#"} continue
+            lassign [split $line " "] verdict key
+            dict set cls $key $verdict
+        }
+    }
+
     set n 0
     set standalone 0
+    set ld_yes 0; set ld_t3d 0; set ld_no 0
     foreach key [pak::module_api_keys] {
         lassign $key mod fn
         set sym [pak::module_api_symbol $mod $fn]
         set mips [expr {[pak::mips_hal_has $mod $fn] ? "yes" : "no"}]
         if {$mips eq "yes"} { incr standalone }
-        lappend lines "| `$mod` | `$fn` | `$sym` | yes | $mips |"
+        set ld "yes*"
+        if {[dict exists $cls "$mod.$fn"]} {
+            switch -- [dict get $cls "$mod.$fn"] {
+                libdragon { set ld "yes";    incr ld_yes }
+                tiny3d    { set ld "tiny3d"; incr ld_t3d }
+                missing   { set ld "no";     incr ld_no  }
+            }
+        }
+        lappend lines "| `$mod` | `$fn` | `$sym` | $ld | $mips |"
         incr n
     }
     lappend lines ""
     lappend lines "**$n functions** across the module surface; **$standalone** exist on the standalone HAL."
+    if {[dict size $cls] > 0} {
+        lappend lines ""
+        lappend lines "Of the [expr {$ld_yes + $ld_t3d + $ld_no}] lowered as a direct call: **$ld_yes** are libdragon's own, **$ld_t3d** need Tiny3D, and **$ld_no** are **not implemented on the libdragon backend** — they exist only on the standalone HAL."
+    }
     lappend lines ""
     lappend lines $::END
     return [join $lines "\n"]
