@@ -154,6 +154,14 @@ jobs:
       - name: MIPS encoder matches GNU as, byte for byte
         run: PATH=/opt/pak-n64/bin:$PATH tclsh tcl/tools/n64enc_gas_test.tcl
 
+      # Same argument one stage down. tcl/n64link.tcl places sections and
+      # applies R_MIPS_26/HI16/LO16/32 itself, and n64link_test.tcl checks that
+      # against expectations written by the same hand. This links the same
+      # objects with mips64-elf-ld and compares the whole image plus every
+      # symbol address, so a relocation packed into the wrong field shows up.
+      - name: Flat linker matches GNU ld, byte for byte
+        run: PATH=/opt/pak-n64/bin:$PATH tclsh tcl/tools/n64link_gas_test.tcl
+
       # Every diagnostic the corpus exercises is a mistake someone thought to
       # write down. This finds the ones nobody did: mutated sources that must
       # still come back as an error message with a line number rather than as
