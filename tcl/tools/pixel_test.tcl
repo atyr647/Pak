@@ -120,6 +120,50 @@ proc drawn_pixels {ppm} {
 
 proc sgn {ax ay bx by cx cy} { return [expr {($ax-$cx)*($by-$cy) - ($bx-$cx)*($ay-$cy)}] }
 
+# Clip a polygon to one axis-aligned half-plane (Sutherland-Hodgman). Used to
+# get the correct expected coverage for a triangle with a vertex off-screen --
+# its true visible area is smaller than its full geometric area, and checking
+# coverage against the unclipped area would fail for a shape that is working
+# exactly as intended.
+proc clip_half {poly axis cmp bound} {
+    set out {}
+    set n [llength $poly]
+    if {$n == 0} { return $out }
+    for {set i 0} {$i < $n} {incr i} {
+        lassign [lindex $poly $i] cx cy
+        lassign [lindex $poly [expr {($i+1)%$n}]] nx ny
+        if {$axis eq "x"} { set cv $cx; set nv $nx } else { set cv $cy; set nv $ny }
+        if {$cmp eq "ge"} {
+            set cin [expr {$cv >= $bound}]; set nin [expr {$nv >= $bound}]
+        } else {
+            set cin [expr {$cv <= $bound}]; set nin [expr {$nv <= $bound}]
+        }
+        if {$cin} { lappend out [list $cx $cy] }
+        if {$cin != $nin} {
+            set t [expr {double($bound - $cv) / double($nv - $cv)}]
+            lappend out [list [expr {$cx + $t*($nx-$cx)}] [expr {$cy + $t*($ny-$cy)}]]
+        }
+    }
+    return $out
+}
+
+proc clipped_area {x0 y0 x1 y1 x2 y2 w h} {
+    set poly [list [list $x0 $y0] [list $x1 $y1] [list $x2 $y2]]
+    set poly [clip_half $poly x ge 0]
+    set poly [clip_half $poly x le $w]
+    set poly [clip_half $poly y ge 0]
+    set poly [clip_half $poly y le $h]
+    if {[llength $poly] < 3} { return 0.0 }
+    set a 0.0
+    set n [llength $poly]
+    for {set i 0} {$i < $n} {incr i} {
+        lassign [lindex $poly $i] ax ay
+        lassign [lindex $poly [expr {($i+1)%$n}]] bx by
+        set a [expr {$a + $ax*$by - $bx*$ay}]
+    }
+    return [expr {abs($a)/2.0}]
+}
+
 # ── 1. filled triangles cover the right pixels ───────────────────────────────
 
 puts "== filled triangles cover their geometry =="
@@ -170,7 +214,12 @@ entry {
     foreach p $core {
         if {![dict exists $drawn "[lindex $p 0],[lindex $p 1]"]} { incr missing }
     }
-    set area [expr {abs([sgn $x0 $y0 $x1 $y1 $x2 $y2]) / 2.0}]
+    # Clipped to the viewport: a vertex off-screen makes the true visible area
+    # smaller than the raw shoelace formula, and checking against the
+    # unclipped area would fail a triangle that is working exactly as
+    # intended. For an all-on-screen triangle clipping is a no-op, so this is
+    # the same check as before for every existing case.
+    set area [clipped_area $x0 $y0 $x1 $y1 $x2 $y2 320 240]
     set n [dict size $drawn]
     # Coverage may exceed the exact area by up to the perimeter (half a pixel
     # per boundary pixel), but must not fall short of it.
@@ -192,6 +241,23 @@ check_triangle "major edge right" 200 40 40 60 160 180
 check_triangle "tall thin"        150 20 170 220 130 220
 check_triangle "wide flat"        20 100 300 110 160 130
 check_triangle "right angle"      50 50 250 50 50 200
+
+# A vertex off-screen. The RDP's YL/YM/YH header field is a signed 14-bit
+# value (11.2), not the unsigned 12-bit field the scissor and rectangles use,
+# and a vertex above the top or left of the screen has a genuinely negative
+# coordinate. Clamping it to 0 (as to_fx102 does, correctly, for scissor and
+# rect corners) leaves the X value at the header's Y wrong -- X is the
+# unclamped value at the TRUE vertex Y, not at Y=0 -- and the RDP starts
+# rasterizing at scanline 0 with an X that belongs to a different Y, shearing
+# the whole triangle. Y is unclamped now (to_fx142); the RDP's own scissor
+# test clips what falls outside 0..239, same as any other engine.
+puts ""
+puts "== a vertex off-screen does not shear the triangle =="
+check_triangle "vertex above top"      100 -40 250 120  40  150
+check_triangle "vertex left of screen"  -60  60 200  40 100  200
+check_triangle "vertex below bottom"   100  40 250 300  40  150
+check_triangle "vertex right of screen" 350  60 100 200  40   40
+check_triangle "two vertices offscreen" -50 -50 400  40 100  260
 
 # ── 2. texture rectangles sample the texels they were given ──────────────────
 

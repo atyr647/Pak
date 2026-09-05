@@ -87,6 +87,16 @@ proc pak::rdpdis::bits {v hi lo} {
 # bits of any Y past 1023.75.
 proc pak::rdpdis::fx102 {v} { return [format %.2f [expr {$v / 4.0}]] }
 
+# A triangle's YL/YM/YH is a signed 14-bit field (11.2), not the unsigned
+# 12-bit field the scissor and rectangles use -- a vertex above the top or
+# left of the screen has a genuine negative coordinate, and the RDP's own
+# scissor test clips what falls outside the visible range.
+proc pak::rdpdis::fx142 {v} {
+    set v [expr {$v & 0x3FFF}]
+    if {$v >= 0x2000} { set v [expr {$v - 0x4000}] }
+    return [format %.2f [expr {$v / 4.0}]]
+}
+
 proc pak::rdpdis::s16 {v} {
     set v [expr {$v & 0xFFFF}]
     if {$v >= 0x8000} { set v [expr {$v - 0x10000}] }
@@ -256,8 +266,8 @@ proc pak::rdpdis::operands {op words} {
             if {$op >= 0x08 && $op <= 0x0F} {
                 return [format "%s YL=%s YM=%s YH=%s" \
                     [expr {[bits $w0 23 23] ? "left" : "right"}] \
-                    [fx102 [bits $w0 13 0]] \
-                    [fx102 [expr {($w1 >> 16) & 0x3FFF}]] [fx102 [expr {$w1 & 0x3FFF}]]]
+                    [fx142 [bits $w0 13 0]] \
+                    [fx142 [expr {($w1 >> 16) & 0x3FFF}]] [fx142 [expr {$w1 & 0x3FFF}]]]
             }
             if {$op >= 0x26 && $op <= 0x29} { return "" }
             return ""

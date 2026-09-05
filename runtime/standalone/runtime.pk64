@@ -645,12 +645,33 @@ fn dl_word(w: u32) {
     g_dl_off = g_dl_off + 4
 }
 
--- Screen coordinate -> the RDP's 10.2 fixed point, clamped to the 12-bit field.
+-- Screen coordinate -> the RDP's 10.2 fixed point, clamped to the 12-bit
+-- unsigned field. Correct for SET_SCISSOR and the rectangle commands, whose
+-- corners are genuinely screen-space and unsigned. WRONG for a triangle's
+-- YL/YM/YH -- see to_fx142 below.
 fn to_fx102(v: i32) -> u32 {
     let mut x: i32 = v
     if x < 0 { x = 0 }
     if x > 1023 { x = 1023 }
     return (x * 4) as u32
+}
+
+-- A triangle's YL/YM/YH are a signed 14-bit field (11.2), not the unsigned
+-- 12-bit field the scissor and rectangles use. A vertex above the top of the
+-- screen has a real negative Y, and the RDP is meant to walk the edge down
+-- from that Y at the given slope, relying on its own scissor test to clip
+-- what falls outside 0..239 -- the X value at YH is only correct if YH is the
+-- vertex's true Y, not a Y clamped to 0.
+--
+-- Using to_fx102 here clamped YH to 0 while leaving XH as the X at the real
+-- (negative) Y, so the RDP started rasterizing at scanline 0 with the wrong
+-- X: every triangle with an off-screen vertex came out sheared, missing a
+-- third of its on-screen area and painting pixels outside its geometry.
+fn to_fx142(v: i32) -> u32 {
+    let mut x: i32 = v
+    if x < -2048 { x = -2048 }
+    if x > 2047 { x = 2047 }
+    return ((x * 4) as u32) & 0x3FFF
 }
 
 -- ── surface + mode state ───────────────────────────────────────────────────
@@ -1057,8 +1078,8 @@ fn rdpq_triangle(x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
 
-    let w0: u32 = (RDP_TRI_FILL << 24) | (lft << 23) | to_fx102(yc)
-    let w1: u32 = (to_fx102(yb) << 16) | to_fx102(ya)
+    let w0: u32 = (RDP_TRI_FILL << 24) | (lft << 23) | to_fx142(yc)
+    let w1: u32 = (to_fx142(yb) << 16) | to_fx142(ya)
     dl_cmd(w0, w1)
     dl_cmd((xb * 65536) as u32, dxldy as u32)
     dl_cmd((xa * 65536) as u32, dxhdy as u32)
@@ -1104,8 +1125,8 @@ fn rdpq_triangle_z(x0: i32, y0: i32, z0: i32,
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
 
-    dl_cmd((RDP_TRI_FILL_Z << 24) | (lft << 23) | to_fx102(yc),
-           (to_fx102(yb) << 16) | to_fx102(ya))
+    dl_cmd((RDP_TRI_FILL_Z << 24) | (lft << 23) | to_fx142(yc),
+           (to_fx142(yb) << 16) | to_fx142(ya))
     dl_cmd((xb * 65536) as u32, dxldy as u32)
     dl_cmd((xa * 65536) as u32, dxhdy as u32)
     dl_cmd((xa * 65536) as u32, dxmdy as u32)
@@ -1189,8 +1210,8 @@ fn rdpq_triangle_tex(tile: u32,
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
 
-    let w0: u32 = (RDP_TRI_TEX << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx102(yc)
-    let w1: u32 = (to_fx102(yb) << 16) | to_fx102(ya)
+    let w0: u32 = (RDP_TRI_TEX << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx142(yc)
+    let w1: u32 = (to_fx142(yb) << 16) | to_fx142(ya)
     dl_cmd(w0, w1)
     dl_cmd((xb * 65536) as u32, dxldy as u32)
     dl_cmd((xa * 65536) as u32, dxhdy as u32)
@@ -1318,8 +1339,8 @@ fn rdp_tri_shade(opcode: u32,
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
 
-    let w0: u32 = (opcode << 24) | (lft << 23) | to_fx102(yc)
-    let w1: u32 = (to_fx102(yb) << 16) | to_fx102(ya)
+    let w0: u32 = (opcode << 24) | (lft << 23) | to_fx142(yc)
+    let w1: u32 = (to_fx142(yb) << 16) | to_fx142(ya)
     dl_cmd(w0, w1)
     dl_cmd((xb * 65536) as u32, dxldy as u32)
     dl_cmd((xa * 65536) as u32, dxhdy as u32)
@@ -1501,8 +1522,8 @@ fn rdpq_triangle_shade_tex(tile: u32,
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
-    dl_cmd((RDP_TRI_SHADE_TXTR << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx102(yc),
-           (to_fx102(yb) << 16) | to_fx102(ya))
+    dl_cmd((RDP_TRI_SHADE_TXTR << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx142(yc),
+           (to_fx142(yb) << 16) | to_fx142(ya))
     dl_cmd((xb * 65536) as u32, dxldy as u32)
     dl_cmd((xa * 65536) as u32, dxhdy as u32)
     dl_cmd((xa * 65536) as u32, dxmdy as u32)
@@ -1560,8 +1581,8 @@ fn rdpq_triangle_shade_tex_z(tile: u32,
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
-    dl_cmd((RDP_TRI_SHADE_TXTR_Z << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx102(yc),
-           (to_fx102(yb) << 16) | to_fx102(ya))
+    dl_cmd((RDP_TRI_SHADE_TXTR_Z << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx142(yc),
+           (to_fx142(yb) << 16) | to_fx142(ya))
     dl_cmd((xb * 65536) as u32, dxldy as u32)
     dl_cmd((xa * 65536) as u32, dxhdy as u32)
     dl_cmd((xa * 65536) as u32, dxmdy as u32)
@@ -1622,8 +1643,8 @@ fn rdpq_triangle_tex_z(tile: u32,
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
 
-    dl_cmd((RDP_TRI_TEX_Z << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx102(yc),
-           (to_fx102(yb) << 16) | to_fx102(ya))
+    dl_cmd((RDP_TRI_TEX_Z << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx142(yc),
+           (to_fx142(yb) << 16) | to_fx142(ya))
     dl_cmd((xb * 65536) as u32, dxldy as u32)
     dl_cmd((xa * 65536) as u32, dxhdy as u32)
     dl_cmd((xa * 65536) as u32, dxmdy as u32)
