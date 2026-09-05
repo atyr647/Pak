@@ -1,0 +1,12 @@
+-- A `static` inside an extern "C" block names a variable the linked C library
+-- owns. The C backend lowered every declaration in the block as a function,
+-- which asked a StaticDecl for its ret_type and took the compiler down with a
+-- Tcl stack trace instead of emitting anything. Found by fuzz_test.tcl.
+extern "C" {
+    fn puts(s: *c_char) -> i32
+    static errno_like: u32
+}
+
+entry {
+    puts("hi")
+}

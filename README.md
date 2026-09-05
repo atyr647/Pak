@@ -95,6 +95,7 @@ cd my_game
 pak check src/main.pk64              # type-check only
 pak explain src/main.pk64            # show the generated C
 pak explain --backend mips src/main.pk64   # show the generated MIPS
+pak dlist src/main.pk64              # show the RDP commands the scene builds
 pak build src/main.pk64              # compile + pack assets + generate Makefile
 pak run src/main.pk64                # build, then launch in the ares emulator
 ```
@@ -237,6 +238,7 @@ every feature tagged `[IMPLEMENTED]`, `[PARTIAL]`, or `[PLANNED]`.
 | `pak build <file>`   | Compile `.pk64` → C / MIPS, pack assets, generate Makefile |
 | `pak explain <file>` | Print the generated C for inspection |
 | `pak explain --backend mips <file>` | Print the generated MIPS assembly |
+| `pak dlist <file>`   | Run the scene against the standalone HAL and disassemble the RDP display list it builds |
 | `pak objgen <file>`  | Compile `.pk64` → `.pakobj` relocatable binary (no external tools) |
 | `pak run <file>`     | Build, then `make run` (launches in ares) |
 | `pak init <name>`    | Scaffold a new project |
@@ -308,7 +310,13 @@ REGEN=1 tclsh tcl/tools/golden_test.tcl   # re-bless the goldens (read them firs
 
 tclsh tcl/tools/n64enc_test.tcl           # MIPS instruction encodings
 tclsh tcl/tools/n64link_test.tcl          # linker + ROM packer
+tclsh tcl/tools/dlist_test.tcl            # the RDP disassembler behind `pak dlist`
+tclsh tcl/tools/pixel_test.tcl            # render on angrylion, compare pixels
 bash  tcl/tools/lint.sh                   # nagelfar static lint
+
+tclsh tcl/tools/fuzz_test.tcl             # mutated sources must never crash it
+ITERATIONS=50000 SEED=7 tclsh tcl/tools/fuzz_test.tcl
+tclsh tcl/tools/fuzz_test.tcl --file /tmp/pak-fuzz/crash-....pk64
 
 pak check examples/canonical/*.pk64       # all must pass
 pak explain examples/canonical/01_hello.pk64
@@ -317,8 +325,17 @@ pak explain --backend mips examples/canonical/01_hello.pk64
 
 CI (GitHub Actions) runs on every push: the golden suite over the whole corpus,
 canonical-example validation, "invalid programs must fail" checks, the
-`pak explain` snapshots, the binary back end (encoder, linker, objgen for every
-canonical example, and a full source-to-`.z64` build), and nagelfar lint.
+`pak explain` snapshots, a front-end fuzz run, the binary back end (encoder,
+linker, objgen for every canonical example, the RDP display-list disassembler,
+a pixel-level render against the angrylion reference, and a full
+source-to-`.z64` build), and nagelfar lint.
+
+The fuzzer mutates the corpus and demands the compiler answer with a
+diagnostic, never a Tcl stack trace: the lexer may raise `LEXERROR`, the parser
+`PARSEERROR`, codegen `CGUNPORTED`/`MIPSUNPORTED`; the checker and typechecker
+must return diagnostics and never raise. It is seeded, so a failure reproduces
+exactly, and it reports how far mutants got — a run where nothing reaches the
+parser fails rather than passing quietly.
 
 ---
 

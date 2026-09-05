@@ -779,12 +779,19 @@ oo::class create pak::Parser {
             if {[my check LPAREN]} {
                 my advance
                 set args {}
-                while {![my check RPAREN]} {
+                # A variant pattern binds names: .ok(v), .rect(w, _). Anything
+                # else has to be an error rather than a token this loop skips,
+                # because nothing here consumes it -- `.ok(1)` used to spin the
+                # parser forever, and so did an unterminated `.ok(` at EOF.
+                while {![my check RPAREN] && ![my check EOF]} {
                     if {[my check IDENT]} {
                         lappend args [pak::N Ident name [my advancev] type_args {}]
                     } elseif {[my check UNDERSCORE]} {
                         my advance
                         lappend args [pak::N Ident name "_" type_args {}]
+                    } else {
+                        set t [my peek]
+                        return -code error "PARSEERROR\t[dict get $t line]\t[dict get $t col]\tExpected a binding name or _ in a variant pattern (got [dict get $t type])"
                     }
                     if {[my check COMMA]} { my advance }
                 }

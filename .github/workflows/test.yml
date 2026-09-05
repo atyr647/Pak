@@ -97,6 +97,26 @@ jobs:
       - name: MIPS assembly snapshots (canonical examples)
         run: bash tcl/tools/mips_parity.sh
 
+      # Every diagnostic the corpus exercises is a mistake someone thought to
+      # write down. This finds the ones nobody did: mutated sources that must
+      # still come back as an error message with a line number rather than as
+      # a Tcl stack trace. Deterministic — the seed reproduces any failure.
+      - name: Front-end fuzz (mutated sources never crash the compiler)
+        run: |
+          # The fuzzer stops itself at DEADLINE seconds, but it can only check
+          # that between mutants -- an input that wedges the compiler outright
+          # (the parser used to spin forever on `.ok(1)`) would hang the job.
+          # The outer timeout catches that, and current.pk64 is the input that
+          # was under the compiler when the clock ran out.
+          if ! timeout 300 tclsh tcl/tools/fuzz_test.tcl; then
+            rc=$?
+            if [ -f /tmp/pak-fuzz/current.pk64 ]; then
+              echo "=== input under the compiler when it stopped ==="
+              cat /tmp/pak-fuzz/current.pk64
+            fi
+            exit $rc
+          fi
+
       - name: Verify validate_pak.sh is executable
         run: test -x tools/validate_pak.sh || chmod +x tools/validate_pak.sh
 
@@ -194,6 +214,13 @@ jobs:
       # SET_TILE/LOAD_TILE/TRI_TEX_Z. This is the FZ "Path A" (see examples/chroma/README.md).
       - name: CHROMA nave (stream pages, draw textured tris)
         run: tclsh tcl/tools/church_test.tcl
+
+      # `pak dlist` runs a scene against the HAL and disassembles the display
+      # list it hands the DP. That is only useful if the disassembler is the
+      # exact inverse of the encoders, which is what this checks: every opcode
+      # the runtime can emit, decoded back to the values the driver passed.
+      - name: RDP display-list disassembler (pak dlist)
+        run: tclsh tcl/tools/dlist_test.tcl
 
       # Command words cannot tell you the RDP draws the right pixels: the lft
       # bit was inverted on all seven triangle commands for as long as the

@@ -2785,9 +2785,26 @@ oo::class create pak::Codegen {
                 lappend lines "/* $nm: already declared by the C standard headers */"
                 continue
             }
+            # The parser accepts `static` inside an extern block -- it is how
+            # you name a variable the linked C library owns. Lowering it as a
+            # function asked a StaticDecl for its ret_type and took the whole
+            # compiler down with a Tcl stack trace. (Found by fuzz_test.tcl.)
+            if {[pak::kindof $decl] eq "StaticDecl"} {
+                lappend lines [my gen_extern_static $decl]
+                continue
+            }
             lappend lines [my gen_fn $decl ""]
         }
         return [join $lines \n]
+    }
+
+    # A variable defined in the linked C library: declared, never allocated.
+    method gen_extern_static {s} {
+        set name [pak::fval $s name]
+        set typ  [pak::nfield $s type]
+        if {![pak::isnil $typ]} { set decl [my gen_array_decl $name $typ] } \
+        else { set decl "int $name" }
+        return "extern $decl;"
     }
 
     # extract N from an @aligned(N) annotation string

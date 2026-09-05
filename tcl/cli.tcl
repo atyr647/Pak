@@ -15,6 +15,8 @@ source [file join $_clihere optimize.tcl]
 source [file join $_clihere n64enc.tcl]
 source [file join $_clihere n64link.tcl]
 source [file join $_clihere n64rom.tcl]
+source [file join $_clihere rdpdis.tcl]
+source [file join $_clihere mips_sim.tcl]
 
 namespace eval pak {}
 set ::pak::CLI_ROOT [file normalize [file join $_clihere ..]]
@@ -577,6 +579,101 @@ proc pak::cmd_explain {opts} {
     }
 }
 
+# ── dlist: the RDP commands a scene actually builds ──────────────────────────
+#
+# `pak explain --backend mips` shows the instructions; it cannot show the
+# display list, because the list only exists once those instructions have run.
+# This runs them: the scene is compiled together with the standalone HAL and
+# executed in tcl/mips_sim.tcl, and every DP kick the run produces is decoded
+# by tcl/rdpdis.tcl.
+#
+# The simulator stops at an instruction budget, so a scene with an endless
+# game loop is fine -- it yields as many frames as fit. Each kick is one
+# submission (rdpq.detach / detach_show, or an automatic flush when the list
+# fills), not necessarily one frame.
+proc pak::cmd_dlist {opts} {
+    set pak_file [dict get $opts file]
+    if {![file exists $pak_file]} { puts stderr "error: file not found: $pak_file"; exit 1 }
+
+    set hal [file join $::pak::CLI_ROOT runtime standalone runtime.pk64]
+    if {![file exists $hal]} {
+        puts stderr "error: standalone HAL not found at $hal"
+        exit 1
+    }
+
+    # The HAL gate first, on the scene alone. Concatenating the HAL would
+    # resolve every name, so a scene calling a libdragon-only API would sail
+    # through and then simply never write DPC_END -- "no display list" instead
+    # of "this API is not in the standalone HAL".
+    set own [pak::cli_parse_file $pak_file]
+    if {$own eq ""} { exit 1 }
+    set hard 0
+    foreach d [pak::semantic_check $own $pak_file mips] {
+        if {[dict get $d severity] ne "warning"} {
+            puts stderr [pak::diag_str $d]
+            incr hard
+        }
+    }
+    if {$hard > 0} {
+        puts stderr "\n$hard error(s): this scene is not a standalone program."
+        exit 1
+    }
+
+    # One translation unit: the HAL's free functions are what the scene's
+    # display.*/rdpq.* calls lower to, so they have to be compiled together.
+    set combined [file join [file dirname $pak_file] ".pak_dlist_[pid].pk64"]
+    set fh [open $combined w]
+    puts -nonewline $fh "[pak::cli_read $hal]
+[pak::cli_read $pak_file]"
+    close $fh
+    set prog [pak::cli_parse_file $combined]
+    if {$prog eq ""} { file delete $combined; exit 1 }
+    if {[catch {
+        set asm [pak::records_to_asm [pak::optimize_records [pak::mips_generate_records $prog]]]
+    } err]} {
+        file delete $combined
+        puts stderr "error: [pak::_errmsg $err]"
+        exit 1
+    }
+    file delete $combined
+
+    set cart ""
+    if {[dict get $opts cart] ne ""} {
+        set cf [dict get $opts cart]
+        if {![file exists $cf]} { puts stderr "error: cart image not found: $cf"; exit 1 }
+        set fh [open $cf rb]; set cart [read $fh]; close $fh
+    }
+
+    # The two registers the HAL spins on: the DP reports idle, and the VI
+    # reports a line past the active region so vi_wait_vblank returns.
+    set preset [dict create 0xA410000C 0 0xA4400010 {0x1E0 0x000}]
+    set budget [dict get $opts budget]
+    set r [pak::mips_sim_run $asm main $budget $preset $cart]
+
+    set kicks [dict get $r dp_kicks]
+    if {[llength $kicks] == 0} {
+        puts "no display list: the scene never wrote DPC_END."
+        puts "  (ran [dict get $r insns] instructions; raise --budget if the"
+        puts "   scene needs longer to reach its first rdpq.detach)"
+        exit 1
+    }
+
+    set want [dict get $opts frames]
+    set n 0
+    foreach kick $kicks {
+        incr n
+        if {$want > 0 && $n > $want} break
+        set nwords [expr {[string length $kick] / 4}]
+        puts ""
+        puts "== DP kick $n of [llength $kicks] — $nwords words =="
+        foreach line [pak::rdpdis::disasm_bytes $kick] { puts $line }
+    }
+    if {$want > 0 && [llength $kicks] > $want} {
+        puts ""
+        puts "([expr {[llength $kicks] - $want}] more kick(s); --frames 0 for all)"
+    }
+}
+
 proc pak::cmd_objgen {opts} {
     set pak_file [dict get $opts file]
     if {![file exists $pak_file]} { puts stderr "error: file not found: $pak_file"; exit 1 }
@@ -793,6 +890,7 @@ proc pak::cli_main {argv} {
         build  { pak::cmd_build [pak::_parse_opts $rest {verbose 0 backend c no_style_warnings 0 output "" name "" size 4}] }
         check  { pak::cmd_check [pak::_parse_opts $rest {files {} no_style_warnings 0 backend c}] }
         explain { pak::cmd_explain [pak::_parse_opts $rest {file "" backend c}] }
+        dlist  { pak::cmd_dlist [pak::_parse_opts $rest {file "" frames 1 budget 20000000 cart ""}] }
         objgen { pak::cmd_objgen [pak::_parse_opts $rest {file "" output ""}] }
         asmobj { pak::cmd_asmobj [pak::_parse_opts $rest {file "" output ""}] }
         link   { pak::cmd_link [pak::_parse_opts $rest \
@@ -814,6 +912,9 @@ proc pak::cli_help {} {
     puts {          objgen + link a padded .z64 in one step (boot + HAL + game).}
     puts {  check   [--backend c|mips] [FILE...]     semantic check (E010 HAL gate)}
     puts {  explain [--backend c|mips] FILE          dump C or MIPS}
+    puts {  dlist   FILE [--frames N] [--cart ROM.bin] [--budget N]}
+    puts {          run the scene against the standalone HAL and disassemble}
+    puts {          the RDP display list it hands the DP (--frames 0 = all)}
     puts {  objgen  FILE [-o FILE.pakobj]            MIPS records -> object}
     puts {  asmobj  FILE.S [-o FILE.pakobj]          assemble crt0 / boot.S}
     puts {  link    OBJS... -o FILE.z64 [--size MiB] [--name TITLE]}
@@ -837,6 +938,9 @@ proc pak::_parse_opts {argv defaults} {
             --ipl3 { incr i; dict set o ipl3 [lindex $argv $i] }
             --entry { incr i; dict set o entry [lindex $argv $i] }
             --size { incr i; dict set o size [lindex $argv $i] }
+            --frames { incr i; dict set o frames [lindex $argv $i] }
+            --budget { incr i; dict set o budget [lindex $argv $i] }
+            --cart { incr i; dict set o cart [lindex $argv $i] }
             -* { }
             default { lappend pos $a }
         }
