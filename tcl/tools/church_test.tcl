@@ -252,10 +252,12 @@ set tri [find_cmd $words 0x0B]
 ok_true "TRI_TEX_Z (RDP 0x0B) in the stream" [expr {$tri >= 0}] \
     [expr {$tri >= 0 ? " (at +[expr {$tri*4}])" : ""}]
 if {$tri >= 0} {
-    # 11 double-words. The tile index lives in bits 16-18 of w0 and must be the
-    # tile the page was just loaded into.
-    ok_true "TRI_TEX_Z is a complete 11-word command" \
-        [expr {$tri + 22 <= [llength $words]}]
+    # TRI_TEX_Z is 14 double-words: 4 of edge setup, 8 of texture coefficients
+    # and 2 of Z. (An earlier revision of this test said 11, which is the count
+    # for no command at all.) The tile index lives in bits 16-18 of w0 and must
+    # be the tile the page was just loaded into.
+    ok_true "TRI_TEX_Z is a complete 14-doubleword command" \
+        [expr {$tri + 28 <= [llength $words]}]
     ok "TRI_TEX_Z draws with tile 0" \
         [format %d [expr {("0x[lindex $words $tri]" >> 16) & 0x7}]] 0
 }

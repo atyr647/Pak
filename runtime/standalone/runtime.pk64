@@ -891,7 +891,7 @@ fn rdpq_triangle(x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
     -- Which side the major edge falls on. Comparing the two cross-product
     -- terms avoids forming the product's sign separately.
     let mut lft: u32 = 0
-    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+    if (yc - ya) * (xb - xa) > (xc - xa) * (yb - ya) { lft = 1 }
 
     -- Major edge spans the full height; the minor edges meet at the middle.
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
@@ -939,7 +939,7 @@ fn rdpq_triangle_z(x0: i32, y0: i32, z0: i32,
     if ya == yc { return }
 
     let mut lft: u32 = 0
-    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+    if (yc - ya) * (xb - xa) > (xc - xa) * (yb - ya) { lft = 1 }
 
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
@@ -1024,7 +1024,7 @@ fn rdpq_triangle_tex(tile: u32,
     if ya == yc { return }
 
     let mut lft: u32 = 0
-    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+    if (yc - ya) * (xb - xa) > (xc - xa) * (yb - ya) { lft = 1 }
 
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
@@ -1153,7 +1153,7 @@ fn rdp_tri_shade(opcode: u32,
     if ya == yc { return }
 
     let mut lft: u32 = 0
-    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+    if (yc - ya) * (xb - xa) > (xc - xa) * (yb - ya) { lft = 1 }
 
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
@@ -1338,7 +1338,7 @@ fn rdpq_triangle_shade_tex(tile: u32,
     }
     if ya == yc { return }
     let mut lft: u32 = 0
-    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+    if (yc - ya) * (xb - xa) > (xc - xa) * (yb - ya) { lft = 1 }
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
@@ -1397,7 +1397,7 @@ fn rdpq_triangle_shade_tex_z(tile: u32,
     }
     if ya == yc { return }
     let mut lft: u32 = 0
-    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+    if (yc - ya) * (xb - xa) > (xc - xa) * (yb - ya) { lft = 1 }
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
@@ -1457,7 +1457,7 @@ fn rdpq_triangle_tex_z(tile: u32,
     if ya == yc { return }
 
     let mut lft: u32 = 0
-    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+    if (yc - ya) * (xb - xa) > (xc - xa) * (yb - ya) { lft = 1 }
 
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)

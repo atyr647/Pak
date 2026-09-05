@@ -220,7 +220,8 @@ entry {
 
         draw_nave()
 
-        rdpq.sync_full()
+        -- detach_show emits SYNC_FULL and submits; a separate sync_full() here
+        -- only forces a second, empty DP kick.
         rdpq.detach_show()
         frame = frame + 1
     }

@@ -53,10 +53,23 @@ bays smear.
 - **Affine ST.** `1/w` is stubbed in the runtime, so ST is affine. One page per
   quad keeps every triangle small enough that it does not show. Widen the bays
   and the texture will swim.
-- **Command words, not pixels.** `church_test.tcl` asserts the command stream
-  the DP is handed, and the tile words are byte-identical to the encodings
-  `rdp_test.tcl` already pins. Neither looks at a pixel. One Angrylion
-  screenshot of a 32×32 textured triangle is still the real gate.
+- **`triangle_tex` does not draw correctly yet.** This is the blocker for the
+  nave, found by `tcl/tools/pixel_test.tcl` rendering on angrylion. A filled
+  `rdpq.triangle` covers exactly its geometry, and a `texture_rectangle`
+  samples exactly the texels it was handed (verified: a half-red/half-blue page
+  comes back 12800 red and 12800 blue pixels). But `triangle_tex` with the same
+  vertices as a working filled triangle emits **byte-identical edge words** and
+  still rasterises a different, smaller shape in white — so the fault is in the
+  eight double-words of texture coefficients, not in the geometry or in TMEM.
+  Reordering them to int(S)/int(DsDx)/int(DsDe)/int(DsDy) then the four
+  fractions did not change the output, so the layout is not the whole story and
+  that change was not kept. Until this is fixed the nave draws untextured.
+
+- **The pixel gate does not cover the church itself.** The simulator does not
+  perform PI transfers -- `dma_read` writes the PI registers and returns -- so
+  the scratch page stays zero and the nave would render black even once
+  `triangle_tex` works. Making the sim honour PI DMA is the prerequisite for a
+  church screenshot.
 - **Page residency is naive.** Bays beyond the third reuse one far set of
   pages, so walking forward does not thrash the PI. There is no cache and no
   eviction policy; every visible face re-DMAs its page every frame.

@@ -195,6 +195,15 @@ jobs:
       - name: CHROMA nave (stream pages, draw textured tris)
         run: tclsh tcl/tools/church_test.tcl
 
+      # Command words cannot tell you the RDP draws the right pixels: the lft
+      # bit was inverted on all seven triangle commands for as long as the
+      # goldens existed, and they matched perfectly. This renders the display
+      # list on angrylion and compares against the source geometry.
+      - name: Pixels (reference RDP)
+        run: |
+          bash tools/build_rdp_harness.sh
+          tclsh tcl/tools/pixel_test.tcl
+
       - name: Runtime builds toolchain-free (boot.S + runtime.pk64)
         run: |
           pak asmobj runtime/standalone/boot.S       -o /tmp/boot.pakobj
