@@ -7,9 +7,13 @@
 #include <math.h>
 #include "pak_math.h"
 #include "pak_containers.h"
+#include "pak_libdragon.h"
 #include <display.h>
 #include <rdpq.h>
-#include <rdpq_gfx.h>
+#include <rdpq_attach.h>
+#include <rdpq_mode.h>
+#include <rdpq_rect.h>
+#include <rdpq_tri.h>
 #include <rdpq_sprite.h>
 #include <pakfs.h>
 
@@ -52,12 +56,12 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
 int main(void) {
-    display_init(0, 0, 2, 0, 0);
+    pak_display_init(0, 0, 2, 0, 0);
     rdpq_init();
     while (true) {
         __auto_type fb = display_get();
-        rdpq_attach_clear(fb);
-        rdpq_set_mode_copy();
+        rdpq_attach_clear(fb, NULL);
+        rdpq_set_mode_copy(true);
         rdpq_sprite_blit(bg_sprite, 0, 0, NULL);
         rdpq_sprite_blit(player_sprite, 160, 120, NULL);
         rdpq_sprite_blit(enemy_sprite, 100, 80, NULL);

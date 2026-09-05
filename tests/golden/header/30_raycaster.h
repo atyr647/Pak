@@ -36,7 +36,7 @@ uint8_t map_get(int32_t mx, int32_t my);
 uint32_t wall_color(uint8_t wtype, int32_t side);
 void render_minimap(GameState * gs);
 void render_3d(GameState * gs);
-void update_playing(GameState * gs, joypad_status_t pad);
+void update_playing(GameState * gs, pak_joypad_status_t pad);
 void render_screen(GameState * gs);
 void init_game(GameState * gs);
 

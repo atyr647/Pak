@@ -7,10 +7,14 @@
 #include <math.h>
 #include "pak_math.h"
 #include "pak_containers.h"
+#include "pak_libdragon.h"
 #include <eeprom.h>
 #include <display.h>
 #include <rdpq.h>
-#include <rdpq_gfx.h>
+#include <rdpq_attach.h>
+#include <rdpq_mode.h>
+#include <rdpq_rect.h>
+#include <rdpq_tri.h>
 
 
 /* -- Pak runtime types -- */
@@ -85,7 +89,7 @@ bool load_game(void) {
 }
 
 int main(void) {
-    display_init(0, 2, 2, 0, 0);
+    pak_display_init(0, 2, 2, 0, 0);
     rdpq_init();
     __auto_type loaded = load_game();
     if (!loaded) {
@@ -97,8 +101,8 @@ int main(void) {
     save_game();
     while (true) {
         __auto_type fb = display_get();
-        rdpq_attach_clear(fb);
-        rdpq_set_mode_fill(0x1A1A2EFF);
+        rdpq_attach_clear(fb, NULL);
+        pak_rdpq_set_mode_fill(0x1A1A2EFF);
         rdpq_fill_rectangle(0, 0, 320, 240);
         rdpq_detach_show();
     }

@@ -11,7 +11,7 @@ enum LoadError: u8 {
     out_of_memory
 }
 
-fn load_data(path: *c_char) -> Result(i32, LoadError) {
+fn load_level(path: *c_char) -> Result(i32, LoadError) {
     if path == none {
         return err(LoadError.file_not_found)
     }
@@ -27,7 +27,7 @@ static sink: i32 = 0
 
 entry {
     -- Match on Result using .ok(v) and .err(e) patterns
-    let r = load_data("level.bin")
+    let r = load_level("level.bin")
     match r {
         .ok(data) => {
             sink = data

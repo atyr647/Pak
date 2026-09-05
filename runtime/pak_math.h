@@ -1,18 +1,34 @@
 /**
  * pak_math.h — Pak runtime math helpers for Vec2/Vec3/Mat4
  *
- * Thin wrappers around libdragon / Tiny3D types.  All functions are
+ * Thin wrappers around Tiny3D's vector and matrix types. All functions are
  * static inline so they compile away when unused.
  *
- * Requires:  libdragon.h  (for T3DVec2/T3DVec3/T3DMat4 / T3DMat4FP)
- *            math.h       (sqrtf)
+ * EVERY declaration below needs T3DVec2/T3DVec3/T3DMat4/T3DMat4FP, so the
+ * whole file is conditional on Tiny3D being available. It used to guard only
+ * the #include and then use the types unconditionally, which meant the header
+ * -- included by every file the C backend emits -- did not compile at all for
+ * a project without Tiny3D. Since `tiny3d = false` is the default `pak init`
+ * writes, that was every default project.
+ *
+ * PAK_HAS_TINY3D is defined by the generated Makefile when pak.toml asks for
+ * tiny3d. __has_include is the fallback for a hand-rolled build.
+ *
+ * Requires:  t3d/t3d.h  (for T3DVec2/T3DVec3/T3DMat4/T3DMat4FP)
+ *            math.h     (sqrtf)
  */
 #pragma once
 #include <stdint.h>
 #include <math.h>
-#ifdef __mips__
-#include <t3d/t3d.h>
+
+#if !defined(PAK_HAS_TINY3D) && defined(__has_include)
+#  if __has_include(<t3d/t3d.h>)
+#    define PAK_HAS_TINY3D 1
+#  endif
 #endif
+
+#ifdef PAK_HAS_TINY3D
+#include <t3d/t3d.h>
 
 /* ── Vec3 ─────────────────────────────────────────────────────────────────── */
 
@@ -107,3 +123,5 @@ static inline T3DMat4FP *pak_mat4_to_fp_alloc(const T3DMat4 *src) {
     t3d_mat4_to_fixed(fp, src);
     return fp;
 }
+
+#endif /* PAK_HAS_TINY3D */

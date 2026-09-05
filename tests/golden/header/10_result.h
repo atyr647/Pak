@@ -11,7 +11,7 @@ typedef enum {
     LoadError_out_of_memory,
 } LoadError;
 
-PakResult_int32_t_LoadError load_data(char * path);
+PakResult_int32_t_LoadError load_level(char * path);
 PakResult_int32_t_LoadError divide(int32_t a, int32_t b);
 
 #endif /* PAKMOD_DEMO_10_RESULT_H */

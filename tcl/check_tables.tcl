@@ -134,3 +134,21 @@ set ::pak::KNOWN_CFG [dict create \
     release 1 \
     tiny3d 1 \
 ]
+
+# Unprefixed global names libdragon's public headers already define, all of
+# them deprecated compatibility shims for a prefixed replacement. A Pak `fn`
+# with one of these names generates C that collides with libdragon and fails
+# to compile -- with an error pointing into libdragon's headers, not at the
+# user's line. W004 says it in Pak terms instead. Sourced from the
+# `deprecated(...)` declarations in the libdragon revision that
+# tools/fetch_libdragon.sh pins.
+set ::pak::LIBDRAGON_RESERVED [dict create \
+    audio_write 1  controller_init 1  controller_read 1  controller_read_gc 1 \
+    controller_read_gc_origin 1  controller_scan 1  execute_raw_command 1 \
+    init_interrupts 1  load_data 1  load_ucode 1  rdp_close 1  rdp_detach 1 \
+    rdp_draw_filled_rectangle 1  rdp_enable_primitive_fill 1 \
+    rdp_enable_texture_copy 1  rdp_init 1  rdp_set_clipping 1 \
+    rdp_set_default_clipping 1  rdp_sync 1  read_data 1  read_ucode 1 \
+    register_reset_handler 1  rspq_signal 1  rumble_start 1  rumble_stop 1 \
+    run_ucode 1 \
+]

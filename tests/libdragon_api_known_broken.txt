@@ -1,0 +1,8 @@
+# Canonical examples whose generated C does NOT compile against the real
+# libdragon headers, pinned by tools/fetch_libdragon.sh.
+#
+# Maintained by tcl/tools/libdragon_api_test.tcl. This is debt, not
+# configuration: fix the binding, drop the name, and the gate holds the
+# new floor. Adding a name is how a regression gets waved through, so add
+# one only with the reason written down.
+

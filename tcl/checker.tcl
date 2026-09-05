@@ -50,6 +50,19 @@ oo::class create pak::Checker {
             message $msg hint $hint line $line col $col filename $filename]
     }
 
+    # A Pak `fn` lowers to a C function of the same name, so a name libdragon
+    # already defines collides -- and the compiler reports it against
+    # libdragon's header rather than the user's line. Warn in Pak terms, with
+    # the replacement libdragon itself points at.
+    method check_libdragon_collision {decl} {
+        if {$backend ne "c"} return
+        set name [pak::fval $decl name]
+        if {![dict exists $::pak::LIBDRAGON_RESERVED $name]} return
+        my warn W004 "'$name' is already defined by libdragon" \
+            "libdragon's headers declare '$name' (a deprecated shim), so the\
+             generated C will not compile. Rename the function." $decl
+    }
+
     # ── top-level program walk ────────────────────────────────────────────────
     method check_program {decls} {
         foreach decl $decls {
@@ -63,6 +76,7 @@ oo::class create pak::Checker {
                 }
                 FnDecl {
                     my register_name [pak::fval $decl name] $decl
+                    my check_libdragon_collision $decl
                     my check_fn_signature_types $decl
                     if {![pak::isnil [pak::nfield $decl body]]} { my check_fn_body $decl }
                 }

@@ -66,11 +66,19 @@ proc pak::cli_find_project_root {{start ""}} {
 proc pak::cli_runtime_dir {} { return [file join $::pak::CLI_ROOT runtime] }
 
 # Recursive *.pk64 glob, excluding any path with a 'build' component, sorted.
+#
+# runtime/standalone/ is excluded too. `pak init` copies the runtime into the
+# project, so that directory holds runtime.pk64 -- the standalone HAL, which is
+# not project source. Compiling it as such put display_init, joypad_init,
+# audio_init and the rest into a libdragon build, where libdragon defines all
+# of them: a guaranteed duplicate-symbol link failure in every scaffolded
+# project. The MIPS ROM path links it deliberately and separately.
 proc pak::cli_src_files {root} {
     set out {}
     foreach f [pak::_rglob $root *.pk64] {
         set rel [pak::_relto $f $root]
         if {[lsearch -exact [file split $rel] build] >= 0} continue
+        if {[string match "runtime/standalone/*" [string map {\\ /} $rel]]} continue
         lappend out $f
     }
     return [lsort $out]
@@ -826,8 +834,13 @@ use n64.rdpq
 entry {
     -- Initialize display: 0=320x240, 2=16bpp, 3=triple-buffer, 0=GAMMA_NONE, 1=FILTERS_RESAMPLE
     display.init(0, 2, 3, 0, 1)
+    controller.init()
+    rdpq.init()
 
     loop {
+        -- Poll once per frame, BEFORE reading. Without this the buttons never
+        -- change: read() returns whatever the last poll captured.
+        controller.poll()
         let input = controller.read(0)
 
         -- Begin frame

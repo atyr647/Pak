@@ -97,6 +97,17 @@ jobs:
       - name: MIPS assembly snapshots (canonical examples)
         run: bash tcl/tools/mips_parity.sh
 
+      # The step above stubs libdragon, declaring every symbol as `long sym();`
+      # -- an unprototyped declaration that accepts any argument count and any
+      # types. A missing header, a renamed function, the wrong arity and the
+      # wrong argument types all compile clean there and fail at a user's
+      # `make`; all four were live in this repo. This compiles the same
+      # generated C against libdragon's real headers, pinned.
+      - name: Generated C matches libdragon's real API
+        run: |
+          bash tools/fetch_libdragon.sh
+          tclsh tcl/tools/libdragon_api_test.tcl
+
       # Every diagnostic the corpus exercises is a mistake someone thought to
       # write down. This finds the ones nobody did: mutated sources that must
       # still come back as an error message with a line number rather than as

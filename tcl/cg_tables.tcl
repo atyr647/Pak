@@ -47,7 +47,6 @@ set ::pak::CG_API [dict create \
     {disk write_sector} {disk_write_sector} \
     {display close} {display_close} \
     {display get} {display_get} \
-    {display init} {display_init} \
     {display show} {display_show} \
     {dma read} {dma_read} \
     {dma wait} {dma_wait} \
@@ -82,7 +81,6 @@ set ::pak::CG_API [dict create \
     {mouse init} {joypad_init} \
     {mouse poll} {joypad_poll} \
     {rdpq attach} {rdpq_attach} \
-    {rdpq attach_clear} {rdpq_attach_clear} \
     {rdpq block_begin} {rdpq_block_begin} \
     {rdpq block_end} {rdpq_block_end} \
     {rdpq block_free} {rdpq_block_free} \
@@ -101,10 +99,7 @@ set ::pak::CG_API [dict create \
     {rdpq set_color_image} {rdpq_set_color_image} \
     {rdpq set_combiner_raw} {rdpq_set_combiner_raw} \
     {rdpq set_env_color} {rdpq_set_env_color} \
-    {rdpq set_fill_color} {rdpq_set_fill_color} \
     {rdpq set_fog_color} {rdpq_set_fog_color} \
-    {rdpq set_mode_copy} {rdpq_set_mode_copy} \
-    {rdpq set_mode_fill} {rdpq_set_mode_fill} \
     {rdpq set_mode_standard} {rdpq_set_mode_standard} \
     {rdpq set_mode_standard_z} {rdpq_set_mode_standard_z} \
     {rdpq set_other_modes_raw} {rdpq_set_other_modes_raw} \
@@ -253,6 +248,11 @@ set ::pak::CG_API_LAMBDA [dict create \
     {arena alloc} {1} \
     {arena reset} {1} \
     {controller read} {1} \
+    {display init} {1} \
+    {rdpq attach_clear} {1} \
+    {rdpq set_fill_color} {1} \
+    {rdpq set_mode_copy} {1} \
+    {rdpq set_mode_fill} {1} \
     {joypad is_connected} {1} \
     {math abs_f} {1} \
     {math abs_i32} {1} \
@@ -363,7 +363,10 @@ set ::pak::CG_USE_INCLUDES [dict create \
 #include <mixer.h>} \
     {n64.mouse} {#include <joypad.h>} \
     {n64.rdpq} {#include <rdpq.h>
-#include <rdpq_gfx.h>} \
+#include <rdpq_attach.h>
+#include <rdpq_mode.h>
+#include <rdpq_rect.h>
+#include <rdpq_tri.h>} \
     {n64.rdpq_font} {#include <rdpq_font.h>
 #include <rdpq_text.h>} \
     {n64.rdpq_mode} {#include <rdpq_mode.h>} \
@@ -417,6 +420,8 @@ set ::pak::CG_PRIM [dict create \
     {i32} {int32_t} \
     {i64} {int64_t} \
     {i8} {int8_t} \
+    {joypad_buttons_t} {pak_joypad_buttons_t} \
+    {joypad_status_t} {pak_joypad_status_t} \
     {u16} {uint16_t} \
     {u32} {uint32_t} \
     {u64} {uint64_t} \

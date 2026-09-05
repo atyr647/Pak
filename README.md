@@ -310,6 +310,7 @@ REGEN=1 tclsh tcl/tools/golden_test.tcl   # re-bless the goldens (read them firs
 
 tclsh tcl/tools/n64enc_test.tcl           # MIPS instruction encodings
 tclsh tcl/tools/n64link_test.tcl          # linker + ROM packer
+tclsh tcl/tools/libdragon_api_test.tcl    # generated C vs libdragon's REAL headers
 tclsh tcl/tools/dlist_test.tcl            # the RDP disassembler behind `pak dlist`
 tclsh tcl/tools/pixel_test.tcl            # render on angrylion, compare pixels
 bash  tcl/tools/lint.sh                   # nagelfar static lint
@@ -325,10 +326,19 @@ pak explain --backend mips examples/canonical/01_hello.pk64
 
 CI (GitHub Actions) runs on every push: the golden suite over the whole corpus,
 canonical-example validation, "invalid programs must fail" checks, the
-`pak explain` snapshots, a front-end fuzz run, the binary back end (encoder,
+`pak explain` snapshots, a compile of that C against libdragon's real headers,
+a front-end fuzz run, the binary back end (encoder,
 linker, objgen for every canonical example, the RDP display-list disassembler,
 a pixel-level render against the angrylion reference, and a full
 source-to-`.z64` build), and nagelfar lint.
+
+The libdragon gate is the one that answers "would this actually build?".
+`tcl/tools/c_compile_test.tcl` stubs libdragon, declaring every symbol as
+`long sym();` — an unprototyped declaration that accepts any argument count and
+any types — so a missing header, a renamed function, the wrong arity and the
+wrong argument types all compile clean there and fail at a user's `make`.
+`tcl/tools/libdragon_api_test.tcl` compiles the same C against real headers
+pinned by `tools/fetch_libdragon.sh`, and keeps a shrinking debt list.
 
 The fuzzer mutates the corpus and demands the compiler answer with a
 diagnostic, never a Tcl stack trace: the lexer may raise `LEXERROR`, the parser

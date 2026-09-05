@@ -85,20 +85,27 @@ static inline void *pak_map_get_raw(void *map_ptr, int32_t cap,
  *                        pak_map_get(&map, cap, key)
  * These macros forward to the raw helpers using typeof to get sizes.
  */
+/*
+ * `&(key)` needs key to be an lvalue, so a literal key -- which is what
+ * generated code passes for `map[1] = 100` -- did not compile at all. A
+ * compound literal IS an lvalue in C, so &(T){v} is valid for both, and a
+ * variable argument still works because the compound literal just copies it.
+ */
 #define pak_map_set(map_ptr, cap, key, val) \
-    pak_map_set_raw((map_ptr), (cap), &(key), &(val), \
+    pak_map_set_raw((map_ptr), (cap), \
+                    &(__typeof__(key)){(key)}, &(__typeof__(val)){(val)}, \
                     (int32_t)sizeof(key), (int32_t)sizeof(val))
 
 #define pak_map_get(map_ptr, cap, key) \
-    pak_map_get_raw((map_ptr), (cap), &(key), \
+    pak_map_get_raw((map_ptr), (cap), &(__typeof__(key)){(key)}, \
                     (int32_t)sizeof(key), \
                     (int32_t)sizeof((map_ptr)->values[0]))
 
 #define pak_map_remove(map_ptr, cap, key) \
-    pak_map_remove_raw((map_ptr), (cap), &(key), \
+    pak_map_remove_raw((map_ptr), (cap), &(__typeof__(key)){(key)}, \
                        (int32_t)sizeof(key), (int32_t)sizeof((map_ptr)->values[0]))
 #define pak_map_has(map_ptr, cap, key) \
-    pak_map_has_raw((map_ptr), (cap), &(key), \
+    pak_map_has_raw((map_ptr), (cap), &(__typeof__(key)){(key)}, \
                     (int32_t)sizeof(key), (int32_t)sizeof((map_ptr)->values[0]))
 
 /* String-keyed variants (FixedMap with *c_char keys) */

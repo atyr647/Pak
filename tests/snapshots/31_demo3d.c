@@ -7,10 +7,14 @@
 #include <math.h>
 #include "pak_math.h"
 #include "pak_containers.h"
+#include "pak_libdragon.h"
 #include <display.h>
 #include <joypad.h>
 #include <rdpq.h>
-#include <rdpq_gfx.h>
+#include <rdpq_attach.h>
+#include <rdpq_mode.h>
+#include <rdpq_rect.h>
+#include <rdpq_tri.h>
 #include <n64sys.h>
 #include <n64sys.h>
 #include <math.h>
@@ -145,7 +149,7 @@ void fill_quad(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t x2, int32
     if (ymax > SCREEN_H) {
         ymax = SCREEN_H;
     }
-    rdpq_set_fill_color(col);
+    pak_rdpq_set_fill_color(col);
     for (int y = ymin; y < ymax; y++) {
         int32_t xl = SCREEN_W;
         int32_t xr = -1;
@@ -244,16 +248,16 @@ void render_cube(Cube * cube) {
 void render_sky_ground(void) {
     int32_t band_h = (HALF_H / 6);
     int32_t gband_h = (HALF_H / 8);
-    rdpq_set_mode_fill(sky_col[0]);
+    pak_rdpq_set_mode_fill(sky_col[0]);
     for (int b = 0; b < 6; b++) {
-        rdpq_set_fill_color(sky_col[b]);
+        pak_rdpq_set_fill_color(sky_col[b]);
         rdpq_fill_rectangle(0, (b * band_h), SCREEN_W, ((b + 1) * band_h));
     }
     for (int b = 0; b < 8; b++) {
-        rdpq_set_fill_color(gnd_col[b]);
+        pak_rdpq_set_fill_color(gnd_col[b]);
         rdpq_fill_rectangle(0, (HALF_H + (b * gband_h)), SCREEN_W, (HALF_H + ((b + 1) * gband_h)));
     }
-    rdpq_set_fill_color(0x4466AAFF);
+    pak_rdpq_set_fill_color(0x4466AAFF);
     rdpq_fill_rectangle(0, (HALF_H - 2), SCREEN_W, (HALF_H + 2));
 }
 
@@ -271,7 +275,7 @@ void render_stars(void) {
         else if (s.z > 0.25f) {
             col = 0x888888FF;
         }
-        rdpq_set_fill_color(col);
+        pak_rdpq_set_fill_color(col);
         int32_t sz = 1;
         if (s.z > 0.7f) {
             sz = 2;
@@ -280,7 +284,7 @@ void render_stars(void) {
     }
 }
 
-void update(joypad_status_t pad) {
+void update(pak_joypad_status_t pad) {
     Cube_spin(&gs.cube_a);
     Cube_spin(&gs.cube_b);
     if (pad.held.l) {
@@ -316,20 +320,20 @@ void init_scene(void) {
 }
 
 int main(void) {
-    display_init(0, 2, 3, 0, 1);
+    pak_display_init(0, 2, 3, 0, 1);
     rdpq_init();
     joypad_init();
     timer_init();
     init_scene();
     while (true) {
         joypad_poll();
-        __auto_type pad = joypad_get_status(0);
+        __auto_type pad = pak_joypad_get_status(0);
         update(pad);
         if (!gs.running) {
             break;
         }
         __auto_type fb = display_get();
-        rdpq_attach_clear(fb);
+        rdpq_attach_clear(fb, NULL);
         render_sky_ground();
         render_stars();
         render_cube(&gs.cube_a);

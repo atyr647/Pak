@@ -42,7 +42,7 @@ void fill_quad(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t x2, int32
 void render_cube(Cube * cube);
 void render_sky_ground(void);
 void render_stars(void);
-void update(joypad_status_t pad);
+void update(pak_joypad_status_t pad);
 void init_scene(void);
 
 #endif /* PAKMOD_DEMO_31_DEMO3D_H */

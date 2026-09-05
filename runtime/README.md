@@ -12,6 +12,13 @@ present, and is compiled by `mips64-elf-gcc` through the generated Makefile.
 * `pak_containers.h` — FixedMap and Pool helpers (FixedList and RingBuffer are
   inlined directly into the generated code)
 * `pak_rand.h` — seedable xorshift32 PRNG
+* `pak_libdragon.h` — Pak's calling convention on top of libdragon's real API,
+  for the three places libdragon's own signature cannot express it: `display_init`
+  (its `resolution_t` is a struct, not an integer), the joypad (Pak's one
+  held/pressed/released struct is four libdragon calls, and libdragon spells the
+  d-pad `d_up`/`d_left`), and rdpq colours (`color_t` vs a packed `0xRRGGBBAA`).
+  Kept as ordinary C rather than code-generator special cases, so a variable
+  argument behaves exactly like a literal one.
 * `pakfs.c` / `pakfs.h` — PakFS archive reader
 * `pak_mips_rt.s` — assembly helpers (panic, fixed-point divide, arena) for
   projects built with `--backend mips` against a real MIPS toolchain

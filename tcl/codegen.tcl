@@ -3053,6 +3053,7 @@ oo::class create pak::Codegen {
         lappend out "#include <math.h>"
         lappend out "#include \"pak_math.h\""
         lappend out "#include \"pak_containers.h\""
+        lappend out "#include \"pak_libdragon.h\""
 
         set seen [dict create]
         foreach use_path $uses {
@@ -3366,8 +3367,35 @@ proc pak::cg_arg_or {arglist i default} {
 proc pak::cg_api_lambda {mod fn arglist} {
     switch -- "$mod $fn" {
         "controller read" {
-            if {[llength $arglist] > 0} { return "joypad_get_status([lindex $arglist 0])" }
-            return "joypad_get_status(0)"
+            # libdragon has no one call returning held/pressed/released; the
+            # shim in runtime/pak_libdragon.h composes its four into the one
+            # struct Pak's surface (and the standalone HAL) promises.
+            if {[llength $arglist] > 0} { return "pak_joypad_get_status([lindex $arglist 0])" }
+            return "pak_joypad_get_status(0)"
+        }
+        "display init" {
+            # resolution_t is a struct in libdragon, so Pak's documented
+            # integer cannot be cast to it. The shim maps them.
+            set a {}
+            foreach i {0 1 2 3 4} { lappend a [pak::cg_arg_or $arglist $i 0] }
+            return "pak_display_init([join $a {, }])"
+        }
+        "rdpq attach_clear" {
+            # rdpq_attach_clear takes the colour surface AND the Z surface.
+            set fb [pak::cg_arg_or $arglist 0 "NULL"]
+            set z  [pak::cg_arg_or $arglist 1 "NULL"]
+            return "rdpq_attach_clear($fb, $z)"
+        }
+        "rdpq set_fill_color" {
+            return "pak_rdpq_set_fill_color([pak::cg_arg_or $arglist 0 0])"
+        }
+        "rdpq set_mode_fill" {
+            return "pak_rdpq_set_mode_fill([pak::cg_arg_or $arglist 0 0])"
+        }
+        "rdpq set_mode_copy" {
+            # libdragon takes an explicit transparency flag; Pak's COPY mode
+            # sets alpha_compare_en, which is the `true` case.
+            return "rdpq_set_mode_copy([pak::cg_arg_or $arglist 0 "true"])"
         }
         "sprite blit" {
             if {[llength $arglist] >= 3} {

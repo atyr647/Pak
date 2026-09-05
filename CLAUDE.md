@@ -121,6 +121,7 @@ When the compiler reports an error, use this table to understand it:
 | E602 | `impl ... for Trait` omits a required trait method (no default body) |
 | E603 | Method signature mismatch — wrong number of parameters in trait impl |
 | W001–W003 | Style warnings (naming conventions) |
+| W004 | Function name collides with a libdragon symbol (rename it) |
 
 ---
 

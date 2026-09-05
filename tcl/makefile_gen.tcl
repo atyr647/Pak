@@ -139,7 +139,9 @@ proc pak::generate_makefile {project_name rom_title c_files pakfs_archive \
 ifndef TINY3D_INST
 \$(error TINY3D_INST is not set. Set it to your Tiny3D installation path.)
 endif
-TINY3D_CFLAGS  := -I\$(TINY3D_INST)/include
+# runtime/pak_math.h is entirely T3DVec/T3DMat wrappers, so it compiles its
+# body only when Tiny3D is actually present.
+TINY3D_CFLAGS  := -I\$(TINY3D_INST)/include -DPAK_HAS_TINY3D=1
 TINY3D_LDFLAGS := -L\$(TINY3D_INST)/lib -lt3d
 "
     }
