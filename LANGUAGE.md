@@ -206,6 +206,12 @@ Pool(T, N)          -- object pool, capacity N
 
 N must be a compile-time integer literal. See `examples/canonical/23_containers.pk64`.
 
+On the standalone backend the fixed-capacity containers are inlined, and
+`FixedMap`, `Pool` and `Vec` call small helpers in
+`runtime/standalone/runtime.pk64` for the operations that need to compare or
+copy an element of an unknown width. `Vec` grows on the bump allocator there,
+which never reuses a freed block: reserve once rather than growing every frame.
+
 ### Trait Objects [IMPLEMENTED]
 
 ```pak
@@ -215,6 +221,12 @@ dyn TraitName        -- dynamic dispatch trait object
 
 Lowers to a vtable-based struct pair. Construct with `TraitName_from_TypeName(&obj)`.
 See `examples/canonical/27_dyn_trait.pk64`.
+
+Both backends lower this the same way: the value is `{self, vtable}` (8 bytes,
+so it is passed and returned by address), and each `impl T for Trait` gets a
+vtable holding the concrete methods **in trait declaration order**. On the
+standalone backend that vtable is a `.word` table naming the method symbols,
+and a call loads the slot and dispatches through `jalr`.
 
 ---
 

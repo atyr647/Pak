@@ -28,6 +28,26 @@ proc run_src {src} {
     return [pak::mips_sim_run [pak::records_to_asm $recs] main 200000]
 }
 
+# FixedMap and Pool lower to calls on pak_map_* / pak_pool_* in the standalone
+# runtime, so a case exercising them has to be linked against that runtime. The
+# helper block is self-contained -- no asm, no hardware registers -- so splicing
+# it in front of the program runs the real code rather than a copy that drifts.
+proc runtime_helpers {} {
+    set f [open [file join $::HERE .. .. runtime standalone runtime.pk64] r]
+    set rt [read $f]
+    close $f
+    # From the heap onwards: the Vec helpers allocate, so __pak_alloc has to
+    # come along. Everything between is plain Pak with no hardware in it.
+    set i [string first "Heap (bump allocator)" $rt]
+    if {$i < 0} { error "runtime.pk64: heap block not found" }
+    set i [string last "\n" [string range $rt 0 $i]]
+    return [string range $rt $i end]
+}
+
+proc chk_rt {what src sym want} {
+    chk $what "[runtime_helpers]\n$src" $sym $want
+}
+
 proc chk {what src sym want} {
     if {[catch {set run [run_src $src]} err]} {
         puts "FAIL  $what -- $err"
@@ -426,6 +446,378 @@ entry {
     if a < b { out = 7 } else { out = 9 }
 }
 } out 00000007
+
+puts ""
+puts "== FixedMap and Pool (standalone container helpers) =="
+
+# The MIPS backend used to call pak_map_set(map, cap, key, val), passing the key
+# and the value BY VALUE. One helper serves every K and V, so it cannot know how
+# wide either is: the call has to pass addresses and sizes. These cases run the
+# real runtime helpers, so a signature that drifts shows up as a wrong answer.
+
+chk_rt "FixedMap.set then len" {
+static out: i32 = 0
+entry {
+    let mut m: FixedMap(i32, i32, 16) = FixedMap.init()
+    m.set(1, 100)
+    m.set(2, 200)
+    m.set(3, 300)
+    out = m.len()
+}
+} out 00000003
+
+chk_rt "FixedMap.get returns the value slot" {
+static out: i32 = 0
+entry {
+    let mut m: FixedMap(i32, i32, 16) = FixedMap.init()
+    m.set(1, 100)
+    m.set(2, 200)
+    let p = m.get(2)
+    if p != none { out = *p }
+}
+} out 000000C8
+
+chk_rt "FixedMap.get of an absent key is none" {
+static out: i32 = 0
+entry {
+    let mut m: FixedMap(i32, i32, 16) = FixedMap.init()
+    m.set(1, 100)
+    out = 5
+    let p = m.get(9)
+    if p == none { out = 7 }
+}
+} out 00000007
+
+chk_rt "FixedMap.set over an existing key replaces it" {
+static out: i32 = 0
+entry {
+    let mut m: FixedMap(i32, i32, 16) = FixedMap.init()
+    m.set(4, 100)
+    m.set(4, 250)
+    let p = m.get(4)
+    if p != none { out = *p + m.len() }
+}
+} out 000000FB
+
+chk_rt "FixedMap.has" {
+static out: i32 = 0
+entry {
+    let mut m: FixedMap(i32, i32, 16) = FixedMap.init()
+    m.set(3, 300)
+    out = (m.has(3) as i32) * 10 + (m.has(4) as i32)
+}
+} out 0000000A
+
+chk_rt "FixedMap.remove drops the key and the count" {
+static out: i32 = 0
+entry {
+    let mut m: FixedMap(i32, i32, 16) = FixedMap.init()
+    m.set(1, 100)
+    m.set(2, 200)
+    m.remove(1)
+    out = m.len() * 10 + (m.has(1) as i32)
+}
+} out 0000000A
+
+# A u8 key is one byte wide: a helper that compares four bytes, or that indexes
+# keys[] by 4, finds the wrong slot. keys[] is also padded up to the value's
+# alignment here, which is why the call carries the offset of values[] instead
+# of recomputing it from cap * key_sz.
+chk_rt "FixedMap with a u8 key and an i32 value" {
+static out: i32 = 0
+entry {
+    let mut m: FixedMap(u8, i32, 6) = FixedMap.init()
+    m.set(1, 111)
+    m.set(2, 222)
+    m.set(3, 333)
+    let p = m.get(2)
+    if p != none { out = *p }
+}
+} out 000000DE
+
+chk_rt "FixedMap fills up and refuses the extra key" {
+static out: i32 = 0
+entry {
+    let mut m: FixedMap(i32, i32, 2) = FixedMap.init()
+    m.set(1, 10)
+    m.set(2, 20)
+    m.set(3, 30)
+    out = m.len() * 10 + (m.has(3) as i32)
+}
+} out 00000014
+
+chk_rt "Pool.acquire hands out a zeroed slot" {
+struct Bullet { x: f32, y: f32, active: i32 }
+static out: i32 = 0
+entry {
+    let mut pool: Pool(Bullet, 16) = Pool.init()
+    let s: *Bullet = pool.acquire()
+    if s != none { out = s.active + 1 }
+}
+} out 00000001
+
+chk_rt "Pool.len counts what is live" {
+struct Bullet { x: f32, y: f32, active: i32 }
+static out: i32 = 0
+entry {
+    let mut pool: Pool(Bullet, 16) = Pool.init()
+    let a: *Bullet = pool.acquire()
+    let b: *Bullet = pool.acquire()
+    let c: *Bullet = pool.acquire()
+    out = pool.len()
+}
+} out 00000003
+
+# release swaps the freed slot with the last live one, so the slot the caller
+# handed back now holds what the last one did: 2 live, a.active 9, c.active 7.
+chk_rt "Pool.release swaps the last live slot down" {
+struct Bullet { x: f32, y: f32, active: i32 }
+static out: i32 = 0
+entry {
+    let mut pool: Pool(Bullet, 16) = Pool.init()
+    let a: *Bullet = pool.acquire()
+    let b: *Bullet = pool.acquire()
+    let c: *Bullet = pool.acquire()
+    a.active = 7
+    c.active = 9
+    pool.release(a)
+    out = pool.len() * 100 + a.active * 10 + c.active
+}
+} out 00000129
+
+chk_rt "Pool.acquire refuses when full" {
+struct Bullet { x: f32, y: f32, active: i32 }
+static out: i32 = 0
+entry {
+    let mut pool: Pool(Bullet, 2) = Pool.init()
+    let a: *Bullet = pool.acquire()
+    let b: *Bullet = pool.acquire()
+    let c: *Bullet = pool.acquire()
+    out = 5
+    if c == none { out = pool.len() }
+}
+} out 00000002
+
+puts ""
+puts "== narrow stores and the word underneath them =="
+
+# The simulator kept byte stores in a side table that a narrow load consulted
+# first, so a byte store shadowed every word store that came after it: zero a
+# struct byte-wise, assign a field, read the field back, and it still read
+# zero. Pool.acquire zeroes its slot exactly that way.
+chk_rt "a word store wins over the byte store under it" {
+static out: i32 = 0
+entry {
+    let mut buf: [i32; 4] = [1, 2, 3, 4]
+    pak_bytes_zero(&buf as u32, 16)
+    buf[1] = 0x2A
+    let p: *u8 = ((&buf as u32) + 7) as *u8
+    out = (*p) as i32
+}
+} out 0000002A
+
+puts ""
+puts "== dyn Trait (vtable dispatch) =="
+
+# A `dyn Trait` is the pair {self, vtable}; the vtable is a .word table of the
+# concrete methods in TRAIT DECLARATION order, so one index means the same
+# method in every impl. The MIPS backend used to refuse the whole construct.
+
+chk "dispatch picks the receiver's own method" {
+trait Shape {
+    fn area(self: *Self) -> i32
+    fn sides(self: *Self) -> i32
+}
+struct Sq { w: i32 }
+struct Tri { b: i32, h: i32 }
+impl Sq for Shape {
+    fn area(self: *Sq) -> i32 { return self.w * self.w }
+    fn sides(self: *Sq) -> i32 { return 4 }
+}
+impl Tri for Shape {
+    fn area(self: *Tri) -> i32 { return (self.b * self.h) / 2 }
+    fn sides(self: *Tri) -> i32 { return 3 }
+}
+static out: i32 = 0
+entry {
+    let mut a = Sq { w: 5 }
+    let mut b = Tri { b: 6, h: 4 }
+    let sa: dyn Shape = Shape_from_Sq(&a)
+    let sb: dyn Shape = Shape_from_Tri(&b)
+    out = sa.area() * 100 + sb.area()
+}
+} out 000009D0
+
+# The second slot: an index computed from the trait declaration, not from the
+# order the impl happens to list its methods.
+chk "the second vtable slot is the second trait method" {
+trait Shape {
+    fn area(self: *Self) -> i32
+    fn sides(self: *Self) -> i32
+}
+struct Sq { w: i32 }
+struct Tri { b: i32, h: i32 }
+impl Sq for Shape {
+    fn sides(self: *Sq) -> i32 { return 4 }
+    fn area(self: *Sq) -> i32 { return self.w * self.w }
+}
+impl Tri for Shape {
+    fn area(self: *Tri) -> i32 { return (self.b * self.h) / 2 }
+    fn sides(self: *Tri) -> i32 { return 3 }
+}
+static out: i32 = 0
+entry {
+    let mut a = Sq { w: 5 }
+    let mut b = Tri { b: 6, h: 4 }
+    let sa: dyn Shape = Shape_from_Sq(&a)
+    let sb: dyn Shape = Shape_from_Tri(&b)
+    out = sa.sides() * 10 + sb.sides()
+}
+} out 0000002B
+
+# A dyn Trait is 8 bytes, so it travels by address and is copied into the
+# callee's frame like any other aggregate.
+chk "a dyn Trait passed to a function still dispatches" {
+trait Shape {
+    fn area(self: *Self) -> i32
+}
+struct Sq { w: i32 }
+impl Sq for Shape {
+    fn area(self: *Sq) -> i32 { return self.w * self.w }
+}
+fn area_of(s: dyn Shape) -> i32 { return s.area() + 1 }
+static out: i32 = 0
+entry {
+    let mut a = Sq { w: 6 }
+    let s: dyn Shape = Shape_from_Sq(&a)
+    out = area_of(s)
+}
+} out 00000025
+
+# A trait method with a default body the impl does not override still needs a
+# concrete symbol for its vtable slot.
+chk "a trait default fills its own vtable slot" {
+trait Greet {
+    fn base(self: *Self) -> i32
+    fn twice(self: *Self) -> i32 { return self.base() * 2 }
+}
+struct N { v: i32 }
+impl N for Greet {
+    fn base(self: *N) -> i32 { return self.v }
+}
+static out: i32 = 0
+entry {
+    let mut n = N { v: 21 }
+    let g: dyn Greet = Greet_from_N(&n)
+    out = g.twice()
+}
+} out 0000002A
+
+chk "dispatch through a float-returning method" {
+trait Shape {
+    fn area(self: *Self) -> f32
+}
+struct Rect { w: f32, h: f32 }
+impl Rect for Shape {
+    fn area(self: *Rect) -> f32 { return self.w * self.h }
+}
+static out: f32 = 0.0
+entry {
+    let mut r = Rect { w: 3.0, h: 4.0 }
+    let s: dyn Shape = Shape_from_Rect(&r)
+    out = s.area()
+}
+} out 41400000
+
+puts ""
+puts "== a data word can name a symbol =="
+
+# `.word <symbol>` had no meaning in the simulator's data image (it stored 0)
+# or in tcl/n64asm.tcl (it raised a Tcl error). A vtable is nothing but such
+# words, so both had to learn it.
+chk "a .word naming a static reads back as its address" {
+static target: i32 = 0x5A5A
+static out: i32 = 0
+entry {
+    let p: *i32 = &target
+    out = *p
+}
+} out 00005A5A
+
+puts ""
+puts "== Vec (heap-backed, growing) =="
+
+# Vec used to lower to _pak_vec_push / _pak_vec_get / ... -- a family of symbols
+# no source on this backend defines, so every program using one linked to
+# nothing. Only the three operations that can move the storage call the
+# runtime now; the rest read the {data, len, cap} header inline. These run
+# against the real helpers, so they also exercise the bump allocator.
+
+chk_rt "Vec.push then len and get" {
+static out: i32 = 0
+entry {
+    let mut v: Vec(i32) = Vec.init()
+    v.push(10)
+    v.push(20)
+    v.push(30)
+    out = v.len() * 1000 + v.get(1)
+}
+} out 00000BCC
+
+chk_rt "Vec grows past its first block" {
+static out: i32 = 0
+entry {
+    let mut v: Vec(i32) = Vec.init()
+    let mut i: i32 = 0
+    while i < 20 {
+        v.push(i * 3)
+        i = i + 1
+    }
+    out = v.len() * 1000 + v.get(19)
+}
+} out 00004E59
+
+chk_rt "Vec.clear keeps the storage but empties it" {
+static out: i32 = 0
+entry {
+    let mut v: Vec(i32) = Vec.init()
+    v.push(1)
+    v.push(2)
+    v.clear()
+    out = (v.is_empty() as i32) * 100 + v.len() * 10 + v.cap()
+}
+} out 0000006C
+
+chk_rt "Vec.reserve raises cap without touching len" {
+static out: i32 = 0
+entry {
+    let mut v: Vec(i32) = Vec.init()
+    v.push(7)
+    v.reserve(64)
+    out = v.cap() * 100 + v.len() * 10 + v.get(0)
+}
+} out 00001911
+
+chk_rt "Vec.pop takes the last element" {
+static out: i32 = 0
+entry {
+    let mut v: Vec(i32) = Vec.init()
+    v.push(4)
+    v.push(9)
+    let top = v.pop()
+    out = top * 10 + v.len()
+}
+} out 0000005B
+
+chk_rt "Vec.free empties the header" {
+static out: i32 = 0
+entry {
+    let mut v: Vec(i32) = Vec.init()
+    v.push(1)
+    v.free()
+    out = v.len() * 100 + v.cap() * 10 + (v.is_empty() as i32)
+}
+} out 00000001
 
 puts ""
 puts "PASS=$pass  FAIL=$fail"

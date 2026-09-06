@@ -101,6 +101,7 @@ proc parse_asm {text} {
     set section .text
     set daddr $DATA_BASE
     set pending_labels {}
+    set word_fixups {}
 
     # Write one byte into the data image, which is stored as aligned words so
     # the simulator's word loads can read it back directly.
@@ -145,7 +146,16 @@ proc parse_asm {text} {
                     if {$section ne ".text"} {
                         foreach v [lrange $parts 1 end] {
                             set v [string trimright $v ","]
-                            if {![string is integer -strict $v]} { set v 0 }
+                            if {![string is integer -strict $v]} {
+                                # `.word <symbol>` -- a vtable slot, or any
+                                # other pointer the assembler resolves. The
+                                # label may not be parsed yet, so record the
+                                # address and fill it in below. Writing 0, as
+                                # this did, made every vtable a table of null
+                                # function pointers.
+                                lappend word_fixups [list $daddr $v]
+                                set v 0
+                            }
                             for {set i 3} {$i >= 0} {incr i -1} {
                                 _dbyte data_image $daddr [expr {($v >> ($i * 8)) & 0xFF}]
                                 incr daddr
@@ -231,6 +241,22 @@ proc parse_asm {text} {
         }
         if {[llength $parts] == 0} continue
         lappend insns $parts
+    }
+    # `.word <symbol>` fixups, now that every label is known. A text label
+    # resolves to the same value `la` gives it -- the instruction index -- so a
+    # function pointer read out of a vtable is callable through jalr.
+    foreach fx $word_fixups {
+        lassign $fx addr sym
+        set v 0
+        if {[dict exists $labels $sym]} {
+            set v [dict get $labels $sym]
+        } elseif {[dict exists $data_syms $sym]} {
+            set v [dict get $data_syms $sym]
+        }
+        for {set i 3} {$i >= 0} {incr i -1} {
+            _dbyte data_image $addr [expr {($v >> ($i * 8)) & 0xFF}]
+            incr addr
+        }
     }
     return [list $labels $insns $data_syms $data_image]
 }
@@ -592,8 +618,17 @@ proc exec_insn {op args} {
             }
         }
         sh {
+            # Half store. Like sb: mem_w is the memory, mem_h is only a record
+            # of what was stored narrowly, kept so tests can assert a halfword
+            # without reconstructing the word around it.
             lassign [lindex $args 1] off base
-            dict set mh [expr {($R($base) + $off) & 0xFFFFFFFF}] [expr {$R([lindex $args 0]) & 0xFFFF}]
+            set addr [expr {($R($base) + $off) & 0xFFFFFFFF}]
+            set val  [expr {$R([lindex $args 0]) & 0xFFFF}]
+            dict set mh $addr $val
+            set w [expr {$addr & ~3}]
+            set shift [expr {(2 - ($addr & 2)) * 8}]
+            set cur [expr {[dict exists $mw $w] ? [dict get $mw $w] : 0}]
+            dict set mw $w [expr {($cur & ~(0xFFFF << $shift)) | ($val << $shift)}]
         }
         sb {
             # Byte store. Merge into the containing word so lbu (which reads
@@ -635,12 +670,13 @@ proc exec_insn {op args} {
             }
         }
         lbu - lb - lhu - lh {
-            # `sb` and `sh` record their stores in mb/mh, but a .byte or .half
-            # in the data image only exists as part of a word in mw. A load
-            # therefore has to look in both: the narrow store first, the word
-            # underneath it otherwise. lh used to consult mh alone and read a
-            # `.half` static as zero, and lb was a second, unreachable switch
-            # arm that returned zero unconditionally.
+            # mem_w is THE memory: `sb`/`sh` merge their store into the word
+            # that contains it, and a .byte or .half in the data image only
+            # ever existed as part of a word. So a narrow load reads mem_w and
+            # nothing else. Consulting mem_b/mem_h first, as this did, made a
+            # byte store permanently shadow the word stores that came after it:
+            # zero a pool slot with `sb`, write a field with `sw`, read the
+            # field back through `lbu`, and the read still saw the zero.
             set n [lindex $args 0]
             if {$n} {
                 lassign [lindex $args 1] off base
@@ -648,18 +684,10 @@ proc exec_insn {op args} {
                 set w [expr {$addr & ~3}]
                 set word [expr {[dict exists $mw $w] ? [dict get $mw $w] : 0}]
                 if {$op eq "lbu" || $op eq "lb"} {
-                    if {[dict exists $mb $addr]} {
-                        set v [expr {[dict get $mb $addr] & 0xFF}]
-                    } else {
-                        set v [expr {($word >> ((3 - ($addr & 3)) * 8)) & 0xFF}]
-                    }
+                    set v [expr {($word >> ((3 - ($addr & 3)) * 8)) & 0xFF}]
                     if {$op eq "lb" && $v >= 0x80} { set v [expr {$v - 0x100}] }
                 } else {
-                    if {[dict exists $mh $addr]} {
-                        set v [expr {[dict get $mh $addr] & 0xFFFF}]
-                    } else {
-                        set v [expr {($word >> ((2 - ($addr & 2)) * 8)) & 0xFFFF}]
-                    }
+                    set v [expr {($word >> ((2 - ($addr & 2)) * 8)) & 0xFFFF}]
                     if {$op eq "lh" && $v >= 0x8000} { set v [expr {$v - 0x10000}] }
                 }
                 set R($n) [expr {$v & 0xFFFFFFFF}]

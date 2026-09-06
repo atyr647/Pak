@@ -225,6 +225,24 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     math_rand_seed 1 \
     math_rand_range 1 \
     math_rand_f 1 \
+    pak_align4 1 \
+    pak_bytes_equal 1 \
+    pak_bytes_copy 1 \
+    pak_bytes_zero 1 \
+    pak_bytes_swap 1 \
+    pak_map_occ 1 \
+    pak_map_lenp 1 \
+    pak_map_find 1 \
+    pak_map_set_raw 1 \
+    pak_map_get_raw 1 \
+    pak_map_has_raw 1 \
+    pak_map_remove_raw 1 \
+    pak_pool_acquire_raw 1 \
+    pak_pool_release_raw 1 \
+    pak_vec_grow 1 \
+    pak_vec_push_raw 1 \
+    pak_vec_reserve_raw 1 \
+    pak_vec_free_raw 1 \
     TICKS_PER_SECOND 1 \
     RDPQ_COMBINER_FLAT 1 \
 ]

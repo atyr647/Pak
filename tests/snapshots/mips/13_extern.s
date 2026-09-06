@@ -186,129 +186,6 @@
 
 
 	.section .text
-	.globl Sprite_draw
-	.type Sprite_draw, @function
-Sprite_draw:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    sw $a1, 140($sp)
-    sw $a2, 144($sp)
-    lw $t8, 140($sp)
-    lw $t7, 136($sp)
-    sw $t8, 0($t7)
-    move $t9, $t8
-    lw $t8, 144($sp)
-    lw $t7, 136($sp)
-    sw $t8, 4($t7)
-    move $t9, $t8
-.LSprite_draw_ret_0:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
-    jr $ra
-    nop
-	.size Sprite_draw, . - Sprite_draw
-
-	.section .text
-	.globl Sprite_get_width
-	.type Sprite_get_width, @function
-Sprite_get_width:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
-    lw $v0, 8($t9)
-    j .LSprite_get_width_ret_1
-    nop
-.LSprite_get_width_ret_1:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
-    jr $ra
-    nop
-	.size Sprite_get_width, . - Sprite_get_width
-
-	.section .text
-	.globl Sprite_get_height
-	.type Sprite_get_height, @function
-Sprite_get_height:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
-    lw $v0, 12($t9)
-    j .LSprite_get_height_ret_2
-    nop
-.LSprite_get_height_ret_2:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
-    jr $ra
-    nop
-	.size Sprite_get_height, . - Sprite_get_height
-
-	.section .text
-	.globl Drawable_from_Sprite
-	.type Drawable_from_Sprite, @function
-Drawable_from_Sprite:
-    sw $a1, 0($a0)
-    la $t0, _pak_Drawable_vtable_Sprite
-    sw $t0, 4($a0)
-    jr $ra
-    nop
-	.size Drawable_from_Sprite, . - Drawable_from_Sprite
-
-	.section .text
-	.globl Enemy_update
-	.type Enemy_update, @function
-Enemy_update:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    swc1 $f12, 140($sp)
-    lw $t6, 136($sp)
-    lwc1 $f12, 8($t6)
-    swc1 $f12, 144($sp)
-    lwc1 $f12, 140($sp)
-    lwc1 $f14, 144($sp)
-    mul.s $f12, $f14, $f12
-    swc1 $f12, 144($sp)
-    lw $t6, 136($sp)
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 144($sp)
-    add.s $f12, $f12, $f14
-    lw $t7, 136($sp)
-    swc1 $f12, 0($t7)
-    move $t9, $t8
-.LEnemy_update_ret_3:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
-    jr $ra
-    nop
-	.size Enemy_update, . - Enemy_update
-
-	.section .text
-	.globl Updatable_from_Enemy
-	.type Updatable_from_Enemy, @function
-Updatable_from_Enemy:
-    sw $a1, 0($a0)
-    la $t0, _pak_Updatable_vtable_Enemy
-    sw $t0, 4($a0)
-    jr $ra
-    nop
-	.size Updatable_from_Enemy, . - Updatable_from_Enemy
-
-	.section .text
 	.globl main
 	.type main, @function
 main:
@@ -316,94 +193,75 @@ main:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    sw $zero, 152($sp)
-    sw $zero, 156($sp)
-    sw $zero, 160($sp)
-    sw $zero, 164($sp)
+    li $a2, 64
+    li $a1, 0
+    la $t8, buf
     li $t7, 0
-    sw $t7, 152($sp)
-    li $t7, 0
-    sw $t7, 156($sp)
-    li $t7, 16
-    sw $t7, 160($sp)
-    li $t7, 16
-    sw $t7, 164($sp)
-    addiu $t9, $sp, 152
+    addu $t8, $t8, $t7
+    move $a0, $t8
+    sw $t9, 96($sp)
+    jal memset
+    nop
+    lw $t9, 96($sp)
+    move $t9, $v0
+    move $t9, $zero
     addiu $t8, $sp, 136
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    lw $t7, 8($t9)
-    sw $t7, 8($t8)
-    lw $t7, 12($t9)
-    sw $t7, 12($t8)
+    li $a2, 8
+    li $a1, 165
     addiu $t8, $sp, 136
+    li $t7, 0
+    addu $t8, $t8, $t7
     move $a0, $t8
-    li $a2, 20
-    li $a1, 10
     sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    jal Sprite_draw
+    jal memset
     nop
     lw $t9, 96($sp)
-    lw $t8, 100($sp)
     move $t9, $v0
-    addiu $t7, $sp, 136
-    move $a0, $t7
+    li $a2, 8
+    addiu $t8, $sp, 136
+    li $t7, 0
+    addu $t8, $t8, $t7
+    move $a1, $t8
+    la $t8, buf
+    li $t7, 0
+    addu $t8, $t8, $t7
+    move $a0, $t8
+    sw $t9, 96($sp)
+    jal memcpy
+    nop
+    lw $t9, 96($sp)
+    move $t9, $v0
+    la $t9, .Lstr0
+    sw $t9, 144($sp)
+    lw $a0, 144($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
-    sw $t7, 104($sp)
-    jal Sprite_get_width
+    jal strlen
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
-    lw $t7, 104($sp)
     move $t8, $v0
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    sw $zero, 180($sp)
-    sw $zero, 184($sp)
-    sw $zero, 188($sp)
-    la $t6, .Lf320
-    lwc1 $f12, 0($t6)
-    swc1 $f12, 180($sp)
-    la $t6, .Lf320
-    lwc1 $f12, 0($t6)
-    swc1 $f12, 184($sp)
-    la $t6, .Lf321
-    lwc1 $f12, 0($t6)
-    swc1 $f12, 188($sp)
-    addiu $t9, $sp, 180
-    addiu $t8, $sp, 168
-    lw $t7, 0($t9)
-    sw $t7, 0($t8)
-    lw $t7, 4($t9)
-    sw $t7, 4($t8)
-    lw $t7, 8($t9)
-    sw $t7, 8($t8)
-    addiu $t8, $sp, 168
-    move $a0, $t8
-    la $t7, .Lf322
-    lwc1 $f12, 0($t7)
-    swc1 $f12, 192($sp)
-    lwc1 $f12, 192($sp)
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    jal Enemy_update
-    nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    move $t9, $v0
-    addiu $t6, $sp, 168
-    lwc1 $f12, 0($t6)
-    cvt.w.s $f12, $f12
-    mfc1 $t8, $f12
+    la $t8, TICKS_PER_SECOND
+    lw $t8, 0($t8)
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-.Lmain_ret_4:
+    la $t7, RDPQ_COMBINER_FLAT
+    lw $t7, 0($t7)
+    andi $t8, $t7, 255
+    la $t7, buf
+    li $t6, 0
+    addu $t7, $t7, $t6
+    sb $t8, 0($t7)
+    move $t9, $t8
+.Lmain_ret_0:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
@@ -412,28 +270,18 @@ main:
 	.size main, . - main
 
 	.section .rodata
-	.align 2
-.Lf320:
-	.word 0
-	.align 2
-.Lf321:
-	.word 1112014848
-	.align 2
-.Lf322:
-	.word 1015222895
+	.align 0
+.Lstr0:
+	.asciiz "hello"
 
 	.section .data
-	.align 2
-	.globl _pak_Drawable_vtable_Sprite
-_pak_Drawable_vtable_Sprite:
-	.word Sprite_draw
-	.word Sprite_get_width
-	.word Sprite_get_height
-	.align 2
-	.globl _pak_Updatable_vtable_Enemy
-_pak_Updatable_vtable_Enemy:
-	.word Enemy_update
 	.align 2
 	.globl sink
 sink:
 	.word 0
+
+	.section .bss
+	.align 0
+	.globl buf
+buf:
+	.space 64

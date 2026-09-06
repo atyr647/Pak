@@ -307,7 +307,13 @@ proc pak::n64asm {asm_text base} {
                         append bin [binary format I [expr {$w & 0xffffffff}]]; incr addr 4
                     }
                 }
-                word { append bin [binary format I [expr {[pak::asm::imm $a] & 0xffffffff}]]; incr addr 4 }
+                word {
+                    # `.word <symbol>` is how a vtable names its methods, so a
+                    # word operand can be a label as well as a number. `imm`
+                    # alone raised a Tcl error on the label.
+                    append bin [binary format I [expr {[pak::asm::sym $a $syms] & 0xffffffff}]]
+                    incr addr 4
+                }
                 half { append bin [binary format S [expr {[pak::asm::imm $a] & 0xffff}]]; incr addr 2 }
                 byte { append bin [binary format c [expr {[pak::asm::imm $a] & 0xff}]]; incr addr 1 }
                 space { append bin [string repeat "\x00" $a]; incr addr $a }

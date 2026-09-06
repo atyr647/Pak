@@ -362,6 +362,11 @@ oo::class create pak::LiteralPool {
                 $em label $name
                 if {[llength $iv] == 2 && [lindex $iv 0] eq "bytes"} {
                     pak::emit_bytes $em [lindex $iv 1]
+                } elseif {[llength $iv] == 2 && [lindex $iv 0] eq "words"} {
+                    # A vtable: each word is a function's address, which only
+                    # the linker knows. n64enc turns `.word <symbol>` into an
+                    # R_MIPS_32 relocation.
+                    foreach w [lindex $iv 1] { $em word $w }
                 } else {
                     pak::emit_init $em $size $iv
                 }
@@ -513,7 +518,8 @@ oo::class create pak::MipsCodegen {
              globals consts float_consts label_n fmtstr_counter \
              tenv_layouts tenv_enum_values tenv_variant_decls fn_decls \
              generic_fns generic_structs generic_impls mono_emitted mono_queue type_nodes \
-             closure_envs closure_captures last_closure_env heap_inited
+             closure_envs closure_captures last_closure_env heap_inited \
+             trait_decls trait_vtables
 
     constructor {} {
         set em [pak::Emitter new]
@@ -549,6 +555,8 @@ oo::class create pak::MipsCodegen {
         set closure_captures [dict create]
         set last_closure_env ""
         set heap_inited 0
+        set trait_decls [dict create]
+        set trait_vtables [dict create]
     }
     destructor {
         $em destroy
@@ -660,13 +668,14 @@ oo::class create pak::MipsCodegen {
 
     method register_program {program} {
         my register_external_types
-        set enums {}; set structs {}; set variants {}
+        set enums {}; set structs {}; set variants {}; set traits {}
         foreach decl [pak::items [pak::nfield $program decls]] {
             switch -- [pak::kindof $decl] {
                 EnumDecl    { lappend enums    $decl }
                 StructDecl  { lappend structs  $decl }
                 VariantDecl { lappend variants $decl }
                 FnDecl      { dict set fn_decls [pak::fval $decl name] $decl }
+                TraitDecl   { lappend traits $decl }
                 ImplBlock - ImplTraitBlock {
                     set type_name [pak::fval $decl type_name]
                     # Recorded unconditionally: register_struct (which fills
@@ -679,9 +688,58 @@ oo::class create pak::MipsCodegen {
                 }
             }
         }
+        foreach t $traits   { my register_trait   $t }
         foreach e $enums    { my register_enum    $e }
         foreach s $structs  { my register_struct  $s }
         foreach v $variants { my register_variant $v }
+    }
+
+    # A `dyn Trait` value is the pair the C backend emits: {void *self; const
+    # vtable *vtable}. Registering it under the trait's own name means every
+    # existing path -- by-address parameter passing, sret returns, field
+    # offsets -- treats it as the 8-byte aggregate it is, with no special case.
+    method register_trait {decl} {
+        set name [pak::fval $decl name]
+        set methods {}
+        foreach m [pak::items [pak::nfield $decl methods]] {
+            lappend methods [pak::fval $m name]
+        }
+        dict set trait_decls $name $decl
+        set tf [dict create]
+        dict set tf self   [dict create name self   offset 0 size 4 align 4 type_node ""]
+        dict set tf vtable [dict create name vtable offset 4 size 4 align 4 type_node ""]
+        dict set tenv_layouts $name [dict create size 8 align 4 \
+            is_float 0 is_signed 0 is_ptr 0 fields $tf field_order {self vtable} \
+            frac_bits 0 _trait $name _trait_methods $methods]
+    }
+
+    # The method list a trait's vtable is indexed by: declaration order, so an
+    # index computed at a call site means the same slot in every impl's table.
+    method trait_method_index {trait method} {
+        if {![dict exists $trait_decls $trait]} { return -1 }
+        set i 0
+        foreach m [pak::items [pak::nfield [dict get $trait_decls $trait] methods]] {
+            if {[pak::fval $m name] eq $method} { return $i }
+            incr i
+        }
+        return -1
+    }
+
+    # The trait a type node names, or "" if it names anything else.
+    method trait_of_type {tn} {
+        set tn [my unwrap_type $tn]
+        if {$tn eq "" || [pak::isnil $tn]} { return "" }
+        switch -- [pak::kindof $tn] {
+            TypeDynTrait {
+                set n [pak::fval $tn name]
+                if {[dict exists $trait_decls $n]} { return $n }
+            }
+            TypeName {
+                set n [pak::fval $tn name]
+                if {[dict exists $trait_decls $n]} { return $n }
+            }
+        }
+        return ""
     }
 
     method register_enum {decl} {
@@ -878,7 +936,20 @@ oo::class create pak::MipsCodegen {
                         _container FixedList _elem_size $esz _cap $cap]
                 }
                 if {$gname eq "Vec"} {
-                    return [dict create size 12 align 4 is_float 0 is_signed 1 is_ptr 0 fields {} frac_bits 0 _container Vec]
+                    # {data, len, cap}. The element size travels in the layout
+                    # because the push/reserve helpers are shared by every T
+                    # and have no other way to know how wide an element is.
+                    set vesz 4
+                    if {[llength $gargs] > 0} {
+                        set vesz [dict get [my mips_layout [lindex $gargs 0]] size]
+                    }
+                    set vdf [dict create name data offset 0 size 4 align 4 type_node ""]
+                    set vlf [dict create name len  offset 4 size 4 align 4 type_node ""]
+                    set vcf [dict create name cap  offset 8 size 4 align 4 type_node ""]
+                    return [dict create size 12 align 4 is_float 0 is_signed 1 is_ptr 0 \
+                        fields [dict create data $vdf len $vlf cap $vcf] \
+                        field_order {data len cap} frac_bits 0 \
+                        _container Vec _elem_size $vesz]
                 }
                 if {$gname eq "RingBuffer"} {
                     set elem_layout [my mips_layout [lindex $gargs 0]]
@@ -931,6 +1002,9 @@ oo::class create pak::MipsCodegen {
                     return [dict get $tenv_layouts $mangled]
                 }
                 return [my mips_layout_name $gname]
+            }
+            TypeDynTrait {
+                return [my mips_layout_name [pak::fval $type_tv name]]
             }
             TypeVolatile {
                 return [my mips_layout [pak::nfield $type_tv inner]]
@@ -1113,6 +1187,45 @@ oo::class create pak::MipsCodegen {
         return [expr {[pak::fval $o name] in {FixedList Pool RingBuffer FixedMap Vec}}]
     }
 
+    # Evaluate `expr` somewhere addressable and return a register holding its
+    # address. The container helpers take keys and values by pointer, because
+    # they are written once for every key and value type and cannot know the
+    # size at compile time; the caller does, and passes it alongside.
+    #
+    # The caller owns the returned register and must free it.
+    method value_addr {expr size} {
+        set r [$ra alloc_temp]
+        if {$size <= 4} {
+            # The store has to be as wide as the value, not as wide as the
+            # register holding it. A `sw` of a u8 key put the key in the word's
+            # HIGH byte -- big-endian -- so the helper, reading one byte from
+            # the address, read the zero above it and never matched.
+            set widths {1 sb 2 sh 4 sw}
+            if {![dict exists $widths $size]} {
+                $ra free_temp $r
+                pak::mips_unported "a container key or value of $size bytes has no matching store width"
+            }
+            set st [dict get $widths $size]
+            incr label_n
+            set lay [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]
+            set off [my declare_local __varg_${label_n} $lay]
+            set v [$ra alloc_temp]
+            my emit_expr $expr $v
+            $em $st $v $off {$sp}
+            $ra free_temp $v
+            $em addiu $r {$sp} $off
+            return $r
+        }
+        # Wider than a register: it has to already be somewhere, so take the
+        # address of the place rather than copying it.
+        if {[pak::kindof $expr] in {Ident DotAccess IndexAccess Deref}} {
+            my emit_place_addr $expr $r
+            return $r
+        }
+        $ra free_temp $r
+        pak::mips_unported "a container key or value wider than a register must be a variable, not an expression"
+    }
+
     # Zero whatever a place expression names, a word at a time. Used for
     # `<place> = <Container>.init()`, where the answer is "all zero" and the
     # place may be a local, a global, or a field of either.
@@ -1242,11 +1355,16 @@ oo::class create pak::MipsCodegen {
                 # each instantiation is discovered; skip the template here.
                 if {[dict exists $generic_structs $type_name]} { return }
                 set subst [dict create Self [pak::N TypeName name $type_name]]
+                set defined {}
                 foreach m [pak::items [pak::nfield $decl methods]] {
                     set mangled "${type_name}_[pak::fval $m name]"
+                    lappend defined [pak::fval $m name]
                     set params [my subst_params [pak::nfield $m params] $subst]
                     my emit_fn $mangled $params [pak::nfield $m body] \
                         [my subst_type [pak::nfield $m ret_type] $subst]
+                }
+                if {[pak::kindof $decl] eq "ImplTraitBlock"} {
+                    my emit_trait_impl $decl $type_name $defined $subst
                 }
             }
             AssetDecl   { $em extern [pak::fval $decl name] }
@@ -1311,6 +1429,74 @@ oo::class create pak::MipsCodegen {
         }
         set v [my eval_const_expr $val]
         if {$v ne ""} { dict set consts [pak::fval $decl name] $v }
+    }
+
+    # `impl T for Trait` needs three things beyond T's own methods: bodies for
+    # the trait defaults T did not override, a vtable of the trait's methods in
+    # declaration order, and the Trait_from_T constructor that pairs a T with
+    # that vtable. The C backend gets the first two from a named struct
+    # initializer and the third from a static inline; here they are a .word
+    # table and four instructions.
+    method emit_trait_impl {decl type_name defined subst} {
+        set trait [pak::fval $decl trait_name]
+        if {![dict exists $trait_decls $trait]} {
+            pak::mips_unported "impl $type_name for $trait: no `trait $trait` declaration in this project"
+        }
+        set tdecl [dict get $trait_decls $trait]
+        set slots {}
+        foreach tm [pak::items [pak::nfield $tdecl methods]] {
+            set mname [pak::fval $tm name]
+            if {$mname ni $defined} {
+                # A trait method with a default body, not overridden: emit it
+                # against the concrete type so the vtable has a slot to name.
+                if {[pak::isnil [pak::nfield $tm body]]} {
+                    pak::mips_unported "impl $type_name for $trait: '$mname' has no body here and no default in the trait"
+                }
+                set params [my subst_params [my retype_self_params [pak::nfield $tm params] $type_name] $subst]
+                my emit_fn "${type_name}_${mname}" $params [pak::nfield $tm body] \
+                    [my subst_type [pak::nfield $tm ret_type] $subst]
+            }
+            lappend slots "${type_name}_${mname}"
+        }
+        set vsym "_pak_${trait}_vtable_${type_name}"
+        $pool add_static $vsym [expr {4 * [llength $slots]}] 4 [list words $slots]
+        dict set trait_vtables [list $trait $type_name] $vsym
+
+        # Trait_from_Type(p): the caller passes the sret address in $a0 (the
+        # pair is 8 bytes, so it comes back by address) and p in $a1.
+        set ctor "${trait}_from_${type_name}"
+        dict set fn_decls $ctor [pak::N FnDecl name $ctor \
+            params [list [pak::N Param name p \
+                type [pak::N TypePointer inner [pak::N TypeName name $type_name] nullable 0 mutable 1] \
+                mutable 0 default_value [pak::Nil]]] \
+            ret_type [pak::N TypeDynTrait name $trait] body [pak::Nil] \
+            type_params {} annotations {} is_method 0 self_type [pak::Nil] variadic 0]
+        $em blank
+        $em section_text
+        $em globl $ctor
+        $em type_func $ctor
+        $em label $ctor
+        $em sw {$a1} 0 {$a0}
+        $em la {$t0} $vsym
+        $em sw {$t0} 4 {$a0}
+        $em jr {$ra}
+        $em nop
+        $em size_sym $ctor ". - $ctor"
+    }
+
+    # Retype a trait default method's `self` to the concrete impl type, so the
+    # body compiles against real field offsets.
+    method retype_self_params {params type_name} {
+        set out {}
+        foreach prm [pak::items $params] {
+            if {[pak::fval $prm name] eq "self"} {
+                set prm [pak::N Param name self \
+                    type [pak::N TypePointer inner [pak::N TypeName name $type_name] nullable 0 mutable 1] \
+                    mutable 0 default_value [pak::Nil]]
+            }
+            lappend out $prm
+        }
+        return [pak::Seq $out]
     }
 
     method emit_static {decl} {
@@ -3631,11 +3817,40 @@ oo::class create pak::MipsCodegen {
                 if {[pak::kindof $f] eq "DotAccess"} {
                     set robj [pak::nfield $f obj]
                     set rt [my unwrap_type [my expr_type $robj]]
+                    set rtrait [my trait_of_type $rt]
+                    if {$rtrait ne ""} {
+                        foreach tm [pak::items [pak::nfield [dict get $trait_decls $rtrait] methods]] {
+                            if {[pak::fval $tm name] eq [pak::fval $f field]} {
+                                return [pak::nfield $tm ret_type]
+                            }
+                        }
+                        return ""
+                    }
                     if {$rt ne "" && ![pak::isnil $rt] && [pak::kindof $rt] eq "TypeGeneric"
                         && [pak::fval $rt name] in {FixedList Pool RingBuffer FixedMap Vec}} {
                         set targs [pak::items [pak::nfield $rt args]]
                         set elem ""
                         if {[llength $targs] > 0} { set elem [lindex $targs 0] }
+                        # A map is keyed, so its first type argument is the KEY,
+                        # not the element: `get` hands back the address of the
+                        # value slot. Falling through to the shared arm below
+                        # typed it as the key, and `let p = m.get(k)` on a
+                        # FixedMap(u8, i32, N) stored the returned pointer with
+                        # `sb` -- one byte of an address.
+                        if {[pak::fval $rt name] eq "FixedMap" && [pak::fval $f field] eq "get"
+                            && [llength $targs] > 1} {
+                            return [pak::N TypePointer inner [lindex $targs 1] nullable 1 mutable 1]
+                        }
+                        # Pool.acquire is the same shape: a pointer to a slot.
+                        # Every other Pool method falls through to the shared
+                        # switch below -- returning early here retyped
+                        # `pool.is_empty()` from bool to nothing, and its
+                        # result went to the stack a word wide instead of a
+                        # byte.
+                        if {[pak::fval $rt name] eq "Pool" && [pak::fval $f field] eq "acquire"
+                            && $elem ne ""} {
+                            return [pak::N TypePointer inner $elem nullable 1 mutable 1]
+                        }
                         switch -- [pak::fval $f field] {
                             slice - slice_mut {
                                 if {$elem ne ""} {
@@ -3712,6 +3927,7 @@ oo::class create pak::MipsCodegen {
         if {$tn eq "" || [pak::isnil $tn]} { return 0 }
         switch -- [pak::kindof $tn] {
             TypeSlice - TypeArray - TypeResult { return 1 }
+            TypeDynTrait { return 1 }
             TypeOption {
                 set lay [my mips_layout $tn]
                 return [expr {[dict get $lay size] > 4}]
@@ -5218,6 +5434,11 @@ oo::class create pak::MipsCodegen {
             $ra free_temp $caddr
             return
         }
+        set trait [my trait_of_type $rt]
+        if {$trait ne ""} {
+            my emit_dyn_dispatch $obj $trait [pak::fval $access field] $args_seq $dst
+            return
+        }
         set type_name [my type_name_of $obj]
         if {$type_name eq ""} {
             pak::mips_unported "cannot determine the receiver type of .[pak::fval $access field]() -- no symbol to call"
@@ -5234,6 +5455,51 @@ oo::class create pak::MipsCodegen {
         }
         my emit_direct_call $mangled $args_seq $dst $self_ptr
         $ra free_temp $self_ptr
+    }
+
+    # d.method(args) on a `dyn Trait`: the pair holds the receiver at +0 and the
+    # vtable at +4, and the method's slot in that table is its position in the
+    # trait declaration -- the same index for every impl.
+    method emit_dyn_dispatch {obj trait method args_seq dst} {
+        set idx [my trait_method_index $trait $method]
+        if {$idx < 0} {
+            pak::mips_unported "trait $trait declares no method '$method'"
+        }
+        set base [$ra alloc_temp]
+        if {[my type_is_ptr [my expr_type $obj]]} {
+            my emit_expr $obj $base
+        } else {
+            my emit_place_addr $obj $base
+        }
+        set fptr  [$ra alloc_temp]
+        set selfp [$ra alloc_temp]
+        $em lw $fptr 4 $base
+        $em lw $selfp 0 $base
+        $em lw $fptr [expr {$idx * 4}] $fptr
+        $ra free_temp $base
+
+        set rt ""
+        set tdecl [dict get $trait_decls $trait]
+        foreach m [pak::items [pak::nfield $tdecl methods]] {
+            if {[pak::fval $m name] eq $method} { set rt [pak::nfield $m ret_type] }
+        }
+        if {[my type_passed_by_addr $rt]} {
+            set lay [my mips_layout $rt]
+            incr label_n
+            set off [my declare_local __sret_${label_n} $lay $rt]
+            $em addiu {$a0} {$sp} $off
+            $em move {$a1} $selfp
+            my marshal_args $args_seq 2
+            my emit_jalr_reg $fptr
+            $em addiu $dst {$sp} $off
+        } else {
+            $em move {$a0} $selfp
+            my marshal_args $args_seq 1
+            my emit_jalr_reg $fptr
+            if {$dst ne {$v0}} { $em move $dst {$v0} }
+        }
+        $ra free_temp $selfp
+        $ra free_temp $fptr
     }
 
     method emit_module_call {mod fn args_seq dst} {
@@ -5916,13 +6182,20 @@ oo::class create pak::MipsCodegen {
                 }
                 acquire {
                     $em addiu {$a0} $base_reg $base_off
-                    my emit_jal pak_pool_acquire
+                    $em li {$a1} $cap
+                    $em li {$a2} $esz
+                    my emit_jal pak_pool_acquire_raw
                     if {$dst ne {$v0}} { $em move $dst {$v0} }
                 }
                 release {
+                    set item_r [$ra alloc_temp]
+                    my emit_expr [lindex $args 0] $item_r
                     $em addiu {$a0} $base_reg $base_off
-                    my marshal_args $args_seq 1
-                    my emit_jal pak_pool_release
+                    $em li {$a1} $cap
+                    $em li {$a2} $esz
+                    $em move {$a3} $item_r
+                    $ra free_temp $item_r
+                    my emit_jal pak_pool_release_raw
                 }
                 default {
                     # There is no _PakList_* helper library: the standalone
@@ -6038,32 +6311,52 @@ oo::class create pak::MipsCodegen {
         if {$gname eq "FixedMap"} {
             set cap    [dict get $layout _cap]
             set fields [dict get $layout fields]
+            set ksz    [dict get $layout _key_size]
+            set vsz    [dict get $layout _val_size]
+            # values[] does not always begin at cap*key_sz: mips_layout pads
+            # keys[] up to max(align K, align V) so a `lw` of a value never
+            # traps. The helper cannot recover that padding from the sizes
+            # alone, so it is passed the offset the layout actually chose.
+            set vals_off [dict get [dict get $fields values] offset]
+            # The helpers are the same ones runtime/pak_containers.h declares:
+            # map, capacity, a pointer to the key (and to the value, for set),
+            # then both element sizes. Passing the key and value BY VALUE, as
+            # this used to, could not work -- one helper serves every K and V,
+            # so it has to be told how big they are and where they live.
             switch -- $method {
                 set {
+                    set kaddr [my value_addr [lindex $args 0] $ksz]
+                    set vaddr [my value_addr [lindex $args 1] $vsz]
+                    set kr [$ra alloc_temp]
+                    $em li $kr $ksz
+                    $em sw $kr 16 {$sp}
+                    $em li $kr $vsz
+                    $em sw $kr 20 {$sp}
+                    $em li $kr $vals_off
+                    $em sw $kr 24 {$sp}
+                    $ra free_temp $kr
                     $em addiu {$a0} $base_reg $base_off
                     $em li {$a1} $cap
-                    my marshal_args $args_seq 2
-                    my emit_jal pak_map_set
+                    $em move {$a2} $kaddr
+                    $em move {$a3} $vaddr
+                    $ra free_temp $vaddr; $ra free_temp $kaddr
+                    my emit_jal pak_map_set_raw
                 }
-                get {
+                get - has - remove {
+                    set kaddr [my value_addr [lindex $args 0] $ksz]
+                    set kr [$ra alloc_temp]
+                    $em li $kr $vsz
+                    $em sw $kr 16 {$sp}
+                    $em li $kr $vals_off
+                    $em sw $kr 20 {$sp}
+                    $ra free_temp $kr
                     $em addiu {$a0} $base_reg $base_off
                     $em li {$a1} $cap
-                    my marshal_args $args_seq 2
-                    my emit_jal pak_map_get
-                    if {$dst ne {$v0}} { $em move $dst {$v0} }
-                }
-                has {
-                    $em addiu {$a0} $base_reg $base_off
-                    $em li {$a1} $cap
-                    my marshal_args $args_seq 2
-                    my emit_jal pak_map_has
-                    if {$dst ne {$v0}} { $em move $dst {$v0} }
-                }
-                remove {
-                    $em addiu {$a0} $base_reg $base_off
-                    $em li {$a1} $cap
-                    my marshal_args $args_seq 2
-                    my emit_jal pak_map_remove
+                    $em move {$a2} $kaddr
+                    $em li {$a3} $ksz
+                    $ra free_temp $kaddr
+                    my emit_jal pak_map_${method}_raw
+                    if {$method ne "remove" && $dst ne {$v0}} { $em move $dst {$v0} }
                 }
                 len {
                     set lo [expr {$base_off + [dict get [dict get $fields len] offset]}]
@@ -6081,26 +6374,76 @@ oo::class create pak::MipsCodegen {
         }
 
         if {$gname eq "Vec"} {
+            # {data, len, cap} with the storage on the heap. Anything that only
+            # reads the header is inlined; the three that can move the storage
+            # call the runtime, which is where the growth policy lives. The old
+            # default arm called _pak_vec_<method>, a family of symbols no
+            # source on this backend defines -- the link failed, not the build.
+            set esz [dict get $layout _elem_size]
+            set len_off [expr {$base_off + 4}]
+            set cap_off [expr {$base_off + 8}]
             switch -- $method {
-                push {
-                    $em addiu {$a0} $base_reg $base_off
-                    my marshal_args $args_seq 1
-                    my emit_jal _pak_vec_push
-                }
-                len {
-                    $em lw $dst [expr {$base_off + 4}] $base_reg
-                }
+                len { $em lw $dst $len_off $base_reg }
+                cap { $em lw $dst $cap_off $base_reg }
                 is_empty {
                     set tmp [$ra alloc_temp]
-                    $em lw $tmp [expr {$base_off + 4}] $base_reg
+                    $em lw $tmp $len_off $base_reg
                     $em seq $dst $tmp {$zero}
                     $ra free_temp $tmp
                 }
-                default {
+                clear { $em sw {$zero} $len_off $base_reg }
+                data { $em lw $dst $base_off $base_reg }
+                get {
+                    set idx_r [$ra alloc_temp]
+                    my emit_expr [lindex $args 0] $idx_r
+                    set addr_r [$ra alloc_temp]
+                    $em li $addr_r $esz
+                    $em mul $addr_r $idx_r $addr_r
+                    set data_r [$ra alloc_temp]
+                    $em lw $data_r $base_off $base_reg
+                    $em addu $addr_r $data_r $addr_r
+                    $em lw $dst 0 $addr_r
+                    $ra free_temp $data_r; $ra free_temp $idx_r; $ra free_temp $addr_r
+                }
+                pop {
+                    set len_r [$ra alloc_temp]
+                    $em lw $len_r $len_off $base_reg
+                    $em addiu $len_r $len_r -1
+                    $em sw $len_r $len_off $base_reg
+                    set addr_r [$ra alloc_temp]
+                    $em li $addr_r $esz
+                    $em mul $addr_r $len_r $addr_r
+                    set data_r [$ra alloc_temp]
+                    $em lw $data_r $base_off $base_reg
+                    $em addu $addr_r $data_r $addr_r
+                    $em lw $dst 0 $addr_r
+                    $ra free_temp $data_r; $ra free_temp $len_r; $ra free_temp $addr_r
+                }
+                push {
+                    set vaddr [my value_addr [lindex $args 0] $esz]
                     $em addiu {$a0} $base_reg $base_off
-                    my marshal_args $args_seq 1
-                    my emit_jal "_pak_vec_${method}"
+                    $em li {$a1} $esz
+                    $em move {$a2} $vaddr
+                    $ra free_temp $vaddr
+                    my emit_jal pak_vec_push_raw
                     if {$dst ne {$v0}} { $em move $dst {$v0} }
+                }
+                reserve {
+                    set n_r [$ra alloc_temp]
+                    my emit_expr [lindex $args 0] $n_r
+                    $em addiu {$a0} $base_reg $base_off
+                    $em li {$a1} $esz
+                    $em move {$a2} $n_r
+                    $ra free_temp $n_r
+                    my emit_jal pak_vec_reserve_raw
+                    if {$dst ne {$v0}} { $em move $dst {$v0} }
+                }
+                free {
+                    $em addiu {$a0} $base_reg $base_off
+                    my emit_jal pak_vec_free_raw
+                }
+                default {
+                    pak::mips_unported "container method Vec.${method} is not implemented on the standalone backend"
                 }
             }
             return

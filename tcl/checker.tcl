@@ -225,29 +225,13 @@ oo::class create pak::Checker {
         return $terminated
     }
 
-    # FixedMap and Pool lower to calls into pak_map_* / pak_pool_* helpers that
-    # runtime/standalone/runtime.pk64 does not define -- there is no helper
-    # library on the standalone path, only boot.S and the HAL. The codegen
-    # emitted those calls anyway and the failure surfaced as an undefined
-    # symbol at link. Report it here, against the declaration, instead.
+    # Nothing left to refuse. This walked every declared type looking for
+    # constructs the MIPS backend could not lower -- FixedMap, Pool, and
+    # `dyn Trait`. All three now lower, so the hook stays as the place to
+    # report the next one against its declaration rather than at link time.
     method check_backend_type {t} {
         if {$backend ne "mips"} return
         if {[pak::isnil $t] || [llength $t] < 2 || [lindex $t 0] ne "node"} return
-        if {[pak::kindof $t] eq "TypeDynTrait"} {
-            my err E010 "dyn trait objects are not implemented on the standalone backend" \
-                "Vtable dispatch is not lowered by the MIPS backend. Use a concrete type, or the libdragon backend." \
-                $t
-            return
-        }
-        if {[pak::kindof $t] eq "TypeGeneric"} {
-            set n [pak::fval $t name]
-            if {$n in {FixedMap Pool}} {
-                my err E010 "container '$n' is not implemented on the standalone backend" \
-                    "It lowers to pak_map_* / pak_pool_* helpers that runtime/standalone/runtime.pk64 does not define. Use FixedList or RingBuffer, or the libdragon backend." \
-                    $t
-                return
-            }
-        }
         dict for {k v} [lindex $t 2] {
             switch -- [lindex $v 0] {
                 node { my check_backend_type $v }

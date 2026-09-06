@@ -2761,3 +2761,212 @@ fn math_rand_f() -> f32 {
 -- lowers to a symbol reference and a Pak `const` has no address.
 static TICKS_PER_SECOND: u32   = 46875000
 static RDPQ_COMBINER_FLAT: u32 = 0x88FDF6FB
+
+-- ── FixedMap / Pool helpers ────────────────────────────────────────────────
+-- The MIPS backend lowers FixedMap and Pool methods into calls on these. They
+-- are the standalone counterpart of runtime/pak_containers.h: one helper has
+-- to serve every K and V, so the element sizes travel with the call and the
+-- key and value are passed by address rather than by value.
+--
+-- FixedMap(K, V, N) is laid out
+--     keys[N] @ 0            values[N] @ vals_off
+--     occupied[N] @ occ      len @ (occ + N) rounded up to 4
+-- `vals_off` travels with the call because the backend pads keys[] up to the
+-- wider of align(K) and align(V) -- a value load has to stay aligned -- and
+-- that padding cannot be recovered from N * key_sz alone.
+--
+-- Pool(T, N) is data[N] @ 0 and len @ (N * elem_sz) rounded up to 4.
+
+fn pak_align4(n: i32) -> i32 {
+    return ((n + 3) / 4) * 4
+}
+
+fn pak_bytes_equal(a: u32, b: u32, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        let pa: *u8 = (a + i as u32) as *u8
+        let pb: *u8 = (b + i as u32) as *u8
+        if *pa != *pb { return 0 }
+        i = i + 1
+    }
+    return 1
+}
+
+fn pak_bytes_copy(dst: u32, src: u32, n: i32) {
+    let mut i: i32 = 0
+    while i < n {
+        let ps: *u8 = (src + i as u32) as *u8
+        let pd: *u8 = (dst + i as u32) as *u8
+        *pd = *ps
+        i = i + 1
+    }
+}
+
+fn pak_bytes_zero(dst: u32, n: i32) {
+    let mut i: i32 = 0
+    while i < n {
+        let pd: *u8 = (dst + i as u32) as *u8
+        *pd = 0
+        i = i + 1
+    }
+}
+
+fn pak_bytes_swap(a: u32, b: u32, n: i32) {
+    let mut i: i32 = 0
+    while i < n {
+        let pa: *u8 = (a + i as u32) as *u8
+        let pb: *u8 = (b + i as u32) as *u8
+        let t: u8 = *pa
+        *pa = *pb
+        *pb = t
+        i = i + 1
+    }
+}
+
+-- Address of occupied[0].
+fn pak_map_occ(map: u32, cap: i32, val_sz: i32, vals_off: i32) -> u32 {
+    return map + (vals_off + cap * val_sz) as u32
+}
+
+-- Address of len.
+fn pak_map_lenp(occ: u32, cap: i32) -> u32 {
+    return occ + pak_align4(cap) as u32
+}
+
+-- Index of the slot holding `key`, or -1.
+fn pak_map_find(map: u32, cap: i32, key_ptr: u32, key_sz: i32, occ: u32) -> i32 {
+    let mut i: i32 = 0
+    while i < cap {
+        let o: *u8 = (occ + i as u32) as *u8
+        if *o != 0 {
+            if pak_bytes_equal(map + (i * key_sz) as u32, key_ptr, key_sz) != 0 {
+                return i
+            }
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+fn pak_map_set_raw(map: u32, cap: i32, key_ptr: u32, val_ptr: u32,
+                   key_sz: i32, val_sz: i32, vals_off: i32) -> i32 {
+    let occ: u32 = pak_map_occ(map, cap, val_sz, vals_off)
+    let hit: i32 = pak_map_find(map, cap, key_ptr, key_sz, occ)
+    if hit >= 0 {
+        pak_bytes_copy(map + (vals_off + hit * val_sz) as u32, val_ptr, val_sz)
+        return 1
+    }
+    let mut i: i32 = 0
+    while i < cap {
+        let o: *u8 = (occ + i as u32) as *u8
+        if *o == 0 {
+            pak_bytes_copy(map + (i * key_sz) as u32, key_ptr, key_sz)
+            pak_bytes_copy(map + (vals_off + i * val_sz) as u32, val_ptr, val_sz)
+            *o = 1
+            let lp: *i32 = pak_map_lenp(occ, cap) as *i32
+            *lp = *lp + 1
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+-- Returns the address of the value slot, or 0 (`none`) when absent.
+fn pak_map_get_raw(map: u32, cap: i32, key_ptr: u32,
+                   key_sz: i32, val_sz: i32, vals_off: i32) -> u32 {
+    let occ: u32 = pak_map_occ(map, cap, val_sz, vals_off)
+    let hit: i32 = pak_map_find(map, cap, key_ptr, key_sz, occ)
+    if hit < 0 { return 0 }
+    return map + (vals_off + hit * val_sz) as u32
+}
+
+fn pak_map_has_raw(map: u32, cap: i32, key_ptr: u32,
+                   key_sz: i32, val_sz: i32, vals_off: i32) -> i32 {
+    if pak_map_get_raw(map, cap, key_ptr, key_sz, val_sz, vals_off) != 0 { return 1 }
+    return 0
+}
+
+fn pak_map_remove_raw(map: u32, cap: i32, key_ptr: u32,
+                      key_sz: i32, val_sz: i32, vals_off: i32) -> i32 {
+    let occ: u32 = pak_map_occ(map, cap, val_sz, vals_off)
+    let hit: i32 = pak_map_find(map, cap, key_ptr, key_sz, occ)
+    if hit < 0 { return 0 }
+    let o: *u8 = (occ + hit as u32) as *u8
+    *o = 0
+    let lp: *i32 = pak_map_lenp(occ, cap) as *i32
+    *lp = *lp - 1
+    return 1
+}
+
+-- Returns the address of a zeroed slot, or 0 (`none`) when the pool is full.
+fn pak_pool_acquire_raw(pool: u32, cap: i32, elem_sz: i32) -> u32 {
+    let lp: *i32 = (pool + pak_align4(cap * elem_sz) as u32) as *i32
+    let n: i32 = *lp
+    if n >= cap { return 0 }
+    let slot: u32 = pool + (n * elem_sz) as u32
+    pak_bytes_zero(slot, elem_sz)
+    *lp = n + 1
+    return slot
+}
+
+-- Swap the released slot with the last live one so data[0..len) stays dense.
+fn pak_pool_release_raw(pool: u32, cap: i32, elem_sz: i32, item: u32) {
+    let lp: *i32 = (pool + pak_align4(cap * elem_sz) as u32) as *i32
+    let n: i32 = *lp
+    if n <= 0 { return }
+    let last: u32 = pool + ((n - 1) * elem_sz) as u32
+    *lp = n - 1
+    if item != last {
+        pak_bytes_swap(item, last, elem_sz)
+    }
+}
+
+-- ── Vec helpers ─────────────────────────────────────────────────────────────
+-- Vec(T) is {data, len, cap} with the storage on the heap. Everything that
+-- only reads the header is inlined by the backend; these three are the ones
+-- that can move the storage. As with the map helpers, one helper serves every
+-- T, so the element size travels with the call.
+--
+-- The heap here is the bump allocator above: growing leaks the old block. A
+-- Vec that grows every frame will exhaust it, which is why a game should
+-- reserve once (or use FixedList).
+
+fn pak_vec_grow(vec: u32, elem_sz: i32, want: i32) -> i32 {
+    let cap_p: *i32 = (vec + 8) as *i32
+    if want <= *cap_p { return 1 }
+    let mut ncap: i32 = *cap_p
+    if ncap == 0 { ncap = 8 }
+    while ncap < want { ncap = ncap * 2 }
+    let np: *u8 = __pak_alloc(ncap * elem_sz)
+    if (np as u32) == 0 { return 0 }
+    let data_p: *u32 = vec as *u32
+    let len_p: *i32 = (vec + 4) as *i32
+    if *data_p != 0 { pak_bytes_copy(np as u32, *data_p, (*len_p) * elem_sz) }
+    *data_p = np as u32
+    *cap_p = ncap
+    return 1
+}
+
+fn pak_vec_push_raw(vec: u32, elem_sz: i32, val_ptr: u32) -> i32 {
+    let len_p: *i32 = (vec + 4) as *i32
+    if pak_vec_grow(vec, elem_sz, *len_p + 1) == 0 { return 0 }
+    let data_p: *u32 = vec as *u32
+    pak_bytes_copy(*data_p + ((*len_p) * elem_sz) as u32, val_ptr, elem_sz)
+    *len_p = *len_p + 1
+    return 1
+}
+
+fn pak_vec_reserve_raw(vec: u32, elem_sz: i32, n: i32) -> i32 {
+    return pak_vec_grow(vec, elem_sz, n)
+}
+
+fn pak_vec_free_raw(vec: u32) {
+    let data_p: *u32 = vec as *u32
+    __pak_free(*data_p as *u8)
+    *data_p = 0
+    let len_p: *i32 = (vec + 4) as *i32
+    *len_p = 0
+    let cap_p: *i32 = (vec + 8) as *i32
+    *cap_p = 0
+}
