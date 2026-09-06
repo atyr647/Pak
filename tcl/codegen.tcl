@@ -316,6 +316,18 @@ oo::class create pak::Codegen {
     method defer_push {stmt} {
         set frame [lindex $defer_stack end]; lappend frame $stmt; lset defer_stack end $frame
     }
+    # The scope-end defer flush, skipped when the block already left through a
+    # `return`: that return emitted every pending defer itself, so emitting
+    # them again appends a second, unreachable copy after it. Harmless-looking
+    # until a defer declares something -- `defer { let elapsed = ... }` then
+    # lowered to two declarations of `elapsed` in one C block, and no compiler
+    # accepts that.
+    method emit_defers_after {stmts indent} {
+        set last [lindex $stmts end]
+        if {$last ne "" && [pak::kindof $last] eq "Return"} { return {} }
+        return [my emit_defers_for_scope $indent]
+    }
+
     # Emit the current scope's defers (LIFO) at the given indent. Returns a list
     # of lines (empty when there are no defers, so output is unchanged otherwise).
     method emit_defers_for_scope {indent} {
@@ -776,11 +788,20 @@ oo::class create pak::Codegen {
             set vc [my gen_variant_ctor $n $field {}]
             if {$vc ne ""} { return $vc }
             if {$n in [dict values $enum_variants]} { return "${obj_str}_$field" }
-            if {[dict exists $enum_variants $field]} { return "${obj_str}_$field" }
             if {[dict exists $::pak::CG_API [list $n $field]] || [dict exists $::pak::CG_API_LAMBDA [list $n $field]]} {
                 return "${obj_str}.$field"
             }
             if {[my is_pointer $n]} { return "${obj_str}->$field" }
+            # `Type.case` where the enum type name is not itself in scope. This
+            # has to come last, and only for a name that is not a variable: it
+            # keys off the FIELD, so with `enum GameState { ..., inventory }`
+            # anywhere in the program it also fired on `self.inventory`, and
+            # every read and write of that struct field lowered to the
+            # undeclared identifier `self_inventory`. Any name bound in scope
+            # is a value, and `.field` on a value is a field access.
+            if {[my scope_get $n] eq "" && [dict exists $enum_variants $field]} {
+                return "${obj_str}_$field"
+            }
         }
         return "${obj_str}.$field"
     }
@@ -2008,16 +2029,18 @@ oo::class create pak::Codegen {
         set cond [pak::strip_parens [my gen_expr [pak::nfield $s condition]]]
         set lines [list "${pad}if ($cond) {"]
         my scope_push
-        foreach st [pak::items [pak::nfield [pak::nfield $s then] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
-        foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+        set _ss [pak::items [pak::nfield [pak::nfield $s then] stmts]]
+        foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+        foreach d [my emit_defers_after $_ss [expr {$indent+1}]] { lappend lines $d }
         my scope_pop
         lappend lines "${pad}}"
         foreach pair [pak::items [pak::nfield $s elif_branches]] {
             set p [pak::items $pair]
             lappend lines "${pad}else if ([pak::strip_parens [my gen_expr [lindex $p 0]]]) {"
             my scope_push
-            foreach st [pak::items [pak::nfield [lindex $p 1] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
-            foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+            set _ss [pak::items [pak::nfield [lindex $p 1] stmts]]
+            foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+            foreach d [my emit_defers_after $_ss [expr {$indent+1}]] { lappend lines $d }
             my scope_pop
             lappend lines "${pad}}"
         }
@@ -2025,8 +2048,9 @@ oo::class create pak::Codegen {
         if {![pak::isnil $eb]} {
             lappend lines "${pad}else {"
             my scope_push
-            foreach st [pak::items [pak::nfield $eb stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
-            foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+            set _ss [pak::items [pak::nfield $eb stmts]]
+            foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+            foreach d [my emit_defers_after $_ss [expr {$indent+1}]] { lappend lines $d }
             my scope_pop
             lappend lines "${pad}}"
         }
@@ -2042,16 +2066,18 @@ oo::class create pak::Codegen {
         lappend lines "${inner_pad}if ($binding != NULL) \{"
         my scope_push
         my scope_set $binding [pak::N TypePointer inner [pak::N TypeName name auto] nullable 0 mutable 0]
-        foreach st [pak::items [pak::nfield [pak::nfield $s then] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
-        foreach d [my emit_defers_for_scope [expr {$indent+2}]] { lappend lines $d }
+        set _ss [pak::items [pak::nfield [pak::nfield $s then] stmts]]
+        foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
+        foreach d [my emit_defers_after $_ss [expr {$indent+2}]] { lappend lines $d }
         my scope_pop
         lappend lines "${inner_pad}\}"
         set eb [pak::nfield $s else_branch]
         if {![pak::isnil $eb]} {
             lappend lines "${inner_pad}else \{"
             my scope_push
-            foreach st [pak::items [pak::nfield $eb stmts]] { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
-            foreach d [my emit_defers_for_scope [expr {$indent+2}]] { lappend lines $d }
+            set _ss [pak::items [pak::nfield $eb stmts]]
+            foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
+            foreach d [my emit_defers_after $_ss [expr {$indent+2}]] { lappend lines $d }
             my scope_pop
             lappend lines "${inner_pad}\}"
         }
@@ -2062,8 +2088,9 @@ oo::class create pak::Codegen {
     method gen_loop {s pad indent} {
         set lines [list "${pad}while (true) {"]
         my scope_push
-        foreach st [pak::items [pak::nfield [pak::nfield $s body] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
-        foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+        set _ss [pak::items [pak::nfield [pak::nfield $s body] stmts]]
+        foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+        foreach d [my emit_defers_after $_ss [expr {$indent+1}]] { lappend lines $d }
         my scope_pop
         lappend lines "${pad}}"
         return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
@@ -2073,8 +2100,9 @@ oo::class create pak::Codegen {
         set cond [pak::strip_parens [my gen_expr [pak::nfield $s condition]]]
         set lines [list "${pad}while ($cond) {"]
         my scope_push
-        foreach st [pak::items [pak::nfield [pak::nfield $s body] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
-        foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+        set _ss [pak::items [pak::nfield [pak::nfield $s body] stmts]]
+        foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+        foreach d [my emit_defers_after $_ss [expr {$indent+1}]] { lappend lines $d }
         my scope_pop
         lappend lines "${pad}}"
         return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
@@ -2112,11 +2140,31 @@ oo::class create pak::Codegen {
             }
         }
         my scope_push
-        foreach st [pak::items [pak::nfield [pak::nfield $s body] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
-        foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+        set _ss [pak::items [pak::nfield [pak::nfield $s body] stmts]]
+        foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+        foreach d [my emit_defers_after $_ss [expr {$indent+1}]] { lappend lines $d }
         my scope_pop
         lappend lines "${pad}\}"
         return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
+    }
+
+    # The C expression to switch on. A match over a pointer to a variant is
+    # ordinary Pak -- `fn f(e: *E) { match e { ... } }`, and match_type_name
+    # already resolves through the pointer to find the variant -- but the tag
+    # and payload reads that follow are `.tag` / `.data`, so the pointer itself
+    # produced `e.tag`, which is not a struct. Parenthesised as well: an
+    # explicit `match *e` gave `*e.tag`, and that parses as `*(e.tag)`.
+    method match_scrutinee {expr} {
+        set c [my gen_expr $expr]
+        if {[pak::kindof [my expr_type $expr]] eq "TypePointer"} { return "(*($c))" }
+        # A postfix chain (name, name[i], name.f, name->f, and combinations)
+        # already binds tighter than the `.tag` about to be appended, so leave
+        # it alone: parenthesising it would churn every existing snapshot for
+        # nothing. Anything else gets the parentheses.
+        if {[regexp {^[A-Za-z_][A-Za-z0-9_]*(\[[^\[\]]*\]|\.[A-Za-z_][A-Za-z0-9_]*|->[A-Za-z_][A-Za-z0-9_]*)*$} $c]} {
+            return $c
+        }
+        return "($c)"
     }
 
     method match_type_name {expr} {
@@ -2268,7 +2316,9 @@ oo::class create pak::Codegen {
         set match_type [my match_type_name [pak::nfield $s expr]]
         set is_variant [dict exists $variant_types $match_type]
         set lines [list "${pad}\{"]
-        lappend lines "${inner_pad}__auto_type ${expr_var} = [my gen_expr [pak::nfield $s expr]];"
+        set scrut [expr {$is_variant ? [my match_scrutinee [pak::nfield $s expr]]
+                                     : [my gen_expr [pak::nfield $s expr]]}]
+        lappend lines "${inner_pad}__auto_type ${expr_var} = ${scrut};"
         set first 1
         foreach arm [pak::items [pak::nfield $s arms]] {
             set pat [pak::nfield $arm pattern]
@@ -2303,12 +2353,14 @@ oo::class create pak::Codegen {
                 my scope_set $vname [pak::N TypeName name auto]
             }
             set body [pak::nfield $arm body]
+            set _ss {}
             if {[pak::kindof $body] eq "Block"} {
-                foreach st [pak::items [pak::nfield $body stmts]] { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
+                set _ss [pak::items [pak::nfield $body stmts]]
+                foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
             } else {
                 lappend lines "${inner2_pad}[my gen_expr $body];"
             }
-            foreach d [my emit_defers_for_scope [expr {$indent+2}]] { lappend lines $d }
+            foreach d [my emit_defers_after $_ss [expr {$indent+2}]] { lappend lines $d }
             my scope_pop
             lappend lines "${inner_pad}\}"
             set first 0
@@ -2376,14 +2428,16 @@ oo::class create pak::Codegen {
                 my scope_set $bind [pak::N TypeName name auto]
             }
             set body [pak::nfield $arm body]
+            set _ss {}
             if {[pak::kindof $body] eq "Block"} {
-                foreach st [pak::items [pak::nfield $body stmts]] {
+                set _ss [pak::items [pak::nfield $body stmts]]
+                foreach st $_ss {
                     lappend lines [my gen_stmt $st [expr {$indent+1}]]
                 }
             } else {
                 lappend lines "${inner_pad}[my gen_expr $body];"
             }
-            foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+            foreach d [my emit_defers_after $_ss [expr {$indent+1}]] { lappend lines $d }
             my scope_pop
             if {$field eq "value"} { lappend lines "${pad}\} else \{" }
         }
@@ -2405,12 +2459,16 @@ oo::class create pak::Codegen {
             set r [my gen_match_result $s $pad $indent $arms]
             if {$r ne ""} { return $r }
         }
-        set expr [my gen_expr [pak::nfield $s expr]]
-        set inner_pad [string repeat "    " [expr {$indent+1}]]
-        set inner2_pad [string repeat "    " [expr {$indent+2}]]
         set match_type [my match_type_name [pak::nfield $s expr]]
         if {$match_type eq ""} { set match_type [my match_type_from_arms $arms] }
         set is_variant [dict exists $variant_types $match_type]
+        if {$is_variant} {
+            set expr [my match_scrutinee [pak::nfield $s expr]]
+        } else {
+            set expr [my gen_expr [pak::nfield $s expr]]
+        }
+        set inner_pad [string repeat "    " [expr {$indent+1}]]
+        set inner2_pad [string repeat "    " [expr {$indent+2}]]
         set switch_expr [expr {$is_variant ? "${expr}.tag" : $expr}]
         set lines [list "${pad}switch ($switch_expr) {"]
         foreach arm $arms {
@@ -2479,12 +2537,14 @@ oo::class create pak::Codegen {
                 }
             }
             set body [pak::nfield $arm body]
+            set _ss {}
             if {[pak::kindof $body] eq "Block"} {
-                foreach st [pak::items [pak::nfield $body stmts]] { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
+                set _ss [pak::items [pak::nfield $body stmts]]
+                foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
             } else {
                 lappend lines "${inner2_pad}[my gen_expr $body];"
             }
-            foreach d [my emit_defers_for_scope [expr {$indent+2}]] { lappend lines $d }
+            foreach d [my emit_defers_after $_ss [expr {$indent+2}]] { lappend lines $d }
             my scope_pop
             lappend lines "${inner2_pad}break;"
             lappend lines "${inner_pad}}"
@@ -2935,7 +2995,13 @@ oo::class create pak::Codegen {
                 if {[regexp {@export\s*\(\s*"([^"]+)"\s*\)} $ann -> en]} { set export_name $en }
             }
         }
-        set name [pak::fval $fn name]
+        # c_ident here as well as at the use site: `fn double(x: i32)` is
+        # legal Pak, and reading `double` as an expression already renamed it
+        # to `double_`, but the definition kept the bare name -- so the call
+        # referred to a function that was never defined, on top of the
+        # definition itself being `int32_t double(int32_t x)`, which is not
+        # even parseable C.
+        set name [my c_ident [pak::fval $fn name]]
         if {$prefix ne ""} { set name "${prefix}_$name" }
         if {$export_name ne ""} { set name $export_name }
         set attr_str [join $attrs " "]
@@ -2952,11 +3018,12 @@ oo::class create pak::Codegen {
         set current_ret_type [pak::nfield $fn ret_type]
         my scope_push
         foreach p [pak::items [pak::nfield $fn params]] { my scope_set [pak::fval $p name] [pak::nfield $p type] }
-        foreach st [pak::items [pak::nfield $body stmts]] {
+        set _ss [pak::items [pak::nfield $body stmts]]
+        foreach st $_ss {
             set s [my gen_stmt $st 1]
             if {$s ne ""} { lappend lines $s }
         }
-        foreach d [my emit_defers_for_scope 1] { lappend lines $d }
+        foreach d [my emit_defers_after $_ss 1] { lappend lines $d }
         my scope_pop
         set current_ret_type $prev_ret
         set current_self_type $saved_self
@@ -2974,11 +3041,12 @@ oo::class create pak::Codegen {
             lappend lines "    dfs_init(DFS_DEFAULT_LOCATION);"
         }
         my scope_push
-        foreach st [pak::items [pak::nfield [pak::nfield $entry body] stmts]] {
+        set _ss [pak::items [pak::nfield [pak::nfield $entry body] stmts]]
+        foreach st $_ss {
             set s [my gen_stmt $st 1]
             if {$s ne ""} { lappend lines $s }
         }
-        foreach d [my emit_defers_for_scope 1] { lappend lines $d }
+        foreach d [my emit_defers_after $_ss 1] { lappend lines $d }
         my scope_pop
         lappend lines "    return 0;"
         lappend lines "}"
@@ -3460,6 +3528,16 @@ proc pak::cg_api_lambda {mod fn arglist} {
             # libdragon has audio_write_begin(), which assumes the caller
             # already checked audio_can_write(); the shim is that pair.
             return "pak_audio_get_buffer()"
+        }
+        "debug log_value" {
+            # debugf is a printf, so a label and a number is one call with a
+            # format string -- there is no libdragon function that takes the
+            # pair. MODULE_API named this and the C backend had no lowering at
+            # all for it, so the call came out as the literal `debug.log_value`
+            # and the C compiler read `debug` as an undeclared variable.
+            set m [pak::cg_arg_or $arglist 0 {""}]
+            set v [pak::cg_arg_or $arglist 1 0]
+            return "debugf(\"%s%ld\\n\", $m, (long)($v))"
         }
         "eeprom init" {
             # libdragon has no eeprom_init: the EEPROM is reached over joybus,

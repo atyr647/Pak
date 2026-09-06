@@ -96,6 +96,7 @@ libdragon rdpq.detach_show
 libdragon rdpq.fill_rectangle
 libdragon rdpq.flush
 libdragon rdpq.init
+libdragon rdpq.load_block
 libdragon rdpq.load_tile
 libdragon rdpq.load_tlut
 libdragon rdpq.set_blend_color
@@ -112,6 +113,7 @@ libdragon rdpq.set_other_modes_raw
 libdragon rdpq.set_prim_color
 libdragon rdpq.set_prim_depth
 libdragon rdpq.set_scissor
+libdragon rdpq.set_texture_image
 libdragon rdpq.set_tile
 missing rdpq.set_tile_mask
 libdragon rdpq.set_tile_size
@@ -228,9 +230,11 @@ libdragon timer.get_ticks
 libdragon timer.init
 libdragon timer.ticks
 libdragon tpak.get_status
+missing tpak.get_value
 libdragon tpak.init
 libdragon tpak.read
 libdragon tpak.set_power
+libdragon tpak.set_value
 libdragon tpak.write
 missing vi.set_aa_mode
 missing vi.set_dedither

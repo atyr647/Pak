@@ -120,6 +120,8 @@ set ::pak::CG_API [dict create \
     {rdpq sync_load} {rdpq_sync_load} \
     {rdpq sync_pipe} {rdpq_sync_pipe} \
     {rdpq sync_tile} {rdpq_sync_tile} \
+    {rdpq load_block} {rdpq_load_block} \
+    {rdpq set_texture_image} {rdpq_set_texture_image} \
     {rdpq texture_rectangle} {rdpq_texture_rectangle} \
     {rdpq texture_rectangle_scaled} {rdpq_texture_rectangle_scaled} \
     {rdpq texture_rectangle_flip} {rdpq_texture_rectangle_flip} \
@@ -228,8 +230,10 @@ set ::pak::CG_API [dict create \
     {timer init} {timer_init} \
     {timer ticks} {get_ticks} \
     {tpak get_status} {tpak_get_status} \
+    {tpak get_value} {tpak_get_value} \
     {tpak init} {tpak_init} \
     {tpak read} {tpak_read} \
+    {tpak set_value} {tpak_set_value} \
     {tpak set_power} {tpak_set_power} \
     {tpak write} {tpak_write} \
     {vi set_aa_mode} {vi_set_aa_mode} \
@@ -257,6 +261,7 @@ set ::pak::CG_API_LAMBDA [dict create \
     {arena reset} {1} \
     {audio get_buffer} {1} \
     {controller read} {1} \
+    {debug log_value} {1} \
     {display init} {1} \
     {eeprom init} {1} \
     {eeprom type_detect} {1} \

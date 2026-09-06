@@ -406,7 +406,7 @@ compiling the examples that use them.
 | `rdpq` | `fill_rectangle` | `rdpq_fill_rectangle` | yes | yes |
 | `rdpq` | `flush` | `rspq_flush` | yes | no |
 | `rdpq` | `init` | `rdpq_init` | yes | yes |
-| `rdpq` | `load_block` | `rdpq_load_block` | yes* | yes |
+| `rdpq` | `load_block` | `rdpq_load_block` | yes | yes |
 | `rdpq` | `load_tile` | `rdpq_load_tile` | yes | yes |
 | `rdpq` | `load_tlut` | `rdpq_load_tlut_raw` | yes | yes |
 | `rdpq` | `set_blend_color` | `rdpq_set_blend_color` | yes | yes |
@@ -426,7 +426,7 @@ compiling the examples that use them.
 | `rdpq` | `set_prim_color` | `rdpq_set_prim_color` | yes | yes |
 | `rdpq` | `set_prim_depth` | `rdpq_set_prim_depth_raw` | yes | yes |
 | `rdpq` | `set_scissor` | `rdpq_set_scissor` | yes | yes |
-| `rdpq` | `set_texture_image` | `rdpq_set_texture_image` | yes* | yes |
+| `rdpq` | `set_texture_image` | `rdpq_set_texture_image` | yes | yes |
 | `rdpq` | `set_tile` | `rdpq_set_tile` | yes | yes |
 | `rdpq` | `set_tile_mask` | `rdpq_set_tile_mask` | no | yes |
 | `rdpq` | `set_tile_size` | `rdpq_set_tile_size` | yes | yes |
@@ -589,11 +589,11 @@ compiling the examples that use them.
 | `timer` | `init` | `timer_init` | yes | yes |
 | `timer` | `ticks` | `get_ticks` | yes | yes |
 | `tpak` | `get_status` | `tpak_get_status` | yes | no |
-| `tpak` | `get_value` | `tpak_get_value` | yes* | no |
+| `tpak` | `get_value` | `tpak_get_value` | no | no |
 | `tpak` | `init` | `tpak_init` | yes | no |
 | `tpak` | `read` | `tpak_read` | yes | no |
 | `tpak` | `set_power` | `tpak_set_power` | yes | no |
-| `tpak` | `set_value` | `tpak_set_value` | yes* | no |
+| `tpak` | `set_value` | `tpak_set_value` | yes | no |
 | `tpak` | `write` | `tpak_write` | yes | no |
 | `vi` | `get_height` | `vi_get_height` | yes* | no |
 | `vi` | `get_width` | `vi_get_width` | yes* | no |
@@ -619,7 +619,7 @@ compiling the examples that use them.
 
 **344 functions** across the module surface; **135** exist on the standalone HAL.
 
-Of the 242 lowered as a direct call: **120** are libdragon's own, **32** need Tiny3D, and **90** are **standalone-only**.
+Of the 246 lowered as a direct call: **123** are libdragon's own, **32** need Tiny3D, and **91** are **standalone-only**.
 
 Standalone-only is mostly by design rather than debt. libdragon owns the
 subsystem and exposes a different shape for it: interrupts are callbacks

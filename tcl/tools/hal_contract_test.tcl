@@ -54,6 +54,31 @@ proc walk {dir} {
     return $out
 }
 
+# ── the table half of the contract ───────────────────────────────────────────
+# MODULE_API is the union of four tables, and `pak check` accepts a call when
+# any of them names it. Only two of those four -- CG_API and CG_API_LAMBDA --
+# tell the C backend how to lower it, so an entry present in MIPS_API or
+# API_ARITY alone was accepted by the checker and then emitted verbatim:
+# `debug.log_value("HP: ", hp)` reached the C compiler with the dot still in
+# it, as a read of an undeclared variable named `debug`. Five entries were in
+# that gap. Nothing downstream can catch this -- the generated C is only
+# compiled for examples/canonical, and none of those five appear there.
+set unlowered {}
+foreach k [pak::module_api_keys] {
+    if {[dict exists $::pak::CG_API $k] || [dict exists $::pak::CG_API_LAMBDA $k]} continue
+    lappend unlowered $k
+}
+if {[llength $unlowered] > 0} {
+    puts "FAIL  [llength $unlowered] MODULE_API entries the C backend cannot lower:"
+    foreach k $unlowered { puts "        [lindex $k 0].[lindex $k 1]" }
+    puts ""
+    puts "      `pak check` accepts a call to each of these and the codegen"
+    puts "      emits the Pak spelling verbatim. Add it to CG_API (a direct"
+    puts "      call) or CG_API_LAMBDA (an expression built in cg_api_lambda)."
+    exit 1
+}
+puts "module tables: all [llength [pak::module_api_keys]] MODULE_API entries lower on both backends"
+
 set accepted 0
 set broken {}
 set unparsable 0
