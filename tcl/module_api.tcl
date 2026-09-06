@@ -240,6 +240,16 @@ foreach _bs {__pak_irq_enable __pak_irq_disable __pak_irq_restore __pak_irq} {
 }
 unset -nocomplain _bs
 
+# Module functions the MIPS backend lowers INLINE, with no symbol to link.
+# They are not in MIPS_HAL_SYMBOLS because runtime.pk64 does not define them --
+# the codegen emits the code at the call site -- but the standalone backend
+# does support them, so the HAL check has to know. Without this `str.from_cstr`
+# read as absent the moment the checker started recognising a module call made
+# without a `use`.
+set ::pak::MIPS_INLINE [dict create \
+    {str from_cstr} 1 \
+]
+
 # The symbol the MIPS backend calls. Not module_api_symbol: that prefers the
 # C name, and the two legitimately differ where libdragon spells a function
 # differently from the standalone HAL (rdpq.load_tlut is rdpq_load_tlut_raw on
@@ -253,6 +263,7 @@ proc pak::mips_api_symbol {mod fn} {
 }
 
 proc pak::mips_hal_has {mod fn} {
+    if {[dict exists $::pak::MIPS_INLINE [list $mod $fn]]} { return 1 }
     return [dict exists $::pak::MIPS_HAL_SYMBOLS [pak::mips_api_symbol $mod $fn]]
 }
 

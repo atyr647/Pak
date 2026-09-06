@@ -293,6 +293,18 @@ let b = my_tuple.1
 
 ## Standard Library / API Rules
 
+### A Module Call Needs Its `use`, and the Backend Decides
+`display.init(...)` is checked against the standalone HAL whether or not the
+file has `use n64.display` — the checker recognises a bare `mod.fn` when `mod`
+is a real module and MODULE_API has the function. So a call that would not
+lower is an error at check time on either backend, not a surprise later.
+An alias works the same way on both backends:
+```
+-- WORKS on both:
+use n64.display as disp
+entry { disp.init(0, 2, 3, 0, 1) }
+```
+
 ### Do Not Invent Module Names
 There are **37** valid module namespaces, all listed in `STDLIB.md`. The valid
 N64 modules (after `use n64.X`) are:

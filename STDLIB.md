@@ -501,7 +501,7 @@ compiling the examples that use them.
 | `str` | `concat` | `str_concat` | yes* | no |
 | `str` | `data` | `str_data` | yes* | no |
 | `str` | `eq` | `str_eq` | yes* | no |
-| `str` | `from_cstr` | `pak_str_from_cstr` | yes* | no |
+| `str` | `from_cstr` | `pak_str_from_cstr` | yes* | yes |
 | `str` | `len` | `str_len` | yes* | no |
 | `str` | `print` | `str_print` | yes* | no |
 | `surface` | `alloc` | `surface_alloc` | yes | no |
@@ -617,7 +617,7 @@ compiling the examples that use them.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**344 functions** across the module surface; **134** exist on the standalone HAL.
+**344 functions** across the module surface; **135** exist on the standalone HAL.
 
 Of the 247 lowered as a direct call: **122** are libdragon's own, **32** need Tiny3D, and **93** are **standalone-only**.
 

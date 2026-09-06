@@ -325,6 +325,13 @@ jobs:
       - name: Assets are read out of the ROM (PakFS + sprite_load)
         run: tclsh tcl/tools/asset_test.tcl
 
+      # The promise `pak check --backend mips` makes, over the WHOLE corpus:
+      # if it accepts a program, the MIPS backend has to be able to lower it.
+      # link_test enforces the same thing, but only over the 32 canonical
+      # examples -- five of the other 570 had been breaking it.
+      - name: HAL contract (checker accepts => codegen lowers)
+        run: tclsh tcl/tools/hal_contract_test.tcl
+
       # The CHROMA nave end to end: it fits under FB0, it streams 2 KB pages
       # over the PI instead of embedding sheets, and the DP is handed
       # SET_TILE/LOAD_TILE/TRI_TEX_Z. This is the FZ "Path A" (see examples/chroma/README.md).

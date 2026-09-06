@@ -17,6 +17,12 @@
 set _mcghere [file dirname [file normalize [info script]]]
 source [file join $_mcghere ast.tcl]
 source [file join $_mcghere mips_tables.tcl]
+# The HAL contract, so the codegen can ask the SAME question the checker asks:
+# `pak check --backend mips` accepts a module call when the standalone HAL
+# defines its symbol, and mips_hal_has is what decides that. Testing MIPS_API
+# membership here instead was narrower, which let a program pass the check and
+# then fail to lower.
+source [file join $_mcghere module_api.tcl]
 
 namespace eval pak {}
 if {[info exists ::pak::_mips_codegen_loaded]} { return }
@@ -519,7 +525,7 @@ oo::class create pak::MipsCodegen {
              tenv_layouts tenv_enum_values tenv_variant_decls fn_decls \
              generic_fns generic_structs generic_impls mono_emitted mono_queue type_nodes \
              closure_envs closure_captures last_closure_env heap_inited \
-             trait_decls trait_vtables assets
+             trait_decls trait_vtables assets use_aliases
 
     constructor {} {
         set em [pak::Emitter new]
@@ -558,6 +564,7 @@ oo::class create pak::MipsCodegen {
         set trait_decls [dict create]
         set trait_vtables [dict create]
         set assets [dict create]
+        set use_aliases [dict create]
     }
     destructor {
         $em destroy
@@ -677,6 +684,19 @@ oo::class create pak::MipsCodegen {
                 VariantDecl { lappend variants $decl }
                 FnDecl      { dict set fn_decls [pak::fval $decl name] $decl }
                 TraitDecl   { lappend traits $decl }
+                UseDecl {
+                    # `use n64.display as disp` -- record disp -> display so a
+                    # call through the alias still resolves to the module API.
+                    # Only the C backend did this, so `disp.init(...)` reached
+                    # the MIPS backend looking like a method call on a receiver
+                    # with no type: accepted by `pak check --backend mips` and
+                    # then refused by the codegen.
+                    set al [pak::nfield $decl alias]
+                    if {![pak::isnil $al]} {
+                        set segs [split [pak::fval $decl path] .]
+                        dict set use_aliases [pak::sval $al] [lindex $segs end]
+                    }
+                }
                 ImplBlock - ImplTraitBlock {
                     set type_name [pak::fval $decl type_name]
                     # Recorded unconditionally: register_struct (which fills
@@ -5051,8 +5071,16 @@ oo::class create pak::MipsCodegen {
         if {[pak::kindof $func] eq "DotAccess" && [pak::kindof [pak::nfield $func obj]] eq "Ident"} {
             set obj_name [pak::fval [pak::nfield $func obj] name]
             set fn [pak::fval $func field]
-            # Check if this is a module API call
-            if {[dict exists $::pak::MIPS_API [list $obj_name $fn]]} {
+            if {[dict exists $use_aliases $obj_name]} {
+                set obj_name [dict get $use_aliases $obj_name]
+            }
+            # Check if this is a module API call. The test is the checker's
+            # own -- `pak check --backend mips` accepts a call when the HAL
+            # defines its symbol, and it resolves that symbol from the union
+            # of the API tables. Testing MIPS_API membership alone was
+            # narrower, so `joypad.poll()` and `arena.alloc()` passed the
+            # check and then had nowhere to go here.
+            if {[pak::mips_hal_has $obj_name $fn]} {
                 my emit_module_call $obj_name $fn [pak::nfield $expr args] $dst
                 return
             }

@@ -103,6 +103,13 @@ oo::class create pak::Checker {
                     my register_name [pak::fval $decl name] $decl
                     my check_const $decl
                 }
+                AssetDecl {
+                    # Only `: Sprite` has a loader on the standalone backend.
+                    # The codegen refuses the rest at the use site, which is
+                    # too late: `pak check --backend mips` had already said
+                    # the program was a valid standalone program.
+                    if {$backend eq "mips"} { my check_asset $decl }
+                }
                 ExternConst {
                     # An extern symbol resolves on the standalone backend only
                     # if the HAL itself defines it -- boot.S and runtime.pk64
@@ -141,6 +148,24 @@ oo::class create pak::Checker {
         } else {
             dict set top_names $name [pak::nodeline $node]
         }
+    }
+
+    # ── assets ────────────────────────────────────────────────────────────────
+    method check_asset {decl} {
+        set t [pak::nfield $decl asset_type]
+        set tname ""
+        if {![pak::isnil $t]} {
+            set tname [expr {[pak::kindof $t] eq "TypeName"
+                             ? [pak::fval $t name] : [pak::sval $t]}]
+        }
+        if {$tname eq "Sprite"} return
+        set what [expr {$tname eq "" ? "no type" : "type '$tname'"}]
+        my err E010 "asset '[pak::fval $decl name]' has $what, and only Sprite\
+                     assets can be loaded on the standalone backend" \
+            "runtime/standalone/runtime.pk64 reads .sprite files out of the ROM\
+             and nothing else. Declare it `: Sprite`, or use the libdragon\
+             backend." \
+            $decl
     }
 
     # ── use declarations ──────────────────────────────────────────────────────
@@ -360,6 +385,17 @@ oo::class create pak::Checker {
             set name [pak::fval $obj name]
             if {[dict exists $used_modules $name]} {
                 return [list [dict get $used_modules $name] $fn]
+            }
+            # A module called without a `use`. The C backend lowers it anyway
+            # -- its dispatch does not consult the imports -- so requiring the
+            # `use` here meant such a call escaped the HAL check entirely:
+            # `arena.alloc(a, 4)` with no `use n64.arena` passed
+            # `pak check --backend mips` and then had no symbol to call.
+            # Both halves are required, so a local variable that merely shares
+            # a module's name is not mistaken for one.
+            if {[dict exists $::pak::KNOWN_MODULES $name]
+                && [pak::module_api_has $name $fn]} {
+                return [list $name $fn]
             }
         }
         return {}
