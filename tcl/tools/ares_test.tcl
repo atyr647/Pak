@@ -270,6 +270,27 @@ if {$lit} {
     }
 }
 
+puts ""
+puts "== the VI interrupt fires =="
+# display.show waits on the counter the ISR bumps rather than polling
+# VI_V_CURRENT, so a handler that never runs hangs the program and leaves the
+# screen black. Green is 30 frames serviced with the VI as the only source the
+# handler ever saw; red is a handler that ran with the wrong numbers.
+#
+# This is the only test of the interrupt path there is: the simulator has no
+# interrupts to model, and neither the encoder nor the linker gate can tell
+# whether Status.IM2, the MI mask and the VI acknowledge actually line up.
+set rom [build_rom vblank tcl/tests/ares/vblank.pk64 "PAKIRQ"]
+lassign [run_rom vblank $rom $DISPLAY] shot log lit
+no_boot_timeout vblank $log
+ok_true "vblank: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "vblank: $where is green (30 frames, VI only)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
 } err]} {
     puts "FAIL  ares_test: $err"
     incr ::fail

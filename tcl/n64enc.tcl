@@ -130,6 +130,9 @@ set ::pak::enc::RCSHIFT [dict create sll 0x00 srl 0x02 sra 0x03]
 set ::pak::enc::RHILO [dict create mult 0x18 multu 0x19 div 0x1a divu 0x1b]
 # Move-from hi/lo: rd only
 set ::pak::enc::RMF [dict create mfhi 0x10 mflo 0x12]
+# Hi/Lo writes: mthi/mtlo $rs. An interrupt handler has to put HI and LO back
+# the way it found them, so these are the other half of mfhi/mflo.
+set ::pak::enc::RMT [dict create mthi 0x11 mtlo 0x13]
 
 # I-type op codes
 set ::pak::enc::IARITH [dict create \
@@ -255,6 +258,19 @@ proc pak::enc::emit_real {ctxVar mnem args} {
         return
     }
     # mfhi/mflo: rd
+    # mthi/mtlo: rs
+    if {[dict exists $::pak::enc::RMT $mnem]} {
+        lassign $ops sreg
+        emit_word ctx [R 0 [gpr $sreg] 0 0 0 [dict get $::pak::enc::RMT $mnem]]
+        return
+    }
+    # ERET: return from an exception. COP0 with the CO bit set, function 0x18.
+    # It restores Status.EXL and jumps to EPC atomically, which is why an
+    # interrupt handler cannot be written with a plain `jr`.
+    if {$mnem eq "eret"} {
+        emit_word ctx 0x42000018
+        return
+    }
     if {[dict exists $::pak::enc::RMF $mnem]} {
         lassign $ops d
         emit_word ctx [R 0 0 0 [gpr $d] 0 [dict get $::pak::enc::RMF $mnem]]

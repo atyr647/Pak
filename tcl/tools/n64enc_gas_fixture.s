@@ -59,6 +59,8 @@ fixture:
     divu    $zero, $t1, $t2
     mflo    $t0
     mfhi    $t0
+    mtlo    $t1
+    mthi    $t1
 
     /* shifts, variable and constant, both signednesses */
     sllv    $t0, $t1, $t2
@@ -77,5 +79,10 @@ fixture:
     nop
     bge     $t1, $t2, .Ltarget
     nop
+    /* CP0 and exception return, which only boot.S writes */
+    mfc0    $t0, $12
+    mtc0    $t0, $12
+    eret
+
     jr      $ra
     nop

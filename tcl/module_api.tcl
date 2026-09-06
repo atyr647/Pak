@@ -185,7 +185,22 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     exception_set_handler 1 \
     exception_get_handler 1 \
     exception_paint 1 \
+    interrupt_init 1 \
+    interrupt_disable 1 \
+    interrupt_restore 1 \
+    interrupt_vi_count 1 \
+    interrupt_pending 1 \
+    interrupt_enabled 1 \
 ]
+
+# Defined in runtime/standalone/boot.S, not in the runtime: Status.IE and
+# Status.IM2 are CP0 registers and Pak has no syntax for mfc0/mtc0. The
+# checker's "is this extern resolvable on the standalone backend?" question
+# is about the whole link, and boot.S is half of it.
+foreach _bs {__pak_irq_enable __pak_irq_disable __pak_irq_restore __pak_irq} {
+    dict set ::pak::MIPS_HAL_SYMBOLS $_bs 1
+}
+unset -nocomplain _bs
 
 proc pak::mips_hal_has {mod fn} {
     set sym [pak::module_api_symbol $mod $fn]

@@ -330,6 +330,12 @@ compiling the examples that use them.
 | `flashram` | `erase_sector` | `flashram_erase_sector` | no | no |
 | `flashram` | `read` | `flashram_read` | no | no |
 | `flashram` | `write` | `flashram_write` | no | no |
+| `interrupt` | `disable` | `interrupt_disable` | no | yes |
+| `interrupt` | `enabled` | `interrupt_enabled` | no | yes |
+| `interrupt` | `init` | `interrupt_init` | no | yes |
+| `interrupt` | `pending` | `interrupt_pending` | no | yes |
+| `interrupt` | `restore` | `interrupt_restore` | no | yes |
+| `interrupt` | `vi_count` | `interrupt_vi_count` | no | yes |
 | `joypad` | `get_accessory_type` | `joypad_get_accessory_type` | yes | no |
 | `joypad` | `get_axis_held` | `joypad_get_axis_held` | yes | no |
 | `joypad` | `get_axis_pressed` | `joypad_get_axis_pressed` | yes | no |
@@ -603,9 +609,9 @@ compiling the examples that use them.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**330 functions** across the module surface; **92** exist on the standalone HAL.
+**336 functions** across the module surface; **98** exist on the standalone HAL.
 
-Of the 233 lowered as a direct call: **119** are libdragon's own, **32** need Tiny3D, and **82** are **not implemented on the libdragon backend** — they exist only on the standalone HAL.
+Of the 239 lowered as a direct call: **119** are libdragon's own, **32** need Tiny3D, and **88** are **not implemented on the libdragon backend** — they exist only on the standalone HAL.
 
 <!-- END GENERATED MODULE API -->
 
@@ -1328,6 +1334,54 @@ On the standalone MIPS HAL the crt0 installs the four VR4300 vectors
 with RGBA5551 `0xF801` (solid red) and points the Video Interface at FB0, so
 a CPU exception or `assert` is a red screen rather than a black hang. A
 non-zero handler installed via `set_handler` is `jalr`'d instead.
+
+---
+
+### `n64.interrupt` — RCP Interrupts (standalone only)
+
+```pak
+use n64.interrupt
+```
+
+**Standalone backend only.** libdragon has its own interrupt layer
+(`enable_interrupts`, `register_VI_handler`) with a different shape, so
+`pak check --backend c` reports W005 on every entry here.
+
+| Function | Maps to | Description |
+|----------|---------|-------------|
+| `interrupt.init()` | `interrupt_init` | Arm the VI source and enable IP2 |
+| `interrupt.vi_count()` | `interrupt_vi_count` | Frames the handler has serviced |
+| `interrupt.pending()` | `interrupt_pending` | MI sources seen since `init` |
+| `interrupt.enabled()` | `interrupt_enabled` | Non-zero once `init` has run |
+| `interrupt.disable()` | `interrupt_disable` | Clear `Status.IE`, return the old Status |
+| `interrupt.restore(s)` | `interrupt_restore` | Put a saved Status back |
+
+Before `interrupt.init()`, `display.show()` spins on `VI_V_CURRENT`. After it,
+the same call waits on the counter the handler bumps and leaves the CPU alone
+between frames — nothing else in a program has to change.
+
+```pak
+display.init(0, 2, 3, 0, 1)
+interrupt.init()
+
+loop {
+    let fb: u32 = display.get()
+    -- draw
+    display.show(fb)      -- now an interrupt-driven wait
+}
+```
+
+`interrupt.disable()` returns the previous Status rather than a flag, so a
+critical section restores what was actually there:
+
+```pak
+let saved: u32 = interrupt.disable()
+-- ... touch state the handler also touches ...
+interrupt.restore(saved)
+```
+
+See N64_HARDWARE.md for the three things that must line up for a source to be
+delivered, and the per-device acknowledge each one needs.
 
 ---
 

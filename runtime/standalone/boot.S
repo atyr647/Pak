@@ -105,15 +105,146 @@ _start:
     /* 8-byte trampoline copied to each exception vector. `j` is patched
      * at link time; copying the relocated word is correct because 0x80000000
      * and 0x80000400 sit in the same 256 MB J-region. */
+    /* ── CP0 interrupt control ──
+     * Status bit 0 is IE, bit 10 is IM2 (the RCP's line). Pak has no way to
+     * name a CP0 register, so the runtime calls these.
+     *
+     * The nops after mtc0 are the VR4300's CP0 hazard: the new Status is not
+     * in effect for the next two instructions, and taking (or missing) an
+     * interrupt in that window is exactly the bug that would only show up
+     * under load. */
+.globl __pak_irq_enable
+__pak_irq_enable:
+    mfc0    $8, $12
+    ori     $8, $8, 0x0401      /* IM2 | IE */
+    mtc0    $8, $12
+    nop
+    nop
+    jr      $ra
+    nop
+.size __pak_irq_enable, . - __pak_irq_enable
+
+    /* Returns the previous Status, so a critical section can put it back
+     * with __pak_irq_restore rather than assuming interrupts were on. */
+.globl __pak_irq_disable
+__pak_irq_disable:
+    mfc0    $2, $12
+    lui     $9, 0xFFFF
+    ori     $9, $9, 0xFFFE
+    and     $8, $2, $9
+    mtc0    $8, $12
+    nop
+    nop
+    jr      $ra
+    nop
+.size __pak_irq_disable, . - __pak_irq_disable
+
+.globl __pak_irq_restore
+__pak_irq_restore:
+    mtc0    $4, $12
+    nop
+    nop
+    jr      $ra
+    nop
+.size __pak_irq_restore, . - __pak_irq_restore
+
 .globl exception_stub
 exception_stub:
     j       exception_entry
     nop
 
-    /* Reset $sp (it may be garbage), then dispatch: a non-zero
-     * g_exc_handler is jalr'd, otherwise exception_paint. Hang after. */
+    /* Everything arrives here: a crash and an interrupt take the same vector.
+     * The crash path resets $sp and never returns, so it has to be reached
+     * only by an actual exception -- Cause.ExcCode tells the two apart, and it
+     * is read with $k0/$k1, the only registers a handler may use before it has
+     * saved anything.
+     *
+     * ExcCode 0 is Int. Any other code is a fault: fall through to the
+     * original behaviour below. */
 .globl exception_entry
 exception_entry:
+    mfc0    $26, $13            /* k0 = Cause */
+    andi    $27, $26, 0x7C      /* ExcCode, still shifted left 2 */
+    bnez    $27, .Lfault
+    nop
+
+    /* An interrupt. IP2 (Cause bit 10) is the RCP's line, the only one the
+     * N64 has anything on -- IP7 is the CPU's own timer, IP3..IP6 are the
+     * cartridge and reset lines. Anything else returns without doing work
+     * rather than running the RCP handler for it. */
+    andi    $27, $26, 0x0400
+    beqz    $27, .Lirq_done
+    nop
+
+    /* Save what the ISR is allowed to clobber. It is compiled Pak code, so
+     * that is the whole o32 caller-saved set, plus HI/LO (a multiply in the
+     * interrupted code may be in flight) and $f12/$f14, the two FP registers
+     * the codegen uses. EXL is set for the whole of this, so nothing nests
+     * and the interrupted code's $sp is safe to build a frame on. */
+    addiu   $29, $29, -96
+    sw      $1, 0($29)
+    sw      $2, 4($29)
+    sw      $3, 8($29)
+    sw      $4, 12($29)
+    sw      $5, 16($29)
+    sw      $6, 20($29)
+    sw      $7, 24($29)
+    sw      $8, 28($29)
+    sw      $9, 32($29)
+    sw      $10, 36($29)
+    sw      $11, 40($29)
+    sw      $12, 44($29)
+    sw      $13, 48($29)
+    sw      $14, 52($29)
+    sw      $15, 56($29)
+    sw      $24, 60($29)
+    sw      $25, 64($29)
+    sw      $31, 68($29)
+    mfhi    $26
+    sw      $26, 72($29)
+    mflo    $26
+    sw      $26, 76($29)
+    swc1    $f12, 80($29)
+    swc1    $f14, 84($29)
+
+    jal     __pak_irq
+    nop
+
+    lwc1    $f14, 84($29)
+    lwc1    $f12, 80($29)
+    lw      $26, 76($29)
+    mtlo    $26
+    lw      $26, 72($29)
+    mthi    $26
+    lw      $31, 68($29)
+    lw      $25, 64($29)
+    lw      $24, 60($29)
+    lw      $15, 56($29)
+    lw      $14, 52($29)
+    lw      $13, 48($29)
+    lw      $12, 44($29)
+    lw      $11, 40($29)
+    lw      $10, 36($29)
+    lw      $9, 32($29)
+    lw      $8, 28($29)
+    lw      $7, 24($29)
+    lw      $6, 20($29)
+    lw      $5, 16($29)
+    lw      $4, 12($29)
+    lw      $3, 8($29)
+    lw      $2, 4($29)
+    lw      $1, 0($29)
+    addiu   $29, $29, 96
+
+.Lirq_done:
+    /* ERET clears EXL and jumps to EPC in one step; a jr would race the
+     * Status write and take the next interrupt in the wrong place. */
+    eret
+    nop
+
+    /* Reset $sp (it may be garbage), then dispatch: a non-zero
+     * g_exc_handler is jalr'd, otherwise exception_paint. Hang after. */
+.Lfault:
     mfc0    $8, $12
     lui     $9, 0xFFBF
     ori     $9, $9, 0xFFFE

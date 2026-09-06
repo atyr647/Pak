@@ -60,6 +60,12 @@ missing exception.set_handler
 missing flashram.erase_sector
 missing flashram.read
 missing flashram.write
+missing interrupt.disable
+missing interrupt.enabled
+missing interrupt.init
+missing interrupt.pending
+missing interrupt.restore
+missing interrupt.vi_count
 libdragon joypad.get_accessory_type
 libdragon joypad.get_axis_held
 libdragon joypad.get_axis_pressed

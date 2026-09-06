@@ -57,6 +57,12 @@ set ::pak::CG_API [dict create \
     {eeprom write} {eeprom_write} \
     {exception get_handler} {exception_get_handler} \
     {exception set_handler} {exception_set_handler} \
+    {interrupt init} {interrupt_init} \
+    {interrupt disable} {interrupt_disable} \
+    {interrupt restore} {interrupt_restore} \
+    {interrupt vi_count} {interrupt_vi_count} \
+    {interrupt pending} {interrupt_pending} \
+    {interrupt enabled} {interrupt_enabled} \
     {flashram erase_sector} {flashram_erase_sector} \
     {flashram read} {flashram_read} \
     {flashram write} {flashram_write} \
@@ -352,6 +358,7 @@ set ::pak::CG_USE_INCLUDES [dict create \
     {n64.dma} {#include <dma.h>} \
     {n64.eeprom} {#include <eeprom.h>} \
     {n64.exception} {#include <exception.h>} \
+    {n64.interrupt} {#include <interrupt.h>} \
     {n64.flashram} {#include <backup.h>} \
     {n64.joypad} {#include <joypad.h>} \
     {n64.math} {#include <n64sys.h>

@@ -270,6 +270,12 @@ set ::pak::MIPS_API [dict create \
     {dma wait} {dma_wait} \
     {exception set_handler} {exception_set_handler} \
     {exception get_handler} {exception_get_handler} \
+    {interrupt init} {interrupt_init} \
+    {interrupt disable} {interrupt_disable} \
+    {interrupt restore} {interrupt_restore} \
+    {interrupt vi_count} {interrupt_vi_count} \
+    {interrupt pending} {interrupt_pending} \
+    {interrupt enabled} {interrupt_enabled} \
     {cache writeback} {data_cache_hit_writeback} \
     {cache invalidate} {data_cache_hit_invalidate} \
     {cache writeback_inv} {data_cache_hit_writeback_invalidate} \

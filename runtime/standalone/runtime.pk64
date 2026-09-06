@@ -26,6 +26,40 @@ const VI_V_BURST: u32   = 0xA440002C
 const VI_X_SCALE: u32   = 0xA4400030
 const VI_Y_SCALE: u32   = 0xA4400034
 
+-- ── MI (MIPS Interface): the RCP's interrupt controller ───────────────────
+-- MI_INTERRUPT reads which of the six RCP sources is asserting. MI_MASK is
+-- write-only and takes a pair of bits per source -- clear then set -- so
+-- enabling one source never disturbs the others.
+const MI_MODE: u32      = 0xA4300000
+const MI_INTERRUPT: u32 = 0xA4300008
+const MI_MASK: u32      = 0xA430000C
+
+const MI_INTR_SP: u32 = 0x01
+const MI_INTR_SI: u32 = 0x02
+const MI_INTR_AI: u32 = 0x04
+const MI_INTR_VI: u32 = 0x08
+const MI_INTR_PI: u32 = 0x10
+const MI_INTR_DP: u32 = 0x20
+
+const MI_MASK_SET_VI: u32   = 0x0080
+const MI_MASK_CLEAR_VI: u32 = 0x0040
+const MI_MASK_SET_AI: u32   = 0x0020
+const MI_MASK_SET_PI: u32   = 0x0200
+const MI_MASK_SET_SI: u32   = 0x0008
+const MI_MASK_SET_DP: u32   = 0x0800
+const MI_MASK_CLEAR_ALL: u32 = 0x0555
+
+-- SP_STATUS bit 3 is "clear interrupt". The runtime drives no RSP task, so
+-- this exists only so the handler can acknowledge a source it enabled.
+const SP_STATUS: u32 = 0xA4040010
+
+-- The halfline VI_V_INTR fires at. vi_program parks it at 0x200, past the end
+-- of the frame, so a ROM that never calls interrupt.init sees no interrupts at
+-- all. 0x200 is also what a game sets it back to in order to turn VI
+-- interrupts off without touching the MI mask.
+const VI_INTR_OFF: u32  = 0x00000200
+const VI_INTR_LINE: u32 = 0x00000002
+
 const VI_CTRL_BLANK: u32 = 0x00000000
 const VI_CTRL_16BPP: u32 = 0x00003202   -- 16bpp RGBA5551, AA off, non-interlaced
 
@@ -46,6 +80,30 @@ static g_shown: i32      = 0
 static g_nbufs: i32      = 3
 -- The VI_CTRL word display.init assembled from its gamma/filters arguments.
 static g_vi_ctrl: u32    = 0x00003202
+
+-- ── interrupt state ───────────────────────────────────────────────────────
+-- Bumped by the VI interrupt, once per frame. vi_wait_vblank watches it
+-- instead of polling VI_V_CURRENT once interrupts are running, which is the
+-- difference between a spin loop that owns the CPU and one that does not.
+static g_vi_count: u32   = 0
+static g_irq_on: i32     = 0
+-- Sources seen since interrupt.init, so a ROM can tell "the ISR never ran"
+-- from "the ISR ran and it was not the VI".
+static g_irq_seen: u32   = 0
+-- The MI sources interrupt.init armed. MI_INTERRUPT reports every source that
+-- is asserting, masked or not, so the handler filters by this rather than
+-- acknowledging -- and so discarding -- a flag nobody asked it to touch.
+static g_irq_mask: u32   = 0
+
+-- ── CP0, which Pak cannot name ─────────────────────────────────────────────
+-- Status.IE and Status.IM2 live in a coprocessor register, and there is no
+-- syntax for mfc0/mtc0. runtime/standalone/boot.S provides these three; they
+-- are part of the standalone HAL, not libdragon.
+extern "C" {
+    fn __pak_irq_enable()
+    fn __pak_irq_disable() -> u32
+    fn __pak_irq_restore(status: u32)
+}
 
 -- ── MMIO helpers ───────────────────────────────────────────────────────────
 fn vi_write(reg: u32, val: u32) {
@@ -113,7 +171,18 @@ fn vi_init() {
 }
 
 fn vi_wait_vblank() {
-    -- Wait until past the active region (line >= 480), then for the new frame.
+    if g_irq_on != 0 {
+        -- Interrupt-driven: sit on the counter the ISR bumps. The read has to
+        -- happen each time round rather than once into a local, or the
+        -- optimizer is free to hoist it and the loop never ends.
+        let start: u32 = g_vi_count
+        loop {
+            if g_vi_count != start { break }
+        }
+        return
+    }
+    -- No interrupts: poll. Wait until past the active region (line >= 480),
+    -- then for the new frame.
     loop {
         let line: u32 = vi_read(VI_V_CURRENT) & 0x3FF
         if line >= 0x1E0 { break }
@@ -2175,4 +2244,77 @@ fn strstr(hay: *u8, needle: *u8) -> *u8 {
         i = i + 1
     }
     return 0 as *u8
+}
+
+-- ── the interrupt handler ─────────────────────────────────────────────────
+-- boot.S jal's this from the general exception vector once it has established
+-- that the exception is an interrupt on IP2 and saved the caller-saved state.
+-- It must acknowledge every source it finds asserting: the RCP holds the line
+-- high until the device is told to drop it, so a source left unacknowledged
+-- re-enters this handler forever.
+--
+-- Do not call anything here that waits on hardware. Status.EXL is set for the
+-- whole of it, so nothing else can be serviced until it returns.
+fn __pak_irq() {
+    -- MI_INTERRUPT shows every source asserting, including ones whose mask
+    -- bit is clear and whose flag therefore belongs to nobody here.
+    let pending: u32 = vi_read(MI_INTERRUPT) & g_irq_mask
+    g_irq_seen = g_irq_seen | pending
+
+    if (pending & MI_INTR_VI) != 0 {
+        -- Any write to VI_V_CURRENT drops the VI's line.
+        vi_write(VI_V_CURRENT, 0)
+        g_vi_count = g_vi_count + 1
+    }
+    if (pending & MI_INTR_PI) != 0 {
+        -- PI_STATUS bit 1 is "clear interrupt".
+        vi_write(PI_STATUS, 0x02)
+    }
+    if (pending & MI_INTR_SI) != 0 {
+        vi_write(SI_STATUS, 0)
+    }
+    if (pending & MI_INTR_AI) != 0 {
+        vi_write(AI_STATUS, 0)
+    }
+    if (pending & MI_INTR_SP) != 0 {
+        -- SP_STATUS bit 3 clears the RSP's interrupt.
+        vi_write(SP_STATUS, 0x08)
+    }
+    if (pending & MI_INTR_DP) != 0 {
+        -- MI_MODE bit 11 clears the DP interrupt.
+        vi_write(MI_MODE, 0x0800)
+    }
+}
+
+-- ── interrupt API (called by generated game code) ─────────────────────────
+fn interrupt_init() {
+    if g_irq_on != 0 { return }
+    -- Start from a clean slate: mask everything off, then arm just the VI.
+    vi_write(MI_MASK, MI_MASK_CLEAR_ALL)
+    vi_write(VI_V_CURRENT, 0)
+    vi_write(VI_V_INTR, VI_INTR_LINE)
+    vi_write(MI_MASK, MI_MASK_SET_VI)
+    g_irq_mask = MI_INTR_VI
+    g_irq_on = 1
+    __pak_irq_enable()
+}
+
+fn interrupt_disable() -> u32 {
+    return __pak_irq_disable()
+}
+
+fn interrupt_restore(status: u32) {
+    __pak_irq_restore(status)
+}
+
+fn interrupt_vi_count() -> u32 {
+    return g_vi_count
+}
+
+fn interrupt_pending() -> u32 {
+    return g_irq_seen
+}
+
+fn interrupt_enabled() -> i32 {
+    return g_irq_on
 }

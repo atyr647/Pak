@@ -22,6 +22,7 @@ set ::pak::KNOWN_MODULES [dict create \
     eeprom 1 \
     exception 1 \
     flashram 1 \
+    interrupt 1 \
     joypad 1 \
     math 1 \
     mem 1 \

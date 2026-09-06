@@ -281,6 +281,18 @@ proc exec_insn {op args} {
         mtc0 {
             dict set C0 [expr {[lindex $args 1]}] $R([lindex $args 0])
         }
+        eret {
+            # Return from an exception: clear Status.EXL and jump to EPC
+            # (CP0 register 14). Nothing here raises an exception, so EPC only
+            # ever holds what something wrote to it -- and an `eret` reached
+            # with EPC unset ends the run rather than jumping to zero. The
+            # instruction is implemented so that an image containing it is not
+            # quietly executed as if the instruction were a nop.
+            set st [expr {[dict exists $C0 12] ? [dict get $C0 12] : 0}]
+            dict set C0 12 [expr {$st & ~0x2}]
+            if {![dict exists $C0 14] || [dict get $C0 14] == 0} { return "done" }
+            return "jmp:[dict get $C0 14]"
+        }
 
         mtc1 {
             # FPU, single precision. Registers are addressed by number, so the

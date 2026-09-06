@@ -353,6 +353,56 @@ fn load_game(data: *SaveData) -> bool {
 
 ---
 
+## Interrupts (standalone backend)
+
+The RCP has six interrupt sources — SP, SI, AI, VI, PI, DP — and they all
+arrive on one CPU line, IP2. Getting one delivered means three things being
+true at once, and a missing any of them looks identical from the outside:
+
+1. **CP0 Status** has `IE` (bit 0) and `IM2` (bit 10) set.
+2. **MI_MASK** (`0xA430000C`) has that source armed. It is write-only and takes
+   a *pair* of bits per source, clear and set, so arming one never disturbs the
+   others: VI is `0x0080` to arm, `0x0040` to disarm.
+3. The **device** is configured to raise it. For the VI that means `VI_V_INTR`
+   (`0xA440000C`) naming a halfline inside the frame; parking it at `0x200` is
+   how you turn VI interrupts off without touching the mask.
+
+```pak
+display.init(0, 2, 3, 0, 1)
+interrupt.init()          -- arms the VI and enables IP2
+```
+
+After `interrupt.init()`, `display.show()` waits on the counter the handler
+bumps rather than spinning on `VI_V_CURRENT`, so the CPU is free between
+frames. `interrupt.vi_count()` is that counter and `interrupt.pending()` is
+every source the handler has seen since it started.
+
+**Every source must be acknowledged, at the device.** The RCP holds its line
+high until the device is told to drop it, so a source the handler leaves alone
+re-enters the handler forever:
+
+| Source | Acknowledge by writing |
+|--------|------------------------|
+| VI | anything to `VI_V_CURRENT` (`0xA4400010`) |
+| PI | `0x02` to `PI_STATUS` (`0xA4600010`) |
+| SI | anything to `SI_STATUS` (`0xA4800018`) |
+| AI | anything to `AI_STATUS` (`0xA450000C`) |
+| SP | `0x08` to `SP_STATUS` (`0xA4040010`) |
+| DP | `0x0800` to `MI_MODE` (`0xA4300000`) |
+
+`MI_INTERRUPT` reports every source that is asserting, **masked or not**, so a
+handler that acts on the raw word will acknowledge — and so discard — a flag
+nobody asked it to touch. Filter by what you armed.
+
+For a critical section, `interrupt.disable()` returns the previous Status and
+`interrupt.restore(s)` puts it back. Do not assume interrupts were on.
+
+Two things the handler itself must respect, because `Status.EXL` is set for the
+whole of it and nothing else can be serviced until it returns: it must not wait
+on hardware, and it must not be long.
+
+---
+
 ## Memory Map (Summary)
 
 | Region | Address Range | Size | Notes |
@@ -363,8 +413,11 @@ fn load_game(data: *SaveData) -> bool {
 | ROM header | `0x10000000` | 64 bytes | Boot code, title, CRC |
 | ROM data | `0x10000040` | rest | Your assets and data |
 | RDP regs | `0xA4100000` | — | Reality Display Processor |
+| MI regs | `0xA4300000` | — | MIPS Interface (interrupt mask/status) |
+| VI regs | `0xA4400000` | — | Video Interface |
 | AI regs | `0xA4500000` | — | Audio Interface |
 | PI regs | `0xA4600000` | — | Parallel Interface (DMA) |
+| SI regs | `0xA4800000` | — | Serial Interface (Joybus); STATUS is `+0x18` |
 
 ---
 
