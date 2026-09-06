@@ -486,6 +486,14 @@ compiling the examples that use them.
 | `rumble` | `is_plugged` | `rumble_is_plugged` | yes* | no |
 | `rumble` | `start` | `rumble_start` | yes | no |
 | `rumble` | `stop` | `rumble_stop` | yes | no |
+| `sp` | `done` | `pak_sp_done` | no | yes |
+| `sp` | `init` | `pak_sp_init` | no | yes |
+| `sp` | `load_data` | `pak_sp_load_data` | no | yes |
+| `sp` | `load_ucode` | `pak_sp_load_ucode` | no | yes |
+| `sp` | `read_data` | `pak_sp_read_data` | no | yes |
+| `sp` | `run` | `pak_sp_run` | no | yes |
+| `sp` | `status` | `pak_sp_status` | no | yes |
+| `sp` | `wait` | `pak_sp_wait` | no | yes |
 | `sprite` | `blit` | `rdpq_sprite_blit` | yes* | no |
 | `sprite` | `load` | `sprite_load` | yes | no |
 | `sram` | `read` | `sram_read` | no | no |
@@ -609,9 +617,9 @@ compiling the examples that use them.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**336 functions** across the module surface; **98** exist on the standalone HAL.
+**344 functions** across the module surface; **106** exist on the standalone HAL.
 
-Of the 239 lowered as a direct call: **119** are libdragon's own, **32** need Tiny3D, and **88** are **not implemented on the libdragon backend** — they exist only on the standalone HAL.
+Of the 247 lowered as a direct call: **119** are libdragon's own, **32** need Tiny3D, and **96** are **not implemented on the libdragon backend** — they exist only on the standalone HAL.
 
 <!-- END GENERATED MODULE API -->
 
@@ -1382,6 +1390,63 @@ interrupt.restore(saved)
 
 See N64_HARDWARE.md for the three things that must line up for a source to be
 delivered, and the per-device acknowledge each one needs.
+
+---
+
+### `n64.sp` — the RSP's registers (standalone only)
+
+```pak
+use n64.sp
+```
+
+**Standalone backend only**, and not the same thing as `n64.rsp`: that module
+is libdragon's rspq command queue, a whole scheduler. This is the SP register
+block — load a microcode image, start it, wait for it, move data in and out.
+libdragon's `rsp_*` functions have the same shape of name and different
+signatures, so these are `pak_sp_*` underneath and `pak check --backend c`
+reports W005 on all of them.
+
+| Function | Maps to | Description |
+|----------|---------|-------------|
+| `sp.init()` | `pak_sp_init` | Halt the RSP and clear its break/step/interrupt state |
+| `sp.load_ucode(src, len)` | `pak_sp_load_ucode` | RDRAM → IMEM |
+| `sp.load_data(src, off, len)` | `pak_sp_load_data` | RDRAM → DMEM at `off` |
+| `sp.read_data(dst, off, len)` | `pak_sp_read_data` | DMEM at `off` → RDRAM |
+| `sp.run(pc)` | `pak_sp_run` | Point the RSP at an IMEM offset and release it |
+| `sp.wait()` | `pak_sp_wait` | Block until it halts or breaks |
+| `sp.done()` | `pak_sp_done` | Non-zero once it has halted or broken |
+| `sp.status()` | `pak_sp_status` | Raw SP_STATUS |
+
+**Pak does not compile to the RSP.** It is a different instruction set with a
+vector unit; a task's words come from somewhere else. But the RSP's *scalar*
+half is a MIPS I subset, so `pak asmobj` can assemble one — which is how
+`tcl/tests/ares/rsp_add.S` is built.
+
+Every address and length in an SP DMA must be a multiple of 8; the HAL panics
+rather than let the hardware silently truncate a misaligned transfer. `src` and
+`dst` are cached RDRAM addresses and the HAL does the writeback and invalidate
+around them.
+
+```pak
+use n64.sp
+
+@aligned(16)
+static ucode: [8]u32 = [ ... ]     -- assembled elsewhere
+@aligned(16)
+static args: [2]u32 = [a, b]
+@aligned(16)
+static result: [2]u32 = [0, 0]
+
+sp.init()
+sp.load_ucode(&ucode[0] as u32, 32)
+sp.load_data(&args[0] as u32, 0, 8)
+sp.run(0)
+sp.wait()
+sp.read_data(&result[0] as u32, 8, 8)
+```
+
+A task ends with `break`. Without one the RSP runs off the end of IMEM, never
+halts, and `sp.wait()` never returns.
 
 ---
 

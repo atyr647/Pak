@@ -285,6 +285,80 @@ entry {
 } out 00000001
 
 puts ""
+puts "== a static's initializer survives to the target =="
+
+# emit_static only knew how to lay out a scalar. An array or struct literal
+# fell through to `.space`, so the initializer was discarded and every read of
+# the table returned zero -- a level map, a palette, a lookup table, RSP
+# microcode. The C backend had it right the whole time, which is why nothing
+# noticed.
+
+chk "an i32 table keeps its values" {
+static xs: [4]i32 = [11, 22, 33, 44]
+static out: i32 = 0
+entry { out = xs[0] + xs[1] + xs[2] + xs[3] }
+} out 0000006E
+
+chk "a u32 table keeps a value with bit 31 set" {
+static xs: [2]u32 = [0x8C080000, 0x0000000D]
+static out: u32 = 0
+entry { out = xs[0] }
+} out 8C080000
+
+chk "the last element is not clipped" {
+static xs: [4]u32 = [1, 2, 3, 0xDEADBEEF]
+static out: u32 = 0
+entry { out = xs[3] }
+} out DEADBEEF
+
+chk "a u8 table packs without shifting" {
+static bs: [4]u8 = [1, 2, 3, 4]
+static out: i32 = 0
+entry { out = (bs[0] as i32) * 1000 + (bs[3] as i32) }
+} out 000003EC
+
+chk "a struct literal keeps its fields" {
+struct P { x: i32, y: i32 }
+static p: P = P { x: 7, y: 9 }
+static out: i32 = 0
+entry { out = p.x * 10 + p.y }
+} out 0000004F
+
+chk "a repeat initializer fills every slot" {
+static xs: [4]i32 = [5; 4]
+static out: i32 = 0
+entry { out = xs[0] + xs[3] }
+} out 0000000A
+
+chk "a scalar f32 static keeps its value" {
+static g: f32 = 0.4
+static out: f32 = 0.0
+entry { out = g }
+} out 3ECCCCCD
+
+# A global went through a plain `lw` whatever its type, so a byte-wide static
+# came back with three of its neighbours in the high bits.
+chk "a u8 static reads back as one byte" {
+static a: u8 = 200
+static b: u8 = 7
+static out: i32 = 0
+entry { out = a as i32 }
+} out 000000C8
+
+chk "an i16 static reads back sign-extended" {
+static h: i16 = -2
+static pad: i16 = 0x1234
+static out: i32 = 0
+entry { out = h as i32 }
+} out FFFFFFFE
+
+chk "`undefined` still means uninitialized" {
+static xs: [4]i32 = undefined
+static out: i32 = 0
+entry { out = 1 }
+} out 00000001
+
+puts ""
 puts "== floating point actually computes =="
 
 # The simulator had no FPU at all: mtc1, cvt.s.w, add.s and the rest fell

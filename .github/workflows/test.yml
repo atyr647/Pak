@@ -192,7 +192,12 @@ jobs:
         if: steps.ares.outputs.cache-hit != 'true'
         run: bash tools/build_ares.sh /opt/pak-ares
 
-      - name: Standalone ROMs boot and draw on ares
+      # Five ROMs: the CPU writing a framebuffer, the RDP drawing, the VI
+      # interrupt firing, and the RSP running a task. Each one is the only
+      # check on its subsystem there is -- the simulator has no interrupts, no
+      # RSP and no cache model, so a wrong VR4300 cache opcode or an
+      # unacknowledged MI source is invisible everywhere else.
+      - name: Standalone ROMs boot, draw, interrupt and run RSP tasks on ares
         run: |
           sudo apt-get install -y xvfb imagemagick mesa-vulkan-drivers libgl1-mesa-dri
           PATH=/opt/pak-ares/bin:/opt/pak-n64/bin:$PATH tclsh tcl/tools/ares_test.tcl

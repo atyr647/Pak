@@ -264,6 +264,20 @@ proc pak::enc::emit_real {ctxVar mnem args} {
         emit_word ctx [R 0 [gpr $sreg] 0 0 0 [dict get $::pak::enc::RMT $mnem]]
         return
     }
+    # BREAK: SPECIAL funct 0x0D, with an optional 20-bit code in bits 25..6.
+    # The RSP's scalar unit is a MIPS I subset and this is how a microcode task
+    # signals that it is finished.
+    if {$mnem eq "break"} {
+        # The 20-bit code is two fields. GNU as puts a single operand in the
+        # upper one (bits 25..16) and a second, if given, in the lower
+        # (bits 15..6); `break 0x7` is 0x0007000D, not 0x000001CD.
+        set hi 0
+        set lo 0
+        if {[llength $ops] >= 1} { set hi [expr {[imm [lindex $ops 0]] & 0x3FF}] }
+        if {[llength $ops] >= 2} { set lo [expr {[imm [lindex $ops 1]] & 0x3FF}] }
+        emit_word ctx [expr {($hi << 16) | ($lo << 6) | 0x0D}]
+        return
+    }
     # ERET: return from an exception. COP0 with the CO bit set, function 0x18.
     # It restores Status.EXL and jumps to EPC atomically, which is why an
     # interrupt handler cannot be written with a plain `jr`.

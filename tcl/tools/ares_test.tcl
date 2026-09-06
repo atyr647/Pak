@@ -291,6 +291,50 @@ if {$lit} {
     }
 }
 
+puts ""
+puts "== the RSP runs a task =="
+# tcl/tests/ares/rsp_add.S is assembled by tcl/n64enc.tcl -- the RSP's scalar
+# half is a MIPS I subset -- and its words are checked into rsp.pk64 for the
+# ROM to ship. Re-assemble and compare, so the listing and the words cannot
+# drift apart.
+set fh [open tcl/tests/ares/rsp_add.S r]; set ucode_src [read $fh]; close $fh
+set uctx [pak::enc::encode [pak::enc::parse_asm $ucode_src]]
+set ucode_bytes [dict get $uctx secdata .text bytes]
+set want {}
+for {set i 0} {$i < [llength $ucode_bytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $ucode_bytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend want [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp.pk64 r]; set rsp_src [read $fh]; close $fh
+set got {}
+# Everything up to the first `]`: Tcl's REs mix greedy and non-greedy badly,
+# and there is no `]` inside the literal.
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $rsp_src -> body]} {
+    foreach tok [split [string map {"\n" " "} $body] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend got [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp.pk64 is what rsp_add.S assembles to" \
+    [join $got " "] [join $want " "]
+
+# Green means the RSP loaded that microcode, ran it, and handed back
+# 0x12340000 + 0x0000ABCD. If it never starts, sp.wait() never returns and the
+# screen stays black -- which is how this began.
+set rom [build_rom rsp tcl/tests/ares/rsp.pk64 "PAKRSP"]
+lassign [run_rom rsp $rom $DISPLAY] shot log lit
+no_boot_timeout rsp $log
+ok_true "rsp: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp: $where is green (the task returned the right sum)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
 } err]} {
     puts "FAIL  ares_test: $err"
     incr ::fail

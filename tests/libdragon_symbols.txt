@@ -164,6 +164,14 @@ libdragon rtc.set
 missing rumble.init
 libdragon rumble.start
 libdragon rumble.stop
+missing sp.done
+missing sp.init
+missing sp.load_data
+missing sp.load_ucode
+missing sp.read_data
+missing sp.run
+missing sp.status
+missing sp.wait
 libdragon sprite.load
 missing sram.read
 missing sram.write

@@ -49,9 +49,38 @@ const MI_MASK_SET_SI: u32   = 0x0008
 const MI_MASK_SET_DP: u32   = 0x0800
 const MI_MASK_CLEAR_ALL: u32 = 0x0555
 
--- SP_STATUS bit 3 is "clear interrupt". The runtime drives no RSP task, so
--- this exists only so the handler can acknowledge a source it enabled.
-const SP_STATUS: u32 = 0xA4040010
+-- ── SP (RSP) registers ────────────────────────────────────────────────────
+-- SP_MEM_ADDR names a location inside the RSP's own 8 KiB: bit 12 picks IMEM
+-- (1) over DMEM (0), bits 11..0 the offset. RD_LEN moves RDRAM -> SP and
+-- WR_LEN moves SP -> RDRAM, both taking length-1 and both requiring the two
+-- addresses and the length to be 8-byte aligned.
+const SP_MEM_ADDR:  u32 = 0xA4040000
+const SP_DRAM_ADDR: u32 = 0xA4040004
+const SP_RD_LEN:    u32 = 0xA4040008
+const SP_WR_LEN:    u32 = 0xA404000C
+const SP_STATUS:    u32 = 0xA4040010
+const SP_DMA_FULL:  u32 = 0xA4040014
+const SP_DMA_BUSY:  u32 = 0xA4040018
+const SP_SEMAPHORE: u32 = 0xA404001C
+const SP_PC:        u32 = 0xA4080000
+
+const SP_IMEM: u32 = 0x1000       -- SP_MEM_ADDR bit 12
+
+-- SP_STATUS reads one set of bits and writes another. Reading: bit 0 halted,
+-- bit 1 broke, bit 2 DMA busy, bit 3 DMA full. Writing: each control is a
+-- clear/set pair, so touching one never disturbs another.
+const SP_ST_HALT:      u32 = 0x0001
+const SP_ST_BROKE:     u32 = 0x0002
+const SP_ST_DMA_BUSY:  u32 = 0x0004
+const SP_ST_DMA_FULL:  u32 = 0x0008
+
+const SP_SET_CLR_HALT:     u32 = 0x00001
+const SP_SET_SET_HALT:     u32 = 0x00002
+const SP_SET_CLR_BROKE:    u32 = 0x00004
+const SP_SET_CLR_INTR:     u32 = 0x00008
+const SP_SET_CLR_SSTEP:    u32 = 0x00020
+const SP_SET_CLR_INTBRK:   u32 = 0x00080
+const SP_SET_SET_INTBRK:   u32 = 0x00100
 
 -- The halfline VI_V_INTR fires at. vi_program parks it at 0x200, past the end
 -- of the frame, so a ROM that never calls interrupt.init sees no interrupts at
@@ -358,10 +387,14 @@ fn data_cache_hit_writeback(ptr: *u8, sz: i32) {
     }
 }
 
+-- Hit_Invalidate_D is (4 << 2) | 1 = 0x11. 0x14 is (5 << 2) | 0 --
+-- Hit_Writeback_Invalidate on the INSTRUCTION cache -- so this invalidated
+-- nothing in the D-cache and every DMA destination kept reading whatever the
+-- CPU had cached: dma.read, EEPROM reads, controller polling, SP reads.
 fn data_cache_hit_invalidate(ptr: *u8, sz: i32) {
     asm {
         ".Ldciv_1:"
-        "cache 0x14, 0($a0)"
+        "cache 0x11, 0($a0)"
         "addiu $a0, $a0, 16"
         "addiu $a1, $a1, -16"
         "bgtz $a1, .Ldciv_1"
@@ -2317,4 +2350,98 @@ fn interrupt_pending() -> u32 {
 
 fn interrupt_enabled() -> i32 {
     return g_irq_on
+}
+
+-- ── RSP (Reality Signal Processor) ────────────────────────────────────────
+-- Enough to load a microcode task, run it, and get its results back. Pak does
+-- not compile to the RSP -- it is a different instruction set with a vector
+-- unit -- so a task's words come from somewhere else and this moves them.
+--
+-- The scalar half of the RSP is a MIPS I subset, which means tcl/n64enc.tcl
+-- can assemble a task: see tcl/tests/ares/rsp_add.S and the gate that keeps
+-- its listing and the words a program ships in step.
+
+fn sp_wait_dma() {
+    loop {
+        let st: u32 = vi_read(SP_STATUS)
+        if (st & (SP_ST_DMA_BUSY | SP_ST_DMA_FULL)) == 0 { break }
+    }
+}
+
+-- One SP DMA. `mem` is an SP_MEM_ADDR value (add SP_IMEM for instruction
+-- memory), `ram` a cached or uncached RDRAM pointer, `len` a byte count.
+-- Both addresses and the length must be multiples of 8; a misaligned transfer
+-- is silently truncated by the hardware rather than refused, so it is checked
+-- here instead.
+fn sp_dma(mem: u32, ram: u32, len: u32, to_rsp: i32) {
+    if (mem & 7) != 0 { __pak_panic() }
+    if (ram & 7) != 0 { __pak_panic() }
+    if (len & 7) != 0 { __pak_panic() }
+    if len == 0 { return }
+    sp_wait_dma()
+    let p_mem: *volatile u32 = SP_MEM_ADDR as *volatile u32
+    *p_mem = mem
+    let p_ram: *volatile u32 = SP_DRAM_ADDR as *volatile u32
+    *p_ram = ram & 0x1FFFFFFF
+    if to_rsp != 0 {
+        let p_rd: *volatile u32 = SP_RD_LEN as *volatile u32
+        *p_rd = len - 1
+    } else {
+        let p_wr: *volatile u32 = SP_WR_LEN as *volatile u32
+        *p_wr = len - 1
+    }
+    sp_wait_dma()
+}
+
+fn pak_sp_init() {
+    -- Park the RSP: halted, no pending break, no single step, and no
+    -- interrupt on break. A task that wants the interrupt asks for it.
+    let p: *volatile u32 = SP_STATUS as *volatile u32
+    let park: u32 = SP_SET_SET_HALT | SP_SET_CLR_BROKE | SP_SET_CLR_INTR
+    *p = park | SP_SET_CLR_SSTEP | SP_SET_CLR_INTBRK
+    sp_wait_dma()
+}
+
+-- Copy a microcode image from RDRAM into IMEM. `src` must be writeback-clean:
+-- the SP DMA reads RDRAM directly and does not see the CPU's data cache.
+fn pak_sp_load_ucode(src: u32, len: u32) {
+    data_cache_hit_writeback(src as *u8, len as i32)
+    sp_dma(SP_IMEM, src, len, 1)
+}
+
+fn pak_sp_load_data(src: u32, dmem_off: u32, len: u32) {
+    data_cache_hit_writeback(src as *u8, len as i32)
+    sp_dma(dmem_off, src, len, 1)
+}
+
+fn pak_sp_read_data(dst: u32, dmem_off: u32, len: u32) {
+    sp_dma(dmem_off, dst, len, 0)
+    data_cache_hit_invalidate(dst as *u8, len as i32)
+}
+
+-- Start the task at an IMEM byte offset. SP_PC only takes a write while the
+-- RSP is halted, so this sets halt, points it, and then releases it.
+fn pak_sp_run(pc: u32) {
+    let p_st: *volatile u32 = SP_STATUS as *volatile u32
+    *p_st = SP_SET_SET_HALT | SP_SET_CLR_BROKE
+    let p_pc: *volatile u32 = SP_PC as *volatile u32
+    *p_pc = pc & 0xFFC
+    *p_st = SP_SET_CLR_HALT
+}
+
+fn pak_sp_done() -> i32 {
+    let st: u32 = vi_read(SP_STATUS)
+    if (st & (SP_ST_HALT | SP_ST_BROKE)) != 0 { return 1 }
+    return 0
+}
+
+fn pak_sp_wait() {
+    loop {
+        if pak_sp_done() != 0 { break }
+    }
+    sp_wait_dma()
+}
+
+fn pak_sp_status() -> u32 {
+    return vi_read(SP_STATUS)
 }

@@ -403,6 +403,31 @@ on hardware, and it must not be long.
 
 ---
 
+## Cache maintenance
+
+The CPU's data cache does not see DMA, and DMA does not see the data cache. So
+every transfer needs one of these on the CPU side, and getting the opcode wrong
+is silent — the program keeps working on an emulator with no cache model and
+returns stale data on hardware.
+
+The `cache` instruction's operand is `(op << 2) | cache_select`, where
+`cache_select` is **0 for the instruction cache and 1 for the data cache**:
+
+| Operand | Meaning | Use |
+|---------|---------|-----|
+| `0x19` | Hit_Writeback_D | before a DMA **out** of a buffer you wrote |
+| `0x11` | Hit_Invalidate_D | after a DMA **into** a buffer you will read |
+| `0x15` | Hit_Writeback_Invalidate_D | both, when the buffer goes each way |
+| `0x10` | Hit_Invalidate_I | after writing instructions the CPU will execute |
+
+`0x14` is a plausible-looking typo for `0x11` and means Hit_Writeback_Invalidate
+on the **instruction** cache: it invalidates nothing in the D-cache at all.
+
+`cache.writeback` / `cache.invalidate` / `cache.writeback_inv` do the right
+thing; this table is here for anyone writing the inline assembly by hand.
+
+---
+
 ## Memory Map (Summary)
 
 | Region | Address Range | Size | Notes |
@@ -418,6 +443,9 @@ on hardware, and it must not be long.
 | AI regs | `0xA4500000` | — | Audio Interface |
 | PI regs | `0xA4600000` | — | Parallel Interface (DMA) |
 | SI regs | `0xA4800000` | — | Serial Interface (Joybus); STATUS is `+0x18` |
+| RSP DMEM | `0xA4000000` | 4 KB | CPU-addressable directly, or by SP DMA |
+| RSP IMEM | `0xA4001000` | 4 KB | Microcode |
+| SP regs | `0xA4040000` | — | SP DMA and status; SP_PC is at `0xA4080000` |
 
 ---
 

@@ -148,6 +148,14 @@ set ::pak::CG_API [dict create \
     {rdpq_tex multi_end} {rdpq_tex_multi_end} \
     {rdpq_tex upload} {rdpq_tex_upload} \
     {rdpq_tex upload_sub} {rdpq_tex_upload_sub} \
+    {sp init} {pak_sp_init} \
+    {sp load_ucode} {pak_sp_load_ucode} \
+    {sp load_data} {pak_sp_load_data} \
+    {sp read_data} {pak_sp_read_data} \
+    {sp run} {pak_sp_run} \
+    {sp wait} {pak_sp_wait} \
+    {sp done} {pak_sp_done} \
+    {sp status} {pak_sp_status} \
     {rsp block_begin} {rspq_block_begin} \
     {rsp block_end} {rspq_block_end} \
     {rsp block_free} {rspq_block_free} \
@@ -359,6 +367,7 @@ set ::pak::CG_USE_INCLUDES [dict create \
     {n64.eeprom} {#include <eeprom.h>} \
     {n64.exception} {#include <exception.h>} \
     {n64.interrupt} {#include <interrupt.h>} \
+    {n64.sp} {#include <rsp.h>} \
     {n64.flashram} {#include <backup.h>} \
     {n64.joypad} {#include <joypad.h>} \
     {n64.math} {#include <n64sys.h>

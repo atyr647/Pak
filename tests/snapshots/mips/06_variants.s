@@ -516,12 +516,10 @@ main:
 
 	.section .data
 	.align 2
+	.globl sink
+sink:
+	.word 0
+	.align 2
 	.globl sink_i
 sink_i:
 	.word 0
-
-	.section .bss
-	.align 2
-	.globl sink
-sink:
-	.space 4

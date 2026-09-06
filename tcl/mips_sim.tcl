@@ -634,34 +634,37 @@ proc exec_insn {op args} {
                 set R($n) [expr {[dict exists $mw $addr] ? [dict get $mw $addr] : 0}]
             }
         }
-        lbu {
+        lbu - lb - lhu - lh {
+            # `sb` and `sh` record their stores in mb/mh, but a .byte or .half
+            # in the data image only exists as part of a word in mw. A load
+            # therefore has to look in both: the narrow store first, the word
+            # underneath it otherwise. lh used to consult mh alone and read a
+            # `.half` static as zero, and lb was a second, unreachable switch
+            # arm that returned zero unconditionally.
             set n [lindex $args 0]
             if {$n} {
                 lassign [lindex $args 1] off base
                 set addr [expr {($R($base) + $off) & 0xFFFFFFFF}]
                 set w [expr {$addr & ~3}]
                 set word [expr {[dict exists $mw $w] ? [dict get $mw $w] : 0}]
-                set R($n) [expr {($word >> ((3 - ($addr & 3)) * 8)) & 0xFF}]
+                if {$op eq "lbu" || $op eq "lb"} {
+                    if {[dict exists $mb $addr]} {
+                        set v [expr {[dict get $mb $addr] & 0xFF}]
+                    } else {
+                        set v [expr {($word >> ((3 - ($addr & 3)) * 8)) & 0xFF}]
+                    }
+                    if {$op eq "lb" && $v >= 0x80} { set v [expr {$v - 0x100}] }
+                } else {
+                    if {[dict exists $mh $addr]} {
+                        set v [expr {[dict get $mh $addr] & 0xFFFF}]
+                    } else {
+                        set v [expr {($word >> ((2 - ($addr & 2)) * 8)) & 0xFFFF}]
+                    }
+                    if {$op eq "lh" && $v >= 0x8000} { set v [expr {$v - 0x10000}] }
+                }
+                set R($n) [expr {$v & 0xFFFFFFFF}]
             }
         }
-        lhu {
-            set n [lindex $args 0]
-            if {$n} {
-                lassign [lindex $args 1] off base
-                set addr [expr {($R($base) + $off) & 0xFFFFFFFF}]
-                set R($n) [expr {[dict exists $mh $addr] ? [dict get $mh $addr] : 0}]
-            }
-        }
-        lh {
-            set n [lindex $args 0]
-            if {$n} {
-                lassign [lindex $args 1] off base
-                set addr [expr {($R($base) + $off) & 0xFFFFFFFF}]
-                set raw [expr {[dict exists $mh $addr] ? [dict get $mh $addr] : 0}]
-                set R($n) [expr {$raw >= 0x8000 ? $raw - 0x10000 : $raw}]
-            }
-        }
-        lb - lbu { set n [lindex $args 0]; if {$n} { set R($n) 0 } }
 
         beqz { if {$R([lindex $args 0]) == 0}  { return "jmp:[lindex $args 1]" } }
         bnez { if {$R([lindex $args 0]) != 0}  { return "jmp:[lindex $args 1]" } }

@@ -270,6 +270,14 @@ set ::pak::MIPS_API [dict create \
     {dma wait} {dma_wait} \
     {exception set_handler} {exception_set_handler} \
     {exception get_handler} {exception_get_handler} \
+    {sp init} {pak_sp_init} \
+    {sp load_ucode} {pak_sp_load_ucode} \
+    {sp load_data} {pak_sp_load_data} \
+    {sp read_data} {pak_sp_read_data} \
+    {sp run} {pak_sp_run} \
+    {sp wait} {pak_sp_wait} \
+    {sp done} {pak_sp_done} \
+    {sp status} {pak_sp_status} \
     {interrupt init} {interrupt_init} \
     {interrupt disable} {interrupt_disable} \
     {interrupt restore} {interrupt_restore} \

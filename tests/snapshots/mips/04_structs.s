@@ -445,12 +445,10 @@ main:
 
 	.section .data
 	.align 2
+	.globl sink_x
+sink_x:
+	.word 0
+	.align 2
 	.globl sink_hp
 sink_hp:
 	.word 0
-
-	.section .bss
-	.align 2
-	.globl sink_x
-sink_x:
-	.space 4

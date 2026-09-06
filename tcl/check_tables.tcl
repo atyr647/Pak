@@ -36,6 +36,7 @@ set ::pak::KNOWN_MODULES [dict create \
     rtc 1 \
     rumble 1 \
     sprite 1 \
+    sp 1 \
     sram 1 \
     std 1 \
     str 1 \

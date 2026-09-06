@@ -257,7 +257,7 @@ save_game:
     sb $t8, 0($t7)
     move $t9, $t8
     la $t8, level
-    lw $t8, 0($t8)
+    lbu $t8, 0($t8)
     la $t7, eeprom_buf
     li $t6, 6
     addu $t7, $t7, $t6
@@ -444,7 +444,7 @@ main:
     sw $t8, 0($t7)
     move $t9, $t8
     la $t7, level
-    lw $t7, 0($t7)
+    lbu $t7, 0($t7)
     li $t6, 1
     addu $t8, $t7, $t6
     la $t7, level

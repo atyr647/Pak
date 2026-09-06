@@ -428,9 +428,7 @@ main:
 	.globl sink_i
 sink_i:
 	.word 0
-
-	.section .bss
 	.align 2
 	.globl sink_f
 sink_f:
-	.space 4
+	.word 0

@@ -360,7 +360,11 @@ oo::class create pak::LiteralPool {
                 $em align [pak::log2_align $align]
                 $em globl $name
                 $em label $name
-                pak::emit_init $em $size $iv
+                if {[llength $iv] == 2 && [lindex $iv 0] eq "bytes"} {
+                    pak::emit_bytes $em [lindex $iv 1]
+                } else {
+                    pak::emit_init $em $size $iv
+                }
             }
         }
         if {[llength $uninited] > 0} {
@@ -383,6 +387,25 @@ proc pak::log2_align {align} {
     while {$v > 0} { incr n; set v [expr {$v >> 1}] }
     return $n
 }
+# A byte image, as .word for every aligned group of four and .byte for the
+# tail. Big-endian, so packing four bytes into a word reproduces them exactly.
+proc pak::emit_bytes {em bytes} {
+    set n [llength $bytes]
+    set i 0
+    while {$i + 4 <= $n} {
+        set w 0
+        for {set j 0} {$j < 4} {incr j} {
+            set w [expr {($w << 8) | ([lindex $bytes [expr {$i + $j}]] & 0xFF)}]
+        }
+        $em word $w
+        incr i 4
+    }
+    while {$i < $n} {
+        $em byte [expr {[lindex $bytes $i] & 0xFF}]
+        incr i
+    }
+}
+
 proc pak::emit_init {em size value} {
     if {$size == 8} {
         $em word [expr {($value >> 32) & 0xFFFFFFFF}]
@@ -1269,7 +1292,15 @@ oo::class create pak::MipsCodegen {
         if {![pak::isnil $typ]} { set layout [my mips_layout $typ] } else { set layout [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}] }
         set init ""
         set v [pak::nfield $decl value]
-        if {![pak::isnil $v]} { set init [my eval_const_expr $v] }
+        if {![pak::isnil $v]} {
+            set init [my eval_const_expr $v]
+            if {$init eq ""} {
+                # Not a scalar constant. An aggregate initializer becomes a
+                # byte image, tagged so emit_data can tell the two apart.
+                set b [my const_bytes $v $typ $layout]
+                if {$b ne ""} { set init [list bytes $b] }
+            }
+        }
         set align [dict get $layout align]
         set align [pak::mips_ann_align [pak::mips_annlist $decl] $align]
         $pool add_static [pak::fval $decl name] [dict get $layout size] $align $init
@@ -3475,6 +3506,14 @@ oo::class create pak::MipsCodegen {
                 $em la $dst $name
                 return
             }
+            # A global goes through the same typed load as a local. Without
+            # this it was always `lw` into a GPR -- so reading a float static
+            # left $f12 untouched, and `out = g` for two f32 statements stored
+            # whatever $f12 last held. A narrow global (u8/i16) was widened
+            # wrongly for the same reason.
+            $em la $dst $name
+            my emit_typed_load $dst 0 $dst $layout
+            return
         }
         $em la $dst $name
         $em lw $dst 0 $dst
@@ -4410,6 +4449,128 @@ oo::class create pak::MipsCodegen {
             DotAccess   { my emit_field_store $target $val_reg }
             default { pak::mips_unported "assign-target:[pak::kindof $target]" }
         }
+    }
+
+    # The byte image of a constant initializer, or "" when it is not one this
+    # backend can lay out. `static xs: [8]u32 = [...]` used to reach emit_static
+    # as an ArrayLit, fail eval_const_expr (which only knows scalars), and land
+    # in .bss as `.space 32` -- the initializer silently discarded and every
+    # read of the table returning zero. Any table a program ships was affected:
+    # a level map, a palette, a lookup table, RSP microcode.
+    #
+    # Big-endian, laid out exactly as the target expects, so emit_data can pack
+    # it back into .word/.byte without knowing what it came from.
+    method const_bytes {expr type_node layout} {
+        if {[pak::isnil $expr]} { return "" }
+        set size [dict get $layout size]
+        switch -- [pak::kindof $expr] {
+            ArrayLit {
+                set inner ""
+                if {![pak::isnil $type_node] && [pak::kindof $type_node] in {TypeArray TypeSlice}} {
+                    set inner [pak::nfield $type_node inner]
+                }
+                if {$inner eq "" || [pak::isnil $inner]} { return "" }
+                if {[catch {set el [my mips_layout $inner]}]} { return "" }
+                set esz [dict get $el size]
+                if {$esz == 0} { return "" }
+                set elems [pak::items [pak::nfield $expr elements]]
+                set repeat [pak::nfield $expr repeat]
+                if {![pak::isnil $repeat]} {
+                    # `[v; N]` -- one element, repeated. N has to be a constant
+                    # for the type to have a size at all.
+                    set n [my eval_const_expr $repeat]
+                    if {$n eq "" || [llength $elems] < 1} { return "" }
+                    set one [my const_bytes [lindex $elems 0] $inner $el]
+                    if {$one eq ""} { return "" }
+                    set out {}
+                    for {set i 0} {$i < $n} {incr i} { lappend out {*}$one }
+                    return [my pad_bytes $out $size]
+                }
+                set out {}
+                foreach e $elems {
+                    set b [my const_bytes $e $inner $el]
+                    if {$b eq ""} { return "" }
+                    lappend out {*}$b
+                }
+                return [my pad_bytes $out $size]
+            }
+            StructLit {
+                set flds [dict get $layout fields]
+                if {[dict size $flds] == 0} { return "" }
+                # Start zeroed so padding between fields, and any field the
+                # literal leaves out, is defined.
+                set out {}
+                for {set i 0} {$i < $size} {incr i} { lappend out 0 }
+                foreach pair [pak::items [pak::nfield $expr fields]] {
+                    # A field is a {name value} pair, not a node.
+                    set fp [pak::items $pair]
+                    set fname [pak::sval [lindex $fp 0]]
+                    set fval [lindex $fp 1]
+                    # `x: undefined` asks for nothing; the zeros already there
+                    # are the answer.
+                    if {[pak::kindof $fval] eq "UndefinedLit"} continue
+                    if {![dict exists $flds $fname]} { return "" }
+                    set fi [dict get $flds $fname]
+                    set ftn [dict get $fi type_node]
+                    if {$ftn eq "" || [pak::isnil $ftn]} { return "" }
+                    if {[catch {set fl [my mips_layout $ftn]}]} { return "" }
+                    set fb [my const_bytes $fval $ftn $fl]
+                    if {$fb eq ""} { return "" }
+                    set off [dict get $fi offset]
+                    set j 0
+                    foreach byte $fb {
+                        if {$off + $j >= $size} break
+                        lset out [expr {$off + $j}] $byte
+                        incr j
+                    }
+                }
+                return $out
+            }
+        }
+        # Scalars. A float's bit pattern is its value; everything else is an
+        # integer the existing evaluator can fold.
+        if {[dict exists $layout is_float] && [dict get $layout is_float]} {
+            set v [my eval_const_float $expr]
+            if {$v eq ""} { return "" }
+            return [my int_bytes [pak::float_to_bits $v] $size]
+        }
+        set v [my eval_const_expr $expr]
+        if {$v eq ""} { return "" }
+        return [my int_bytes $v $size]
+    }
+
+    method pad_bytes {bytes size} {
+        while {[llength $bytes] < $size} { lappend bytes 0 }
+        if {[llength $bytes] > $size} { set bytes [lrange $bytes 0 [expr {$size - 1}]] }
+        return $bytes
+    }
+
+    # Big-endian, most significant byte first.
+    method int_bytes {v size} {
+        set out {}
+        for {set i [expr {$size - 1}]} {$i >= 0} {incr i -1} {
+            lappend out [expr {($v >> ($i * 8)) & 0xFF}]
+        }
+        return $out
+    }
+
+    method eval_const_float {expr} {
+        switch -- [pak::kindof $expr] {
+            FloatLit { return [pak::fval $expr value] }
+            IntLit   { return [expr {double([pak::fval $expr value])}] }
+            UnaryOp {
+                if {[pak::fval $expr op] ne "-"} { return "" }
+                set v [my eval_const_float [pak::nfield $expr operand]]
+                if {$v eq ""} { return "" }
+                return [expr {-$v}]
+            }
+            Ident {
+                set n [pak::fval $expr name]
+                if {[dict exists $consts $n]} { return [dict get $consts $n] }
+                return ""
+            }
+        }
+        return ""
     }
 
     method eval_const_expr {expr} {

@@ -84,5 +84,9 @@ fixture:
     mtc0    $t0, $12
     eret
 
+    /* break, plain and with a code: how an RSP microcode task ends */
+    break
+    break   0x7
+
     jr      $ra
     nop

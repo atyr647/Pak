@@ -219,6 +219,60 @@ set ast [parse_src "entry { n64.rdpq.set_texture_image(0xA0300000, 0, 2, 32) }
 set diags [pak::semantic_check $ast "t.pk64" mips]
 ok "KSEG1 texture addr is clean" [expr {![has_code $diags E203]}] [codes $diags]
 
+# ── cache maintenance opcodes ────────────────────────────────────────────────
+# The VR4300's `cache` operand is (op << 2) | cache_select, with 0 selecting
+# the instruction cache and 1 the data cache. Nothing executes these here --
+# the simulator treats `cache` as a no-op and only an emulator can tell -- so
+# the numbers are checked against the encoding directly.
+#
+# data_cache_hit_invalidate shipped 0x14, which is (5 << 2) | 0: a writeback-
+# invalidate of the INSTRUCTION cache. It invalidated nothing in the D-cache,
+# so every DMA destination kept reading whatever the CPU had cached, and
+# dma.read, EEPROM reads, controller polling and SP reads all returned stale
+# data on hardware while passing every test in this repo.
+puts ""
+puts "== cache maintenance uses the right VR4300 cache ops =="
+
+proc cache_op {name} {
+    set fh [open [file join $::REPO runtime standalone runtime.pk64] r]
+    set txt [read $fh]; close $fh
+    # `string first`, not `string match`: a glob pattern containing "(" is not
+    # something Tcl will accept where this needs to use it.
+    set head "fn $name"
+    set seen 0
+    foreach line [split $txt \n] {
+        set t [string trim $line]
+        if {[string first $head $t] == 0} { set seen 1; continue }
+        if {!$seen} continue
+        if {[regexp {cache (0x[0-9A-Fa-f]+),} $t -> op]} { return [expr {$op}] }
+        # Stop at the next function rather than at a closing brace: a literal
+        # brace in a quoted string here would end this proc's own body, since
+        # Tcl counts braces inside quotes too.
+        if {[string first "fn " $t] == 0} break
+    }
+    return -1
+}
+
+# (op << 2) | 1 for the data cache: 4 = Hit_Invalidate, 5 = Hit_Writeback_
+# Invalidate, 6 = Hit_Writeback. (op << 2) | 0 for the instruction cache.
+ok "data_cache_hit_writeback is Hit_Writeback_D (0x19)" \
+    [expr {[cache_op data_cache_hit_writeback] == 0x19}] \
+    "got [format 0x%02X [cache_op data_cache_hit_writeback]]"
+ok "data_cache_hit_invalidate is Hit_Invalidate_D (0x11)" \
+    [expr {[cache_op data_cache_hit_invalidate] == 0x11}] \
+    "got [format 0x%02X [cache_op data_cache_hit_invalidate]]"
+ok "both select the data cache, not the instruction cache" \
+    [expr {([cache_op data_cache_hit_writeback] & 1) == 1
+           && ([cache_op data_cache_hit_invalidate] & 1) == 1}]
+
+# boot.S invalidates the I-cache after writing the exception vectors, so that
+# one is meant to be an instruction-cache op: Hit_Invalidate_I = (4 << 2) | 0.
+set fh [open [file join $::REPO runtime standalone boot.S] r]
+set boot_txt [read $fh]; close $fh
+ok "boot.S's vector install uses Hit_Invalidate_I (0x10)" \
+    [expr {[regexp {cache\s+0x10,} $boot_txt]}] \
+    "the trampoline it just stored has to leave the I-cache"
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

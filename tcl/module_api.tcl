@@ -191,6 +191,14 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     interrupt_vi_count 1 \
     interrupt_pending 1 \
     interrupt_enabled 1 \
+    pak_sp_init 1 \
+    pak_sp_load_ucode 1 \
+    pak_sp_load_data 1 \
+    pak_sp_read_data 1 \
+    pak_sp_run 1 \
+    pak_sp_wait 1 \
+    pak_sp_done 1 \
+    pak_sp_status 1 \
 ]
 
 # Defined in runtime/standalone/boot.S, not in the runtime: Status.IE and
