@@ -103,6 +103,26 @@ proc pak::nfield {node field} {
     }
     return [dict get [lindex $node 2] $field]
 }
+# `pak build` converts an asset before packing it -- mksprite turns a .png
+# into a .sprite, audioconv64 a .wav into a .wav64 -- and `pak pack` names the
+# archive entry after the CONVERTED file. A program declares the source it
+# authored (`from "sprites/bg.png"`), so the name it asks for at runtime has to
+# be put through the same mapping or it can never match. Both backends use
+# this, so both ask for the same name.
+set ::pak::ASSET_PACKED_EXT [dict create \
+    .png .sprite \
+    .wav .wav64 \
+    .xm  .xm64 \
+    .ym  .ym64 \
+    .gltf .t3dm \
+    .glb  .t3dm]
+
+proc pak::asset_packed_path {path} {
+    set ext [string tolower [file extension $path]]
+    if {![dict exists $::pak::ASSET_PACKED_EXT $ext]} { return $path }
+    return "[file rootname $path][dict get $::pak::ASSET_PACKED_EXT $ext]"
+}
+
 proc pak::Seq {items}    { return [list seq $items] }
 proc pak::Lit {s}        { return [list lit $s] }
 proc pak::Fnum {x}       { return [list fnum $x] }

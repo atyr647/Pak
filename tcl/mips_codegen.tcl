@@ -519,7 +519,7 @@ oo::class create pak::MipsCodegen {
              tenv_layouts tenv_enum_values tenv_variant_decls fn_decls \
              generic_fns generic_structs generic_impls mono_emitted mono_queue type_nodes \
              closure_envs closure_captures last_closure_env heap_inited \
-             trait_decls trait_vtables
+             trait_decls trait_vtables assets
 
     constructor {} {
         set em [pak::Emitter new]
@@ -557,6 +557,7 @@ oo::class create pak::MipsCodegen {
         set heap_inited 0
         set trait_decls [dict create]
         set trait_vtables [dict create]
+        set assets [dict create]
     }
     destructor {
         $em destroy
@@ -1367,7 +1368,7 @@ oo::class create pak::MipsCodegen {
                     my emit_trait_impl $decl $type_name $defined $subst
                 }
             }
-            AssetDecl   { $em extern [pak::fval $decl name] }
+            AssetDecl   { my emit_asset $decl }
             CfgBlock    { my emit_top_decl [pak::nfield $decl decl] }
             ComptimeIf  { my emit_comptime_if_decls $decl }
             default     { pak::mips_unported "decl:[pak::kindof $decl]" }
@@ -1497,6 +1498,76 @@ oo::class create pak::MipsCodegen {
             lappend out $prm
         }
         return [pak::Seq $out]
+    }
+
+    # `asset bg: Sprite from "sprites/bg.png"` becomes a lazily-loaded handle:
+    # a word in .data, and a getter that loads the file the first time the name
+    # is used. Lazy because the archive is read over PI and there is no
+    # static-init phase to read it in. This used to emit only `.extern bg` --
+    # a reference to a symbol nothing defines, so the link failed.
+    #
+    # The path is the CONVERTED file's, because that is what `pak pack` puts in
+    # the archive: `pak build` runs the .png through mksprite and packs the
+    # .sprite it produced.
+    method emit_asset {decl} {
+        set aname [pak::fval $decl name]
+        set apath [pak::asset_packed_path [pak::fval $decl path]]
+        set atype [pak::nfield $decl asset_type]
+        set tname ""
+        if {![pak::isnil $atype]} {
+            set tname [expr {[pak::kindof $atype] eq "TypeName"
+                             ? [pak::fval $atype name] : [pak::sval $atype]}]
+        }
+        # Only Sprite has a loader. An asset of any other type -- or of no
+        # type at all -- is still a valid declaration; it is USING the name
+        # that has nowhere to go, so the error is raised there, where it can
+        # name the use rather than the declaration.
+        if {$tname ne "Sprite"} {
+            dict set assets $aname ""
+            return
+        }
+        set slot "_pak_asset_${aname}"
+        $pool add_static $slot 4 4 0
+        set path_lbl [$pool intern_string "pak:/$apath"]
+        dict set assets $aname $slot
+
+        $em blank
+        $em section_text
+        $em globl "_pak_asset_get_${aname}"
+        $em type_func "_pak_asset_get_${aname}"
+        $em label "_pak_asset_get_${aname}"
+        # Reading the name is an ordinary expression to everything above, and
+        # marshal_args writes the other arguments into \$a1-\$a3 BEFORE
+        # evaluating it. So the load has to leave the argument registers as it
+        # found them: without this, `sprite.blit(bg, 160, 120, 0)` reached the
+        # blit with whatever sprite_load happened to leave in them.
+        set have [my fresh_label .Lasset]
+        $em addiu {$sp} {$sp} -40
+        $em sw {$ra} 36 {$sp}
+        $em sw {$s0} 32 {$sp}
+        $em la {$s0} $slot
+        $em lw {$v0} 0 {$s0}
+        $em nop
+        $em bnez {$v0} $have
+        $em nop
+        $em sw {$a0} 16 {$sp}
+        $em sw {$a1} 20 {$sp}
+        $em sw {$a2} 24 {$sp}
+        $em sw {$a3} 28 {$sp}
+        $em la {$a0} $path_lbl
+        $em jal sprite_load
+        $em nop
+        $em sw {$v0} 0 {$s0}
+        $em lw {$a0} 16 {$sp}
+        $em lw {$a1} 20 {$sp}
+        $em lw {$a2} 24 {$sp}
+        $em lw {$a3} 28 {$sp}
+        $em label $have
+        $em lw {$s0} 32 {$sp}
+        $em lw {$ra} 36 {$sp}
+        $em jr {$ra}
+        $em addiu {$sp} {$sp} 40
+        $em size_sym "_pak_asset_get_${aname}" ". - _pak_asset_get_${aname}"
     }
 
     method emit_static {decl} {
@@ -3692,6 +3763,18 @@ oo::class create pak::MipsCodegen {
     }
 
     method emit_ident_load {name dst} {
+        # An asset name is a handle, not a variable: reading it loads the file
+        # if this is the first use.
+        if {[dict exists $assets $name]} {
+            if {[dict get $assets $name] eq ""} {
+                pak::mips_unported "asset '$name' has no loader on the standalone\
+                                    backend: only `: Sprite` assets can be read\
+                                    from the ROM"
+            }
+            my emit_jal "_pak_asset_get_${name}"
+            if {$dst ne {$v0}} { $em move $dst {$v0} }
+            return
+        }
         if {[dict exists $consts $name]} { $em li $dst [dict get $consts $name]; return }
         if {[dict exists $float_consts $name]} {
             set lbl [$pool intern_float [dict get $float_consts $name]]

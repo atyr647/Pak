@@ -29,6 +29,7 @@ source [file join $REPO tcl optimize.tcl]
 source [file join $REPO tcl n64enc.tcl]
 source [file join $REPO tcl n64link.tcl]
 source [file join $REPO tcl n64rom.tcl]
+source [file join $REPO tcl pakfs.tcl]
 
 set ::pass 0
 set ::fail 0
@@ -90,7 +91,7 @@ proc asm_of_pak {path} {
     return [pak::records_to_asm [pak::optimize_records [pak::mips_generate_records $ast]]]
 }
 
-proc build_rom {tag source title} {
+proc build_rom {tag source title {fs ""}} {
     global TMP
     set dir [file join $TMP $tag]
     file mkdir $dir
@@ -102,8 +103,15 @@ proc build_rom {tag source title} {
     set go [file join $dir game.pakobj]
     pak::enc::write_object_from_asm [asm_of_pak $source] $go
     set r [pak::link_objects [list $bo $ro $go] _start]
-    set rom [pak::n64rom [dict get $r image] $title [pak::n64rom_default_ipl3] \
-                 [expr {4 * 1024 * 1024}]]
+    set image [dict get $r image]
+    if {$fs ne ""} {
+        # What `pak link --fs` does: patch the runtime's two statics, then
+        # append the archive past the payload.
+        set image [pak::n64rom_patch_fs $image [dict get $r symbols] \
+                       [dict get $r base] [string length $fs]]
+    }
+    set rom [pak::n64rom $image $title [pak::n64rom_default_ipl3] \
+                 [expr {4 * 1024 * 1024}] $fs]
     set path [file join $dir $tag.z64]
     set fh [open $path wb]; puts -nonewline $fh $rom; close $fh
     return $path
@@ -333,6 +341,33 @@ if {$lit} {
         ok_colour "rsp: $where is green (the task returned the right sum)" \
             [probe $shot $DISPLAY $fx $fy] {0 255 0}
     }
+}
+
+puts ""
+puts "== an asset is read out of the ROM and drawn =="
+# The whole asset path in one ROM: `pak link --fs` appended the archive and
+# patched where it is, the runtime walked the index and pulled the file over
+# PI, and rdpq.sprite_blit turned it into a LOAD_TILE and a TEXTURE_RECTANGLE.
+# A wrong ROM offset, a byte read big-endian that is little, or a tile line
+# computed wrong all end as blue where the sprite should be.
+proc solid_sprite {w h texel} {
+    set s [binary format SScccc $w $h 0 0x02 1 1]
+    append s [string repeat [binary format S $texel] [expr {$w * $h}]]
+    return $s
+}
+# RGBA5551 green: (0 << 11) | (31 << 6) | (0 << 1) | 1.
+set arch [pak::pakfs_pack [list [list hero.sprite [solid_sprite 32 32 0x07C1]]]]
+set rom [build_rom sprite tcl/tests/ares/sprite.pk64 "PAKSPR" $arch]
+lassign [run_rom sprite $rom $DISPLAY] shot log lit
+no_boot_timeout sprite $log
+ok_true "sprite: a frame reached the screen" $lit
+if {$lit} {
+    ok_colour "sprite: the middle of the sprite is green" \
+        [probe $shot $DISPLAY 160 120] {0 255 0}
+    ok_colour "sprite: just outside it is still the blue clear" \
+        [probe $shot $DISPLAY 100 120] {0 0 255}
+    ok_colour "sprite: the far corner is blue" \
+        [probe $shot $DISPLAY 300 220] {0 0 255}
 }
 
 } err]} {

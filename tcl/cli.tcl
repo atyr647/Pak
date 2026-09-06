@@ -737,6 +737,27 @@ proc pak::cmd_link {opts} {
     }
 
     set image [dict get $result image]
+
+    # --fs: the archive is appended to the ROM and the runtime is told where by
+    # patching two of its statics. That has to happen here, in the image,
+    # because the ROM's CRC is taken over the payload afterwards.
+    set fs_bytes ""
+    set fs_path [dict get $opts fs]
+    if {$fs_path ne ""} {
+        if {![file exists $fs_path]} {
+            puts stderr "error: --fs file not found: $fs_path"; exit 1
+        }
+        set fh [open $fs_path rb]; set fs_bytes [read $fh]; close $fh
+        set fs_off [pak::n64rom_fs_offset [string length $image]]
+        if {[catch {set image [pak::n64rom_patch_fs $image \
+                [dict get $result symbols] [dict get $result base] \
+                [string length $fs_bytes]]} err]} {
+            puts stderr "error: $err"; exit 1
+        }
+        puts [format "FS:  %s  (%d bytes) at ROM %#010x" \
+            $fs_path [string length $fs_bytes] $fs_off]
+    }
+
     if {$emit_bin ne ""} {
         set f [open $emit_bin wb]; puts -nonewline $f $image; close $f
         puts "BIN: $emit_bin  ([string length $image] bytes)\
@@ -751,7 +772,8 @@ proc pak::cmd_link {opts} {
             puts stderr "error: --size must be 4, 8, 16, 32 or 64 (MiB)"; exit 1
         }
         set rom_bytes [expr {$size_mib * 1024 * 1024}]
-        if {[catch {set rom [pak::n64rom $image [dict get $opts name] $ipl3 $rom_bytes]} err]} {
+        if {[catch {set rom [pak::n64rom $image [dict get $opts name] $ipl3 \
+                                          $rom_bytes $fs_bytes]} err]} {
             puts stderr "rom error: $err"
             exit 1
         }
@@ -918,7 +940,7 @@ proc pak::cli_main {argv} {
         objgen { pak::cmd_objgen [pak::_parse_opts $rest {file "" output ""}] }
         asmobj { pak::cmd_asmobj [pak::_parse_opts $rest {file "" output ""}] }
         link   { pak::cmd_link [pak::_parse_opts $rest \
-                     {files {} output "" emit_bin "" name "PAK GAME" ipl3 "" entry _start size 4}] }
+                     {files {} output "" emit_bin "" name "PAK GAME" ipl3 "" entry _start size 4 fs ""}] }
         run    { pak::cmd_run [pak::_parse_opts $rest {verbose 0 backend c no_style_warnings 0}] }
         init   { pak::cmd_init [pak::_parse_opts $rest {name ""}] }
         clean  { pak::cmd_clean {} }
@@ -960,6 +982,7 @@ proc pak::_parse_opts {argv defaults} {
             --emit-bin { incr i; dict set o emit_bin [lindex $argv $i] }
             --name { incr i; dict set o name [lindex $argv $i] }
             --ipl3 { incr i; dict set o ipl3 [lindex $argv $i] }
+            --fs { incr i; dict set o fs [lindex $argv $i] }
             --entry { incr i; dict set o entry [lindex $argv $i] }
             --size { incr i; dict set o size [lindex $argv $i] }
             --frames { incr i; dict set o frames [lindex $argv $i] }

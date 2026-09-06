@@ -182,7 +182,7 @@ _CONVERTED_ASSETS := $(_SPRITE_OUTS) $(_WAV_OUTS) $(_XM_OUTS) $(_YM_OUTS) $(_T3D
 
 filesystem/g2.pakfs: $(_CONVERTED_ASSETS)
 	@mkdir -p filesystem
-	pak pack --output $@ --base $(BUILD_DIR) $(_CONVERTED_ASSETS)
+	pak pack --output $@ --base $(BUILD_DIR)/assets $(_CONVERTED_ASSETS)
 
 run: $(PROJECT_NAME).z64
 	ares --system Nintendo64 $<
@@ -313,7 +313,7 @@ _CONVERTED_ASSETS := $(_SPRITE_OUTS) $(_WAV_OUTS) $(_XM_OUTS) $(_YM_OUTS) $(_T3D
 
 filesystem/m3.pakfs: $(_CONVERTED_ASSETS)
 	@mkdir -p filesystem
-	pak pack --output $@ --base $(BUILD_DIR) $(_CONVERTED_ASSETS)
+	pak pack --output $@ --base $(BUILD_DIR)/assets $(_CONVERTED_ASSETS)
 
 run: $(PROJECT_NAME).z64
 	ares --system Nintendo64 $<

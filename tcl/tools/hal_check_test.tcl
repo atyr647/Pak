@@ -102,7 +102,16 @@ set ast [parse_src "use n64.sprite
 entry { sprite.load(\"a.sprite\") }
 "]
 set diags [pak::semantic_check $ast "t.pk64" mips]
-ok "sprite.load is E010 on mips" [has_code $diags E010] [codes $diags]
+ok "sprite.load accepted on mips" [expr {[llength $diags] == 0}] [codes $diags]
+
+# The negative case still has to be pinned by something, or this file stops
+# proving that the HAL gate refuses anything at all. surface.alloc is a
+# libdragon allocator with no standalone counterpart.
+set ast [parse_src "use n64.surface
+entry { surface.alloc(0, 32, 32) }
+"]
+set diags [pak::semantic_check $ast "t.pk64" mips]
+ok "surface.alloc is E010 on mips" [has_code $diags E010] [codes $diags]
 
 set ast [parse_src "use n64.display as disp
 entry { disp.init(0, 2, 3, 0, 1) }
@@ -119,7 +128,9 @@ ok "display_init is in the HAL" [pak::mips_hal_symbol display_init]
 ok "audio_init is in the HAL" [pak::mips_hal_symbol audio_init]
 ok "audio_get_buffer is in the HAL" [pak::mips_hal_symbol audio_get_buffer]
 ok "audio_write is in the HAL" [pak::mips_hal_symbol audio_write]
-ok "sprite_load is not in the HAL" [expr {![pak::mips_hal_symbol sprite_load]}]
+ok "sprite_load is in the HAL" [pak::mips_hal_symbol sprite_load]
+ok "rdpq_sprite_blit is in the HAL" [pak::mips_hal_symbol rdpq_sprite_blit]
+ok "surface_alloc is not in the HAL" [expr {![pak::mips_hal_symbol surface_alloc]}]
 ok "rdpq_triangle_tex is in the HAL" [pak::mips_hal_symbol rdpq_triangle_tex]
 ok "rdpq_triangle_z is in the HAL" [pak::mips_hal_symbol rdpq_triangle_z]
 ok "rdpq_triangle_tex_z is in the HAL" [pak::mips_hal_symbol rdpq_triangle_tex_z]

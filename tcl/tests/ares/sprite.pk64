@@ -1,0 +1,19 @@
+-- An asset, all the way from the cartridge to the screen: `pak link --fs`
+-- appended a PakFS archive holding one 32x32 RGBA16 sprite, the runtime reads
+-- its index over PI and DMAs the file into RDRAM, and sprite.blit turns it
+-- into a LOAD_TILE plus a TEXTURE_RECTANGLE. Clear is blue, the sprite is
+-- green, so where the green lands says whether every step got it right.
+
+asset hero: Sprite from "hero.png"
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    loop {
+        let fb: u32 = display.get()
+        rdpq.attach_clear(fb, 0x0000FFFF)
+        rdpq.set_mode_copy()
+        sprite.blit(hero, 144, 104, 0)
+        rdpq.detach_show()
+    }
+}

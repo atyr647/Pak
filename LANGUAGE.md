@@ -1043,6 +1043,21 @@ asset level_data from "levels/level1.bin"
 asset bgm: Sound from "audio/theme.wav"
 ```
 
+The path is relative to the project's `assets/` directory, and names the file
+you authored. `pak build` converts it (`.png` → `.sprite` via `mksprite`,
+`.wav` → `.wav64`, `.gltf` → `.t3dm`) and packs the result, so what a program
+looks up at runtime is the converted name — the compiler applies the same
+mapping, and neither backend asks for the `.png`.
+
+An asset name is a handle, not a path string: reading it the first time loads
+the file, and every read after that reuses what was loaded. Loading is lazy
+because the archive is read from the cartridge, which cannot happen before the
+entry block runs.
+
+The standalone backend loads `Sprite` assets; see the `n64.sprite` section of
+`STDLIB.md` for how the archive reaches the ROM and which sprite formats it
+reads.
+
 ---
 
 ## 15. Entry Point

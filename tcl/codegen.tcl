@@ -3120,7 +3120,7 @@ oo::class create pak::Codegen {
                 set tname [expr {[pak::kindof $atype] eq "TypeName" ? [pak::fval $atype name] : [pak::sval $atype]}]
             }
             lappend out "/* asset: $aname from \"$apath\" */"
-            lappend out "static const char *${aname}_path = \"pak:/${apath}\";"
+            lappend out "static const char *${aname}_path = \"pak:/[pak::asset_packed_path $apath]\";"
             if {[dict exists $asset_loaders $tname]} {
                 lassign [dict get $asset_loaders $tname] ctype loader
                 lappend out "static $ctype _pak_asset_${aname} = 0;"

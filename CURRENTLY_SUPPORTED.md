@@ -32,7 +32,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 |---------|--------|-------|
 | `use module.path` | ✅ Full | |
 | `use ... as alias` | ✅ Full | |
-| `asset name: Type from "path"` | ✅ Full | |
+| `asset name: Type from "path"` | ✅ Full | Parsed and lowered; see the asset row under Codegen for how the archive reaches the ROM on each backend. |
 | `module path.name` | ✅ Full | |
 | `struct Name { field: Type }` | ✅ Full | |
 | `struct Name<T> { ... }` (generic) | ✅ Full | Params parsed |
@@ -179,7 +179,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `alloc` / `free` | ✅ Full | Maps to `malloc`/`free` |
 | `defer` → cleanup code | ✅ Full | |
 | N64 module API calls | ✅ Full | `tcl/module_api.tcl` (CG_API ∪ CG_API_LAMBDA). Standalone HAL is the subset in `runtime/standalone/runtime.pk64`; `pak check --backend mips` is E010 on the rest. |
-| `asset` declarations | ✅ Full | |
+| `asset` declarations | ✅ Full on standalone, ⚠️ on libdragon | Standalone: `pak link --fs` puts the archive in the ROM, the runtime reads it over PI, and `sprite.blit` draws it — covered end to end by `tcl/tools/asset_test.tcl` and the ares gate. Only `: Sprite` assets have a loader; any other type is an error at the use site. libdragon: the archive still never reaches the ROM (n64.mk's `%.z64` rule takes `$(filter %.dfs, $^)` and the generated prerequisite is `filesystem/<name>.pakfs`, so it is dropped) and nothing calls `pakfs_init`. |
 | `extern "C"` blocks | ✅ Full | |
 | `@cfg` conditional compilation | ✅ Full | Maps to `#if`/`#endif` |
 | `comptime if` | ✅ Full | Maps to `#if` |

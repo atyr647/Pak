@@ -106,7 +106,7 @@ _CONVERTED_ASSETS := \$(_SPRITE_OUTS) \$(_WAV_OUTS) \$(_XM_OUTS) \$(_YM_OUTS) \$
 
 filesystem/${project_name}.pakfs: \$(_CONVERTED_ASSETS)
 \t@mkdir -p filesystem
-\tpak pack --output \$@ --base \$(BUILD_DIR) \$(_CONVERTED_ASSETS)"
+\tpak pack --output \$@ --base \$(BUILD_DIR)/assets \$(_CONVERTED_ASSETS)"
 }
 
 proc pak::generate_makefile {project_name rom_title c_files pakfs_archive \

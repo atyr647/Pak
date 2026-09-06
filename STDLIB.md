@@ -346,32 +346,32 @@ compiling the examples that use them.
 | `joypad` | `init` | `joypad_init` | yes | yes |
 | `joypad` | `is_connected` | `joypad_is_connected` | yes* | no |
 | `joypad` | `poll` | `joypad_poll` | yes | yes |
-| `math` | `abs_f` | `math_abs_f` | yes* | no |
-| `math` | `abs_i32` | `math_abs_i32` | yes* | no |
-| `math` | `atan2_f` | `math_atan2_f` | yes* | no |
-| `math` | `ceil_f` | `math_ceil_f` | yes* | no |
-| `math` | `clamp_f` | `math_clamp_f` | yes* | no |
-| `math` | `clamp_i32` | `math_clamp_i32` | yes* | no |
-| `math` | `cos_f` | `math_cos_f` | yes* | no |
-| `math` | `f_to_fix` | `math_f_to_fix` | yes* | no |
-| `math` | `fix_cos` | `math_fix_cos` | yes* | no |
-| `math` | `fix_sin` | `math_fix_sin` | yes* | no |
-| `math` | `fix_sqrt` | `math_fix_sqrt` | yes* | no |
-| `math` | `fix_to_f` | `math_fix_to_f` | yes* | no |
-| `math` | `floor_f` | `math_floor_f` | yes* | no |
-| `math` | `lerp_f` | `math_lerp_f` | yes* | no |
-| `math` | `max_f` | `math_max_f` | yes* | no |
-| `math` | `max_i32` | `math_max_i32` | yes* | no |
-| `math` | `min_f` | `math_min_f` | yes* | no |
-| `math` | `min_i32` | `math_min_i32` | yes* | no |
-| `math` | `pow_f` | `math_pow_f` | yes* | no |
-| `math` | `rand` | `math_rand` | yes* | no |
-| `math` | `rand_f` | `math_rand_f` | yes* | no |
-| `math` | `rand_range` | `math_rand_range` | yes* | no |
-| `math` | `rand_seed` | `math_rand_seed` | yes* | no |
-| `math` | `sin_f` | `math_sin_f` | yes* | no |
-| `math` | `sqrt_f` | `math_sqrt_f` | yes* | no |
-| `math` | `tan_f` | `math_tan_f` | yes* | no |
+| `math` | `abs_f` | `math_abs_f` | yes* | yes |
+| `math` | `abs_i32` | `math_abs_i32` | yes* | yes |
+| `math` | `atan2_f` | `math_atan2_f` | yes* | yes |
+| `math` | `ceil_f` | `math_ceil_f` | yes* | yes |
+| `math` | `clamp_f` | `math_clamp_f` | yes* | yes |
+| `math` | `clamp_i32` | `math_clamp_i32` | yes* | yes |
+| `math` | `cos_f` | `math_cos_f` | yes* | yes |
+| `math` | `f_to_fix` | `math_f_to_fix` | yes* | yes |
+| `math` | `fix_cos` | `math_fix_cos` | yes* | yes |
+| `math` | `fix_sin` | `math_fix_sin` | yes* | yes |
+| `math` | `fix_sqrt` | `math_fix_sqrt` | yes* | yes |
+| `math` | `fix_to_f` | `math_fix_to_f` | yes* | yes |
+| `math` | `floor_f` | `math_floor_f` | yes* | yes |
+| `math` | `lerp_f` | `math_lerp_f` | yes* | yes |
+| `math` | `max_f` | `math_max_f` | yes* | yes |
+| `math` | `max_i32` | `math_max_i32` | yes* | yes |
+| `math` | `min_f` | `math_min_f` | yes* | yes |
+| `math` | `min_i32` | `math_min_i32` | yes* | yes |
+| `math` | `pow_f` | `math_pow_f` | yes* | yes |
+| `math` | `rand` | `math_rand` | yes* | yes |
+| `math` | `rand_f` | `math_rand_f` | yes* | yes |
+| `math` | `rand_range` | `math_rand_range` | yes* | yes |
+| `math` | `rand_seed` | `math_rand_seed` | yes* | yes |
+| `math` | `sin_f` | `math_sin_f` | yes* | yes |
+| `math` | `sqrt_f` | `math_sqrt_f` | yes* | yes |
+| `math` | `tan_f` | `math_tan_f` | yes* | yes |
 | `mem` | `alloc` | `mem_alloc` | yes* | no |
 | `mem` | `alloc_aligned` | `mem_alloc_aligned` | yes* | no |
 | `mem` | `copy` | `mem_copy` | yes* | no |
@@ -494,8 +494,8 @@ compiling the examples that use them.
 | `sp` | `run` | `pak_sp_run` | no | yes |
 | `sp` | `status` | `pak_sp_status` | no | yes |
 | `sp` | `wait` | `pak_sp_wait` | no | yes |
-| `sprite` | `blit` | `rdpq_sprite_blit` | yes* | no |
-| `sprite` | `load` | `sprite_load` | yes | no |
+| `sprite` | `blit` | `rdpq_sprite_blit` | yes* | yes |
+| `sprite` | `load` | `sprite_load` | yes | yes |
 | `sram` | `read` | `sram_read` | no | no |
 | `sram` | `write` | `sram_write` | no | no |
 | `str` | `concat` | `str_concat` | yes* | no |
@@ -617,7 +617,7 @@ compiling the examples that use them.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**344 functions** across the module surface; **106** exist on the standalone HAL.
+**344 functions** across the module surface; **134** exist on the standalone HAL.
 
 Of the 247 lowered as a direct call: **119** are libdragon's own, **32** need Tiny3D, and **96** are **not implemented on the libdragon backend** — they exist only on the standalone HAL.
 
@@ -855,7 +855,25 @@ use n64.sprite           -- #include <rdpq_sprite.h>
 **Behavioral rules:**
 - Call `rdpq.set_mode_copy()` before `sprite.blit` — blit requires copy mode.
 - `flags` is usually `0`. `x`, `y` are top-left pixel coordinates.
-- Asset sprites (`asset name: Sprite from "path"`) are loaded automatically.
+- Asset sprites (`asset name: Sprite from "path"`) are loaded automatically:
+  reading the name the first time loads the file, and every read after that
+  reuses the handle.
+
+**On the standalone backend:**
+- `pak link --fs <archive>` appends a PakFS archive to the ROM past the
+  payload; the runtime walks its index and DMAs a file in on demand. A ROM
+  linked without `--fs` has no assets and every load returns `none`.
+- The archive is named after the CONVERTED file, so `from "sprites/bg.png"`
+  looks up `sprites/bg.sprite` — what `pak build` ran through `mksprite` and
+  packed. Asset paths are relative to the project's `assets/` directory.
+- Only `--compress 0` sprites are readable: a compressed one starts with
+  libdragon's "DCA3" container and nothing in the standalone runtime
+  decompresses it.
+- CI4 and CI8 sprites are skipped rather than drawn, because their palette is
+  not loaded into TMEM; so are the 4-bit formats. RGBA16 is what `pak build`
+  converts to.
+- Sprites larger than TMEM (4 KiB) are drawn as horizontal strips, one
+  LOAD_TILE and one TEXTURE_RECTANGLE each.
 
 ---
 

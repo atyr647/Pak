@@ -18,7 +18,7 @@
 #include <pakfs.h>
 
 /* asset: player_sprite from "sprites/player.png" */
-static const char *player_sprite_path = "pak:/sprites/player.png";
+static const char *player_sprite_path = "pak:/sprites/player.sprite";
 static sprite_t * _pak_asset_player_sprite = 0;
 static inline sprite_t * _pak_asset_get_player_sprite(void) {
     if (!_pak_asset_player_sprite) _pak_asset_player_sprite = sprite_load(player_sprite_path);
@@ -26,7 +26,7 @@ static inline sprite_t * _pak_asset_get_player_sprite(void) {
 }
 #define player_sprite (_pak_asset_get_player_sprite())
 /* asset: enemy_sprite from "sprites/enemy.png" */
-static const char *enemy_sprite_path = "pak:/sprites/enemy.png";
+static const char *enemy_sprite_path = "pak:/sprites/enemy.sprite";
 static sprite_t * _pak_asset_enemy_sprite = 0;
 static inline sprite_t * _pak_asset_get_enemy_sprite(void) {
     if (!_pak_asset_enemy_sprite) _pak_asset_enemy_sprite = sprite_load(enemy_sprite_path);
@@ -34,7 +34,7 @@ static inline sprite_t * _pak_asset_get_enemy_sprite(void) {
 }
 #define enemy_sprite (_pak_asset_get_enemy_sprite())
 /* asset: bg_sprite from "sprites/background.png" */
-static const char *bg_sprite_path = "pak:/sprites/background.png";
+static const char *bg_sprite_path = "pak:/sprites/background.sprite";
 static sprite_t * _pak_asset_bg_sprite = 0;
 static inline sprite_t * _pak_asset_get_bg_sprite(void) {
     if (!_pak_asset_bg_sprite) _pak_asset_bg_sprite = sprite_load(bg_sprite_path);

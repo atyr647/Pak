@@ -130,6 +130,20 @@ framebuffers and the display list).
 Cart images are padded to 4/8/16/32/64 MiB
 (`pak link --size 4`, default 4); a 2.9 MB `.z64` crashes on flashcarts.
 
+## Assets
+
+`pak link --fs <archive>` appends a PakFS archive (`pak pack`) to the ROM after
+the payload, on a 16-byte boundary, and patches its cart address and length
+into the runtime's `g_pakfs_rom` / `g_pakfs_len`. It has to go outside the
+payload: the compat IPL3 copies exactly `payload` bytes into RDRAM at boot, so
+an archive counted in that size would be copied along with the program. The
+runtime reads the index once and then DMAs each file in on demand.
+
+```
+pak pack --output assets.pakfs --base build/assets build/assets/hero.sprite
+pak link boot.pakobj runtime.pakobj game.pakobj -o game.z64 --fs assets.pakfs
+```
+
 The linker exports `__fb0`, `__fb1`, `__fb2`, `__zb`, `__dl_base`, `__ab`,
 `__heap_start`, `__heap_end`, `__stack_top` so a program can read the map instead of
 hard-coding it. `.bss` still reserves address space but is not stored in the

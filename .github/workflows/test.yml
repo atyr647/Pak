@@ -322,6 +322,9 @@ jobs:
       - name: Standalone execution (consts, defer, monomorphs, FixedList)
         run: tclsh tcl/tools/standalone_exec_test.tcl
 
+      - name: Assets are read out of the ROM (PakFS + sprite_load)
+        run: tclsh tcl/tools/asset_test.tcl
+
       # The CHROMA nave end to end: it fits under FB0, it streams 2 KB pages
       # over the PI instead of embedding sheets, and the DP is handed
       # SET_TILE/LOAD_TILE/TRI_TEX_Z. This is the FZ "Path A" (see examples/chroma/README.md).

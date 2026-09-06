@@ -2970,3 +2970,241 @@ fn pak_vec_free_raw(vec: u32) {
     let cap_p: *i32 = (vec + 8) as *i32
     *cap_p = 0
 }
+
+-- ── PakFS: assets in the ROM ────────────────────────────────────────────────
+-- `pak link --fs <archive>` appends a PakFS archive to the ROM past the end of
+-- the payload and patches its ROM offset and length into the two statics
+-- below. Both stay zero in a ROM built without --fs, which is how pakfs_init
+-- tells "this ROM has no assets" from "I could not read the ones it has".
+--
+-- Archive layout (little-endian, written by tcl/pakfs.tcl):
+--   0    "PKFS"
+--   4    version    u16  (1)
+--   6    num_files  u16
+--   8    index_off  u32  (always 12)
+--   12   index      per file: name_len u16, name, data_off u32,
+--                   data_size u32, flags u16
+--   ...  data       16-byte aligned within the archive
+--
+-- The VR4300 is big-endian, so every field is assembled from bytes rather than
+-- loaded as a word.
+
+static g_pakfs_rom:   u32 = 0   -- ROM offset of the archive; patched at link
+static g_pakfs_len:   u32 = 0   -- archive length in bytes; patched at link
+static g_pakfs_idx:   u32 = 0   -- RDRAM copy of the header + index
+static g_pakfs_n:     i32 = 0
+static g_pakfs_state: i32 = 0   -- 0 = untried, 1 = mounted, -1 = failed
+static g_pakfs_size:  i32 = 0   -- size of the file the last lookup found
+
+fn pakfs_le16(p: u32) -> i32 {
+    let a: *u8 = p as *u8
+    let b: *u8 = (p + 1) as *u8
+    return (*a as i32) | ((*b as i32) << 8)
+}
+
+fn pakfs_le32(p: u32) -> u32 {
+    let a: *u8 = p as *u8
+    let b: *u8 = (p + 1) as *u8
+    let c: *u8 = (p + 2) as *u8
+    let d: *u8 = (p + 3) as *u8
+    return (*a as u32) | ((*b as u32) << 8) | ((*c as u32) << 16) | ((*d as u32) << 24)
+}
+
+fn pakfs_be16(p: u32) -> i32 {
+    let a: *u8 = p as *u8
+    let b: *u8 = (p + 1) as *u8
+    return ((*a as i32) << 8) | (*b as i32)
+}
+
+-- PI DMA wants a 16-byte-aligned destination and a length that is a multiple
+-- of 16; __pak_alloc only promises 8, so take the next 16 inside a larger
+-- block. Returns 0 when the heap is exhausted.
+fn pakfs_alloc16(n: i32) -> u32 {
+    let p: *u8 = __pak_alloc(n + 16)
+    if (p as u32) == 0 { return 0 }
+    return ((p as u32) + 15) & 0xFFFFFFF0
+}
+
+fn pakfs_round16(n: i32) -> i32 {
+    return (n + 15) & 0x7FFFFFF0
+}
+
+-- Reads the header and the whole index into RDRAM. Returns 1 mounted,
+-- -1 failed. Safe to call repeatedly: it only does the work once.
+fn pakfs_init() -> i32 {
+    if g_pakfs_state != 0 { return g_pakfs_state }
+    g_pakfs_state = -1
+    if g_pakfs_len < 12 { return -1 }
+
+    -- The index length is not in the header: it ends where the first file's
+    -- data begins. Read a block big enough for the header plus a first entry,
+    -- learn the data offset from it, then re-read if the index is longer.
+    let mut blk: i32 = 512
+    if (g_pakfs_len as i32) < blk { blk = g_pakfs_len as i32 }
+    blk = pakfs_round16(blk)
+    let buf: u32 = pakfs_alloc16(blk)
+    if buf == 0 { return -1 }
+    dma_read(buf as *u8, g_pakfs_rom, blk)
+    if pakfs_le32(buf) != 0x53464B50 { return -1 }      -- "PKFS"
+    if pakfs_le16(buf + 4) != 1 { return -1 }           -- version
+    if pakfs_le32(buf + 8) != 12 { return -1 }          -- index_off
+
+    g_pakfs_n = pakfs_le16(buf + 6)
+    g_pakfs_idx = buf
+    if g_pakfs_n == 0 {
+        g_pakfs_state = 1
+        return 1
+    }
+    let nlen: i32 = pakfs_le16(buf + 12)
+    let dstart: i32 = pakfs_le32(buf + 14 + (nlen as u32)) as i32
+    if dstart > blk {
+        let want: i32 = pakfs_round16(dstart)
+        let b2: u32 = pakfs_alloc16(want)
+        if b2 == 0 { return -1 }
+        dma_read(b2 as *u8, g_pakfs_rom, want)
+        g_pakfs_idx = b2
+    }
+    g_pakfs_state = 1
+    return 1
+}
+
+-- The index name is length-counted; the one a program passes is NUL-
+-- terminated. Equal means same length and same bytes.
+fn pakfs_name_eq(name: u32, stored: u32, nlen: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < nlen {
+        let a: *u8 = (name + i as u32) as *u8
+        let b: *u8 = (stored + i as u32) as *u8
+        if *a != *b { return 0 }
+        i = i + 1
+    }
+    let last: *u8 = (name + nlen as u32) as *u8
+    if *last != 0 { return 0 }
+    return 1
+}
+
+-- Generated asset paths carry the "pak:/" scheme the libdragon backend needs;
+-- the archive names do not.
+fn pakfs_strip_scheme(p: u32) -> u32 {
+    let a: *u8 = p as *u8
+    let b: *u8 = (p + 1) as *u8
+    let c: *u8 = (p + 2) as *u8
+    let d: *u8 = (p + 3) as *u8
+    let e: *u8 = (p + 4) as *u8
+    if *a != 112 { return p }   -- 'p'
+    if *b != 97  { return p }   -- 'a'
+    if *c != 107 { return p }   -- 'k'
+    if *d != 58  { return p }   -- ':'
+    if *e != 47  { return p }   -- '/'
+    return p + 5
+}
+
+-- ROM offset of a file, or 0. Its size lands in g_pakfs_size.
+fn pakfs_find(path: *c_char) -> u32 {
+    g_pakfs_size = 0
+    if pakfs_init() != 1 { return 0 }
+    let name: u32 = pakfs_strip_scheme(path as u32)
+    let mut p: u32 = g_pakfs_idx + 12
+    let mut i: i32 = 0
+    while i < g_pakfs_n {
+        let nlen: i32 = pakfs_le16(p)
+        let nptr: u32 = p + 2
+        if pakfs_name_eq(name, nptr, nlen) != 0 {
+            g_pakfs_size = pakfs_le32(nptr + (nlen as u32) + 4) as i32
+            return g_pakfs_rom + pakfs_le32(nptr + (nlen as u32))
+        }
+        p = nptr + (nlen as u32) + 10
+        i = i + 1
+    }
+    return 0
+}
+
+fn pakfs_size(path: *c_char) -> i32 {
+    if pakfs_find(path) == 0 { return 0 }
+    return g_pakfs_size
+}
+
+-- Read a whole file out of the ROM into fresh RDRAM. Returns none when the
+-- archive has no such file or the heap is full.
+fn pakfs_read(path: *c_char) -> *u8 {
+    let off: u32 = pakfs_find(path)
+    if off == 0 { return 0 as *u8 }
+    let n: i32 = pakfs_round16(g_pakfs_size)
+    let p: u32 = pakfs_alloc16(n)
+    if p == 0 { return 0 as *u8 }
+    dma_read(p as *u8, off, n)
+    return p as *u8
+}
+
+-- ── Sprites ─────────────────────────────────────────────────────────────────
+-- A .sprite file is libdragon's, written by mksprite with --compress 0:
+--   0  width   u16 (big-endian)
+--   2  height  u16
+--   4  bitdepth u8   (deprecated, ignored)
+--   5  flags    u8   -- the texture format is the low 5 bits
+--   6  hslices  u8
+--   7  vslices  u8
+--   8  texels
+-- The format code is (rdp_format << 2) | rdp_size, which is exactly the pair
+-- SET_TEXTURE_IMAGE and SET_TILE want. A compressed sprite starts with the
+-- "DCA3" container instead and is rejected: nothing here decompresses.
+
+fn sprite_load(path: *c_char) -> *u8 {
+    return pakfs_read(path)
+}
+
+fn sprite_width(spr: *u8) -> i32 {
+    if (spr as u32) == 0 { return 0 }
+    return pakfs_be16(spr as u32)
+}
+
+fn sprite_height(spr: *u8) -> i32 {
+    if (spr as u32) == 0 { return 0 }
+    return pakfs_be16((spr as u32) + 2)
+}
+
+-- Draw a sprite 1:1 at (x, y). Call rdpq.set_mode_copy() first for an opaque
+-- blit, or set_mode_standard() to blend.
+--
+-- TMEM is 4 KiB, so anything bigger is drawn as horizontal strips: each strip
+-- is loaded on its own and drawn where it belongs. `flags` is accepted for
+-- signature parity with libdragon and is not used.
+fn rdpq_sprite_blit(spr: *u8, x: i32, y: i32, flags: u32) {
+    if (spr as u32) == 0 { return }
+    let base: u32 = spr as u32
+    let w: i32 = pakfs_be16(base)
+    let h: i32 = pakfs_be16(base + 2)
+    if w <= 0 { return }
+    if h <= 0 { return }
+    let fb: *u8 = (base + 5) as *u8
+    let code: i32 = (*fb as i32) & 0x1F
+    let fmt: u32 = (code >> 2) as u32
+    let size: u32 = (code & 3) as u32
+    -- CI4/CI8 need their palette loaded into TMEM first, which this does not
+    -- do; drawing them would show index bytes as colours.
+    if fmt == 2 { return }
+    -- 4-bit formats (I4, IA4) pack two texels per byte, which the whole-byte
+    -- row arithmetic below does not model.
+    if size == 0 { return }
+    let bpp: i32 = rdp_tex_bpp(size)
+    let data: u32 = base + 8
+
+    -- Bytes per row in TMEM, and how many whole rows of them fit in 4 KiB.
+    let row: i32 = w * bpp
+    if row <= 0 { return }
+    let mut strip: i32 = 4096 / row
+    if strip <= 0 { return }
+    if strip > h { strip = h }
+
+    rdpq_set_texture_image(data, fmt, size, w)
+    rdpq_set_tile(0, fmt, size, ((row + 7) / 8) as u32, 0, 0)
+    let mut t0: i32 = 0
+    while t0 < h {
+        let mut t1: i32 = t0 + strip
+        if t1 > h { t1 = h }
+        rdpq_set_tile_size(0, 0, t0, w, t1)
+        rdpq_load_tile(0, 0, t0, w, t1)
+        rdpq_texture_rectangle(0, x, y + t0, x + w, y + t1, 0, t0)
+        t0 = t1
+    }
+}
