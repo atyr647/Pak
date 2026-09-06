@@ -199,6 +199,34 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     pak_sp_wait 1 \
     pak_sp_done 1 \
     pak_sp_status 1 \
+    math_abs_i32 1 \
+    math_min_i32 1 \
+    math_max_i32 1 \
+    math_clamp_i32 1 \
+    math_abs_f 1 \
+    math_min_f 1 \
+    math_max_f 1 \
+    math_clamp_f 1 \
+    math_lerp_f 1 \
+    math_floor_f 1 \
+    math_ceil_f 1 \
+    math_fix_to_f 1 \
+    math_f_to_fix 1 \
+    math_sqrt_f 1 \
+    math_sin_f 1 \
+    math_cos_f 1 \
+    math_tan_f 1 \
+    math_atan2_f 1 \
+    math_pow_f 1 \
+    math_fix_sin 1 \
+    math_fix_cos 1 \
+    math_fix_sqrt 1 \
+    math_rand 1 \
+    math_rand_seed 1 \
+    math_rand_range 1 \
+    math_rand_f 1 \
+    TICKS_PER_SECOND 1 \
+    RDPQ_COMBINER_FLAT 1 \
 ]
 
 # Defined in runtime/standalone/boot.S, not in the runtime: Status.IE and

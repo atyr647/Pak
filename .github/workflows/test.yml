@@ -248,6 +248,14 @@ jobs:
       - name: MIPS binary encoder (golden encodings)
         run: tclsh tcl/tools/n64enc_test.tcl
 
+      # n64.math is <math.h> on the libdragon backend; on standalone the HAL
+      # is the implementation, so every function is executed and compared
+      # against the value it should produce. The first half of the file is the
+      # float arithmetic underneath -- this backend has two FP registers and
+      # nothing used to keep a float alive across the evaluation of another.
+      - name: Math HAL and float expressions (executed)
+        run: tclsh tcl/tools/math_test.tcl
+
       - name: Encoded exec goldens (optimizer on records, calls + MMIO)
         run: tclsh tcl/tools/enc_exec_test.tcl
 

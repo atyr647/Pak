@@ -904,9 +904,10 @@ check_platform_landing:
     sw $a1, 140($sp)
     sw $a2, 144($sp)
     lw $t8, 144($sp)
-    mov.s $f14, $f12
+    swc1 $f12, 148($sp)
     la $t6, .Lf320
     lwc1 $f12, 0($t6)
+    lwc1 $f14, 148($sp)
     c.le.s $f14, $f12
     li $t9, 0
     bc1f .Lfle_9
@@ -921,43 +922,43 @@ check_platform_landing:
     nop
 .Lif_end_8:
     li $t9, 0
-    sw $t9, 148($sp)
+    sw $t9, 152($sp)
 .Lwhile_h_10:
-    lw $t8, 148($sp)
+    lw $t8, 152($sp)
     li $t7, 8
     slt $t9, $t8, $t7
     beqz $t9, .Lwhile_x_11
     nop
     la $t8, platforms
-    lw $t7, 148($sp)
+    lw $t7, 152($sp)
     li $t6, 20
     mul $t7, $t7, $t6
     addu $t8, $t8, $t7
     move $t9, $t8
-    sw $t9, 152($sp)
-    lw $t8, 152($sp)
+    sw $t9, 156($sp)
+    lw $t8, 156($sp)
     lbu $t9, 16($t8)
     beqz $t9, .Lif_end_12
     nop
     lw $t8, 140($sp)
     li $t7, 16
     addu $t9, $t8, $t7
-    sw $t9, 156($sp)
-    lw $t7, 152($sp)
+    sw $t9, 160($sp)
+    lw $t7, 156($sp)
     lw $t8, 12($t7)
     sw $t8, 28($sp)
-    lw $t7, 152($sp)
+    lw $t7, 156($sp)
     lw $t8, 8($t7)
     sw $t8, 24($sp)
-    lw $t7, 152($sp)
+    lw $t7, 156($sp)
     lw $t8, 4($t7)
     sw $t8, 20($sp)
-    lw $t7, 152($sp)
+    lw $t7, 156($sp)
     lw $t8, 0($t7)
     sw $t8, 16($sp)
     li $a3, 4
     li $a2, 12
-    lw $t8, 156($sp)
+    lw $t8, 160($sp)
     li $t7, 2
     subu $a1, $t8, $t7
     lw $a0, 136($sp)
@@ -966,20 +967,20 @@ check_platform_landing:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    sb $t9, 160($sp)
-    lbu $t9, 160($sp)
+    sb $t9, 164($sp)
+    lbu $t9, 164($sp)
     beqz $t9, .Lif_end_13
     nop
-    lw $t9, 152($sp)
+    lw $t9, 156($sp)
     lw $v0, 4($t9)
     j .Lcheck_platform_landing_ret_7
     nop
 .Lif_end_13:
 .Lif_end_12:
     li $t8, 1
-    lw $t7, 148($sp)
+    lw $t7, 152($sp)
     addu $t8, $t7, $t8
-    sw $t8, 148($sp)
+    sw $t8, 152($sp)
     move $t9, $t8
     j .Lwhile_h_10
     nop
@@ -1112,18 +1113,20 @@ Player_physics:
     move $t9, $t8
     lw $t6, 136($sp)
     lw $t7, 8($t6)
-    mov.s $f14, $f12
+    swc1 $f12, 140($sp)
     la $t5, .Lf323
     lwc1 $f12, 0($t5)
+    lwc1 $f14, 140($sp)
     mul.s $f12, $f14, $f12
     lw $t7, 136($sp)
     sw $t8, 8($t7)
     move $t9, $t8
     lw $t7, 136($sp)
     lw $t8, 0($t7)
-    mov.s $f14, $f12
+    swc1 $f12, 140($sp)
     la $t6, .Lf320
     lwc1 $f12, 0($t6)
+    lwc1 $f14, 140($sp)
     c.lt.s $f14, $f12
     li $t9, 0
     bc1f .Lflt_19
@@ -1140,9 +1143,10 @@ Player_physics:
 .Lif_end_18:
     lw $t7, 136($sp)
     lw $t8, 0($t7)
-    mov.s $f14, $f12
+    swc1 $f12, 140($sp)
     la $t6, .Lf324
     lwc1 $f12, 0($t6)
+    lwc1 $f14, 140($sp)
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_21
@@ -1259,9 +1263,10 @@ Player_resolve_collisions:
 .Lif_end_23:
     lw $t7, 136($sp)
     lw $t8, 4($t7)
-    mov.s $f14, $f12
+    swc1 $f12, 152($sp)
     la $t6, .Lf325
     lwc1 $f12, 0($t6)
+    lwc1 $f14, 152($sp)
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_29
@@ -1332,9 +1337,10 @@ Player_handle_input:
     nop
     lw $t6, 144($sp)
     sll $t7, $t6, 16
-    mov.s $f14, $f12
+    swc1 $f12, 152($sp)
     la $t5, .Lf326
     lwc1 $f12, 0($t5)
+    lwc1 $f14, 152($sp)
     mul.s $f12, $f14, $f12
     lw $t7, 136($sp)
     sw $t8, 8($t7)
@@ -1354,9 +1360,10 @@ Player_handle_input:
     nop
     lw $t6, 144($sp)
     sll $t7, $t6, 16
-    mov.s $f14, $f12
+    swc1 $f12, 152($sp)
     la $t5, .Lf326
     lwc1 $f12, 0($t5)
+    lwc1 $f14, 152($sp)
     mul.s $f12, $f14, $f12
     lw $t7, 136($sp)
     sw $t8, 8($t7)
@@ -1470,9 +1477,10 @@ Player_update_state:
     nop
     lw $t7, 136($sp)
     lw $t8, 12($t7)
-    mov.s $f14, $f12
+    swc1 $f12, 140($sp)
     la $t6, .Lf320
     lwc1 $f12, 0($t6)
+    lwc1 $f14, 140($sp)
     c.lt.s $f14, $f12
     li $t9, 0
     bc1f .Lflt_44
@@ -1511,9 +1519,10 @@ Player_update_state:
 .Lelif_else_45:
     lw $t6, 136($sp)
     lw $t7, 8($t6)
-    mov.s $f14, $f12
+    swc1 $f12, 140($sp)
     la $t5, .Lf327
     lwc1 $f12, 0($t5)
+    lwc1 $f14, 140($sp)
     c.lt.s $f12, $f14
     li $t8, 0
     bc1f .Lfgt_47
@@ -1522,10 +1531,11 @@ Player_update_state:
 .Lfgt_47:
     lw $t5, 136($sp)
     lw $t6, 8($t5)
-    mov.s $f14, $f12
+    swc1 $f12, 140($sp)
     la $t3, .Lf327
     lwc1 $f12, 0($t3)
     neg.s $f12, $f12
+    lwc1 $f14, 140($sp)
     c.lt.s $f14, $f12
     li $t7, 0
     bc1f .Lflt_48
@@ -1715,20 +1725,22 @@ Camera_follow:
     sw $a0, 136($sp)
     sw $a1, 140($sp)
     lw $t8, 140($sp)
-    mov.s $f14, $f12
+    swc1 $f12, 148($sp)
     la $t6, .Lf328
     lwc1 $f12, 0($t6)
+    lwc1 $f14, 148($sp)
     sub.s $f12, $f14, $f12
     sw $t9, 144($sp)
     lw $t8, 144($sp)
     lw $t6, 136($sp)
     lw $t7, 0($t6)
     subu $t9, $t8, $t7
-    sw $t9, 148($sp)
-    lw $t7, 148($sp)
-    mov.s $f14, $f12
+    sw $t9, 152($sp)
+    lw $t7, 152($sp)
+    swc1 $f12, 148($sp)
     la $t5, .Lf329
     lwc1 $f12, 0($t5)
+    lwc1 $f14, 148($sp)
     mul.s $f12, $f14, $f12
     lw $t6, 136($sp)
     lw $t7, 0($t6)
@@ -1738,9 +1750,10 @@ Camera_follow:
     move $t9, $t8
     lw $t7, 136($sp)
     lw $t8, 0($t7)
-    mov.s $f14, $f12
+    swc1 $f12, 148($sp)
     la $t6, .Lf320
     lwc1 $f12, 0($t6)
+    lwc1 $f14, 148($sp)
     c.lt.s $f14, $f12
     li $t9, 0
     bc1f .Lflt_61

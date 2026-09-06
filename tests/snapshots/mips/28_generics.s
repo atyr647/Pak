@@ -206,6 +206,8 @@ main:
     move $t9, $t8
     la $t7, .Lf320
     lwc1 $f12, 0($t7)
+    swc1 $f12, 136($sp)
+    lwc1 $f12, 136($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal identity__f32
@@ -222,7 +224,7 @@ main:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 136($sp)
+    sw $t9, 140($sp)
     li $a1, 7
     li $a0, 3
     sw $t9, 96($sp)
@@ -237,9 +239,12 @@ main:
     move $t9, $t8
     la $t7, .Lf321
     lwc1 $f12, 0($t7)
-    mov.s $f14, $f12
+    swc1 $f12, 144($sp)
     la $t7, .Lf322
     lwc1 $f12, 0($t7)
+    swc1 $f12, 136($sp)
+    lwc1 $f14, 144($sp)
+    lwc1 $f12, 136($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal max_of__f32
@@ -274,29 +279,29 @@ main:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    sw $zero, 148($sp)
-    sw $zero, 152($sp)
+    sw $zero, 156($sp)
+    sw $zero, 160($sp)
     li $t7, 10
-    sw $t7, 148($sp)
+    sw $t7, 156($sp)
     li $t7, 32
-    sw $t7, 152($sp)
-    addiu $t9, $sp, 148
-    addiu $t8, $sp, 140
+    sw $t7, 160($sp)
+    addiu $t9, $sp, 156
+    addiu $t8, $sp, 148
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 148
     lw $t8, 0($t7)
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 148
     lw $t8, 4($t7)
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 148
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
@@ -310,7 +315,7 @@ main:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 148
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
@@ -324,26 +329,26 @@ main:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    sw $zero, 164($sp)
-    sw $zero, 168($sp)
+    sw $zero, 172($sp)
+    sw $zero, 176($sp)
     la $t6, .Lf322
     lwc1 $f12, 0($t6)
-    swc1 $f12, 164($sp)
+    swc1 $f12, 172($sp)
     la $t6, .Lf321
     lwc1 $f12, 0($t6)
-    swc1 $f12, 168($sp)
-    addiu $t9, $sp, 164
-    addiu $t8, $sp, 156
+    swc1 $f12, 176($sp)
+    addiu $t9, $sp, 172
+    addiu $t8, $sp, 164
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    addiu $t7, $sp, 156
+    addiu $t7, $sp, 164
     lwc1 $f12, 0($t7)
     la $t7, sink_f
     swc1 $f12, 0($t7)
     move $t9, $t8
-    addiu $t7, $sp, 156
+    addiu $t7, $sp, 164
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
@@ -357,7 +362,7 @@ main:
     la $t7, sink_f
     swc1 $f12, 0($t7)
     move $t9, $t8
-    addiu $t7, $sp, 156
+    addiu $t7, $sp, 164
     move $a0, $t7
     sw $t9, 96($sp)
     sw $t8, 100($sp)
@@ -382,25 +387,25 @@ main:
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    sw $zero, 180($sp)
-    sw $zero, 184($sp)
+    sw $zero, 188($sp)
+    sw $zero, 192($sp)
     li $t7, 1
-    sw $t7, 180($sp)
+    sw $t7, 188($sp)
     la $t6, .Lf323
     lwc1 $f12, 0($t6)
-    swc1 $f12, 184($sp)
-    addiu $t9, $sp, 180
-    addiu $t8, $sp, 172
+    swc1 $f12, 192($sp)
+    addiu $t9, $sp, 188
+    addiu $t8, $sp, 180
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
-    addiu $t7, $sp, 172
+    addiu $t7, $sp, 180
     lw $t8, 0($t7)
     la $t7, sink_i
     sw $t8, 0($t7)
     move $t9, $t8
-    addiu $t7, $sp, 172
+    addiu $t7, $sp, 180
     lwc1 $f12, 4($t7)
     la $t7, sink_f
     swc1 $f12, 0($t7)
@@ -515,8 +520,9 @@ max_of__f32:
     mov.s $f12, $f14
     swc1 $f12, 140($sp)
     lwc1 $f12, 136($sp)
-    mov.s $f14, $f12
+    swc1 $f12, 144($sp)
     lwc1 $f12, 140($sp)
+    lwc1 $f14, 144($sp)
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_8

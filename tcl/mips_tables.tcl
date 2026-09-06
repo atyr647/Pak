@@ -270,6 +270,32 @@ set ::pak::MIPS_API [dict create \
     {dma wait} {dma_wait} \
     {exception set_handler} {exception_set_handler} \
     {exception get_handler} {exception_get_handler} \
+    {math abs_i32} {math_abs_i32} \
+    {math min_i32} {math_min_i32} \
+    {math max_i32} {math_max_i32} \
+    {math clamp_i32} {math_clamp_i32} \
+    {math abs_f} {math_abs_f} \
+    {math min_f} {math_min_f} \
+    {math max_f} {math_max_f} \
+    {math clamp_f} {math_clamp_f} \
+    {math lerp_f} {math_lerp_f} \
+    {math floor_f} {math_floor_f} \
+    {math ceil_f} {math_ceil_f} \
+    {math fix_to_f} {math_fix_to_f} \
+    {math f_to_fix} {math_f_to_fix} \
+    {math sqrt_f} {math_sqrt_f} \
+    {math sin_f} {math_sin_f} \
+    {math cos_f} {math_cos_f} \
+    {math tan_f} {math_tan_f} \
+    {math atan2_f} {math_atan2_f} \
+    {math pow_f} {math_pow_f} \
+    {math fix_sin} {math_fix_sin} \
+    {math fix_cos} {math_fix_cos} \
+    {math fix_sqrt} {math_fix_sqrt} \
+    {math rand} {math_rand} \
+    {math rand_seed} {math_rand_seed} \
+    {math rand_range} {math_rand_range} \
+    {math rand_f} {math_rand_f} \
     {sp init} {pak_sp_init} \
     {sp load_ucode} {pak_sp_load_ucode} \
     {sp load_data} {pak_sp_load_data} \

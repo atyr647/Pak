@@ -220,8 +220,9 @@ max:
     mov.s $f12, $f14
     swc1 $f12, 140($sp)
     lwc1 $f12, 136($sp)
-    mov.s $f14, $f12
+    swc1 $f12, 144($sp)
     lwc1 $f12, 140($sp)
+    lwc1 $f14, 144($sp)
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_3
@@ -259,8 +260,9 @@ clamp:
     lwc1 $f12, 8($fp)
     swc1 $f12, 144($sp)
     lwc1 $f12, 136($sp)
-    mov.s $f14, $f12
+    swc1 $f12, 148($sp)
     lwc1 $f12, 140($sp)
+    lwc1 $f14, 148($sp)
     c.lt.s $f14, $f12
     li $t9, 0
     bc1f .Lflt_6
@@ -274,8 +276,9 @@ clamp:
     nop
 .Lif_end_5:
     lwc1 $f12, 136($sp)
-    mov.s $f14, $f12
+    swc1 $f12, 148($sp)
     lwc1 $f12, 144($sp)
+    lwc1 $f14, 148($sp)
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_8
@@ -366,9 +369,12 @@ main:
     move $t9, $t8
     la $t8, .Lf320
     lwc1 $f12, 0($t8)
-    mov.s $f14, $f12
+    swc1 $f12, 140($sp)
     la $t8, .Lf321
     lwc1 $f12, 0($t8)
+    swc1 $f12, 144($sp)
+    lwc1 $f14, 140($sp)
+    lwc1 $f12, 144($sp)
     sw $t9, 96($sp)
     jal max
     nop
@@ -377,38 +383,43 @@ main:
     swc1 $f12, 136($sp)
     la $t8, .Lf322
     lwc1 $f12, 0($t8)
-    swc1 $f12, 8($sp)
+    swc1 $f12, 152($sp)
     la $t8, .Lf323
     lwc1 $f12, 0($t8)
-    mov.s $f14, $f12
+    swc1 $f12, 140($sp)
     la $t8, .Lf324
     lwc1 $f12, 0($t8)
+    swc1 $f12, 144($sp)
+    lwc1 $f12, 152($sp)
+    swc1 $f12, 8($sp)
+    lwc1 $f14, 140($sp)
+    lwc1 $f12, 144($sp)
     sw $t9, 96($sp)
     jal clamp
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    swc1 $f12, 140($sp)
+    swc1 $f12, 148($sp)
     li $t9, 5
-    sw $t9, 144($sp)
-    addiu $a0, $sp, 144
+    sw $t9, 156($sp)
+    addiu $a0, $sp, 156
     sw $t9, 96($sp)
     jal increment
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    addiu $a0, $sp, 144
+    addiu $a0, $sp, 156
     sw $t9, 96($sp)
     jal reset
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    lw $t6, 144($sp)
+    lw $t6, 156($sp)
     lwc1 $f12, 136($sp)
     cvt.w.s $f12, $f12
     mfc1 $t5, $f12
     addu $t7, $t6, $t5
-    lwc1 $f12, 140($sp)
+    lwc1 $f12, 148($sp)
     cvt.w.s $f12, $f12
     mfc1 $t6, $f12
     addu $t8, $t7, $t6

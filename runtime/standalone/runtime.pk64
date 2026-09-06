@@ -2445,3 +2445,319 @@ fn pak_sp_wait() {
 fn pak_sp_status() -> u32 {
     return vi_read(SP_STATUS)
 }
+
+-- ── math ──────────────────────────────────────────────────────────────────
+-- The whole n64.math surface, in Pak. On the libdragon backend these lower to
+-- <math.h>; there is no libm here, so the standalone HAL has to be the
+-- implementation. Everything below is f32 -- the VR4300's FPU is
+-- single-precision for the codegen's purposes and Pak has no f64.
+--
+-- Accuracy: sin/cos are a six-term Taylor series on a quadrant-reduced
+-- argument (error under 1e-7, at f32's own resolution); atan2 is a
+-- five-coefficient minimax (about 1e-5); sqrt is Newton-Raphson from a scaled
+-- seed, which reaches f32 precision in four steps. Good enough for a game,
+-- and none of it allocates or waits.
+
+const PAK_PI: f32      = 3.14159265
+const PAK_TWO_PI: f32  = 6.28318531
+const PAK_HALF_PI: f32 = 1.57079633
+const PAK_LN2: f32     = 0.69314718
+
+fn math_abs_i32(x: i32) -> i32 {
+    if x < 0 { return 0 - x }
+    return x
+}
+
+fn math_min_i32(a: i32, b: i32) -> i32 {
+    if a < b { return a }
+    return b
+}
+
+fn math_max_i32(a: i32, b: i32) -> i32 {
+    if a > b { return a }
+    return b
+}
+
+fn math_clamp_i32(v: i32, lo: i32, hi: i32) -> i32 {
+    if v < lo { return lo }
+    if v > hi { return hi }
+    return v
+}
+
+fn math_abs_f(x: f32) -> f32 {
+    if x < 0.0 { return 0.0 - x }
+    return x
+}
+
+fn math_min_f(a: f32, b: f32) -> f32 {
+    if a < b { return a }
+    return b
+}
+
+fn math_max_f(a: f32, b: f32) -> f32 {
+    if a > b { return a }
+    return b
+}
+
+fn math_clamp_f(v: f32, lo: f32, hi: f32) -> f32 {
+    if v < lo { return lo }
+    if v > hi { return hi }
+    return v
+}
+
+fn math_lerp_f(a: f32, b: f32, t: f32) -> f32 {
+    return a + (b - a) * t
+}
+
+-- `as i32` truncates toward zero, so the negative cases need the extra step.
+-- Valid for |x| < 2^31; beyond that the cast itself is undefined.
+fn math_floor_f(x: f32) -> f32 {
+    let t: f32 = (x as i32) as f32
+    if x < 0.0 and t != x { return t - 1.0 }
+    return t
+}
+
+fn math_ceil_f(x: f32) -> f32 {
+    let t: f32 = (x as i32) as f32
+    if x > 0.0 and t != x { return t + 1.0 }
+    return t
+}
+
+fn math_fix_to_f(v: i32) -> f32 {
+    return (v as f32) / 65536.0
+}
+
+fn math_f_to_fix(v: f32) -> i32 {
+    return (v * 65536.0) as i32
+}
+
+-- ── sqrt ──────────────────────────────────────────────────────────────────
+-- Scale into [1, 4) by powers of four, Newton there, then scale the answer by
+-- the matching power of two. The scaling is what makes four iterations enough
+-- whatever the magnitude: Pak has no way to reinterpret a float's bits, so
+-- the usual exponent hack for the seed is not available.
+fn math_sqrt_f(x: f32) -> f32 {
+    if x <= 0.0 { return 0.0 }
+    let mut m: f32 = x
+    let mut k: i32 = 0
+    while m >= 4.0 {
+        m = m * 0.25
+        k = k + 1
+    }
+    while m < 1.0 {
+        m = m * 4.0
+        k = k - 1
+    }
+    let mut y: f32 = 0.5 * (m + 1.0)
+    y = 0.5 * (y + m / y)
+    y = 0.5 * (y + m / y)
+    y = 0.5 * (y + m / y)
+    y = 0.5 * (y + m / y)
+    while k > 0 {
+        y = y * 2.0
+        k = k - 1
+    }
+    while k < 0 {
+        y = y * 0.5
+        k = k + 1
+    }
+    return y
+}
+
+-- ── sin / cos / tan ───────────────────────────────────────────────────────
+-- Fold into [0, PI/2] using sin(-t) = -sin(t) and sin(PI - t) = sin(t), then
+-- Taylor. Six terms over a quarter turn is past f32's own resolution; over the
+-- whole turn it would not be, which is why the folding comes first.
+fn math_sin_f(x: f32) -> f32 {
+    let mut t: f32 = x
+    while t > PAK_PI { t = t - PAK_TWO_PI }
+    while t < 0.0 - PAK_PI { t = t + PAK_TWO_PI }
+    let mut sign: f32 = 1.0
+    if t < 0.0 {
+        t = 0.0 - t
+        sign = 0.0 - 1.0
+    }
+    if t > PAK_HALF_PI { t = PAK_PI - t }
+    let t2: f32 = t * t
+    -- Horner on t * (1 - t2/6 + t2^2/120 - t2^3/5040 + t2^4/362880
+    --                - t2^5/39916800)
+    let mut s: f32 = 0.0 - 0.000000025052108
+    s = s * t2 + 0.0000027557319
+    s = s * t2 - 0.00019841270
+    s = s * t2 + 0.0083333333
+    s = s * t2 - 0.16666667
+    s = s * t2 + 1.0
+    return sign * t * s
+}
+
+fn math_cos_f(x: f32) -> f32 {
+    return math_sin_f(x + PAK_HALF_PI)
+}
+
+fn math_tan_f(x: f32) -> f32 {
+    let c: f32 = math_cos_f(x)
+    if c == 0.0 { return 0.0 }
+    return math_sin_f(x) / c
+}
+
+-- ── atan2 ─────────────────────────────────────────────────────────────────
+-- Minimax on |z| <= 1, then the octant fixup. Accurate to about 1e-5, which
+-- is what a five-coefficient fit buys.
+fn math_atan_unit(z: f32) -> f32 {
+    let z2: f32 = z * z
+    let mut p: f32 = 0.0208351
+    p = p * z2 - 0.0851330
+    p = p * z2 + 0.1801410
+    p = p * z2 - 0.3302995
+    p = p * z2 + 0.9998660
+    return z * p
+}
+
+fn math_atan2_f(y: f32, x: f32) -> f32 {
+    if x == 0.0 and y == 0.0 { return 0.0 }
+    let ax: f32 = math_abs_f(x)
+    let ay: f32 = math_abs_f(y)
+    let mut a: f32 = 0.0
+    if ax >= ay {
+        a = math_atan_unit(y / x)
+        if x < 0.0 {
+            if y >= 0.0 { a = a + PAK_PI } else { a = a - PAK_PI }
+        }
+        return a
+    }
+    -- |y| > |x|: reflect through the diagonal so the polynomial keeps its
+    -- argument inside [-1, 1].
+    a = math_atan_unit(x / y)
+    if y >= 0.0 { return PAK_HALF_PI - a }
+    return (0.0 - PAK_HALF_PI) - a
+}
+
+-- ── exp / log / pow ───────────────────────────────────────────────────────
+-- ln by the atanh series on a mantissa scaled into [1, 2); exp by the same
+-- power-of-two split in reverse. pow is exp(y * ln x), so it inherits both.
+fn math_ln_f(x: f32) -> f32 {
+    if x <= 0.0 { return 0.0 }
+    let mut m: f32 = x
+    let mut k: i32 = 0
+    while m >= 2.0 {
+        m = m * 0.5
+        k = k + 1
+    }
+    while m < 1.0 {
+        m = m * 2.0
+        k = k - 1
+    }
+    let s: f32 = (m - 1.0) / (m + 1.0)
+    let s2: f32 = s * s
+    let mut p: f32 = 0.11111111
+    p = p * s2 + 0.14285714
+    p = p * s2 + 0.2
+    p = p * s2 + 0.33333333
+    p = p * s2 + 1.0
+    return 2.0 * s * p + (k as f32) * PAK_LN2
+}
+
+fn math_exp_f(x: f32) -> f32 {
+    -- Split into 2^k * e^r with |r| <= ln2/2, where six Taylor terms are past
+    -- f32's resolution.
+    let mut k: i32 = (x / PAK_LN2) as i32
+    if x < 0.0 and ((k as f32) * PAK_LN2) > x { k = k - 1 }
+    let r: f32 = x - (k as f32) * PAK_LN2
+    let mut e: f32 = 0.0013888889
+    e = e * r + 0.0083333333
+    e = e * r + 0.041666667
+    e = e * r + 0.16666667
+    e = e * r + 0.5
+    e = e * r + 1.0
+    e = e * r + 1.0
+    let mut n: i32 = k
+    while n > 0 {
+        e = e * 2.0
+        n = n - 1
+    }
+    while n < 0 {
+        e = e * 0.5
+        n = n + 1
+    }
+    return e
+}
+
+fn math_pow_f(x: f32, y: f32) -> f32 {
+    if y == 0.0 { return 1.0 }
+    if x == 0.0 { return 0.0 }
+    if x > 0.0 { return math_exp_f(y * math_ln_f(x)) }
+    -- A negative base is only defined for an integer exponent; anything else
+    -- has no real answer, so it comes back as zero rather than a NaN nobody
+    -- checks for.
+    let iy: i32 = y as i32
+    if (iy as f32) != y { return 0.0 }
+    let m: f32 = math_exp_f(y * math_ln_f(0.0 - x))
+    if (iy & 1) != 0 { return 0.0 - m }
+    return m
+}
+
+-- ── fixed-point wrappers ──────────────────────────────────────────────────
+fn math_fix_sin(a: i32) -> i32 {
+    return math_f_to_fix(math_sin_f(math_fix_to_f(a)))
+}
+
+fn math_fix_cos(a: i32) -> i32 {
+    return math_f_to_fix(math_cos_f(math_fix_to_f(a)))
+}
+
+fn math_fix_sqrt(a: i32) -> i32 {
+    return math_f_to_fix(math_sqrt_f(math_fix_to_f(a)))
+}
+
+-- ── PRNG ──────────────────────────────────────────────────────────────────
+-- xorshift32, the same generator and the same default seed as runtime/
+-- pak_rand.h, so a program seeded identically produces the same stream on
+-- both backends.
+static g_rng: u32 = 0x2545F491
+
+fn math_rand_seed(seed: u32) {
+    if seed == 0 {
+        g_rng = 0x2545F491
+    } else {
+        g_rng = seed
+    }
+}
+
+fn math_rand() -> u32 {
+    let mut x: u32 = g_rng
+    x = x ^ (x << 13)
+    x = x ^ (x >> 17)
+    x = x ^ (x << 5)
+    g_rng = x
+    return x
+}
+
+fn math_rand_range(lo: i32, hi: i32) -> i32 {
+    if hi <= lo { return lo }
+    let span: u32 = (hi - lo) as u32
+    return lo + (math_rand() % span) as i32
+}
+
+fn math_rand_f() -> f32 {
+    -- 24 bits, the most an f32 mantissa holds exactly.
+    return ((math_rand() >> 8) as f32) / 16777216.0
+}
+
+-- ── constants a program can declare `extern const` ─────────────────────────
+-- These are libdragon macros on the C backend, so nothing there defines a
+-- symbol for them; a standalone link needs one. Both are hardware facts
+-- rather than libdragon inventions, which is why they belong here:
+--
+--   TICKS_PER_SECOND   the VR4300's COP0 count rate, CPU_FREQUENCY / 2, and
+--                      93.75 MHz is the retail N64's clock.
+--   RDPQ_COMBINER_FLAT the colour combiner set to pass the primitive colour
+--                      through unchanged. libdragon's macro is 64 bits
+--                      (0x00887F1088FDF6FB); a `u32` reference to it takes
+--                      the low half on either backend, so that is what this
+--                      is, and a program wanting the whole word should build
+--                      it with rdpq.set_combiner_raw.
+--
+-- They are `static`, not `const`, because an `extern const` in a program
+-- lowers to a symbol reference and a Pak `const` has no address.
+static TICKS_PER_SECOND: u32   = 46875000
+static RDPQ_COMBINER_FLAT: u32 = 0x88FDF6FB

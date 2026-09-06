@@ -396,7 +396,9 @@ main:
     addiu $a0, $sp, 220
     la $t7, .Lf321
     lwc1 $f12, 0($t7)
+    swc1 $f12, 228($sp)
     addiu $a1, $sp, 180
+    lwc1 $f12, 228($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal vec2fx_scale

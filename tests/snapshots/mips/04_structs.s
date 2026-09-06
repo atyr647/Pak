@@ -238,17 +238,19 @@ Player_move:
     mov.s $f12, $f14
     swc1 $f12, 144($sp)
     lwc1 $f12, 140($sp)
-    mov.s $f14, $f12
+    swc1 $f12, 148($sp)
     lw $t6, 136($sp)
     lwc1 $f12, 0($t6)
+    lwc1 $f14, 148($sp)
     add.s $f12, $f12, $f14
     lw $t7, 136($sp)
     swc1 $f12, 0($t7)
     move $t9, $t8
     lwc1 $f12, 144($sp)
-    mov.s $f14, $f12
+    swc1 $f12, 148($sp)
     lw $t6, 136($sp)
     lwc1 $f12, 4($t6)
+    lwc1 $f14, 148($sp)
     add.s $f12, $f12, $f14
     lw $t7, 136($sp)
     swc1 $f12, 4($t7)
@@ -376,9 +378,12 @@ main:
     move $a0, $t8
     la $t7, .Lf320
     lwc1 $f12, 0($t7)
-    mov.s $f14, $f12
+    swc1 $f12, 184($sp)
     la $t7, .Lf324
     lwc1 $f12, 0($t7)
+    swc1 $f12, 188($sp)
+    lwc1 $f14, 184($sp)
+    lwc1 $f12, 188($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal Player_move

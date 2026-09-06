@@ -209,12 +209,14 @@ area:
     lwc1 $f12, 4($t9)
     swc1 $f12, 148($sp)
     lwc1 $f12, 148($sp)
-    mov.s $f14, $f12
+    swc1 $f12, 156($sp)
     lwc1 $f12, 148($sp)
+    lwc1 $f14, 156($sp)
     mul.s $f12, $f14, $f12
-    mov.s $f14, $f12
+    swc1 $f12, 152($sp)
     la $t6, .Lf320
     lwc1 $f12, 0($t6)
+    lwc1 $f14, 152($sp)
     mul.s $f12, $f14, $f12
     j .Larea_ret_0
     nop
@@ -226,12 +228,13 @@ area:
     bne $t8, $t7, .Larm_skip_5
     nop
     lwc1 $f12, 4($t9)
-    swc1 $f12, 152($sp)
+    swc1 $f12, 160($sp)
     lwc1 $f12, 8($t9)
-    swc1 $f12, 156($sp)
-    lwc1 $f12, 152($sp)
-    mov.s $f14, $f12
-    lwc1 $f12, 156($sp)
+    swc1 $f12, 164($sp)
+    lwc1 $f12, 160($sp)
+    swc1 $f12, 152($sp)
+    lwc1 $f12, 164($sp)
+    lwc1 $f14, 152($sp)
     mul.s $f12, $f14, $f12
     j .Larea_ret_0
     nop
