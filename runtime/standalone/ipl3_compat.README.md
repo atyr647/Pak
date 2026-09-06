@@ -50,7 +50,32 @@ involved. libdragon's own ROMs sidestep it because the *mainline* build does
 not write the size it detected to `0x80000318`, where mupen64plus reads it;
 the compat build does, so the emulator sees the bad number and stops.
 
-Test standalone ROMs on hardware or on an emulator with real RDRAM emulation
-(ares, simple64, or any build tracking libdragon's own CI). `pak explain`,
-`pak dlist` and the MIPS simulator are the loop to use here in the meantime;
-the libdragon backend is the path with an emulator-verified toolchain today.
+**ares runs it.** `tcl/tools/ares_test.tcl` boots two ROMs on ares headless
+under Xvfb and checks the pixels that come out; `tools/build_ares.sh` builds
+the emulator. Note that the Debian and Ubuntu `ares` packages have the
+Nintendo 64 core removed, and that package is on PATH ahead of a locally built
+one -- it opens a window, loads nothing, and shows a black screen, which looks
+exactly like a ROM that will not boot. The gate checks which systems the ares
+it found actually has.
+
+## What the game has to do: terminate the boot process
+
+Something must write `8` to the last word of PIF RAM (`0xBFC007FC`) after
+boot. If nobody does, the PIF halts the CPU five seconds in -- ares says so
+outright:
+
+```
+[unusual] [PIF::main] boot timeout: CPU has not sent the boot termination
+          command within 5 seconds. Halting the CPU
+```
+
+Official IPL3 left this to the game. libdragon's *mainline* loader does it
+itself (`boot/loader.c`, `pif_terminate_boot`); the **compat** loader Pak ships
+deliberately does not, because the build systems it targets have a crt0 that
+already does. So it is `runtime/standalone/boot.S`'s job, and it does it before
+calling `main`.
+
+This is worth knowing about because the failure is invisible on a lenient
+emulator: mupen64plus does not implement the timeout at all, and even on ares
+the picture draws correctly for five seconds before the freeze. Only the log
+line names it.

@@ -171,6 +171,32 @@ jobs:
       - name: The linked image runs from _start
         run: PATH=/opt/pak-n64/bin:$PATH tclsh tcl/tools/rom_exec_test.tcl
 
+      # Everything above checks Pak against Pak, or against binutils -- which
+      # covers the bytes, not what a console does with them. This boots the
+      # finished .z64 on ares and looks at the pixels. It is also the only
+      # thing that implements the PIF's boot timeout, which is what caught
+      # runtime/standalone/boot.S never sending the boot-termination command:
+      # the picture draws correctly for five seconds either way.
+      #
+      # ares is ~30 minutes to build (plus SDL3, which Ubuntu does not
+      # package), so it is cached; the gate skips cleanly when the cache is
+      # cold rather than failing.
+      - name: Cache ares
+        id: ares
+        uses: actions/cache@v4
+        with:
+          path: /opt/pak-ares
+          key: ares-master-sdl3.2.24-v1
+
+      - name: Build ares (cold cache only)
+        if: steps.ares.outputs.cache-hit != 'true'
+        run: bash tools/build_ares.sh /opt/pak-ares
+
+      - name: Standalone ROMs boot and draw on ares
+        run: |
+          sudo apt-get install -y xvfb imagemagick mesa-vulkan-drivers libgl1-mesa-dri
+          PATH=/opt/pak-ares/bin:/opt/pak-n64/bin:$PATH tclsh tcl/tools/ares_test.tcl
+
       # Every diagnostic the corpus exercises is a mistake someone thought to
       # write down. This finds the ones nobody did: mutated sources that must
       # still come back as an error message with a line number rather than as

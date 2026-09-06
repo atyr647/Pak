@@ -194,7 +194,11 @@ fn display_close() {
 -- ── SI (Serial Interface) controller ─────────────────────────────────────────
 const SI_DRAM_ADDR:      u32 = 0xA4800000
 const SI_PIF_ADDR_RD64B: u32 = 0xA4800004
-const SI_STATUS:         u32 = 0xA480000C
+-- SI_STATUS is at 0x04800018. 0x0480000C is a reserved register that reads
+-- back zero, so si_wait() returned immediately and every Joybus transaction --
+-- controller polling and EEPROM alike -- raced the SI instead of waiting for
+-- it. ares' PIF is strict enough to notice; mupen64plus was not.
+const SI_STATUS:         u32 = 0xA4800018
 const SI_PIF_ADDR_WR64B: u32 = 0xA4800010
 const PIF_RAM_PHYS:      u32 = 0x1FC007C0
 

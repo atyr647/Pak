@@ -71,6 +71,26 @@ _start:
     bnez    $10, .Lvec_ic
     nop
 
+    /* ── Tell the PIF the boot process is finished ──
+     * Writing 8 to the last word of PIF RAM (0xBFC007FC). If nobody does,
+     * the PIF halts the CPU five seconds in -- ares reports it as
+     * "boot timeout: CPU has not sent the boot termination command".
+     * Official IPL3 left this to the game, and libdragon's *compat* IPL3
+     * (the one Pak ships) follows suit; only its mainline loader does it
+     * itself. So it is the crt0's job here.
+     * SI_STATUS is 0xA4800018; bits 0 and 1 are DMA_BUSY and IO_BUSY. */
+    lui     $9, 0xA480
+    ori     $9, $9, 0x0018
+.Lsi_idle:
+    lw      $10, 0($9)
+    andi    $10, $10, 0x3
+    bnez    $10, .Lsi_idle
+    nop
+    lui     $8, 0xBFC0
+    ori     $8, $8, 0x07FC
+    li      $11, 8
+    sw      $11, 0($8)
+
     /* ── Call main ── */
     jal     main
     nop
