@@ -70,6 +70,14 @@ proc hal_stub_header {} {
     lappend out "pak_joypad_status_t pak_joypad_get_status(int);"
     lappend out "void pak_rdpq_set_fill_color(uint32_t);"
     lappend out "void pak_rdpq_set_mode_fill(uint32_t);"
+    lappend out ""
+    lappend out "/* DragonFS. `main` mounts it when the file declares an asset,"
+    lappend out " * so the generated C names these two whether or not the program"
+    lappend out " * calls anything from dragonfs.h itself. Neither is in"
+    lappend out " * MODULE_API: they are emitted by the entry-block prologue"
+    lappend out " * rather than by a Pak call. */"
+    lappend out "#define DFS_DEFAULT_LOCATION 0"
+    lappend out "int dfs_init(uint32_t);"
     set seen [dict create]
     foreach key [pak::module_api_keys] {
         lassign $key mod fn
