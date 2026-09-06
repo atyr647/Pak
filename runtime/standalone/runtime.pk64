@@ -3083,20 +3083,27 @@ fn pakfs_name_eq(name: u32, stored: u32, nlen: i32) -> i32 {
     return 1
 }
 
--- Generated asset paths carry the "pak:/" scheme the libdragon backend needs;
--- the archive names do not.
-fn pakfs_strip_scheme(p: u32) -> u32 {
+-- Generated asset paths carry a scheme; the archive names do not. `rom:/` is
+-- what both backends emit -- libdragon opens it through DragonFS -- and
+-- `pak:/` is accepted too, so a path written by hand for either one works.
+fn pakfs_has_prefix(p: u32, c0: i32, c1: i32, c2: i32) -> i32 {
     let a: *u8 = p as *u8
     let b: *u8 = (p + 1) as *u8
     let c: *u8 = (p + 2) as *u8
     let d: *u8 = (p + 3) as *u8
     let e: *u8 = (p + 4) as *u8
-    if *a != 112 { return p }   -- 'p'
-    if *b != 97  { return p }   -- 'a'
-    if *c != 107 { return p }   -- 'k'
-    if *d != 58  { return p }   -- ':'
-    if *e != 47  { return p }   -- '/'
-    return p + 5
+    if (*a as i32) != c0 { return 0 }
+    if (*b as i32) != c1 { return 0 }
+    if (*c as i32) != c2 { return 0 }
+    if *d != 58 { return 0 }   -- ':'
+    if *e != 47 { return 0 }   -- '/'
+    return 1
+}
+
+fn pakfs_strip_scheme(p: u32) -> u32 {
+    if pakfs_has_prefix(p, 114, 111, 109) != 0 { return p + 5 }   -- "rom:/"
+    if pakfs_has_prefix(p, 112, 97, 107) != 0  { return p + 5 }   -- "pak:/"
+    return p
 }
 
 -- ROM offset of a file, or 0. Its size lands in g_pakfs_size.

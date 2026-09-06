@@ -484,39 +484,32 @@ proc pak::cmd_build {opts} {
         }
         puts "  Runtime -> runtime/"
     }
-    # Assets / pakfs
+    # Assets. Whether the project HAS any is all that is decided here: the
+    # conversion and the filesystem image are Makefile rules, because they
+    # depend on tools (mksprite, audioconv64, mkdfs) that only exist inside a
+    # libdragon install. This used to look for the CONVERTED files instead --
+    # which only exist after a build -- so the first `pak build` of a project
+    # with assets always concluded it had none and generated a Makefile with
+    # no filesystem in it.
     set has_assets 0
-    set pakfs_name "${project_name}.pakfs"
-    set packable {}
-    set convert {.png .sprite .wav .wav64 .xm .xm64 .ym .ym64 .gltf .t3dm .glb .t3dm}
+    set convert {.png .wav .xm .ym .gltf .glb}
+    set n_assets 0
     if {[dict exists $config assets]} {
         dict for {kind rel_dir} [dict get $config assets] {
             set asset_path [file join $root $rel_dir]
-            if {[file isdirectory $asset_path]} {
-                foreach f [lsort [pak::_rglob $asset_path *]] {
-                    set ext [file extension $f]
-                    set idx [lsearch -exact $convert $ext]
-                    if {$idx >= 0} {
-                        set out_ext [lindex $convert [expr {$idx+1}]]
-                        set rel [pak::_relto $f $asset_path]
-                        set conv [file join $build_dir [file rootname $rel]$out_ext]
-                        if {[file exists $conv]} {
-                            set arch [pak::_relto $conv $build_dir]
-                            lappend packable [list $arch [pak::cli_read_bin $conv]]
-                            set has_assets 1
-                        }
-                    }
+            if {![file isdirectory $asset_path]} continue
+            foreach f [lsort [pak::_rglob $asset_path *]] {
+                if {[file extension $f] in $convert} {
+                    set has_assets 1
+                    incr n_assets
                 }
             }
         }
     }
     if {$has_assets} {
-        set fsdir [file join $root filesystem]
-        file mkdir $fsdir
-        pak::cli_write_bin [file join $fsdir $pakfs_name] [pak::pakfs_pack $packable]
-        puts "  Packed [llength $packable] asset(s) -> filesystem/$pakfs_name"
+        puts "  $n_assets asset(s) -> filesystem/${project_name}.dfs (built by make)"
     }
-    set pakfs_arg [expr {$has_assets ? $pakfs_name : ""}]
+    set pakfs_arg [expr {$has_assets ? "${project_name}.dfs" : ""}]
     set makefile [pak::generate_makefile $project_name $rom_title $out_rel $pakfs_arg \
         $save_type $bit_depth $resolution $framebuffers $optimization $use_tiny3d $root $backend]
     pak::cli_write [file join $root Makefile] $makefile

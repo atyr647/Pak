@@ -408,11 +408,11 @@ compiling the examples that use them.
 | `rdpq` | `init` | `rdpq_init` | yes | yes |
 | `rdpq` | `load_block` | `rdpq_load_block` | yes* | yes |
 | `rdpq` | `load_tile` | `rdpq_load_tile` | yes | yes |
-| `rdpq` | `load_tlut` | `rdpq_load_tlut` | no | yes |
+| `rdpq` | `load_tlut` | `rdpq_load_tlut_raw` | yes | yes |
 | `rdpq` | `set_blend_color` | `rdpq_set_blend_color` | yes | yes |
 | `rdpq` | `set_color_image` | `rdpq_set_color_image` | yes | yes |
 | `rdpq` | `set_combiner_raw` | `rdpq_set_combiner_raw` | yes | yes |
-| `rdpq` | `set_convert` | `rdpq_set_convert` | no | yes |
+| `rdpq` | `set_convert` | `rdpq_set_yuv_parms` | yes | yes |
 | `rdpq` | `set_env_color` | `rdpq_set_env_color` | yes | yes |
 | `rdpq` | `set_fill_color` | `rdpq_set_fill_color` | yes* | yes |
 | `rdpq` | `set_fog_color` | `rdpq_set_fog_color` | yes | yes |
@@ -424,7 +424,7 @@ compiling the examples that use them.
 | `rdpq` | `set_mode_standard_z` | `rdpq_set_mode_standard_z` | no | yes |
 | `rdpq` | `set_other_modes_raw` | `rdpq_set_other_modes_raw` | yes | yes |
 | `rdpq` | `set_prim_color` | `rdpq_set_prim_color` | yes | yes |
-| `rdpq` | `set_prim_depth` | `rdpq_set_prim_depth` | no | yes |
+| `rdpq` | `set_prim_depth` | `rdpq_set_prim_depth_raw` | yes | yes |
 | `rdpq` | `set_scissor` | `rdpq_set_scissor` | yes | yes |
 | `rdpq` | `set_texture_image` | `rdpq_set_texture_image` | yes* | yes |
 | `rdpq` | `set_tile` | `rdpq_set_tile` | yes | yes |
@@ -619,7 +619,16 @@ compiling the examples that use them.
 
 **344 functions** across the module surface; **134** exist on the standalone HAL.
 
-Of the 247 lowered as a direct call: **119** are libdragon's own, **32** need Tiny3D, and **96** are **not implemented on the libdragon backend** — they exist only on the standalone HAL.
+Of the 247 lowered as a direct call: **122** are libdragon's own, **32** need Tiny3D, and **93** are **standalone-only**.
+
+Standalone-only is mostly by design rather than debt. libdragon owns the
+subsystem and exposes a different shape for it: interrupts are callbacks
+(`register_VI_handler`) rather than mask/restore, exceptions are
+`register_exception_handler`, the RSP is an `rsp_ucode_t` rather than raw
+SP registers, and `rdpq.triangle_*` takes screen-space integers where
+libdragon's `rdpq_triangle` takes a format struct and float vertex arrays.
+A program using one of these builds with `--backend mips`; `pak check`
+warns W005 rather than letting the C fail to compile.
 
 <!-- END GENERATED MODULE API -->
 
@@ -859,16 +868,23 @@ use n64.sprite           -- #include <rdpq_sprite.h>
   reading the name the first time loads the file, and every read after that
   reuses the handle.
 
-**On the standalone backend:**
-- `pak link --fs <archive>` appends a PakFS archive to the ROM past the
-  payload; the runtime walks its index and DMAs a file in on demand. A ROM
-  linked without `--fs` has no assets and every load returns `none`.
-- The archive is named after the CONVERTED file, so `from "sprites/bg.png"`
-  looks up `sprites/bg.sprite` — what `pak build` ran through `mksprite` and
-  packed. Asset paths are relative to the project's `assets/` directory.
-- Only `--compress 0` sprites are readable: a compressed one starts with
-  libdragon's "DCA3" container and nothing in the standalone runtime
-  decompresses it.
+**How an asset reaches the ROM:**
+- libdragon: `pak build` writes a Makefile that converts each asset and packs
+  the results into a DragonFS image (`filesystem/<project>.dfs`), which
+  n64.mk attaches to the ROM. `main` calls `dfs_init` before anything can read
+  one. A `.dfs` is the only kind of attached file n64.mk's `%.z64` rule passes
+  on, which is why the image is one.
+- Standalone: `pak link --fs <archive>` appends a PakFS archive to the ROM
+  past the payload; the runtime walks its index and DMAs a file in on demand.
+  A ROM linked without `--fs` has no assets and every load returns `none`.
+- Either way the path is `rom:/<converted name>`.
+- The name is the CONVERTED file's, so `from "sprites/bg.png"` looks up
+  `sprites/bg.sprite` — what `pak build` ran through `mksprite`. Asset paths
+  are relative to the project's `assets/` directory.
+- On the standalone backend only `--compress 0` sprites are readable: a
+  compressed one starts with libdragon's "DCA3" container and nothing in the
+  standalone runtime decompresses it. libdragon's own `sprite_load` handles
+  both, so the Makefile leaves mksprite's default compression on.
 - CI4 and CI8 sprites are skipped rather than drawn, because their palette is
   not loaded into TMEM; so are the 4-bit formats. RGBA16 is what `pak build`
   converts to.

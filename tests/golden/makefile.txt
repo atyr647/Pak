@@ -25,8 +25,7 @@ RUNTIME_DIR     = $(shell pak --runtime-dir 2>/dev/null || echo runtime)
 
 
 SRCS = main.c \
-        player.c \
-        runtime/pakfs.c
+        player.c
 
 OBJS = $(SRCS:%.c=$(BUILD_DIR)/%.o)
 DEPS = $(OBJS:.o=.d)
@@ -61,22 +60,28 @@ $(BUILD_DIR)/%.o: %.c
 -include $(DEPS)
 
 # ── Asset conversion rules ────────────────────────────────────────
+#
+# The tool variables are n64.mk's own (N64_MKSPRITE, N64_AUDIOCONV): MKSPRITE
+# and AUDIOCONV64 are defined nowhere, so these rules used to run the bare
+# flags as a command. mksprite's --output takes a DIRECTORY and names the file
+# after the input, so pointing it at $@ made a directory called hero.sprite
+# with the sprite inside it, and mkdfs then skipped the empty tree.
 
 $(BUILD_DIR)/%.sprite: %.png
 	@mkdir -p $(dir $@)
-	$(MKSPRITE) --format RGBA16 --output $@ $<
+	$(N64_MKSPRITE) --format RGBA16 --output $(dir $@) $<
 
 $(BUILD_DIR)/%.wav64: %.wav
 	@mkdir -p $(dir $@)
-	$(AUDIOCONV64) $< $@
+	$(N64_AUDIOCONV) -o $(dir $@) $<
 
 $(BUILD_DIR)/%.xm64: %.xm
 	@mkdir -p $(dir $@)
-	$(AUDIOCONV64) $< $@
+	$(N64_AUDIOCONV) -o $(dir $@) $<
 
 $(BUILD_DIR)/%.ym64: %.ym
 	@mkdir -p $(dir $@)
-	$(AUDIOCONV64) $< $@
+	$(N64_AUDIOCONV) -o $(dir $@) $<
 
 
 run: $(PROJECT_NAME).z64
@@ -111,10 +116,9 @@ FRAMEBUFFERS    = 2
 
 RUNTIME_DIR     = $(shell pak --runtime-dir 2>/dev/null || echo runtime)
 
-DFS_FILE        = filesystem/g2.pakfs
+DFS_FILE        = filesystem/g2.dfs
 
-SRCS = a.c \
-        runtime/pakfs.c
+SRCS = a.c
 
 OBJS = $(SRCS:%.c=$(BUILD_DIR)/%.o)
 DEPS = $(OBJS:.o=.d)
@@ -149,23 +153,33 @@ $(BUILD_DIR)/%.o: %.c
 -include $(DEPS)
 
 # ── Asset conversion rules ────────────────────────────────────────
+#
+# The tool variables are n64.mk's own (N64_MKSPRITE, N64_AUDIOCONV): MKSPRITE
+# and AUDIOCONV64 are defined nowhere, so these rules used to run the bare
+# flags as a command. mksprite's --output takes a DIRECTORY and names the file
+# after the input, so pointing it at $@ made a directory called hero.sprite
+# with the sprite inside it, and mkdfs then skipped the empty tree.
 
 $(BUILD_DIR)/%.sprite: %.png
 	@mkdir -p $(dir $@)
-	$(MKSPRITE) --format RGBA16 --output $@ $<
+	$(N64_MKSPRITE) --format RGBA16 --output $(dir $@) $<
 
 $(BUILD_DIR)/%.wav64: %.wav
 	@mkdir -p $(dir $@)
-	$(AUDIOCONV64) $< $@
+	$(N64_AUDIOCONV) -o $(dir $@) $<
 
 $(BUILD_DIR)/%.xm64: %.xm
 	@mkdir -p $(dir $@)
-	$(AUDIOCONV64) $< $@
+	$(N64_AUDIOCONV) -o $(dir $@) $<
 
 $(BUILD_DIR)/%.ym64: %.ym
 	@mkdir -p $(dir $@)
-	$(AUDIOCONV64) $< $@
-# ── PakFS archive (packed from converted assets in BUILD_DIR) ──────────────
+	$(N64_AUDIOCONV) -o $(dir $@) $<
+# ── Asset filesystem (DragonFS, built from the converted assets) ───────────
+#
+# n64.mk's %.z64 rule attaches $(filter %.dfs, $^) and nothing else, so the
+# image has to BE a .dfs -- a `filesystem/<name>.pakfs` prerequisite was
+# silently dropped and the ROM shipped with no assets in it at all.
 _RAW_ASSETS      := $(shell find assets -type f 2>/dev/null)
 _SPRITE_SRCS     := $(filter %.png,$(_RAW_ASSETS))
 _WAV_SRCS        := $(filter %.wav,$(_RAW_ASSETS))
@@ -180,9 +194,9 @@ _T3DM_OUTS       := $(patsubst %.gltf,$(BUILD_DIR)/%.t3dm,$(filter %.gltf,$(_T3D
                     $(patsubst %.glb,$(BUILD_DIR)/%.t3dm,$(filter %.glb,$(_T3DM_SRCS)))
 _CONVERTED_ASSETS := $(_SPRITE_OUTS) $(_WAV_OUTS) $(_XM_OUTS) $(_YM_OUTS) $(_T3DM_OUTS)
 
-filesystem/g2.pakfs: $(_CONVERTED_ASSETS)
+filesystem/g2.dfs: $(_CONVERTED_ASSETS)
 	@mkdir -p filesystem
-	pak pack --output $@ --base $(BUILD_DIR)/assets $(_CONVERTED_ASSETS)
+	$(N64_MKDFS) $@ $(BUILD_DIR)/assets >/dev/null
 
 run: $(PROJECT_NAME).z64
 	ares --system Nintendo64 $<
@@ -224,11 +238,10 @@ FRAMEBUFFERS    = 3
 
 RUNTIME_DIR     = $(shell pak --runtime-dir 2>/dev/null || echo runtime)
 
-DFS_FILE        = filesystem/m3.pakfs
+DFS_FILE        = filesystem/m3.dfs
 
 SRCS = x.s \
-        y.c \
-        runtime/pakfs.c
+        y.c
 
 C_SRCS  = $(filter %.c,$(SRCS))
 S_SRCS  = $(filter %.s,$(SRCS))
@@ -272,31 +285,43 @@ $(BUILD_DIR)/%.o: %.c
 -include $(DEPS)
 
 # ── Asset conversion rules ────────────────────────────────────────
+#
+# The tool variables are n64.mk's own (N64_MKSPRITE, N64_AUDIOCONV): MKSPRITE
+# and AUDIOCONV64 are defined nowhere, so these rules used to run the bare
+# flags as a command. mksprite's --output takes a DIRECTORY and names the file
+# after the input, so pointing it at $@ made a directory called hero.sprite
+# with the sprite inside it, and mkdfs then skipped the empty tree.
 
 $(BUILD_DIR)/%.sprite: %.png
 	@mkdir -p $(dir $@)
-	$(MKSPRITE) --format RGBA16 --output $@ $<
+	$(N64_MKSPRITE) --format RGBA16 --output $(dir $@) $<
 
 $(BUILD_DIR)/%.wav64: %.wav
 	@mkdir -p $(dir $@)
-	$(AUDIOCONV64) $< $@
+	$(N64_AUDIOCONV) -o $(dir $@) $<
 
 $(BUILD_DIR)/%.xm64: %.xm
 	@mkdir -p $(dir $@)
-	$(AUDIOCONV64) $< $@
+	$(N64_AUDIOCONV) -o $(dir $@) $<
 
 $(BUILD_DIR)/%.ym64: %.ym
 	@mkdir -p $(dir $@)
-	$(AUDIOCONV64) $< $@
+	$(N64_AUDIOCONV) -o $(dir $@) $<
+
+T3D_GLTF_TO_3D ?= $(TINY3D_INST)/bin/gltf_to_t3d
 
 $(BUILD_DIR)/%.t3dm: %.gltf
 	@mkdir -p $(dir $@)
-	$(T3D_GLTF) $< $@
+	$(T3D_GLTF_TO_3D) "$<" $@
 
 $(BUILD_DIR)/%.t3dm: %.glb
 	@mkdir -p $(dir $@)
-	$(T3D_GLTF) $< $@
-# ── PakFS archive (packed from converted assets in BUILD_DIR) ──────────────
+	$(T3D_GLTF_TO_3D) "$<" $@
+# ── Asset filesystem (DragonFS, built from the converted assets) ───────────
+#
+# n64.mk's %.z64 rule attaches $(filter %.dfs, $^) and nothing else, so the
+# image has to BE a .dfs -- a `filesystem/<name>.pakfs` prerequisite was
+# silently dropped and the ROM shipped with no assets in it at all.
 _RAW_ASSETS      := $(shell find assets -type f 2>/dev/null)
 _SPRITE_SRCS     := $(filter %.png,$(_RAW_ASSETS))
 _WAV_SRCS        := $(filter %.wav,$(_RAW_ASSETS))
@@ -311,9 +336,9 @@ _T3DM_OUTS       := $(patsubst %.gltf,$(BUILD_DIR)/%.t3dm,$(filter %.gltf,$(_T3D
                     $(patsubst %.glb,$(BUILD_DIR)/%.t3dm,$(filter %.glb,$(_T3DM_SRCS)))
 _CONVERTED_ASSETS := $(_SPRITE_OUTS) $(_WAV_OUTS) $(_XM_OUTS) $(_YM_OUTS) $(_T3DM_OUTS)
 
-filesystem/m3.pakfs: $(_CONVERTED_ASSETS)
+filesystem/m3.dfs: $(_CONVERTED_ASSETS)
 	@mkdir -p filesystem
-	pak pack --output $@ --base $(BUILD_DIR)/assets $(_CONVERTED_ASSETS)
+	$(N64_MKDFS) $@ $(BUILD_DIR)/assets >/dev/null
 
 run: $(PROJECT_NAME).z64
 	ares --system Nintendo64 $<
@@ -356,8 +381,7 @@ FRAMEBUFFERS    = 3
 RUNTIME_DIR     = $(shell pak --runtime-dir 2>/dev/null || echo runtime)
 
 
-SRCS = scene.s \
-        runtime/pakfs.c
+SRCS = scene.s
 
 C_SRCS  = $(filter %.c,$(SRCS))
 S_SRCS  = $(filter %.s,$(SRCS))
@@ -401,30 +425,38 @@ $(BUILD_DIR)/%.o: %.c
 -include $(DEPS)
 
 # ── Asset conversion rules ────────────────────────────────────────
+#
+# The tool variables are n64.mk's own (N64_MKSPRITE, N64_AUDIOCONV): MKSPRITE
+# and AUDIOCONV64 are defined nowhere, so these rules used to run the bare
+# flags as a command. mksprite's --output takes a DIRECTORY and names the file
+# after the input, so pointing it at $@ made a directory called hero.sprite
+# with the sprite inside it, and mkdfs then skipped the empty tree.
 
 $(BUILD_DIR)/%.sprite: %.png
 	@mkdir -p $(dir $@)
-	$(MKSPRITE) --format RGBA16 --output $@ $<
+	$(N64_MKSPRITE) --format RGBA16 --output $(dir $@) $<
 
 $(BUILD_DIR)/%.wav64: %.wav
 	@mkdir -p $(dir $@)
-	$(AUDIOCONV64) $< $@
+	$(N64_AUDIOCONV) -o $(dir $@) $<
 
 $(BUILD_DIR)/%.xm64: %.xm
 	@mkdir -p $(dir $@)
-	$(AUDIOCONV64) $< $@
+	$(N64_AUDIOCONV) -o $(dir $@) $<
 
 $(BUILD_DIR)/%.ym64: %.ym
 	@mkdir -p $(dir $@)
-	$(AUDIOCONV64) $< $@
+	$(N64_AUDIOCONV) -o $(dir $@) $<
+
+T3D_GLTF_TO_3D ?= $(TINY3D_INST)/bin/gltf_to_t3d
 
 $(BUILD_DIR)/%.t3dm: %.gltf
 	@mkdir -p $(dir $@)
-	$(T3D_GLTF) $< $@
+	$(T3D_GLTF_TO_3D) "$<" $@
 
 $(BUILD_DIR)/%.t3dm: %.glb
 	@mkdir -p $(dir $@)
-	$(T3D_GLTF) $< $@
+	$(T3D_GLTF_TO_3D) "$<" $@
 
 
 run: $(PROJECT_NAME).z64

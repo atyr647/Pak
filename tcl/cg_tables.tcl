@@ -99,7 +99,7 @@ set ::pak::CG_API [dict create \
     {rdpq flush} {rspq_flush} \
     {rdpq init} {rdpq_init} \
     {rdpq load_tile} {rdpq_load_tile} \
-    {rdpq load_tlut} {rdpq_load_tlut} \
+    {rdpq load_tlut} {rdpq_load_tlut_raw} \
     {rdpq set_blend_color} {rdpq_set_blend_color} \
     {rdpq set_color_image} {rdpq_set_color_image} \
     {rdpq set_combiner_raw} {rdpq_set_combiner_raw} \
@@ -109,10 +109,10 @@ set ::pak::CG_API [dict create \
     {rdpq set_mode_standard_z} {rdpq_set_mode_standard_z} \
     {rdpq set_other_modes_raw} {rdpq_set_other_modes_raw} \
     {rdpq set_prim_color} {rdpq_set_prim_color} \
-    {rdpq set_prim_depth} {rdpq_set_prim_depth} \
+    {rdpq set_prim_depth} {rdpq_set_prim_depth_raw} \
     {rdpq set_key_r} {rdpq_set_key_r} \
     {rdpq set_key_gb} {rdpq_set_key_gb} \
-    {rdpq set_convert} {rdpq_set_convert} \
+    {rdpq set_convert} {rdpq_set_yuv_parms} \
     {rdpq set_scissor} {rdpq_set_scissor} \
     {rdpq set_tile} {rdpq_set_tile} \
     {rdpq set_tile_mask} {rdpq_set_tile_mask} \

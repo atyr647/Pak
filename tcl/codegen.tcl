@@ -147,7 +147,7 @@ proc pak::cg_subst_type {t subst} {
 }
 
 oo::class create pak::Codegen {
-    variable filename uses assets module_name fn_names enum_variants variant_types \
+    variable filename uses assets has_assets module_name fn_names enum_variants variant_types \
              variant_case_fields \
              struct_fields scopes method_registry trait_decls const_values \
              generic_fns generic_structs generic_impls mono_struct_origin \
@@ -163,6 +163,7 @@ oo::class create pak::Codegen {
         set filename $fname
         set uses {}
         set assets {}
+        set has_assets 0
         set module_name ""
         set fn_names {}
         set fn_decls [dict create]
@@ -2945,6 +2946,13 @@ oo::class create pak::Codegen {
 
     method gen_entry {entry} {
         set lines [list "int main(void) {"]
+        # An asset is read from the ROM's DragonFS image, and nothing can open
+        # `rom:/...` until that is mounted. Nothing used to mount it at all:
+        # every asset load failed at runtime in a build that compiled and
+        # linked cleanly.
+        if {$has_assets} {
+            lappend lines "    dfs_init(DFS_DEFAULT_LOCATION);"
+        }
         my scope_push
         foreach st [pak::items [pak::nfield [pak::nfield $entry body] stmts]] {
             set s [my gen_stmt $st 1]
@@ -3087,7 +3095,7 @@ oo::class create pak::Codegen {
             }
         }
 
-        if {[llength $assets] > 0} { lappend out "#include <pakfs.h>" }
+        if {[llength $assets] > 0} { set has_assets 1 }
 
         if {"n64.timer" in $uses} {
             lappend out ""
@@ -3120,7 +3128,7 @@ oo::class create pak::Codegen {
                 set tname [expr {[pak::kindof $atype] eq "TypeName" ? [pak::fval $atype name] : [pak::sval $atype]}]
             }
             lappend out "/* asset: $aname from \"$apath\" */"
-            lappend out "static const char *${aname}_path = \"pak:/[pak::asset_packed_path $apath]\";"
+            lappend out "static const char *${aname}_path = \"rom:/[pak::asset_packed_path $apath]\";"
             if {[dict exists $asset_loaders $tname]} {
                 lassign [dict get $asset_loaders $tname] ctype loader
                 lappend out "static $ctype _pak_asset_${aname} = 0;"

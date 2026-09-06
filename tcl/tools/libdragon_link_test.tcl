@@ -67,6 +67,38 @@ proc n64_flags {var} {
 set CFLAGS [n64_flags N64_CFLAGS]
 if {$CFLAGS eq ""} { puts "libdragon link: SKIP (cannot read N64_CFLAGS from n64.mk)"; exit 0 }
 
+# A minimal RGBA PNG, so a gate can create an asset without an image library.
+proc make_png {path w h} {
+    file mkdir [file dirname $path]
+    set raw ""
+    for {set y 0} {$y < $h} {incr y} {
+        append raw [binary format c 0]
+        for {set x 0} {$x < $w} {incr x} {
+            append raw [binary format cccc 255 [expr {$x * 40}] [expr {$y * 40}] 255]
+        }
+    }
+    set z [zlib compress $raw]
+    proc _png_chunk {type data} {
+        return "[binary format I [string length $data]]$type$data[binary format I [zlib crc32 $type$data]]"
+    }
+    set out "\x89PNG\r\n\x1a\n"
+    append out [_png_chunk IHDR [binary format IIccccc $w $h 8 6 0 0 0]]
+    append out [_png_chunk IDAT $z]
+    append out [_png_chunk IEND ""]
+    set fh [open $path wb]; fconfigure $fh -translation binary
+    puts -nonewline $fh $out; close $fh
+    return $path
+}
+
+proc ok_true {name cond} {
+    if {$cond} {
+        puts "ok    $name"
+    } else {
+        puts "FAIL  $name"
+        uplevel 1 {set ok 0}
+    }
+}
+
 proc known_broken {} {
     global KNOWN
     set out {}
@@ -170,6 +202,40 @@ if {[llength $regressed] > 0 || [llength $fixed] > 0} { exit 1 }
 # so no generated project had ever linked. Only running `pak init && pak build
 # && make` finds that.
 puts ""
+puts "== module functions that map onto a libdragon spelling =="
+# Three rdpq calls were named as if libdragon did not have them, so every
+# program using one warned W005 and could not be built for libdragon at all.
+# It does have them, under its `_raw` names. Compiling the call proves the
+# ARITY and the argument types match, which a name-only check cannot.
+set probe [file join $WORK probe_rdpq.pk64]
+set fh [open $probe w]
+puts $fh "use n64.rdpq"
+puts $fh "entry {"
+puts $fh "    rdpq.init()"
+puts $fh "    rdpq.load_tlut(0, 0, 16)"
+puts $fh "    rdpq.set_prim_depth(100, 0)"
+puts $fh "    rdpq.set_convert(175, 0 - 43, 0 - 89, 222, 114, 42)"
+puts $fh "}"
+close $fh
+set ok 1
+if {[catch {exec [info nameofexecutable] [file join $REPO tcl cli.tcl] explain $probe} c]} {
+    puts "FAIL  pak explain on the probe: $c"
+    set ok 0
+} else {
+    set pc [file join $WORK probe_rdpq.c]
+    set fh [open $pc w]; puts $fh $c; close $fh
+    if {[catch {exec $CC {*}$CFLAGS -I[file join $REPO runtime] \
+                    -c $pc -o [file join $WORK probe_rdpq.o] 2>@1} err]} {
+        puts "FAIL  the probe does not compile against libdragon:"
+        foreach l [lrange [split $err "\n"] 0 8] { puts "      $l" }
+        set ok 0
+    } else {
+        puts "ok    rdpq.load_tlut / set_prim_depth / set_convert compile for libdragon"
+    }
+}
+if {!$ok} { exit 1 }
+
+puts ""
 puts "== pak init -> pak build -> make =="
 set proj [file join $CACHE pak-romtest]
 file delete -force $proj
@@ -208,5 +274,83 @@ if {$ok} {
     }
 }
 if {!$ok} { exit 1 }
+
+puts ""
+puts "== a project with an asset ships it in the ROM =="
+# Assets never reached a libdragon ROM at all: n64.mk's %.z64 rule attaches
+# $(filter %.dfs, $^) and the generated prerequisite was a .pakfs, so it was
+# dropped without a word; nothing called dfs_init either. Building a project
+# that declares one, and looking for the converted file inside the ROM, is the
+# only thing that catches that.
+set proj2 [file join $CACHE pak-assettest]
+file delete -force $proj2
+file mkdir $proj2
+set ok 1
+if {[catch {exec sh -c "cd [file nativename $proj2] && $pak init game 2>&1"} out]} {
+    puts "FAIL  pak init: $out"; set ok 0
+}
+set game [file join $proj2 game]
+if {$ok} {
+    # A 2x2 RGBA PNG, written by hand so the gate needs no image library.
+    set png [make_png [file join $game assets sprites hero.png] 2 2]
+    set fh [open [file join $game src main.pk64] w]
+    puts $fh "use n64.display"
+    puts $fh "use n64.rdpq"
+    puts $fh "use n64.sprite"
+    puts $fh ""
+    puts $fh "asset hero: Sprite from \"sprites/hero.png\""
+    puts $fh ""
+    puts $fh "entry {"
+    puts $fh "    display.init(0, 2, 3, 0, 1)"
+    puts $fh "    rdpq.init()"
+    puts $fh "    loop {"
+    puts $fh "        let fb = display.get()"
+    puts $fh "        rdpq.attach_clear(fb)"
+    puts $fh "        rdpq.set_mode_copy()"
+    puts $fh "        sprite.blit(hero, 16, 16, 0)"
+    puts $fh "        rdpq.detach_show()"
+    puts $fh "    }"
+    puts $fh "}"
+    close $fh
+}
+foreach step [list \
+        [list "pak build" "cd [file nativename $game] && $pak build"] \
+        [list "make"      "cd [file nativename $game] && make"]] {
+    lassign $step label cmd
+    if {!$ok} break
+    if {[catch {exec sh -c "$cmd 2>&1"} out]} {
+        puts "FAIL  $label:"
+        foreach l [lrange [split $out "\n"] end-12 end] { puts "      $l" }
+        set ok 0
+    }
+}
+if {$ok} {
+    set gen [file join $game build src main.c]
+    if {![file exists $gen]} { set gen [file join $game build main.c] }
+    set csrc ""
+    catch { set fh [open $gen r]; set csrc [read $fh]; close $fh }
+    ok_true "the generated C mounts the filesystem" \
+        [string match "*dfs_init(DFS_DEFAULT_LOCATION)*" $csrc]
+    ok_true "the asset is looked up by its converted name" \
+        [string match "*rom:/sprites/hero.sprite*" $csrc]
+
+    set dfs [file join $game filesystem game.dfs]
+    ok_true "mkdfs produced a filesystem image" [file exists $dfs]
+
+    set rom2 [file join $game game.z64]
+    set d2 ""
+    if {[file exists $rom2]} {
+        set fh [open $rom2 rb]; fconfigure $fh -translation binary
+        set d2 [read $fh]; close $fh
+    }
+    # mkdfs writes each file's name into the image directory, so the converted
+    # name appearing in the ROM means the image was attached, not just built.
+    ok_true "the ROM carries the converted sprite" \
+        [expr {[string first "hero.sprite" $d2] >= 0}]
+    ok_true "the ROM carries its directory path too" \
+        [expr {[string first "sprites" $d2] >= 0}]
+}
+if {!$ok} { exit 1 }
+
 puts ""
 puts "no regressions."

@@ -82,7 +82,9 @@ proc pak::gen_stdlib_block {} {
     lappend lines "**$n functions** across the module surface; **$standalone** exist on the standalone HAL."
     if {[dict size $cls] > 0} {
         lappend lines ""
-        lappend lines "Of the [expr {$ld_yes + $ld_t3d + $ld_no}] lowered as a direct call: **$ld_yes** are libdragon's own, **$ld_t3d** need Tiny3D, and **$ld_no** are **not implemented on the libdragon backend** — they exist only on the standalone HAL."
+        lappend lines "Of the [expr {$ld_yes + $ld_t3d + $ld_no}] lowered as a direct call: **$ld_yes** are libdragon's own, **$ld_t3d** need Tiny3D, and **$ld_no** are **standalone-only**."
+        lappend lines ""
+        lappend lines "Standalone-only is mostly by design rather than debt. libdragon owns the\nsubsystem and exposes a different shape for it: interrupts are callbacks\n(`register_VI_handler`) rather than mask/restore, exceptions are\n`register_exception_handler`, the RSP is an `rsp_ucode_t` rather than raw\nSP registers, and `rdpq.triangle_*` takes screen-space integers where\nlibdragon's `rdpq_triangle` takes a format struct and float vertex arrays.\nA program using one of these builds with `--backend mips`; `pak check`\nwarns W005 rather than letting the C fail to compile."
     }
     lappend lines ""
     lappend lines $::END

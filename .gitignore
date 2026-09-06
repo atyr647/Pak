@@ -10,6 +10,11 @@ dist/
 # build output: without it `pak link` produces a ROM that cannot boot.
 !runtime/standalone/ipl3_compat.bin
 
+# Scratch sources the gates splice together (runtime + case) and hand to the
+# compiler. They land in the repo root because that is where the runtime's
+# relative paths resolve from; they are outputs, not sources.
+.*_combined.pk64
+
 # Editor / OS
 .DS_Store
 *.swp

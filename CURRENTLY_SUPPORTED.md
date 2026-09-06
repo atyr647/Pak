@@ -156,15 +156,15 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | Exhaustive match check (E301) | ✅ Full | Covers enums + variants |
 | Match payload binding scope | ✅ Full | Fixed — bindings now declared |
 | Move-after-use detection (E401) | ✅ Full | |
-| DMA without cache writeback (E201) | ✅ Full | ⚠️ False positives on constant args — use inline literals |
-| Unaligned DMA buffer (E202) | ✅ Full | ⚠️ Same caveat as E201 |
+| DMA without cache writeback (E201) | ✅ Full | Only `args[0]` (the buffer) is inspected, so a named constant as the address or size does not trip it |
+| Unaligned DMA buffer (E202) | ✅ Full | Same rule as E201 |
 | Trait method validation (E601) | ✅ Full | |
 | Return path checking (W201) | ✅ Full | Warning, not error |
 | Naming convention checks (W001–W003) | ✅ Full | Suppressible |
 | Asset declaration scope | ✅ Full | Fixed — asset names registered in typechecker scope |
 | Generic type instantiation | ✅ Full | Type-arg count (E015); generic function bodies checked at each instantiation (E016 on field access after T is concrete) |
 | Trait implementation completeness | ✅ Full | Method existence (E601/E602) and parameter count (E603) checked |
-| Result/Option type checking | ⚠️ Partial | Constructors accepted; match types partially resolved |
+| Result/Option type checking | ✅ Full | A match arm's bindings carry the payload's type — `.ok(v)` is the ok type, `.err(e)` the err type, `.some(v)` the inner — so a field access on one is checked. Named-field variant arms (`.rect { w: ww }`) declare their bindings too |
 
 ---
 
@@ -179,7 +179,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `alloc` / `free` | ✅ Full | Maps to `malloc`/`free` |
 | `defer` → cleanup code | ✅ Full | |
 | N64 module API calls | ✅ Full | `tcl/module_api.tcl` (CG_API ∪ CG_API_LAMBDA). Standalone HAL is the subset in `runtime/standalone/runtime.pk64`; `pak check --backend mips` is E010 on the rest. |
-| `asset` declarations | ✅ Full on standalone, ⚠️ on libdragon | Standalone: `pak link --fs` puts the archive in the ROM, the runtime reads it over PI, and `sprite.blit` draws it — covered end to end by `tcl/tools/asset_test.tcl` and the ares gate. Only `: Sprite` assets have a loader; any other type is an error at the use site. libdragon: the archive still never reaches the ROM (n64.mk's `%.z64` rule takes `$(filter %.dfs, $^)` and the generated prerequisite is `filesystem/<name>.pakfs`, so it is dropped) and nothing calls `pakfs_init`. |
+| `asset` declarations | ✅ Full | Both backends. libdragon: the converted assets are packed into a DragonFS image n64.mk attaches to the ROM, `main` mounts it, and the handle loads `rom:/<converted path>`. Standalone: `pak link --fs` appends a PakFS archive past the payload and the runtime reads it over PI. Only `: Sprite` assets have a loader on the standalone backend; any other type is an error at the use site. Covered by `tcl/tools/asset_test.tcl`, the ares gate, and a libdragon build that looks for the sprite inside the finished ROM. |
 | `extern "C"` blocks | ✅ Full | |
 | `@cfg` conditional compilation | ✅ Full | Maps to `#if`/`#endif` |
 | `comptime if` | ✅ Full | Maps to `#if` |
@@ -245,18 +245,15 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `match` on enums | ✅ Full | |
 | Named-field variant construction (`Type.case { f: v }`) | ✅ Full | Stack-allocated with tag + payload stores |
 | Compound-assign `/=`, `%=`, `<<=`, `>>=` | ✅ Full | `/=` → `div`/`mflo`; `%=` → `div`/`mfhi`; shifts → `sllv`/`srav` |
-| Generics / traits | ⚠️ Partial | Static dispatch works; `dyn Trait` vtable is C-only |
+| Generics / traits | ✅ Full | Static dispatch monomorphises; `dyn Trait` is a `{self, vtable}` pair with a `.word` vtable per impl and `jalr` dispatch |
 
 
 ---
 
 ## Known Bugs (current, not by design)
 
-| Bug | Workaround |
-|-----|------------|
-| (fixed) `let _ = expr` — expression evaluated, result discarded | — |
-| (fixed) Capturing closures — now emitted as GCC nested functions | — |
-| (fixed) Named-field variant construction (`Event.move { x: 1 }`) | — |
+None outstanding. Everything that used to sit here is in *Recently Fixed
+Bugs* below, with the fix.
 
 ## Recently Fixed Bugs
 
@@ -273,6 +270,11 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 | `DotAccess` on a non-Ident pointer expression generates `.` instead of `->` | Fixed — `_expr_type` consulted for chained access; pointer results use `->` |
 | MIPS `swc1`/`lwc1` used GPR operand (invalid assembly for float store/load) | Fixed — float typed-load/store always targets `$f12`; `FloatLit` drops spurious `move $dst $zero` |
 | MIPS `break`/`continue` skipped `defer` blocks declared inside the loop | Fixed — `emit_defers_from` emits inner-loop defers on break/continue; loop depth tracked in `loop_defer_depth` |
+| Named-field variant arm (`.rect { w: ww }`) bound nothing, so every use of the binding was E010 | Fixed — `check_match` declares NamedArg bindings as well as positional ones |
+| A match binding had no type, so a field access on one was never checked | Fixed — bindings carry the payload type from the scrutinee: `.ok(v)` is the ok type, `.err(e)` the err type, a variant case its declared field types |
+| `pool.data[i]` indexed with stride 4 and resolved `.field` against the wrong layout | Fixed — a container's `data`/`keys`/`values` layout field is typed as an ARRAY of the element, not the bare element |
+| A libdragon ROM shipped with no assets in it | Fixed — the converted assets are packed into a DragonFS image (the only kind n64.mk attaches), `main` calls `dfs_init`, the asset rules use n64.mk's own tool variables, and `mksprite --output` is given a directory |
+| `rdpq.load_tlut` / `set_prim_depth` / `set_convert` warned W005 although libdragon has them | Fixed — mapped to `rdpq_load_tlut_raw` / `rdpq_set_prim_depth_raw` / `rdpq_set_yuv_parms`, and the standalone HAL lookup now uses the MIPS symbol rather than the C one |
 | MIPS spill area (offsets 16–47) conflicted with O32 outgoing arg area | Fixed — spill base moved to offset 64; stack args (slots 5+) still go to 16–47, no overlap for ≤12 extra args |
 | `?*mut T` and `?*volatile T` failed to parse | Fixed — `parse_type` handles `mut`/`volatile` after `?*` |
 | Tcl parser missing match arm guard support (`pattern if cond =>`) | Fixed — `parse_match_arm` now checks for `IF` token before `FAT_ARROW` |

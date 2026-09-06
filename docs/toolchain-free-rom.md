@@ -234,7 +234,10 @@ The simulator models the two registers the runtime spins on (`DPC_STATUS` and
 `VI_V_CURRENT`) via a preset that can return a sequence of values, so hardware
 wait loops terminate instead of hanging.
 
-## Current limitations
+## What the standalone path lowers, and where its goldens are
+
+None of the below is a gap: each bullet says how the construct is lowered and
+names the gate that pins it.
 
 * **Optimization.** The peephole/scheduler/delay-slot passes in
   `tcl/optimize.tcl` operate on instruction records. `pak objgen` and

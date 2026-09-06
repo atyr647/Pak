@@ -15,10 +15,9 @@
 #include <rdpq_rect.h>
 #include <rdpq_tri.h>
 #include <rdpq_sprite.h>
-#include <pakfs.h>
 
 /* asset: player_sprite from "sprites/player.png" */
-static const char *player_sprite_path = "pak:/sprites/player.sprite";
+static const char *player_sprite_path = "rom:/sprites/player.sprite";
 static sprite_t * _pak_asset_player_sprite = 0;
 static inline sprite_t * _pak_asset_get_player_sprite(void) {
     if (!_pak_asset_player_sprite) _pak_asset_player_sprite = sprite_load(player_sprite_path);
@@ -26,7 +25,7 @@ static inline sprite_t * _pak_asset_get_player_sprite(void) {
 }
 #define player_sprite (_pak_asset_get_player_sprite())
 /* asset: enemy_sprite from "sprites/enemy.png" */
-static const char *enemy_sprite_path = "pak:/sprites/enemy.sprite";
+static const char *enemy_sprite_path = "rom:/sprites/enemy.sprite";
 static sprite_t * _pak_asset_enemy_sprite = 0;
 static inline sprite_t * _pak_asset_get_enemy_sprite(void) {
     if (!_pak_asset_enemy_sprite) _pak_asset_enemy_sprite = sprite_load(enemy_sprite_path);
@@ -34,7 +33,7 @@ static inline sprite_t * _pak_asset_get_enemy_sprite(void) {
 }
 #define enemy_sprite (_pak_asset_get_enemy_sprite())
 /* asset: bg_sprite from "sprites/background.png" */
-static const char *bg_sprite_path = "pak:/sprites/background.sprite";
+static const char *bg_sprite_path = "rom:/sprites/background.sprite";
 static sprite_t * _pak_asset_bg_sprite = 0;
 static inline sprite_t * _pak_asset_get_bg_sprite(void) {
     if (!_pak_asset_bg_sprite) _pak_asset_bg_sprite = sprite_load(bg_sprite_path);
@@ -56,6 +55,7 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
 int main(void) {
+    dfs_init(DFS_DEFAULT_LOCATION);
     pak_display_init(0, 0, 2, 0, 0);
     rdpq_init();
     while (true) {

@@ -1,0 +1,3 @@
+(E016 error "type 'i32' has no field 'nope'" "Instantiate with a struct that has field 'nope'")
+(E016 error "type 'f32' has no field 'bogus'" "Instantiate with a struct that has field 'bogus'")
+(E016 error "type 'f32' has no field 'missing'" "Instantiate with a struct that has field 'missing'")

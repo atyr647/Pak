@@ -242,7 +242,7 @@ every feature tagged `[IMPLEMENTED]`, `[PARTIAL]`, or `[PLANNED]`.
 | `pak objgen <file>`  | Compile `.pk64` → `.pakobj` relocatable binary (no external tools) |
 | `pak run <file>`     | Build, then `make run` (launches in ares) |
 | `pak init <name>`    | Scaffold a new project |
-| `pak pack`           | Pack converted assets into a PakFS archive |
+| `pak pack`           | Pack converted assets into a PakFS archive (for `pak link --fs`) |
 | `pak convert <src>`  | Transpile an existing C file/directory to Pak (`c2pak`) |
 | `pak clean`          | Remove build artifacts |
 
@@ -264,11 +264,11 @@ tcl/              Primary compiler implementation (Tcl): lexer, parser,
   n64link.tcl         Flat linker: .pakobj files → RDRAM image, relocs patched
   c2pak.tcl           C → Pak transpiler (pak convert)
 bin/pak           The CLI entry point: a shell wrapper around tcl/cli.tcl
-runtime/          C runtime for the libdragon backend (containers, math, RNG, PakFS)
+runtime/          C runtime for the libdragon backend (containers, math, RNG)
 runtime/standalone/  Toolchain-free runtime: the HAL in Pak + a hand-written crt0
 examples/canonical/  32 gold-standard, known-correct reference programs
 examples/         51 example programs total (games, std-lib middleware, baremetal)
-tests/corpus/     588-file source corpus the golden suite compiles
+tests/corpus/     source corpus the golden suite compiles
 tests/golden/     Pinned output of every compiler stage across that corpus
 tests/snapshots/  Human-readable generated C and MIPS per canonical example
 ```
@@ -277,8 +277,8 @@ The compiler is a single implementation in Tcl, with no build step and no
 dependency beyond `tclsh` and `tcllib`. It is held in place by the **golden
 suite**: `tests/golden/` pins the output of every stage — tokens, AST,
 generated C, MIPS assembly, checker and typechecker diagnostics, module
-headers, transpiler output, Makefile and PakFS layout — across all 588 corpus
-files. Any change in compiler behaviour surfaces there.
+headers, transpiler output, Makefile and PakFS layout — across every corpus
+file. Any change in compiler behaviour surfaces there.
 
 ---
 

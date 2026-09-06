@@ -820,5 +820,86 @@ entry {
 } out 00000001
 
 puts ""
+puts "== named-field variant arms =="
+
+# `.rect { w: ww, h: hh }` lowers correctly on both backends, but the checker
+# declared only positional bindings, so every use of `ww` was E010 and no
+# program using the form could reach a backend at all.
+chk "a named-field arm binds its fields" {
+variant Shape { circle(i32), rect { w: i32, h: i32 } }
+static out: i32 = 0
+entry {
+    let a: Shape = Shape.rect { w: 3, h: 4 }
+    match a {
+        .circle(r)             => { out = r }
+        .rect { w: ww, h: hh } => { out = ww * 100 + hh }
+    }
+}
+} out 00000130
+
+chk "the positional arm of the same variant still works" {
+variant Shape { circle(i32), rect { w: i32, h: i32 } }
+static out: i32 = 0
+entry {
+    let b: Shape = Shape.circle(9)
+    match b {
+        .circle(r)             => { out = r }
+        .rect { w: ww, h: hh } => { out = 0 }
+    }
+}
+} out 00000009
+
+puts ""
+puts "== a container's backing array =="
+
+# The C backend lowers p.data\[i\] straight through, so it has always worked
+# there. Here the layout handed back the ELEMENT type for `data` rather than
+# an array of it, so the index scaled by 4 and the field offset was resolved
+# against the wrong layout: silently the wrong element, no diagnostic.
+chk_rt "FixedList.data indexes by the element's stride" {
+static out: i32 = 0
+entry {
+    let mut l: FixedList(i32, 8) = FixedList.init()
+    l.push(10)
+    l.push(20)
+    l.push(30)
+    out = l.data[1]
+}
+} out 00000014
+
+chk_rt "Pool.data on a struct element reads the right field" {
+struct B { x: i32, y: i32, z: i32 }
+static out: i32 = 0
+entry {
+    let mut p: Pool(B, 8) = Pool.init()
+    let a: *B = p.acquire()
+    let b: *B = p.acquire()
+    let c: *B = p.acquire()
+    a.z = 1
+    b.z = 2
+    c.z = 3
+    out = p.data[0].z * 100 + p.data[1].z * 10 + p.data[2].z
+}
+} out 0000007B
+
+chk_rt "FixedMap.keys and .values are their own arrays" {
+static out: i32 = 0
+entry {
+    let mut m: FixedMap(i32, i32, 8) = FixedMap.init()
+    m.set(5, 500)
+    out = m.keys[0] * 1000 + m.values[0]
+}
+} out 0000157C
+
+chk_rt "RingBuffer.data indexes from the head slot" {
+static out: i32 = 0
+entry {
+    let mut r: RingBuffer(i32, 8) = RingBuffer.init()
+    r.push(77)
+    out = r.data[0]
+}
+} out 0000004D
+
+puts ""
 puts "PASS=$pass  FAIL=$fail"
 exit [expr {$fail > 0 ? 1 : 0}]

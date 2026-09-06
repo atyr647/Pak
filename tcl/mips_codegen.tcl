@@ -930,7 +930,13 @@ oo::class create pak::MipsCodegen {
                     set total [expr {$len_off + 4}]
                     set total_align [expr {max($eal, 4)}]
                     set total [expr {($total + $total_align - 1) & ~($total_align - 1)}]
-                    set df [dict create name data offset 0 size $data_sz align $eal type_node [lindex $gargs 0]]
+                    # `data` is an ARRAY of the element, not one element. Handing
+                    # back the bare element type made `pool.data[i]` index with
+                    # stride 4 and resolve `.field` against the wrong layout --
+                    # a silent wrong answer for a form the C backend lowers
+                    # correctly as `p.data[i]`.
+                    set df [dict create name data offset 0 size $data_sz align $eal \
+                        type_node [pak::N TypeArray size $cap_arg inner [lindex $gargs 0]]]
                     set lf [dict create name len  offset $len_off size 4 align 4 type_node ""]
                     return [dict create size $total align $total_align is_float 0 is_signed 1 is_ptr 0 \
                         fields [dict create data $df len $lf] field_order {data len} frac_bits 0 \
@@ -963,7 +969,8 @@ oo::class create pak::MipsCodegen {
                     set total [expr {$ctrl_off + 12}]
                     set total_align [expr {max($eal, 4)}]
                     set total [expr {($total + $total_align - 1) & ~($total_align - 1)}]
-                    set df   [dict create name data offset 0         size $data_sz align $eal type_node ""]
+                    set df   [dict create name data offset 0         size $data_sz align $eal \
+                        type_node [pak::N TypeArray size $cap_arg inner [lindex $gargs 0]]]
                     set hf   [dict create name head offset $ctrl_off size 4 align 4 type_node ""]
                     set tf   [dict create name tail offset [expr {$ctrl_off+4}] size 4 align 4 type_node ""]
                     set lf   [dict create name len  offset [expr {$ctrl_off+8}] size 4 align 4 type_node ""]
@@ -988,8 +995,10 @@ oo::class create pak::MipsCodegen {
                     set total [expr {$len_off + 4}]
                     set tal [expr {max($kal, $val_al, 4)}]
                     set total [expr {($total + $tal - 1) & ~($tal - 1)}]
-                    set kf [dict create name keys     offset 0        size $keys_sz align $kal  type_node ""]
-                    set vf [dict create name values   offset $vals_off size $vals_sz align $val_al type_node ""]
+                    set kf [dict create name keys     offset 0        size $keys_sz align $kal \
+                        type_node [pak::N TypeArray size $cap_arg inner [lindex $gargs 0]]]
+                    set vf [dict create name values   offset $vals_off size $vals_sz align $val_al \
+                        type_node [pak::N TypeArray size $cap_arg inner [lindex $gargs 1]]]
                     set of [dict create name occupied offset $occ_off  size $cap    align 1      type_node ""]
                     set lf [dict create name len      offset $len_off  size 4       align 4      type_node ""]
                     return [dict create size $total align $tal is_float 0 is_signed 1 is_ptr 0 \
@@ -1506,9 +1515,11 @@ oo::class create pak::MipsCodegen {
     # static-init phase to read it in. This used to emit only `.extern bg` --
     # a reference to a symbol nothing defines, so the link failed.
     #
-    # The path is the CONVERTED file's, because that is what `pak pack` puts in
-    # the archive: `pak build` runs the .png through mksprite and packs the
-    # .sprite it produced.
+    # The path is the CONVERTED file's, because that is what goes into the
+    # archive: `pak build` runs the .png through mksprite and packs the .sprite
+    # it produced. `rom:/` is the scheme both backends emit -- libdragon opens
+    # it through DragonFS, and the standalone runtime strips it before looking
+    # the name up in its own archive.
     method emit_asset {decl} {
         set aname [pak::fval $decl name]
         set apath [pak::asset_packed_path [pak::fval $decl path]]
@@ -1528,7 +1539,7 @@ oo::class create pak::MipsCodegen {
         }
         set slot "_pak_asset_${aname}"
         $pool add_static $slot 4 4 0
-        set path_lbl [$pool intern_string "pak:/$apath"]
+        set path_lbl [$pool intern_string "rom:/$apath"]
         dict set assets $aname $slot
 
         $em blank

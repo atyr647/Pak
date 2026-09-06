@@ -240,9 +240,20 @@ foreach _bs {__pak_irq_enable __pak_irq_disable __pak_irq_restore __pak_irq} {
 }
 unset -nocomplain _bs
 
+# The symbol the MIPS backend calls. Not module_api_symbol: that prefers the
+# C name, and the two legitimately differ where libdragon spells a function
+# differently from the standalone HAL (rdpq.load_tlut is rdpq_load_tlut_raw on
+# libdragon and rdpq_load_tlut here). Asking the C name of the standalone HAL
+# would have made those functions look absent and E010 every use.
+proc pak::mips_api_symbol {mod fn} {
+    set key [list $mod $fn]
+    if {[dict exists $::pak::MIPS_API $key]} { return [dict get $::pak::MIPS_API $key] }
+    if {[dict exists $::pak::CG_API $key]}   { return [dict get $::pak::CG_API $key] }
+    return "${mod}_${fn}"
+}
+
 proc pak::mips_hal_has {mod fn} {
-    set sym [pak::module_api_symbol $mod $fn]
-    return [dict exists $::pak::MIPS_HAL_SYMBOLS $sym]
+    return [dict exists $::pak::MIPS_HAL_SYMBOLS [pak::mips_api_symbol $mod $fn]]
 }
 
 proc pak::mips_hal_symbol {sym} {

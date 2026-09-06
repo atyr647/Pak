@@ -378,13 +378,13 @@ main:
 	.section .rodata
 	.align 0
 .Lstr0:
-	.asciiz "pak:/sprites/player.sprite"
+	.asciiz "rom:/sprites/player.sprite"
 	.align 0
 .Lstr1:
-	.asciiz "pak:/sprites/enemy.sprite"
+	.asciiz "rom:/sprites/enemy.sprite"
 	.align 0
 .Lstr2:
-	.asciiz "pak:/sprites/background.sprite"
+	.asciiz "rom:/sprites/background.sprite"
 
 	.section .data
 	.align 2

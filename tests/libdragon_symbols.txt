@@ -99,11 +99,11 @@ libdragon rdpq.fill_rectangle
 libdragon rdpq.flush
 libdragon rdpq.init
 libdragon rdpq.load_tile
-missing rdpq.load_tlut
+libdragon rdpq.load_tlut
 libdragon rdpq.set_blend_color
 libdragon rdpq.set_color_image
 libdragon rdpq.set_combiner_raw
-missing rdpq.set_convert
+libdragon rdpq.set_convert
 libdragon rdpq.set_env_color
 libdragon rdpq.set_fog_color
 missing rdpq.set_key_gb
@@ -112,7 +112,7 @@ libdragon rdpq.set_mode_standard
 missing rdpq.set_mode_standard_z
 libdragon rdpq.set_other_modes_raw
 libdragon rdpq.set_prim_color
-missing rdpq.set_prim_depth
+libdragon rdpq.set_prim_depth
 libdragon rdpq.set_scissor
 libdragon rdpq.set_tile
 missing rdpq.set_tile_mask

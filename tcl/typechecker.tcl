@@ -136,6 +136,7 @@ oo::class create pak::TypeEnv {
     method get_struct {name}  { return [dict get $structs $name] }
     method has_enum {name}    { return [dict exists $enums $name] }
     method has_variant {name} { return [dict exists $variants $name] }
+    method get_variant {name} { return [dict get $variants $name] }
     method has_trait {name}   { return [dict exists $traits $name] }
     method has_fn {name}      { return [dict exists $fns $name] }
     method get_fn {name}      { return [dict get $fns $name] }
@@ -929,6 +930,12 @@ oo::class create pak::TypeChecker {
         my check_expr [pak::nfield $stmt expr]
         set has_wildcard 0
         set covered [dict create]
+        # What is being matched, so an arm's bindings can be given the payload's
+        # real type. Without it every binding was `auto`: `.ok(v)` on a
+        # Result(i32, E) let `v.anything` through, and a named-field arm
+        # (`.rect { w: ww }`) declared nothing at all, so using `ww` was E010 --
+        # the construct was documented as working and could not be compiled.
+        set styp [my scrutinee_type [pak::nfield $stmt expr]]
         foreach arm [pak::items [pak::nfield $stmt arms]] {
             $scope push
             set pat [pak::nfield $arm pattern]
@@ -944,10 +951,34 @@ oo::class create pak::TypeChecker {
                 }
                 Call {
                     if {[pak::kindof [pak::nfield $pat func]] eq "EnumVariantAccess"} {
-                        dict set covered [pak::fval [pak::nfield $pat func] name] 1
+                        set case [pak::fval [pak::nfield $pat func] name]
+                        dict set covered $case 1
+                        set pay [my case_payload_types $styp $case]
+                        set pos [dict get $pay pos]
+                        set named [dict get $pay named]
+                        set i 0
                         foreach arg [pak::items [pak::nfield $pat args]] {
-                            if {[pak::kindof $arg] eq "Ident" && [pak::fval $arg name] ne "_"} {
-                                $scope declare [pak::fval $arg name] [pak::N TypeName name auto]
+                            switch -- [pak::kindof $arg] {
+                                Ident {
+                                    set bind [pak::fval $arg name]
+                                    set t [pak::N TypeName name auto]
+                                    if {$i < [llength $pos]} { set t [lindex $pos $i] }
+                                    if {$bind ne "_"} { $scope declare $bind $t }
+                                    incr i
+                                }
+                                NamedArg {
+                                    # .rect { w: ww } -- the binding is the
+                                    # VALUE, and its type is the field's.
+                                    set v [pak::nfield $arg value]
+                                    if {[pak::kindof $v] ne "Ident"} continue
+                                    set bind [pak::fval $v name]
+                                    set fld [pak::fval $arg name]
+                                    set t [pak::N TypeName name auto]
+                                    if {[dict exists $named $fld]} {
+                                        set t [dict get $named $fld]
+                                    }
+                                    if {$bind ne "_"} { $scope declare $bind $t }
+                                }
                             }
                         }
                     }
@@ -972,6 +1003,81 @@ oo::class create pak::TypeChecker {
             my err E301 "non-exhaustive match on '$match_type'" $stmt \
                 "Add missing cases: [join $dotted {, }], or add a default: _ => {}"
         }
+    }
+
+    # The type node a `match` is scrutinising, or nil when it cannot be worked
+    # out. Unlike infer_match_type, which only wants a NAME for the
+    # exhaustiveness check, this keeps the whole node so Result(T, E) and
+    # Option(T) still carry their payload types.
+    method scrutinee_type {expr} {
+        switch -- [pak::kindof $expr] {
+            Ident {
+                set t [$scope lookup [pak::fval $expr name]]
+                if {$t ne ""} { return $t }
+            }
+            Call {
+                set f [pak::nfield $expr func]
+                if {[pak::kindof $f] eq "Ident" && [$env has_fn [pak::fval $f name]]} {
+                    return [pak::nfield [$env get_fn [pak::fval $f name]] ret_type]
+                }
+            }
+            DotAccess {
+                set obj [pak::nfield $expr obj]
+                if {[pak::kindof $obj] eq "Ident"} {
+                    set sn [my unwrap_type_name [$scope lookup [pak::fval $obj name]]]
+                    if {$sn ne ""} {
+                        set fields [$env struct_fields $sn]
+                        set fld [pak::fval $expr field]
+                        if {$fields ne "" && [dict exists $fields $fld]} {
+                            return [dict get $fields $fld]
+                        }
+                    }
+                }
+            }
+        }
+        return [pak::Nil]
+    }
+
+    # The types an arm's bindings take: {pos LIST named DICT}. Both empty when
+    # the scrutinee's type says nothing, which leaves the bindings `auto` and
+    # the behaviour exactly as it was.
+    method case_payload_types {styp case} {
+        set out [dict create pos {} named [dict create]]
+        if {$styp eq "" || [pak::isnil $styp]} { return $out }
+        set styp [my subst_type $styp]
+        switch -- [pak::kindof $styp] {
+            TypeResult {
+                if {$case eq "ok"}  { dict set out pos [list [pak::nfield $styp ok]] }
+                if {$case eq "err"} { dict set out pos [list [pak::nfield $styp err]] }
+                return $out
+            }
+            TypeOption {
+                if {$case in {some Some}} {
+                    dict set out pos [list [pak::nfield $styp inner]]
+                }
+                return $out
+            }
+        }
+        set tn [my unwrap_type_name $styp]
+        if {$tn eq "" || ![$env has_variant $tn]} { return $out }
+        foreach c [pak::items [pak::nfield [$env get_variant $tn] cases]] {
+            if {[pak::fval $c name] ne $case} continue
+            set pos {}
+            set named [dict create]
+            foreach f [pak::flist $c fields] {
+                if {[lindex $f 0] eq "seq"} {
+                    # Named payload: {seq {{lit NAME} TYPE}}
+                    set pair [pak::items $f]
+                    dict set named [pak::sval [lindex $pair 0]] [lindex $pair 1]
+                } else {
+                    lappend pos $f
+                }
+            }
+            dict set out pos $pos
+            dict set out named $named
+            break
+        }
+        return $out
     }
 
     method infer_match_type {expr} {

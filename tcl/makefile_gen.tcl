@@ -61,35 +61,47 @@ proc pak::_mf_compile_rules {is_mips} {
 
 proc pak::_mf_asset_rules {use_tiny3d} {
     set rules {}
-    lappend rules "# ── Asset conversion rules ────────────────────────────────────────"
+    lappend rules "# ── Asset conversion rules ────────────────────────────────────────
+#
+# The tool variables are n64.mk's own (N64_MKSPRITE, N64_AUDIOCONV): MKSPRITE
+# and AUDIOCONV64 are defined nowhere, so these rules used to run the bare
+# flags as a command. mksprite's --output takes a DIRECTORY and names the file
+# after the input, so pointing it at \$@ made a directory called hero.sprite
+# with the sprite inside it, and mkdfs then skipped the empty tree."
     lappend rules "\$(BUILD_DIR)/%.sprite: %.png
 \t@mkdir -p \$(dir \$@)
-\t\$(MKSPRITE) --format RGBA16 --output \$@ \$<"
+\t\$(N64_MKSPRITE) --format RGBA16 --output \$(dir \$@) \$<"
     lappend rules "\$(BUILD_DIR)/%.wav64: %.wav
 \t@mkdir -p \$(dir \$@)
-\t\$(AUDIOCONV64) \$< \$@
+\t\$(N64_AUDIOCONV) -o \$(dir \$@) \$<
 
 \$(BUILD_DIR)/%.xm64: %.xm
 \t@mkdir -p \$(dir \$@)
-\t\$(AUDIOCONV64) \$< \$@
+\t\$(N64_AUDIOCONV) -o \$(dir \$@) \$<
 
 \$(BUILD_DIR)/%.ym64: %.ym
 \t@mkdir -p \$(dir \$@)
-\t\$(AUDIOCONV64) \$< \$@"
+\t\$(N64_AUDIOCONV) -o \$(dir \$@) \$<"
     if {$use_tiny3d} {
-        lappend rules "\$(BUILD_DIR)/%.t3dm: %.gltf
+        lappend rules "T3D_GLTF_TO_3D ?= \$(TINY3D_INST)/bin/gltf_to_t3d
+
+\$(BUILD_DIR)/%.t3dm: %.gltf
 \t@mkdir -p \$(dir \$@)
-\t\$(T3D_GLTF) \$< \$@
+\t\$(T3D_GLTF_TO_3D) \"\$<\" \$@
 
 \$(BUILD_DIR)/%.t3dm: %.glb
 \t@mkdir -p \$(dir \$@)
-\t\$(T3D_GLTF) \$< \$@"
+\t\$(T3D_GLTF_TO_3D) \"\$<\" \$@"
     }
     return [join $rules "\n\n"]
 }
 
 proc pak::_mf_pakfs_rule {project_name} {
-    return "# ── PakFS archive (packed from converted assets in BUILD_DIR) ──────────────
+    return "# ── Asset filesystem (DragonFS, built from the converted assets) ───────────
+#
+# n64.mk's %.z64 rule attaches \$(filter %.dfs, \$^) and nothing else, so the
+# image has to BE a .dfs -- a `filesystem/<name>.pakfs` prerequisite was
+# silently dropped and the ROM shipped with no assets in it at all.
 _RAW_ASSETS      := \$(shell find assets -type f 2>/dev/null)
 _SPRITE_SRCS     := \$(filter %.png,\$(_RAW_ASSETS))
 _WAV_SRCS        := \$(filter %.wav,\$(_RAW_ASSETS))
@@ -104,9 +116,9 @@ _T3DM_OUTS       := \$(patsubst %.gltf,\$(BUILD_DIR)/%.t3dm,\$(filter %.gltf,\$(
                     \$(patsubst %.glb,\$(BUILD_DIR)/%.t3dm,\$(filter %.glb,\$(_T3DM_SRCS)))
 _CONVERTED_ASSETS := \$(_SPRITE_OUTS) \$(_WAV_OUTS) \$(_XM_OUTS) \$(_YM_OUTS) \$(_T3DM_OUTS)
 
-filesystem/${project_name}.pakfs: \$(_CONVERTED_ASSETS)
+filesystem/${project_name}.dfs: \$(_CONVERTED_ASSETS)
 \t@mkdir -p filesystem
-\tpak pack --output \$@ --base \$(BUILD_DIR)/assets \$(_CONVERTED_ASSETS)"
+\t\$(N64_MKDFS) \$@ \$(BUILD_DIR)/assets >/dev/null"
 }
 
 proc pak::generate_makefile {project_name rom_title c_files pakfs_archive \
@@ -114,7 +126,6 @@ proc pak::generate_makefile {project_name rom_title c_files pakfs_archive \
         {optimization debug} {use_tiny3d 0} {project_root .} {backend c}} {
 
     set src_list [join $c_files " \\\n        "]
-    append src_list " \\\n        runtime/pakfs.c"
 
     set is_mips [expr {$backend eq "mips"}]
     set opt_flag [expr {$optimization eq "release" ? "-O2" : "-g -O0"}]
@@ -150,7 +161,7 @@ TINY3D_LDFLAGS := -L\$(TINY3D_INST)/lib -lt3d
 "
     }
 
-    set dfs_file [expr {$pakfs_archive ne "" ? "filesystem/${project_name}.pakfs" : ""}]
+    set dfs_file [expr {$pakfs_archive ne "" ? "filesystem/${project_name}.dfs" : ""}]
     set dfs_include [expr {$dfs_file ne "" ? "\nDFS_FILE        = $dfs_file" : ""}]
     set dfs_dep [expr {$dfs_file ne "" ? " \$(DFS_FILE)" : ""}]
     set clean_fs [expr {$dfs_file ne "" ? " filesystem/" : ""}]

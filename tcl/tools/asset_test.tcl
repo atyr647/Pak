@@ -117,10 +117,21 @@ chk "the second entry is walked to correctly" [prog {
     out = pakfs_size("sprites/other.sprite")
 } $arch] $arch out [string length [make_sprite 4 2]]
 
-# The generated code spells asset paths with libdragon's scheme; the archive
-# names do not carry it.
-chk "the pak:/ scheme is stripped" [prog {
+# The generated code spells asset paths with a scheme; the archive names do
+# not carry one. Both backends emit rom:/ -- libdragon opens that through
+# DragonFS -- and pak:/ is still accepted for a path written by hand.
+chk "the rom:/ scheme is stripped" [prog {
+    out = pakfs_size("rom:/sprites/hero.sprite")
+} $arch] $arch out [string length $spr]
+
+chk "the pak:/ scheme is stripped too" [prog {
     out = pakfs_size("pak:/sprites/hero.sprite")
+} $arch] $arch out [string length $spr]
+
+# A name with no scheme, and one whose first bytes look like a scheme but are
+# not, both have to be taken as they are.
+chk "a bare name is not truncated" [prog {
+    out = pakfs_size("sprites/hero.sprite")
 } $arch] $arch out [string length $spr]
 
 puts ""

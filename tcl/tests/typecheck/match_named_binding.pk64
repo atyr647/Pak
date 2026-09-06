@@ -1,0 +1,19 @@
+-- A named-field variant arm binds names, and they have to be in scope in the
+-- body. The checker declared only POSITIONAL bindings, so every use of `ww`
+-- here was E010 -- a construct both backends lower correctly and no program
+-- could get past the checker to reach them.
+
+variant Shape {
+    circle(f32)
+    rect { w: f32, h: f32 }
+}
+
+static sink: f32 = 0.0
+
+entry {
+    let s: Shape = Shape.rect { w: 3.0, h: 4.0 }
+    match s {
+        .circle(r)             => { sink = r }
+        .rect { w: ww, h: hh } => { sink = ww * hh }
+    }
+}

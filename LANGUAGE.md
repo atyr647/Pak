@@ -1045,9 +1045,11 @@ asset bgm: Sound from "audio/theme.wav"
 
 The path is relative to the project's `assets/` directory, and names the file
 you authored. `pak build` converts it (`.png` → `.sprite` via `mksprite`,
-`.wav` → `.wav64`, `.gltf` → `.t3dm`) and packs the result, so what a program
-looks up at runtime is the converted name — the compiler applies the same
-mapping, and neither backend asks for the `.png`.
+`.wav` → `.wav64`, `.gltf` → `.t3dm`) and packs the result into the ROM, so
+what a program looks up at runtime is the converted name — the compiler
+applies the same mapping, and neither backend asks for the `.png`. The lookup
+is `rom:/<converted name>` on both: a DragonFS image on libdragon, a PakFS
+archive appended by `pak link --fs` on the standalone backend.
 
 An asset name is a handle, not a path string: reading it the first time loads
 the file, and every read after that reuses what was loaded. Loading is lazy
