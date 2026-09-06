@@ -10,10 +10,23 @@ dist/
 # build output: without it `pak link` produces a ROM that cannot boot.
 !runtime/standalone/ipl3_compat.bin
 
-# Scratch sources the gates splice together (runtime + case) and hand to the
-# compiler. They land in the repo root because that is where the runtime's
-# relative paths resolve from; they are outputs, not sources.
-.*_combined.pk64
+# Scratch the gates write into the repo root -- spliced sources (runtime +
+# case) and the objects they link. The root is where the runtime's relative
+# paths resolve from, so that is where they land; they are outputs, not
+# sources. Named individually rather than as `.*.pk64` so a real dotfile
+# source would still be seen.
+.au_combined.pk64
+.church_combined.pk64
+.dlist_combined.pk64
+.ee_combined.pk64
+.exc_combined.pk64
+.exc_game.pk64
+.pixel_combined.pk64
+.rdp_combined.pk64
+.boot.pakobj
+.boot2.pakobj
+.game.pakobj
+.rt.pakobj
 
 # Editor / OS
 .DS_Store
