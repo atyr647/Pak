@@ -107,6 +107,10 @@ typedef struct {
     } data;
 } Packet;
 
+
+/* -- Function prototypes -- */
+float area(Shape s);
+int32_t entity_id(Entity e);
 float area(Shape s) {
     switch (s.tag) {
         case Shape_tag_circle:

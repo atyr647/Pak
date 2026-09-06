@@ -2772,6 +2772,25 @@ oo::class create pak::Codegen {
         return [join $lines \n]
     }
 
+    # A fixed-point literal, scaled to its integer representation, or "" when
+    # the initializer is not a literal this can fold. Unary minus is folded
+    # here rather than left to gen_expr: `-8.0` parses as UnaryOp over
+    # FloatLit, so matching only FloatLit emitted `enum { X = -8.0f };` --
+    # not an integer constant, and no compiler accepts it. An integer literal
+    # is scaled too: `const X: fix16.16 = 2` means 2.0, not raw 2.
+    method fold_fix_literal {e shift} {
+        if {[pak::kindof $e] eq "UnaryOp" && [pak::fval $e op] eq "-"} {
+            set inner [my fold_fix_literal [pak::nfield $e operand] $shift]
+            if {$inner eq ""} { return "" }
+            return [expr {-$inner}]
+        }
+        switch -- [pak::kindof $e] {
+            FloatLit { return [expr {entier(double([pak::fval $e value]) * (1 << $shift))}] }
+            IntLit   { return [expr {entier([pak::fval $e value]) << $shift}] }
+        }
+        return ""
+    }
+
     method gen_const {c} {
         set val [my gen_expr [pak::nfield $c value]]
         set typ [pak::nfield $c type]
@@ -2782,10 +2801,11 @@ oo::class create pak::Codegen {
             # into `enum { GRAVITY = 0.4f };` -- not an integer constant, and
             # every later >> on it operated on a float.
             set shift [pak::cg_fixshift $typ]
-            if {$shift != 0 && [pak::kindof [pak::nfield $c value]] eq "FloatLit"} {
-                set raw [pak::fval [pak::nfield $c value] value]
-                set scaled [expr {entier(double($raw) * (1 << $shift))}]
-                return "enum { [pak::fval $c name] = $scaled };"
+            if {$shift != 0} {
+                set scaled [my fold_fix_literal [pak::nfield $c value] $shift]
+                if {$scaled ne ""} {
+                    return "enum { [pak::fval $c name] = $scaled };"
+                }
             }
             if {$ct in {int32_t uint32_t int int16_t uint16_t int8_t uint8_t int64_t uint64_t}} {
                 return "enum { [pak::fval $c name] = $val };"
@@ -2883,7 +2903,7 @@ oo::class create pak::Codegen {
         return "$decl;"
     }
 
-    method gen_fn {fn prefix} {
+    method gen_fn {fn prefix {proto_only 0}} {
         set saved_self $current_self_type
         if {$prefix ne ""} { set current_self_type $prefix }
         set ret [my gen_type [pak::nfield $fn ret_type]]
@@ -2922,7 +2942,7 @@ oo::class create pak::Codegen {
         set head {}
         if {$attr_str ne ""} { lappend head $attr_str }
         set body [pak::nfield $fn body]
-        if {[pak::isnil $body]} {
+        if {$proto_only || [pak::isnil $body]} {
             lappend head "$ret ${name}($param_str);"
             set current_self_type $saved_self
             return [join $head \n]
@@ -3174,7 +3194,11 @@ oo::class create pak::Codegen {
             if {[pak::kindof $decl] in {UseDecl AssetDecl ModuleDecl}} continue
             set r [my gen_decl $decl]
             if {$r eq ""} continue
-            if {[pak::kindof $decl] in {StructDecl EnumDecl VariantDecl UnionDecl}} {
+            # TraitDecl is a type declaration too: it lowers to the vtable
+            # struct and the fat-pointer struct that names it. Leaving it in
+            # $body put it after the prototype block, so a function taking a
+            # `dyn Shape` had a prototype naming a type C had not seen yet.
+            if {[pak::kindof $decl] in {StructDecl EnumDecl VariantDecl UnionDecl TraitDecl}} {
                 if {[my decl_needs_generated_type $decl]} {
                     lappend late_type_decls $r; lappend late_type_decls ""
                 } else {
@@ -3182,6 +3206,37 @@ oo::class create pak::Codegen {
                 }
             } else {
                 lappend body $r; lappend body ""
+            }
+        }
+
+        # Function prototypes, so a call to a function defined further down the
+        # file is a call and not an implicit declaration. Pak has no forward
+        # declarations and no ordering rule -- `fn a() { b() } fn b() {}` is
+        # ordinary Pak -- but C reads top to bottom, so without this block the
+        # generated C is rejected by any compiler that treats an implicit
+        # declaration as an error, which every modern one does.
+        #
+        # Built here, in the same pass as the bodies, so that a type registered
+        # as a side effect of generating a signature (Result, slice, tuple,
+        # Vec) is already in its typedef list by the time `out` is assembled.
+        # `cfg`/`comptime` blocks are skipped: their functions are inside a
+        # `#if`, and an unguarded prototype would name a function that may not
+        # be compiled.
+        set protos {}
+        foreach decl $decls {
+            switch -- [pak::kindof $decl] {
+                FnDecl {
+                    if {[llength [pak::items [pak::nfield $decl type_params]]] > 0} continue
+                    if {[pak::isnil [pak::nfield $decl body]]} continue
+                    lappend protos [my gen_fn $decl "" 1]
+                }
+                ImplBlock {
+                    if {[llength [pak::items [pak::nfield $decl type_params]]] > 0} continue
+                    foreach m [pak::items [pak::nfield $decl methods]] {
+                        if {[pak::isnil [pak::nfield $m body]]} continue
+                        lappend protos [my gen_fn $m [pak::fval $decl type_name] 1]
+                    }
+                }
             }
         }
 
@@ -3339,6 +3394,12 @@ oo::class create pak::Codegen {
             foreach l $late_type_decls { lappend out $l }
         }
 
+        if {[llength $protos] > 0} {
+            lappend out ""
+            lappend out "/* -- Function prototypes -- */"
+            foreach l $protos { lappend out $l }
+        }
+
         # Emit monomorphized generic specializations generated during body codegen.
         # These must precede body so that specialized struct typedefs and function
         # definitions are visible where main/other code uses them.
@@ -3399,6 +3460,22 @@ proc pak::cg_api_lambda {mod fn arglist} {
             # libdragon has audio_write_begin(), which assumes the caller
             # already checked audio_can_write(); the shim is that pair.
             return "pak_audio_get_buffer()"
+        }
+        "eeprom init" {
+            # libdragon has no eeprom_init: the EEPROM is reached over joybus,
+            # which the joypad subsystem already brings up, so there is nothing
+            # to initialize. The standalone HAL does have one (it drives the PIF
+            # itself), so the call stays in the language and lowers to nothing
+            # here rather than becoming a call to a function libdragon has never
+            # had -- which is what it used to be, and no build of a program
+            # calling eeprom.init on this backend got past the C compiler.
+            return "((void)0)"
+        }
+        "eeprom type_detect" {
+            # libdragon spells this eeprom_present(): it returns eeprom_type_t,
+            # which is 0/1/2 for none/4K/16K -- exactly what type_detect is
+            # documented to return. There is no eeprom_type_detect.
+            return "((int)eeprom_present())"
         }
         "controller read" {
             # libdragon has no one call returning held/pressed/released; the
@@ -3525,6 +3602,21 @@ proc pak::cg_api_lambda {mod fn arglist} {
         "vi get_height"     { return "display_get_height()" }
         "vi wait_vblank"    { return "vi_wait_vblank()" }
         "rtc is_running"    { return "!rtc_is_stopped()" }
+        "rumble init" {
+            # There is no rumble_init in libdragon: the Rumble Pak is reached
+            # through the joypad subsystem, which joypad_init already brings
+            # up. The three calls below used to lower to rumble_start /
+            # rumble_stop out of <rumble.h> -- a header libdragon does not
+            # have, so `use n64.rumble` alone stopped the C compiler at the
+            # include, before it reached a single line of generated code.
+            return "((void)0)"
+        }
+        "rumble start" {
+            return "joypad_set_rumble_active([pak::cg_arg_or $arglist 0 0], true)"
+        }
+        "rumble stop" {
+            return "joypad_set_rumble_active([pak::cg_arg_or $arglist 0 0], false)"
+        }
         "rumble is_plugged" {
             return "(joypad_get_accessory_type([pak::cg_arg_or $arglist 0 0]) ==\
  JOYPAD_ACCESSORY_TYPE_RUMBLE_PAK)"

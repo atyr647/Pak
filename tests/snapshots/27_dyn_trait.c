@@ -28,15 +28,6 @@ typedef struct Circle Circle;
 typedef struct Rect Rect;
 
 /* -- User types -- */
-struct Circle {
-    float radius;
-};
-
-struct Rect {
-    float width;
-    float height;
-};
-
 /* trait Shape */
 typedef struct {
     float (*area)(void *);
@@ -48,6 +39,19 @@ typedef struct {
     const Shape_vtable *vtable;
 } Shape;
 
+struct Circle {
+    float radius;
+};
+
+struct Rect {
+    float width;
+    float height;
+};
+
+
+/* -- Function prototypes -- */
+float get_area(Shape s);
+float get_perimeter(Shape s);
 /* impl Circle for Shape */
 float Circle_area(Circle * self) {
     return ((3.14159f * self->radius) * self->radius);

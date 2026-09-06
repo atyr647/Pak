@@ -150,9 +150,6 @@ proc codegen::shmup::_header {doc} {
     if {[_any_sprite $doc] || [_any_audio $doc]} {
         lappend lines ""
         lappend lines "extern \"C\" \{"
-        if {[_any_sprite $doc]} {
-            lappend lines "    fn sprite_load(path: *c_char) -> *sprite_t"
-        }
         if {[_any_audio $doc]} {
             lappend lines "    fn wav64_open(wav: *wav64_t, path: *c_char)"
             lappend lines "    fn wav64_play(wav: *wav64_t, channel: i32)"
@@ -174,8 +171,7 @@ proc codegen::shmup::_asset_decls {doc} {
     # the static *sprite_t handle is loaded from it at startup.
     foreach role [_sprite_roles] {
         if {[_has_sprite $doc $role]} {
-            lappend lines "asset spr_${role}_asset: Sprite from \"sprites/${role}.png\""
-            lappend lines "static spr_${role}: *sprite_t = none"
+            lappend lines "asset spr_${role}: Sprite from \"sprites/${role}.png\""
             set any 1
         }
     }
@@ -264,11 +260,6 @@ proc codegen::shmup::_audio_block_assets {doc} {
     if {[_has_audio $doc music]} {
         lappend lines "    xm64player_open(&music_player, \"rom:/audio/music.xm64\")"
     }
-    foreach role [_sprite_roles] {
-        if {[_has_sprite $doc $role]} {
-            lappend lines "    spr_${role} = sprite_load(\"pak:/sprites/${role}.png\")"
-        }
-    }
     lappend lines "\}"
     lappend lines ""
     lappend lines "fn fill_audio() \{"
@@ -300,12 +291,6 @@ proc codegen::shmup::_audio_block_assets {doc} {
 proc codegen::shmup::_audio_block {doc} {
     if {[_any_audio $doc]} {
         return [_audio_block_assets $doc]
-    }
-    set spr_loads ""
-    foreach role [_sprite_roles] {
-        if {[_has_sprite $doc $role]} {
-            append spr_loads "    spr_${role} = sprite_load(\"pak:/sprites/${role}.png\")\n"
-        }
     }
     set block {-- ── Procedural sound engine (asset-free) ─────────────────────────────────────
 const SR: i32 = 44100
@@ -411,12 +396,12 @@ fn fill_audio() {
 fn snd_init() {
     audio.init(44100, 4)
     init_music_table()
-@@SPR_LOADS@@}
+}
 
 fn music_start() { music_on = true }
 fn music_stop()  { music_on = false }
 }
-    return [string map [list "@@SPR_LOADS@@" $spr_loads] $block]
+    return $block
 }
 
 # ── Game state + arrays ──────────────────────────────────────────────────────

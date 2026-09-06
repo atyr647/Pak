@@ -37,6 +37,10 @@ struct CriticalBuffer {
     uint8_t data[256];
 } __attribute__((aligned(8)));
 
+
+/* -- Function prototypes -- */
+__attribute__((hot))
+int32_t sum_scanline(uint8_t * buf, int32_t y, int32_t width);
 __attribute__((hot))
 int32_t sum_scanline(uint8_t * buf, int32_t y, int32_t width) {
     int32_t total = 0;

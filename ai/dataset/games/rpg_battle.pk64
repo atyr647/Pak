@@ -199,12 +199,12 @@ fn count_alive_party() -> i32 {
     return count
 }
 
-fn update_select_action(pad: *controller_data) {
-    if pad.pressed.d_up {
+fn update_select_action(pad: *joypad_status_t) {
+    if pad.pressed.up {
         battle.cursor = battle.cursor - 1
         if battle.cursor < 0 { battle.cursor = 3 }
     }
-    if pad.pressed.d_down {
+    if pad.pressed.down {
         battle.cursor = battle.cursor + 1
         if battle.cursor > 3 { battle.cursor = 0 }
     }
@@ -228,12 +228,12 @@ fn update_select_action(pad: *controller_data) {
     }
 }
 
-fn update_select_target(pad: *controller_data) {
-    if pad.pressed.d_up {
+fn update_select_target(pad: *joypad_status_t) {
+    if pad.pressed.up {
         battle.target = battle.target - 1
         if battle.target < 0 { battle.target = battle.foe_count - 1 }
     }
-    if pad.pressed.d_down {
+    if pad.pressed.down {
         battle.target = battle.target + 1
         if battle.target >= battle.foe_count { battle.target = 0 }
     }

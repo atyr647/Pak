@@ -23,6 +23,9 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
+
+/* -- Function prototypes -- */
+void do_work(void);
 void do_work(void) {
     uint8_t * buf = (uint8_t *)malloc(sizeof(uint8_t) * (size_t)(256));
     debugf("working");

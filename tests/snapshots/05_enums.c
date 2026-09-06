@@ -45,6 +45,9 @@ typedef enum {
     ButtonMask_z = 0x20,
 } ButtonMask;
 
+
+/* -- Function prototypes -- */
+Direction opposite(Direction dir);
 Direction opposite(Direction dir) {
     switch (dir) {
         case Direction_north:

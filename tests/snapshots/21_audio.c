@@ -31,6 +31,10 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
+
+/* -- Function prototypes -- */
+int16_t gen_sample(int32_t t);
+void fill_audio_buffer(void);
 static int32_t frame = 0;
 
 int16_t gen_sample(int32_t t) {

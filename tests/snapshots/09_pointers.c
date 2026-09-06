@@ -32,6 +32,9 @@ struct Node {
     Node * next;
 };
 
+
+/* -- Function prototypes -- */
+void double_value(int32_t * ptr);
 void double_value(int32_t * ptr) {
     *ptr = (*ptr * 2);
 }

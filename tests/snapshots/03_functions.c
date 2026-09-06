@@ -22,6 +22,13 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
+
+/* -- Function prototypes -- */
+int32_t add(int32_t a, int32_t b);
+float max(float a, float b);
+float clamp(float val, float lo, float hi);
+void reset(int32_t * ptr);
+void increment(int32_t * ptr);
 int32_t add(int32_t a, int32_t b) {
     return (a + b);
 }

@@ -200,9 +200,6 @@ proc codegen::platformer::_header {doc} {
     if {[_any_sprite $doc] || [_any_audio $doc]} {
         lappend lines ""
         lappend lines "extern \"C\" \{"
-        if {[_any_sprite $doc]} {
-            lappend lines "    fn sprite_load(path: *c_char) -> *sprite_t"
-        }
         if {[_any_audio $doc]} {
             lappend lines "    fn wav64_open(wav: *wav64_t, path: *c_char)"
             lappend lines "    fn wav64_play(wav: *wav64_t, channel: i32)"
@@ -224,15 +221,17 @@ proc codegen::platformer::_asset_decls {doc} {
     set lines {}
     lappend lines "-- ── Asset bindings ───────────────────────────────────────────────────────────"
     set any 0
-    # Sprites: declare both an asset (so pak bundles the file into the ROM
-    # filesystem) and a *sprite_t handle loaded at startup via sprite_load().
-    # Using distinct names (_asset suffix) avoids a name collision: the asset
-    # declaration generates spr_x_asset_path (a const char*), while our static
-    # spr_x is the sprite_t* handle used by sprite.blit().
+    # An `asset` declaration is the whole binding: it bundles the file into the
+    # ROM filesystem AND gives the name a sprite handle, loaded on first use.
+    # This used to also emit `static spr_x: *sprite_t = none` and a hand-written
+    # `extern "C" fn sprite_load(path: *c_char)`, loaded from "pak:/...png".
+    # Every part of that was wrong: Pak has no `const`, so `*c_char` lowered to
+    # `char *` and clashed with libdragon's `sprite_load(const char *)`; and the
+    # path named a .png, which is the SOURCE file -- neither filesystem holds
+    # one, both hold the converted .sprite the asset pipeline writes.
     foreach role [_sprite_roles] {
         if {[_has_sprite $doc $role]} {
-            lappend lines "asset spr_${role}_asset: Sprite from \"sprites/${role}.png\""
-            lappend lines "static spr_${role}: *sprite_t = none"
+            lappend lines "asset spr_${role}: Sprite from \"sprites/${role}.png\""
             set any 1
         }
     }
@@ -466,11 +465,6 @@ proc codegen::platformer::_audio_block_assets {doc} {
     if {[_has_audio $doc music]} {
         lappend lines "    xm64player_open(&music_player, \"rom:/audio/music.xm64\")"
     }
-    foreach role [_sprite_roles] {
-        if {[_has_sprite $doc $role]} {
-            lappend lines "    spr_${role} = sprite_load(\"pak:/sprites/${role}.png\")"
-        }
-    }
     lappend lines "\}"
     lappend lines ""
     lappend lines "fn fill_audio() \{"
@@ -500,13 +494,6 @@ proc codegen::platformer::_audio_block_assets {doc} {
 proc codegen::platformer::_audio_block {doc} {
     if {[_any_audio $doc]} {
         return [_audio_block_assets $doc]
-    }
-    # Build sprite loading lines injected into snd_init via @@SPR_LOADS@@ placeholder.
-    set spr_loads ""
-    foreach role [_sprite_roles] {
-        if {[_has_sprite $doc $role]} {
-            append spr_loads "    spr_${role} = sprite_load(\"pak:/sprites/${role}.png\")\n"
-        }
     }
     set block {-- ── Procedural sound engine (asset-free) ─────────────────────────────────────
 const SR: i32 = 44100
@@ -615,12 +602,12 @@ fn fill_audio() {
 fn snd_init() {
     audio.init(44100, 4)
     init_music_table()
-@@SPR_LOADS@@}
+}
 
 fn music_start() { music_on = true }
 fn music_stop()  { music_on = false }
 }
-    return [string map [list "@@SPR_LOADS@@" $spr_loads] $block]
+    return $block
 }
 
 # ── Level tile data (data-driven) ────────────────────────────────────────────

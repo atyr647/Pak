@@ -22,6 +22,12 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
+
+/* -- Function prototypes -- */
+bool check_greeting(const char * s);
+bool same_string(const char * a, const char * b);
+int32_t find_offset(const char * haystack, const char * needle);
+int32_t check_pakstr(PakStr s);
 bool check_greeting(const char * s) {
     return ((strncmp(s, "hello", strlen("hello")) == 0) && (strstr(s, "world") != NULL));
 }

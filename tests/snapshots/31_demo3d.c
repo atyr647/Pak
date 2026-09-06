@@ -87,6 +87,19 @@ struct GameState {
     bool running;
 };
 
+
+/* -- Function prototypes -- */
+void Cube_spin(Cube * self);
+uint32_t Cube_face_col(Cube * self, int32_t fi);
+int32_t edge_x_at(int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t y);
+__attribute__((hot))
+void fill_quad(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t x2, int32_t y2, int32_t x3, int32_t y3, uint32_t col);
+__attribute__((hot))
+void render_cube(Cube * cube);
+void render_sky_ground(void);
+void render_stars(void);
+void update(pak_joypad_status_t pad);
+void init_scene(void);
 enum { SCREEN_W = 320 };
 
 enum { SCREEN_H = 240 };

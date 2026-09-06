@@ -40,6 +40,12 @@ struct Player {
     bool alive;
 };
 
+
+/* -- Function prototypes -- */
+void Player_init(Player * self);
+void Player_move(Player * self, float dx, float dy);
+bool Player_is_alive(Player * self);
+void Player_take_damage(Player * self, int32_t amount);
 void Player_init(Player * self) {
     self->pos.x = 0.0f;
     self->pos.y = 0.0f;

@@ -36,6 +36,11 @@ typedef struct {
     bool f0;
     int32_t f1;
 } PakTuple2_bool_int32_t;
+
+/* -- Function prototypes -- */
+PakTuple2_int32_t_int32_t min_max(int32_t a, int32_t b);
+PakTuple2_int32_t_int32_t div_rem(int32_t a, int32_t b);
+int32_t pair_sum(PakTuple2_int32_t_int32_t t);
 PakTuple2_int32_t_int32_t min_max(int32_t a, int32_t b) {
     if (a < b) {
         return (PakTuple2_int32_t_int32_t){.f0 = a, .f1 = b};

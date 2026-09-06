@@ -23,7 +23,7 @@ if {[info exists ::pak::_checker_loaded]} { return }
 set ::pak::_checker_loaded 1
 
 oo::class create pak::Checker {
-    variable filename diags top_names used_modules backend
+    variable filename diags top_names used_modules backend pathonly_assets
 
     constructor {{fname ""} {be "c"}} {
         set filename $fname
@@ -31,6 +31,7 @@ oo::class create pak::Checker {
         set diags {}
         set top_names [dict create]
         set used_modules [dict create]
+        set pathonly_assets [dict create]
     }
 
     method diags {} { return $diags }
@@ -109,6 +110,15 @@ oo::class create pak::Checker {
                     # too late: `pak check --backend mips` had already said
                     # the program was a valid standalone program.
                     if {$backend eq "mips"} { my check_asset $decl }
+                    # An untyped asset is a path and nothing else -- there is
+                    # no loader to give the name a handle (LANGUAGE.md 14:
+                    # `asset level_data from "levels/level1.bin"` is the blob
+                    # you DMA yourself). Reading the bare name lowered to an
+                    # identifier the generated C never declares. Remember the
+                    # name so the use site can say so.
+                    if {[pak::isnil [pak::nfield $decl asset_type]]} {
+                        dict set pathonly_assets [pak::fval $decl name] $decl
+                    }
                 }
                 ExternConst {
                     # An extern symbol resolves on the standalone backend only
@@ -358,6 +368,16 @@ oo::class create pak::Checker {
             Cast      { my check_expr_calls [pak::nfield $expr expr] }
             AddrOf    { my check_expr_calls [pak::nfield $expr expr] }
             Deref     { my check_expr_calls [pak::nfield $expr expr] }
+            Ident {
+                set nm [pak::fval $expr name]
+                if {[dict exists $pathonly_assets $nm]} {
+                    my err E010 "asset '$nm' has no type, so it has no handle to read" \
+                        "An untyped asset declares a path only. Give it a type\
+                         (`asset $nm: Sprite from ...`) to get a loaded handle,\
+                         or read `${nm}_path` and load it yourself." \
+                        $expr
+                }
+            }
             CatchExpr { my check_expr_calls [pak::nfield $expr expr] }
             OkExpr    { my check_expr_calls [pak::nfield $expr value] }
             ErrExpr   { my check_expr_calls [pak::nfield $expr value] }

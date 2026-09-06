@@ -50,6 +50,10 @@ struct GameState {
     bool running;
 };
 
+
+/* -- Function prototypes -- */
+void update(GameState * gs);
+void render(GameState * gs);
 void update(GameState * gs) {
     __auto_type input = pak_joypad_get_status(0);
     if (input.held.right) {

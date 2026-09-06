@@ -29,6 +29,10 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
+
+/* -- Function prototypes -- */
+void save_game(void);
+bool load_game(void);
 enum { SAVE_MAGIC_HI = 0xDE };
 
 enum { SAVE_MAGIC_LO = 0xAD };

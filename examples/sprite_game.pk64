@@ -7,7 +7,7 @@ use n64.rdpq
 use n64.sprite
 use n64.timer
 
-asset hero_sprite from "hero.sprite"
+asset hero_sprite: Sprite from "hero.sprite"
 
 struct Player {
     x: f32

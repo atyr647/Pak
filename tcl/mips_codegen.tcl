@@ -1432,6 +1432,34 @@ oo::class create pak::MipsCodegen {
         if {[pak::isnil $branch]} return
         foreach d [pak::items [pak::nfield $branch stmts]] { my emit_top_decl $d }
     }
+    # The float value of a literal initializer, or "" when it is not one.
+    # `-8.0` parses as UnaryOp over FloatLit, so matching FloatLit alone left
+    # every negative float const out of both pools below.
+    method fold_float_literal {e} {
+        if {[pak::kindof $e] eq "UnaryOp" && [pak::fval $e op] eq "-"} {
+            set inner [my fold_float_literal [pak::nfield $e operand]]
+            if {$inner eq ""} { return "" }
+            return [expr {-$inner}]
+        }
+        if {[pak::kindof $e] eq "FloatLit"} { return [pak::sval [pak::nfield $e value]] }
+        return ""
+    }
+
+    # A fixed-point literal scaled to its integer representation, or "".
+    # An integer literal is scaled too: `const X: fix16.16 = 2` means 2.0.
+    method fold_fix_literal {e shift} {
+        if {[pak::kindof $e] eq "UnaryOp" && [pak::fval $e op] eq "-"} {
+            set inner [my fold_fix_literal [pak::nfield $e operand] $shift]
+            if {$inner eq ""} { return "" }
+            return [expr {-$inner}]
+        }
+        switch -- [pak::kindof $e] {
+            FloatLit { return [expr {entier(double([pak::sval [pak::nfield $e value]]) * (1 << $shift))}] }
+            IntLit   { return [expr {entier([pak::sval [pak::nfield $e value]]) << $shift}] }
+        }
+        return ""
+    }
+
     method collect_const {decl} {
         # A fixed-point const is written as a decimal but stored as an integer
         # scaled by 2^frac: `const GRAVITY: fix16.16 = 0.4` is 26214. Without
@@ -1441,20 +1469,22 @@ oo::class create pak::MipsCodegen {
         # the link failed with an undefined symbol.
         set typ [pak::nfield $decl type]
         set val [pak::nfield $decl value]
-        if {![pak::isnil $typ] && [pak::kindof $typ] eq "TypeName" \
-                && [pak::kindof $val] eq "FloatLit"} {
+        if {![pak::isnil $typ] && [pak::kindof $typ] eq "TypeName"} {
             set shift [pak::frac_bits_for [pak::fval $typ name]]
             if {$shift != 0} {
-                set raw [pak::sval [pak::nfield $val value]]
-                dict set consts [pak::fval $decl name] [expr {entier(double($raw) * (1 << $shift))}]
-                return
+                set scaled [my fold_fix_literal $val $shift]
+                if {$scaled ne ""} {
+                    dict set consts [pak::fval $decl name] $scaled
+                    return
+                }
             }
         }
         # A plain float const (const PI: f32 = 3.14159) has no integer value to
         # fold, so eval_const_expr returned "" and PI was never a const either.
         # It goes in the float pool and loads like any other float literal.
-        if {[pak::kindof $val] eq "FloatLit"} {
-            dict set float_consts [pak::fval $decl name] [pak::sval [pak::nfield $val value]]
+        set fv [my fold_float_literal $val]
+        if {$fv ne ""} {
+            dict set float_consts [pak::fval $decl name] $fv
             return
         }
         set v [my eval_const_expr $val]

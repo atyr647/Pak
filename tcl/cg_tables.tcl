@@ -50,10 +50,8 @@ set ::pak::CG_API [dict create \
     {dma read} {dma_read} \
     {dma wait} {dma_wait} \
     {dma write} {dma_write} \
-    {eeprom init} {eeprom_init} \
     {eeprom present} {eeprom_present} \
     {eeprom read} {eeprom_read} \
-    {eeprom type_detect} {eeprom_type_detect} \
     {eeprom write} {eeprom_write} \
     {exception get_handler} {exception_get_handler} \
     {exception set_handler} {exception_set_handler} \
@@ -169,9 +167,6 @@ set ::pak::CG_API [dict create \
     {rtc init} {rtc_init} \
     {rtc is_stopped} {rtc_is_stopped} \
     {rtc set} {rtc_set} \
-    {rumble init} {rumble_init} \
-    {rumble start} {rumble_start} \
-    {rumble stop} {rumble_stop} \
     {sprite load} {sprite_load} \
     {sram read} {sram_read} \
     {sram write} {sram_write} \
@@ -263,6 +258,8 @@ set ::pak::CG_API_LAMBDA [dict create \
     {audio get_buffer} {1} \
     {controller read} {1} \
     {display init} {1} \
+    {eeprom init} {1} \
+    {eeprom type_detect} {1} \
     {rdpq attach_clear} {1} \
     {rdpq set_fill_color} {1} \
     {rdpq set_mode_copy} {1} \
@@ -312,7 +309,10 @@ set ::pak::CG_API_LAMBDA [dict create \
     {rdpq_mode tlut} {1} \
     {rdpq_mode zbuf} {1} \
     {rtc is_running} {1} \
+    {rumble init} {1} \
     {rumble is_plugged} {1} \
+    {rumble start} {1} \
+    {rumble stop} {1} \
     {sprite blit} {1} \
     {str concat} {1} \
     {str data} {1} \
@@ -389,8 +389,7 @@ set ::pak::CG_USE_INCLUDES [dict create \
     {n64.rdpq_tex} {#include <rdpq_tex.h>} \
     {n64.rsp} {#include <rspq.h>} \
     {n64.rtc} {#include <rtc.h>} \
-    {n64.rumble} {#include <joypad.h>
-#include <rumble.h>} \
+    {n64.rumble} {#include <joypad.h>} \
     {n64.sprite} {#include <rdpq_sprite.h>} \
     {n64.sram} {#include <backup.h>} \
     {n64.surface} {#include <surface.h>} \

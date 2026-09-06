@@ -118,6 +118,36 @@ struct GameState {
     int32_t coins_collected;
 };
 
+
+/* -- Function prototypes -- */
+void init_platforms(void);
+void init_pickups(void);
+bool aabb_overlap(int32_t ax, int32_t ay, int32_t aw, int32_t ah, int32_t bx, int32_t by, int32_t bw, int32_t bh);
+int32_t check_platform_landing(int32_t px, int32_t py, int32_t pvy);
+void Player_init(Player * self);
+void Player_physics(Player * self);
+void Player_resolve_collisions(Player * self);
+void Player_handle_input(Player * self, pak_joypad_status_t pad);
+void Player_update_state(Player * self);
+void Player_collect_pickups(Player * self);
+void Camera_init(Camera * self);
+void Camera_follow(Camera * self, int32_t player_x);
+void draw_rect_world(int32_t wx, int32_t wy, int32_t ww, int32_t wh, int32_t cam_x, uint32_t color);
+void draw_platforms(int32_t cam_x);
+void draw_player(Player * p, int32_t cam_x);
+void draw_pickup(Pickup p, int32_t cam_x);
+void draw_pickups(int32_t cam_x);
+void draw_hud(GameState * gs);
+void update_playing(GameState * gs, pak_joypad_status_t pad);
+void update_title(GameState * gs, pak_joypad_status_t pad);
+void update_paused(GameState * gs, pak_joypad_status_t pad);
+void update_gameover(GameState * gs, pak_joypad_status_t pad);
+void update(GameState * gs, pak_joypad_status_t pad);
+void render_world(GameState * gs);
+void render_title(void);
+void render_paused(GameState * gs);
+void render_gameover(void);
+void render(GameState * gs);
 enum { SCREEN_W = 320 };
 
 enum { SCREEN_H = 240 };

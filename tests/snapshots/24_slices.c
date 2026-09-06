@@ -35,6 +35,12 @@ struct Point {
 
 typedef struct { int32_t *data; int32_t len; } PakSlice_int32_t;
 typedef struct { Point *data; int32_t len; } PakSlice_Point;
+
+/* -- Function prototypes -- */
+int32_t sum(PakSlice_int32_t s);
+int32_t find_max(PakSlice_int32_t s);
+void double_all(PakSlice_int32_t s);
+int32_t sum_x(PakSlice_Point pts);
 int32_t sum(PakSlice_int32_t s) {
     int32_t total = 0;
     for (int _i_item = 0; _i_item < (s).len; _i_item++) {

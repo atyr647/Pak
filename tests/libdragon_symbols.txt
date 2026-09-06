@@ -50,10 +50,8 @@ libdragon display.show
 libdragon dma.read
 libdragon dma.wait
 libdragon dma.write
-missing eeprom.init
 libdragon eeprom.present
 libdragon eeprom.read
-missing eeprom.type_detect
 libdragon eeprom.write
 missing exception.get_handler
 missing exception.set_handler
@@ -161,9 +159,6 @@ libdragon rtc.get
 libdragon rtc.init
 missing rtc.is_stopped
 libdragon rtc.set
-missing rumble.init
-libdragon rumble.start
-libdragon rumble.stop
 missing sp.done
 missing sp.init
 missing sp.load_data

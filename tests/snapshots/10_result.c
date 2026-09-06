@@ -32,6 +32,10 @@ typedef enum {
 
 
 typedef struct { bool is_ok; union { int32_t value; LoadError error; } data; } PakResult_int32_t_LoadError;
+
+/* -- Function prototypes -- */
+PakResult_int32_t_LoadError load_level(char * path);
+PakResult_int32_t_LoadError divide(int32_t a, int32_t b);
 PakResult_int32_t_LoadError load_level(char * path) {
     if (path == NULL) {
         return (PakResult_int32_t_LoadError){ .is_ok = false, .data.error = LoadError_file_not_found };

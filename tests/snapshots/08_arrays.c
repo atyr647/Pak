@@ -22,6 +22,10 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
+
+/* -- Function prototypes -- */
+int32_t sum_array(int32_t * arr, int32_t len);
+void fill(int32_t * arr, int32_t len, int32_t value);
 enum { MAP_W = 8 };
 
 int32_t sum_array(int32_t * arr, int32_t len) {

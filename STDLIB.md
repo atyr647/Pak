@@ -320,10 +320,10 @@ compiling the examples that use them.
 | `dma` | `read` | `dma_read` | yes | yes |
 | `dma` | `wait` | `dma_wait` | yes | yes |
 | `dma` | `write` | `dma_write` | yes | yes |
-| `eeprom` | `init` | `eeprom_init` | no | yes |
+| `eeprom` | `init` | `eeprom_init` | yes* | yes |
 | `eeprom` | `present` | `eeprom_present` | yes | yes |
 | `eeprom` | `read` | `eeprom_read` | yes | yes |
-| `eeprom` | `type_detect` | `eeprom_type_detect` | no | yes |
+| `eeprom` | `type_detect` | `eeprom_type_detect` | yes* | yes |
 | `eeprom` | `write` | `eeprom_write` | yes | yes |
 | `exception` | `get_handler` | `exception_get_handler` | no | yes |
 | `exception` | `set_handler` | `exception_set_handler` | no | yes |
@@ -482,10 +482,10 @@ compiling the examples that use them.
 | `rtc` | `is_running` | `rtc_is_running` | yes* | no |
 | `rtc` | `is_stopped` | `rtc_is_stopped` | no | no |
 | `rtc` | `set` | `rtc_set` | yes | no |
-| `rumble` | `init` | `rumble_init` | no | no |
+| `rumble` | `init` | `rumble_init` | yes* | no |
 | `rumble` | `is_plugged` | `rumble_is_plugged` | yes* | no |
-| `rumble` | `start` | `rumble_start` | yes | no |
-| `rumble` | `stop` | `rumble_stop` | yes | no |
+| `rumble` | `start` | `rumble_start` | yes* | no |
+| `rumble` | `stop` | `rumble_stop` | yes* | no |
 | `sp` | `done` | `pak_sp_done` | no | yes |
 | `sp` | `init` | `pak_sp_init` | no | yes |
 | `sp` | `load_data` | `pak_sp_load_data` | no | yes |
@@ -619,7 +619,7 @@ compiling the examples that use them.
 
 **344 functions** across the module surface; **135** exist on the standalone HAL.
 
-Of the 247 lowered as a direct call: **122** are libdragon's own, **32** need Tiny3D, and **93** are **standalone-only**.
+Of the 242 lowered as a direct call: **120** are libdragon's own, **32** need Tiny3D, and **90** are **standalone-only**.
 
 Standalone-only is mostly by design rather than debt. libdragon owns the
 subsystem and exposes a different shape for it: interrupts are callbacks

@@ -72,6 +72,18 @@ struct GameState {
     int32_t score;
 };
 
+
+/* -- Function prototypes -- */
+uint8_t map_get(int32_t mx, int32_t my);
+void Camera_rotate(Camera * self, float angle);
+void Camera_try_move(Camera * self, float dx, float dy);
+uint32_t wall_color(uint8_t wtype, int32_t side);
+void render_minimap(GameState * gs);
+__attribute__((hot))
+void render_3d(GameState * gs);
+void update_playing(GameState * gs, pak_joypad_status_t pad);
+void render_screen(GameState * gs);
+void init_game(GameState * gs);
 enum { SCREEN_W = 320 };
 
 enum { SCREEN_H = 240 };
