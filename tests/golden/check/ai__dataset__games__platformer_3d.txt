@@ -1,8 +1,5 @@
-(W006 warning "'t3d.init' needs Tiny3D" "Set `tiny3d = true` under [dependencies] in pak.toml and point TINY3D_INST at your Tiny3D installation.")
 (W006 warning "'t3d.viewport_create' needs Tiny3D" "Set `tiny3d = true` under [dependencies] in pak.toml and point TINY3D_INST at your Tiny3D installation.")
 (W006 warning "'t3d.viewport_set_projection' needs Tiny3D" "Set `tiny3d = true` under [dependencies] in pak.toml and point TINY3D_INST at your Tiny3D installation.")
-(W006 warning "'t3d.light_set_ambient' needs Tiny3D" "Set `tiny3d = true` under [dependencies] in pak.toml and point TINY3D_INST at your Tiny3D installation.")
-(W006 warning "'t3d.light_set_directional' needs Tiny3D" "Set `tiny3d = true` under [dependencies] in pak.toml and point TINY3D_INST at your Tiny3D installation.")
 (W006 warning "'t3d.light_set_count' needs Tiny3D" "Set `tiny3d = true` under [dependencies] in pak.toml and point TINY3D_INST at your Tiny3D installation.")
 (W006 warning "'t3d.frame_start' needs Tiny3D" "Set `tiny3d = true` under [dependencies] in pak.toml and point TINY3D_INST at your Tiny3D installation.")
 (W006 warning "'t3d.viewport_attach' needs Tiny3D" "Set `tiny3d = true` under [dependencies] in pak.toml and point TINY3D_INST at your Tiny3D installation.")

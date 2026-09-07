@@ -280,7 +280,7 @@ impl Player {
             self.stats.hp = 0
             self.alive = false
         }
-        return hit(effective, self.stats.hp)
+        return DamageResult.hit(effective, self.stats.hp)
     }
 
     fn heal(self: *Player, amount: i32) {
@@ -352,13 +352,13 @@ fn update_enemy(e: *Enemy, player_pos: Vec2i) {
 fn compute_damage(attacker_atk: i32, defender_def: i32, is_critical: bool) -> DamageResult {
     if is_critical {
         let dmg = max_i32(1, (attacker_atk * 2) - defender_def)
-        return critical(dmg, 0, 2)
+        return DamageResult.critical(dmg, 0, 2)
     }
     let dmg = max_i32(1, attacker_atk - defender_def)
     if dmg <= 0 {
-        return blocked(defender_def)
+        return DamageResult.blocked(defender_def)
     }
-    return hit(dmg, 0)
+    return DamageResult.hit(dmg, 0)
 }
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -367,15 +367,15 @@ fn compute_damage(attacker_atk: i32, defender_def: i32, is_critical: bool) -> Da
 
 fn process_pickup(player: *Player, pickup: Pickup) -> bool {
     match pickup {
-        .item_drop(drop) => {
-            return player.add_item(drop.item)
+        .item_drop(item, pos) => {
+            return player.add_item(item)
         }
-        .gold_pile(g) => {
-            player.xp = player.xp + g.amount
+        .gold_pile(amount, pos) => {
+            player.xp = player.xp + amount
             return true
         }
-        .health_orb(h) => {
-            player.heal(h.heal)
+        .health_orb(heal) => {
+            player.heal(heal)
             return true
         }
         .nothing => {
@@ -578,9 +578,9 @@ entry {
     let player = Player.init()
 
     -- Initialize enemy pool
-    enemies[0] = slime(30, 1)
-    enemies[1] = skeleton(50, 8, Direction.east)
-    enemies[2] = boss(200, 200, 1, 0)
+    enemies[0] = Enemy.slime(30, 1)
+    enemies[1] = Enemy.skeleton(50, 8, Direction.east)
+    enemies[2] = Enemy.boss(200, 200, 1, 0)
     enemy_count = 3
 
     -- Game loop
@@ -590,7 +590,7 @@ entry {
 
         -- Begin frame
         let disp = display.get()
-        rdpq.attach_clear(disp, none)
+        rdpq.attach_clear(disp)
 
         match game_state {
             .playing => {

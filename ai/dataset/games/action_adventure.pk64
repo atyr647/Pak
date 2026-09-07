@@ -11,18 +11,10 @@ use n64.audio
 use n64.mixer
 use n64.eeprom
 use t3d
-
-extern "C" {
-    fn rdpq_mode_push()
-    fn rdpq_mode_pop()
-    fn rdpq_text_printf(x: i32, y: i32, font: i32, fmt: *c_char, ...) -> i32
-    fn wav64_open(wav: *wav64_t, path: *c_char)
-    fn wav64_play(wav: *wav64_t, channel: i32)
-    fn xm64player_open(xm: *xm64player_t, path: *c_char)
-    fn xm64player_play(xm: *xm64player_t, first_channel: i32)
-    fn xm64player_set_vol(xm: *xm64player_t, vol: f32)
-    fn xm64player_stop(xm: *xm64player_t)
-}
+use n64.rdpq_mode
+use n64.rdpq_font
+use n64.wav64
+use n64.xm64
 
 -- ============================================================
 -- Constants
@@ -257,7 +249,7 @@ fn player_update(dt: f32, pad: *joypad_status_t) {
         player.vy = JUMP_FORCE
         player.grounded = false
         if not mixer.ch_playing(4) {
-            wav64_play(&sfx_jump, 4)
+            wav64.play(&sfx_jump, 4)
         }
     }
 
@@ -270,7 +262,7 @@ fn player_update(dt: f32, pad: *joypad_status_t) {
         player.ammo = player.ammo - 1
         player.fire_cooldown = 0.25
         if not mixer.ch_playing(5) {
-            wav64_play(&sfx_shoot, 5)
+            wav64.play(&sfx_shoot, 5)
         }
     }
 
@@ -392,7 +384,7 @@ fn enemy_update(e: *Enemy, dt: f32) {
                     player.hp = player.hp - e.attack_damage
                     player.invincible_timer = 1.5
                     if not mixer.ch_playing(6) {
-                        wav64_play(&sfx_hit, 6)
+                        wav64.play(&sfx_hit, 6)
                     }
                 }
                 e.state = EnemyState.chase
@@ -480,7 +472,7 @@ fn items_update(dt: f32) {
                 }
                 items[i].active = false
                 if not mixer.ch_playing(3) {
-                    wav64_play(&sfx_pickup, 3)
+                    wav64.play(&sfx_pickup, 3)
                 }
                 player.score = player.score + 50
             }
@@ -589,7 +581,7 @@ fn dialog_update(dt: f32, a_pressed: bool) {
 -- HUD
 -- ============================================================
 fn render_hud() {
-    rdpq_mode_push()
+    rdpq_mode.push()
     rdpq.set_mode_standard()
 
     -- HP bar background
@@ -622,16 +614,16 @@ fn render_hud() {
     }
 
     -- ammo
-    rdpq_text_printf(270, 225, 1, "%d", player.ammo)
+    rdpq_font.printf(270, 225, 1, "%d", player.ammo)
 
     -- score
-    rdpq_text_printf(110, 8, 1, "%06d", player.score)
+    rdpq_font.printf(110, 8, 1, "%06d", player.score)
 
     -- crosshair
     rdpq.set_mode_fill(0xFFFFFFFF)
     rdpq.fill_rectangle(157, 118, 163, 122)
 
-    rdpq_mode_pop()
+    rdpq_mode.pop()
 }
 
 -- ============================================================
@@ -699,13 +691,13 @@ fn render_game_over() {
 fn state_enter(s: GameState) {
     match s {
         GameState.gameplay => {
-            xm64player_play(&music, 0)
+            xm64.play(&music, 0)
         }
         GameState.pause => {
-            xm64player_set_vol(&music, 0.3)
+            xm64.set_vol(&music, 0.3)
         }
         GameState.game_over => {
-            xm64player_stop(&music)
+            xm64.stop(&music)
         }
         _ => { }
     }
@@ -714,7 +706,7 @@ fn state_enter(s: GameState) {
 fn state_exit(s: GameState) {
     match s {
         GameState.pause => {
-            xm64player_set_vol(&music, 1.0)
+            xm64.set_vol(&music, 1.0)
         }
         _ => { }
     }
@@ -751,11 +743,11 @@ entry {
     -- t3d.anim_set_looping(&player_anim_idle, true)
 
     -- load audio
-    wav64_open(&sfx_jump, "rom:/sfx/jump.wav64")
-    wav64_open(&sfx_hit, "rom:/sfx/hit.wav64")
-    wav64_open(&sfx_pickup, "rom:/sfx/pickup.wav64")
-    wav64_open(&sfx_shoot, "rom:/sfx/shoot.wav64")
-    xm64player_open(&music, "rom:/music/adventure.xm64")
+    wav64.open(&sfx_jump, "rom:/sfx/jump.wav64")
+    wav64.open(&sfx_hit, "rom:/sfx/hit.wav64")
+    wav64.open(&sfx_pickup, "rom:/sfx/pickup.wav64")
+    wav64.open(&sfx_shoot, "rom:/sfx/shoot.wav64")
+    xm64.open(&music, "rom:/music/adventure.xm64")
 
     -- init game
     init_player()
@@ -779,7 +771,7 @@ entry {
         -- audio fill first
         let abuf = audio.get_buffer()
         if abuf != none {
-            mixer.poll(*abuf)
+            mixer.poll(abuf)
         }
 
         -- handle state transitions

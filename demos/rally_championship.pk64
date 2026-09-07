@@ -26,22 +26,10 @@ use n64.audio
 use n64.mixer
 use n64.math
 use t3d
-
-extern "C" {
-    fn rdpq_mode_push()
-    fn rdpq_mode_pop()
-    fn rdpq_text_printf(x: i32, y: i32, font: i32, fmt: *c_char, ...) -> i32
-    fn wav64_open(wav: *wav64_t, path: *c_char)
-    fn wav64_play(wav: *wav64_t, channel: i32)
-    fn xm64player_open(xm: *xm64player_t, path: *c_char)
-    fn xm64player_play(xm: *xm64player_t, first_ch: i32)
-}
-
-extern "C" {
-    fn t3d_matrix_push(mat: *T3DMat4FP)
-    fn t3d_matrix_pop(count: i32)
-    fn t3d_mat4fp_from_srt_euler(mat: *T3DMat4FP, scale: *f32, rot: *f32, translate: *f32)
-}
+use n64.rdpq_mode
+use n64.rdpq_font
+use n64.wav64
+use n64.xm64
 
 -- ============================================================
 -- Constants
@@ -480,7 +468,7 @@ fn render_minimap() {
 -- HUD
 -- ============================================================
 fn render_hud() {
-    rdpq_mode_push()
+    rdpq_mode.push()
     rdpq.set_mode_standard()
 
     let p: *Car = &cars[0]
@@ -510,24 +498,24 @@ fn render_hud() {
 
     -- speed in km/h
     let kmh: i32 = (p.speed * 4.8) as i32
-    rdpq_text_printf(8, 196, 1, "%d km/h", kmh)
+    rdpq_font.printf(8, 196, 1, "%d km/h", kmh)
 
     -- lap counter
-    rdpq_text_printf(136, 6, 1, "LAP %d/%d", p.lap + 1, MAX_LAPS)
+    rdpq_font.printf(136, 6, 1, "LAP %d/%d", p.lap + 1, MAX_LAPS)
 
     -- race position
-    rdpq_text_printf(276, 6, 1, "P%d", p.place)
+    rdpq_font.printf(276, 6, 1, "P%d", p.place)
 
     -- current lap time
     let ls: i32 = p.times.lap_ms / 1000
     let lf: i32 = (p.times.lap_ms % 1000) / 10
-    rdpq_text_printf(8, 6, 1, "%d.%02d", ls, lf)
+    rdpq_font.printf(8, 6, 1, "%d.%02d", ls, lf)
 
     -- best lap
     if p.times.best_ms < 999999 {
         let bs: i32 = p.times.best_ms / 1000
         let bf: i32 = (p.times.best_ms % 1000) / 10
-        rdpq_text_printf(8, 18, 1, "BEST %d.%02d", bs, bf)
+        rdpq_font.printf(8, 18, 1, "BEST %d.%02d", bs, bf)
     }
 
     render_minimap()
@@ -537,11 +525,11 @@ fn render_hud() {
         rdpq.set_mode_fill(0x000000A0)
         rdpq.fill_rectangle(124, 88, 196, 132)
         let cd: i32 = countdown as i32 + 1
-        rdpq_text_printf(150, 98, 1, "%d", cd)
-        rdpq_text_printf(112, 72, 1, "GET READY!")
+        rdpq_font.printf(150, 98, 1, "%d", cd)
+        rdpq_font.printf(112, 72, 1, "GET READY!")
     }
 
-    rdpq_mode_pop()
+    rdpq_mode.pop()
 }
 
 -- ============================================================
@@ -584,10 +572,10 @@ fn render_race(dt: f32) {
             eu[0] = 0.0  eu[1] = cars[i].heading  eu[2] = 0.0
             let tr: [f32; 3] = undefined
             tr[0] = cars[i].x  tr[1] = cars[i].y  tr[2] = cars[i].z
-            t3d_mat4fp_from_srt_euler(car_fp[i], &sc[0], &eu[0], &tr[0])
-            t3d_matrix_push(car_fp[i])
+            t3d.mat4fp_from_srt_euler(car_fp[i], &sc[0], &eu[0], &tr[0])
+            t3d.matrix_push(car_fp[i])
             t3d.model_draw(car_model[i])
-            t3d_matrix_pop(1)
+            t3d.matrix_pop(1)
         }
         i = i + 1
     }
@@ -612,9 +600,9 @@ fn render_results() {
     -- gold title bar
     rdpq.set_mode_fill(0xC8960AFF)
     rdpq.fill_rectangle(56, 24, 264, 44)
-    rdpq_text_printf(78, 28, 1, "RALLY CHAMPIONSHIP")
+    rdpq_font.printf(78, 28, 1, "RALLY CHAMPIONSHIP")
 
-    rdpq_text_printf(108, 54, 1, "FINAL RESULTS")
+    rdpq_font.printf(108, 54, 1, "FINAL RESULTS")
 
     -- result rows
     let i: i32 = 0
@@ -624,25 +612,25 @@ fn render_results() {
         rdpq.set_mode_fill(0x0E2040FF)
         rdpq.fill_rectangle(52, y, 268, y + 28)
 
-        rdpq_text_printf(62, y + 6, 1, "P%d", cars[i].place)
+        rdpq_font.printf(62, y + 6, 1, "P%d", cars[i].place)
 
         let ts: i32 = cars[i].times.total_ms / 1000
         let tf: i32 = (cars[i].times.total_ms % 1000) / 10
-        rdpq_text_printf(110, y + 6, 1, "%d.%02ds total", ts, tf)
+        rdpq_font.printf(110, y + 6, 1, "%d.%02ds total", ts, tf)
 
         if cars[i].times.best_ms < 999999 {
             let bs: i32 = cars[i].times.best_ms / 1000
             let bf: i32 = (cars[i].times.best_ms % 1000) / 10
-            rdpq_text_printf(110, y + 16, 1, "best %d.%02d", bs, bf)
+            rdpq_font.printf(110, y + 16, 1, "best %d.%02d", bs, bf)
         }
 
         if cars[i].is_player {
-            rdpq_text_printf(238, y + 6, 1, "<YOU")
+            rdpq_font.printf(238, y + 6, 1, "<YOU")
         }
         i = i + 1
     }
 
-    rdpq_text_printf(82, 224, 1, "Press A or START to race again")
+    rdpq_font.printf(82, 224, 1, "Press A or START to race again")
 
     rdpq.detach_show()
 }
@@ -673,11 +661,11 @@ entry {
     car_model[3]  = t3d.model_load("rom:/models/car_white.t3dm")
 
     -- Music + SFX
-    xm64player_open(&bgm, "rom:/music/rally.xm64")
-    xm64player_play(&bgm, 0)
-    wav64_open(&sfx_engine, "rom:/sfx/engine.wav64")
-    wav64_open(&sfx_crash,  "rom:/sfx/crash.wav64")
-    wav64_open(&sfx_lap,    "rom:/sfx/lap.wav64")
+    xm64.open(&bgm, "rom:/music/rally.xm64")
+    xm64.play(&bgm, 0)
+    wav64.open(&sfx_engine, "rom:/sfx/engine.wav64")
+    wav64.open(&sfx_crash,  "rom:/sfx/crash.wav64")
+    wav64.open(&sfx_lap,    "rom:/sfx/lap.wav64")
 
     init_waypoints()
     init_cars()
@@ -703,7 +691,7 @@ entry {
         if dt > 0.033 { dt = 0.033 }
 
         let abuf = audio.get_buffer()
-        if abuf != none { mixer.poll(*abuf) }
+        if abuf != none { mixer.poll(abuf) }
 
         controller.poll()
         let pad = controller.read(0)

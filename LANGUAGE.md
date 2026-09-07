@@ -346,12 +346,32 @@ body** is *required* — an `impl` that omits it raises `E602`.
 impl TypeName {
     fn method(self: *TypeName) { ... }
     fn method_mut(self: *mut TypeName, arg: i32) -> bool { ... }
+
+    -- associated function: no `self`, so it is called on the TYPE
+    fn new(x: i32) -> TypeName { ... }
 }
 
 -- generic impl
 impl TypeName<T> {
     fn get(self: *TypeName<T>) -> T { ... }
 }
+```
+
+A method whose first parameter is `self` is called on a value —
+`p.method()` — and receives it as the receiver. A method with no `self` is an
+*associated function*: it belongs to the type rather than to any value, and is
+called on the type itself.
+
+```pak
+struct Player { hp: i32 }
+
+impl Player {
+    fn new() -> Player { return Player { hp: 100 } }
+    fn is_alive(self: *Player) -> bool { return self.hp > 0 }
+}
+
+let p = Player.new()      -- associated function, called on the type
+let alive = p.is_alive()  -- method, called on the value
 ```
 
 ### Impl Trait [IMPLEMENTED]

@@ -159,6 +159,11 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     eeprom_init 1 \
     eeprom_present 1 \
     eeprom_type_detect 1 \
+    debug_init_isviewer 1 \
+    rumble_init 1 \
+    rumble_is_plugged 1 \
+    rumble_start 1 \
+    rumble_stop 1 \
     eeprom_read 1 \
     eeprom_write 1 \
     audio_init 1 \

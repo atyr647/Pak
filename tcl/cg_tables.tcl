@@ -80,7 +80,6 @@ set ::pak::CG_API [dict create \
     {mixer ch_stop} {mixer_ch_stop} \
     {mixer close} {mixer_close} \
     {mixer init} {mixer_init} \
-    {mixer poll} {audio_poll} \
     {mouse init} {joypad_init} \
     {mouse poll} {joypad_poll} \
     {rdpq attach} {rdpq_attach} \
@@ -89,7 +88,6 @@ set ::pak::CG_API [dict create \
     {rdpq block_free} {rdpq_block_free} \
     {rdpq block_run} {rdpq_block_run} \
     {rdpq call} {rdpq_call} \
-    {rdpq clear_z} {rdpq_clear_z} \
     {rdpq close} {rdpq_close} \
     {rdpq detach} {rdpq_detach} \
     {rdpq detach_show} {rdpq_detach_show} \
@@ -104,7 +102,6 @@ set ::pak::CG_API [dict create \
     {rdpq set_env_color} {rdpq_set_env_color} \
     {rdpq set_fog_color} {rdpq_set_fog_color} \
     {rdpq set_mode_standard} {rdpq_set_mode_standard} \
-    {rdpq set_mode_standard_z} {rdpq_set_mode_standard_z} \
     {rdpq set_other_modes_raw} {rdpq_set_other_modes_raw} \
     {rdpq set_prim_color} {rdpq_set_prim_color} \
     {rdpq set_prim_depth} {rdpq_set_prim_depth_raw} \
@@ -113,7 +110,6 @@ set ::pak::CG_API [dict create \
     {rdpq set_convert} {rdpq_set_yuv_parms} \
     {rdpq set_scissor} {rdpq_set_scissor} \
     {rdpq set_tile} {rdpq_set_tile} \
-    {rdpq set_tile_mask} {rdpq_set_tile_mask} \
     {rdpq set_tile_size} {rdpq_set_tile_size} \
     {rdpq set_z_image} {rdpq_set_z_image} \
     {rdpq sync_full} {rdpq_sync_full} \
@@ -121,7 +117,6 @@ set ::pak::CG_API [dict create \
     {rdpq sync_pipe} {rdpq_sync_pipe} \
     {rdpq sync_tile} {rdpq_sync_tile} \
     {rdpq load_block} {rdpq_load_block} \
-    {rdpq set_texture_image} {rdpq_set_texture_image} \
     {rdpq texture_rectangle} {rdpq_texture_rectangle} \
     {rdpq texture_rectangle_scaled} {rdpq_texture_rectangle_scaled} \
     {rdpq texture_rectangle_flip} {rdpq_texture_rectangle_flip} \
@@ -130,10 +125,8 @@ set ::pak::CG_API [dict create \
     {rdpq triangle_shade} {rdpq_triangle_shade} \
     {rdpq triangle_shade_z} {rdpq_triangle_shade_z} \
     {rdpq triangle_tex} {rdpq_triangle_tex} \
-    {rdpq triangle_tex_z} {rdpq_triangle_tex_z} \
     {rdpq triangle_shade_tex} {rdpq_triangle_shade_tex} \
     {rdpq triangle_shade_tex_z} {rdpq_triangle_shade_tex_z} \
-    {rdpq set_tri_z} {rdpq_set_tri_z} \
     {rdpq_font draw_text} {rdpq_text_print} \
     {rdpq_font free} {rdpq_font_free} \
     {rdpq_font load} {rdpq_font_load} \
@@ -186,18 +179,12 @@ set ::pak::CG_API [dict create \
     {t3d destroy} {t3d_destroy} \
     {t3d draw_indexed} {t3d_draw_indexed} \
     {t3d draw_object} {t3d_draw_object} \
-    {t3d fog_set_color} {t3d_fog_set_color} \
     {t3d fog_set_range} {t3d_fog_set_range} \
-    {t3d frame_end} {rspq_block_run} \
     {t3d frame_start} {t3d_frame_start} \
-    {t3d init} {t3d_init} \
-    {t3d light_set_ambient} {t3d_light_set_ambient} \
     {t3d light_set_count} {t3d_light_set_count} \
-    {t3d light_set_directional} {t3d_light_set_directional} \
     {t3d light_set_point} {t3d_light_set_point} \
     {t3d light_set_point_params} {t3d_light_set_point_params} \
     {t3d light_set_spot} {t3d_light_set_spot} \
-    {t3d look_at} {t3d_look_at} \
     {t3d model_bake_pos} {t3d_model_bake_pos} \
     {t3d model_draw} {t3d_model_draw} \
     {t3d model_free} {t3d_model_free} \
@@ -205,6 +192,8 @@ set ::pak::CG_API [dict create \
     {t3d model_get_object_by_index} {t3d_model_get_object_by_index} \
     {t3d model_get_object_by_name} {t3d_model_get_object_by_name} \
     {t3d model_get_vertex_count} {t3d_model_get_vertex_count} \
+    {t3d matrix_pop} {t3d_matrix_pop} \
+    {t3d matrix_push} {t3d_matrix_push} \
     {t3d model_load} {t3d_model_load} \
     {t3d pop_draw_flags} {t3d_pop_draw_flags} \
     {t3d push_draw_flags} {t3d_push_draw_flags} \
@@ -214,7 +203,6 @@ set ::pak::CG_API [dict create \
     {t3d set_camera} {t3d_set_camera} \
     {t3d skeleton_create} {t3d_skeleton_create} \
     {t3d skeleton_destroy} {t3d_skeleton_destroy} \
-    {t3d skeleton_draw} {t3d_skeleton_draw} \
     {t3d skeleton_update} {t3d_skeleton_update} \
     {t3d state_set_drawflags} {t3d_state_set_drawflags} \
     {t3d state_set_vertex_fx} {t3d_state_set_vertex_fx} \
@@ -265,7 +253,16 @@ set ::pak::CG_API_LAMBDA [dict create \
     {display init} {1} \
     {eeprom init} {1} \
     {eeprom type_detect} {1} \
+    {mixer poll} {1} \
     {rdpq attach_clear} {1} \
+    {rdpq_font printf} {1} \
+    {rdpq_font register_builtin_mono} {1} \
+    {rdpq clear_z} {1} \
+    {rdpq set_mode_standard_z} {1} \
+    {rdpq set_texture_image} {1} \
+    {rdpq set_tile_mask} {1} \
+    {rdpq set_tri_z} {1} \
+    {rdpq triangle_tex_z} {1} \
     {rdpq set_fill_color} {1} \
     {rdpq set_mode_copy} {1} \
     {rdpq set_mode_fill} {1} \
@@ -331,7 +328,14 @@ set ::pak::CG_API_LAMBDA [dict create \
     {system ticks_to_ms} {1} \
     {system tv_type} {1} \
     {t3d fog_set_enabled} {1} \
+    {t3d fog_set_color} {1} \
+    {t3d frame_end} {1} \
+    {t3d init} {1} \
+    {t3d light_set_ambient} {1} \
+    {t3d light_set_directional} {1} \
+    {t3d look_at} {1} \
     {t3d mat4_from_srt} {1} \
+    {t3d mat4fp_from_srt_euler} {1} \
     {t3d mat4_from_srt_euler} {1} \
     {t3d mat4_identity} {1} \
     {t3d mat4_invert} {1} \
@@ -342,6 +346,7 @@ set ::pak::CG_API_LAMBDA [dict create \
     {t3d mat4_scale} {1} \
     {t3d mat4_translate} {1} \
     {t3d mat4_transpose} {1} \
+    {t3d skeleton_draw} {1} \
     {t3d quat_from_axis_angle} {1} \
     {t3d quat_identity} {1} \
     {t3d quat_mul} {1} \
@@ -417,10 +422,15 @@ set ::pak::CG_USE_INCLUDES [dict create \
     {n64.xm64} {#include <xm64.h>} \
     {pak.arena} {} \
     {pak.str} {} \
+    {t3d} {#include <t3d/t3d.h>
+#include <t3d/t3dmath.h>
+#include <t3d/t3dmodel.h>
+#include <t3d/t3dskeleton.h>
+#include <t3d/t3danim.h>} \
     {t3d.anim} {#include <t3d/t3danim.h>} \
     {t3d.core} {#include <t3d/t3d.h>} \
     {t3d.fog} {#include <t3d/t3d.h>} \
-    {t3d.light} {#include <t3d/t3dlight.h>} \
+    {t3d.light} {#include <t3d/t3d.h>} \
     {t3d.math} {#include <t3d/t3dmath.h>} \
     {t3d.model} {#include <t3d/t3dmodel.h>} \
     {t3d.particles} {#include <t3d/t3d.h>} \

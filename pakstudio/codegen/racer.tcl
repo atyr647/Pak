@@ -792,7 +792,7 @@ ${audio_block}
         if dt > 0.033 { dt = 0.033 }
 
         let abuf = audio.get_buffer()
-        if abuf != none { mixer.poll(*abuf) }
+        if abuf != none { mixer.poll(abuf) }
 
         controller.poll()
         let pad = controller.read(0)

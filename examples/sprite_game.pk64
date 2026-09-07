@@ -37,7 +37,7 @@ entry {
 
         -- Draw
         let disp = display.get()
-        rdpq.attach_clear(disp, none)
+        rdpq.attach_clear(disp)
         rdpq.set_mode_standard()
         sprite.blit(hero_sprite, player.x, player.y)
         rdpq.detach_show()

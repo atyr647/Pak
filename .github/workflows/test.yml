@@ -269,6 +269,12 @@ jobs:
       - name: EEPROM SI/PIF + PI DMA goldens
         run: tclsh tcl/tools/eeprom_test.tcl
 
+      # The Rumble Pak sits behind a controller, so a wrong channel offset or
+      # a wrong address checksum is a rumble that silently does nothing. This
+      # executes the generated MIPS and reads the Joybus frame back out.
+      - name: Rumble Pak Joybus frames and the ISViewer channel
+        run: tclsh tcl/tools/accessory_test.tcl
+
       - name: Audio PCM (AI DACRATE/LEN/kick)
         run: tclsh tcl/tools/audio_test.tcl
 

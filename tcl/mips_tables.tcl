@@ -78,6 +78,7 @@ set ::pak::MIPS_EXTERNS [list \
     audio_write_silence \
     audio_set_buffer_num \
     debugf \
+    debug_init_isviewer \
     assert \
     dma_read \
     dma_write \
@@ -261,6 +262,8 @@ set ::pak::MIPS_API [dict create \
     {audio write} {audio_write} \
     {audio write_silence} {audio_write_silence} \
     {audio set_buffer_num} {audio_set_buffer_num} \
+    {debug init} {debug_init_isviewer} \
+    {debug init_isviewer} {debug_init_isviewer} \
     {debug log} {debugf} \
     {debug assert} {assert} \
     {debug log_value} {debugf} \
@@ -319,6 +322,7 @@ set ::pak::MIPS_API [dict create \
     {eeprom read} {eeprom_read} \
     {eeprom write} {eeprom_write} \
     {rumble init} {rumble_init} \
+    {rumble is_plugged} {rumble_is_plugged} \
     {rumble start} {rumble_start} \
     {rumble stop} {rumble_stop} \
     {cpak init} {cpak_init} \

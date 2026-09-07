@@ -455,6 +455,23 @@ oo::class create pak::Codegen {
                 # its element type. Without this a `let ss = xs.slice()` was
                 # __auto_type with no known type, so ss[i] indexed the struct.
                 set fn [pak::nfield $e func]
+                # An associated function called on its type -- `P.init()` --
+                # returns whatever it declares. Without this `let p = P.init()`
+                # was __auto_type with no known type here, so the very next
+                # `p.method()` had no receiver type to look the method up on.
+                if {[pak::kindof $fn] eq "DotAccess"
+                        && [pak::kindof [pak::nfield $fn obj]] eq "Ident"} {
+                    set tn [pak::fval [pak::nfield $fn obj] name]
+                    set mn [pak::fval $fn field]
+                    if {[dict exists $method_registry $tn]
+                            && [dict exists [dict get $method_registry $tn] $mn]} {
+                        set md [dict get [dict get $method_registry $tn] $mn]
+                        set mp [pak::items [pak::nfield $md params]]
+                        if {[llength $mp] == 0 || [pak::fval [lindex $mp 0] name] ne "self"} {
+                            return [pak::nfield $md ret_type]
+                        }
+                    }
+                }
                 if {[pak::kindof $fn] eq "DotAccess" && [pak::fval $fn field] in {slice items}} {
                     set ot [my expr_type [pak::nfield $fn obj]]
                     if {[pak::kindof $ot] eq "TypeGeneric" \
@@ -1622,6 +1639,23 @@ oo::class create pak::Codegen {
             # Static type-method calls
             set r [my gen_static_type_method $type_name $method $args]
             if {$r ne ""} { return $r }
+            # An associated function: a method in `impl T` whose first
+            # parameter is not `self`, called on the TYPE rather than on a
+            # value -- `let p = Player.init()`. It lowers to the same
+            # T_method symbol as any other impl method, with no receiver.
+            # Without this the type name was generated as an expression and
+            # the C read `Player.init()`, a member access on an undeclared
+            # variable.
+            if {[dict exists $method_registry $type_name]
+                && [dict exists [dict get $method_registry $type_name] $method]} {
+                set fn_decl [dict get [dict get $method_registry $type_name] $method]
+                set params [pak::items [pak::nfield $fn_decl params]]
+                if {[llength $params] == 0 || [pak::fval [lindex $params 0] name] ne "self"} {
+                    set user_args [my apply_named_args_and_defaults $params \
+                        [pak::items [pak::nfield $e args]]]
+                    return "${type_name}_${method}([join $user_args {, }])"
+                }
+            }
         }
         # Method call: obj.method(args) → TypeName_method(&obj, args)
         # The receiver need not be a bare identifier: gs.cam.rotate(a) is a
@@ -3579,10 +3613,12 @@ proc pak::cg_api_lambda {mod fn arglist} {
             return "pak_display_init([join $a {, }])"
         }
         "rdpq attach_clear" {
-            # rdpq_attach_clear takes the colour surface AND the Z surface.
+            # Pak's second argument is the CLEAR COLOUR, not libdragon's Z
+            # surface: see pak_rdpq_attach_clear. Omitted means black, which
+            # is what libdragon's own rdpq_attach_clear clears to.
             set fb [pak::cg_arg_or $arglist 0 "NULL"]
-            set z  [pak::cg_arg_or $arglist 1 "NULL"]
-            return "rdpq_attach_clear($fb, $z)"
+            set c  [pak::cg_arg_or $arglist 1 "0x000000FF"]
+            return "pak_rdpq_attach_clear($fb, $c)"
         }
         "rdpq set_fill_color" {
             return "pak_rdpq_set_fill_color([pak::cg_arg_or $arglist 0 0])"
@@ -3689,6 +3725,94 @@ proc pak::cg_api_lambda {mod fn arglist} {
         "vi get_height"     { return "display_get_height()" }
         "vi wait_vblank"    { return "vi_wait_vblank()" }
         "rtc is_running"    { return "!rtc_is_stopped()" }
+        "mixer poll" {
+            # libdragon's is mixer_poll(buffer, nsamples), not audio_poll.
+            # The sample count is the audio buffer's own length, which is what
+            # audio.get_buffer just handed the caller.
+            return "mixer_poll([pak::cg_arg_or $arglist 0 "NULL"], audio_get_buffer_length())"
+        }
+        "rdpq_font printf" {
+            # libdragon's rdpq_text_printf takes the text parameters first, the
+            # font id second, and float coordinates:
+            #   rdpq_text_printf(parms, font_id, x, y, fmt, ...)
+            # Pak's surface is (x, y, font, fmt, ...), which reads the way the
+            # call site wants it. NULL parms means the font's own defaults.
+            set x [pak::cg_arg_or $arglist 0 0]
+            set y [pak::cg_arg_or $arglist 1 0]
+            set f [pak::cg_arg_or $arglist 2 1]
+            set rest [lrange $arglist 3 end]
+            if {[llength $rest] == 0} { set rest [list {""}] }
+            return "rdpq_text_printf(NULL, (uint8_t)($f), (float)($x), (float)($y),\
+                    [join $rest {, }])"
+        }
+        "rdpq_font register_builtin_mono" {
+            # libdragon ships a monospaced debug font; nothing draws text until
+            # a font is registered under an id, and id 1 is the one the demos
+            # pass. Two calls in libdragon, one here.
+            set id [pak::cg_arg_or $arglist 0 1]
+            return "rdpq_text_register_font($id, rdpq_font_load_builtin(FONT_BUILTIN_DEBUG_MONO))"
+        }
+        "t3d mat4fp_from_srt_euler" {
+            # Tiny3D takes three float[3] arrays. Passing pointers straight
+            # through is what the call sites already do.
+            return "t3d_mat4fp_from_srt_euler([join $arglist {, }])"
+        }
+        "t3d init" {
+            # t3d_init takes a T3DInitParams struct, not nothing. Zeroed means
+            # its documented defaults (an 8-deep matrix stack).
+            return "t3d_init((T3DInitParams){0})"
+        }
+        "t3d frame_end" {
+            # Tiny3D has no frame_end: a frame ends when the RDP attachment is
+            # detached and shown, which Pak spells rdpq.detach_show(). This
+            # used to lower to rspq_block_run, which takes a block and runs it
+            # -- an entirely different operation, called with no argument.
+            return "((void)0)"
+        }
+        "t3d look_at" {
+            # Tiny3D spells this t3d_viewport_look_at. There is no t3d_look_at.
+            return "t3d_viewport_look_at([join $arglist {, }])"
+        }
+        "t3d skeleton_draw" {
+            # Tiny3D draws a skinned model through the MODEL, taking the
+            # skeleton second: t3d_model_draw_skinned(model, skel). Pak's
+            # surface names the skeleton first, matching the other skeleton_*
+            # calls, so the two arguments swap here.
+            set sk [pak::cg_arg_or $arglist 0 "NULL"]
+            set md [pak::cg_arg_or $arglist 1 "NULL"]
+            return "t3d_model_draw_skinned($md, $sk)"
+        }
+        "t3d light_set_ambient" {
+            # t3d_light_set_ambient takes a pointer to four bytes, not three
+            # integers. A compound literal keeps the call an expression.
+            set r [pak::cg_arg_or $arglist 0 0]
+            set g [pak::cg_arg_or $arglist 1 0]
+            set b [pak::cg_arg_or $arglist 2 0]
+            return "t3d_light_set_ambient((uint8_t\[4\])\{$r, $g, $b, 0xFF\})"
+        }
+        "t3d light_set_directional" {
+            # (index, r, g, b, dx, dy, dz) in Pak; (int, const uint8_t *,
+            # const T3DVec3 *) in Tiny3D.
+            set i  [pak::cg_arg_or $arglist 0 0]
+            set r  [pak::cg_arg_or $arglist 1 0]
+            set g  [pak::cg_arg_or $arglist 2 0]
+            set b  [pak::cg_arg_or $arglist 3 0]
+            set dx [pak::cg_arg_or $arglist 4 0]
+            set dy [pak::cg_arg_or $arglist 5 0]
+            set dz [pak::cg_arg_or $arglist 6 0]
+            return "t3d_light_set_directional($i, (uint8_t\[4\])\{$r, $g, $b, 0xFF\},                    &(T3DVec3)\{\{$dx, $dy, $dz\}\})"
+        }
+        "t3d fog_set_color" {
+            # Tiny3D has no fog colour of its own: the fog colour is the RDP's,
+            # set with rdpq_set_fog_color. t3d_fog_set_color does not exist.
+            return "rdpq_set_fog_color(color_from_packed32([pak::cg_arg_or $arglist 0 0]))"
+        }
+        "rdpq clear_z"            { return "pak_rdpq_clear_z()" }
+        "rdpq set_mode_standard_z" { return "pak_rdpq_set_mode_standard_z()" }
+        "rdpq set_texture_image"  { return "pak_rdpq_set_texture_image([join $arglist {, }])" }
+        "rdpq set_tile_mask"      { return "pak_rdpq_set_tile_mask([join $arglist {, }])" }
+        "rdpq set_tri_z"          { return "pak_rdpq_set_tri_z([join $arglist {, }])" }
+        "rdpq triangle_tex_z"     { return "pak_rdpq_triangle_tex_z([join $arglist {, }])" }
         "rumble init" {
             # There is no rumble_init in libdragon: the Rumble Pak is reached
             # through the joypad subsystem, which joypad_init already brings

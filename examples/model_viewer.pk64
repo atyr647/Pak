@@ -1,55 +1,66 @@
 -- model_viewer.pk64
--- Complete example: 3D scene with Tiny3D (from Pak spec)
+-- A Tiny3D model on a turntable: load a .t3dm, spin it with the stick.
+--
+-- Tiny3D is RSP microcode, so this is a libdragon-backend program. `pak check
+-- --backend mips` reports E010 on every t3d.* call: the standalone HAL has no
+-- 3D pipeline. Build it with the default backend.
 
 use n64.display
 use n64.controller
 use n64.rdpq
 use n64.timer
-use t3d.core
-use t3d.model
-use t3d.math
-use t3d.viewport
-use t3d.light
+use t3d
 
 asset character_model: Model from "character.t3dm"
 
 entry {
-    let camera_pos = Vec3 { x: 0, y: 25, z: -50 }
-    let camera_target = Vec3 { x: 0, y: 0, z: 0 }
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+    t3d.init()
 
-    -- Model matrix: allocated with 16-byte alignment for DMA
+    -- The viewport carries the projection and the camera, so it is built once
+    -- and reused; t3d.viewport_create takes no arguments and the projection is
+    -- set separately.
+    let mut viewport = t3d.viewport_create()
+    t3d.viewport_set_projection(&viewport, 70.0, 1.0, 200.0)
+
+    let mut eye: Vec3 = Vec3 { x: 0.0, y: 25.0, z: -50.0 }
+    let mut target: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    let mut up: Vec3 = Vec3 { x: 0.0, y: 1.0, z: 0.0 }
+
+    -- The RSP reads the matrix by DMA, so it is 16-byte aligned and lives in
+    -- its fixed-point form.
     @aligned(16)
-    let model_mat: Mat4 = undefined
+    let mut model_mat: Mat4 = undefined
 
-    let rotation: f32 = 0.0
+    let mut rotation: f32 = 0.0
 
     loop {
+        controller.poll()
         let input = controller.read(0)
-        let dt = timer.delta()
-        let stick_x = input.stick_x
+        let dt: f32 = timer.delta()
 
-        -- Rotate model with stick
-        rotation += stick_x * 2.0 * dt
+        rotation = rotation + (input.stick_x as f32) * 2.0 * dt
 
-        -- Update model matrix
-        t3d.mat4_identity(model_mat)
-        t3d.mat4_rotate_y(model_mat, rotation)
+        t3d.mat4_identity(&model_mat)
+        t3d.mat4_rotate_y(&model_mat, rotation)
 
-        -- Set up camera
-        let viewport = t3d.viewport_create(320, 240, fov: 70.0, near: 1.0, far: 200.0, aspect: 320.0 / 240.0)
-
-        -- Begin frame
         let disp = display.get()
-        rdpq.attach_clear(disp, none)
+        rdpq.attach_clear(disp, 0x101828FF)
+
         t3d.frame_start()
+        t3d.viewport_attach(&viewport)
+        t3d.look_at(&viewport, &eye, &target, &up)
 
-        -- Set up lighting
-        t3d.light_set_directional(index: 0, color: 0xFFFFFFFF, direction: Vec3 { x: 1, y: 1, z: 1 })
+        t3d.light_set_count(1)
+        t3d.light_set_ambient(40, 40, 50)
+        t3d.light_set_directional(0, 255, 255, 255, 1.0, 1.0, 1.0)
 
-        -- Draw model
-        t3d.model_draw(character_model, model_mat)
-
+        t3d.model_draw(character_model)
         t3d.frame_end()
+
         rdpq.detach_show()
     }
 }

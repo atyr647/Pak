@@ -210,7 +210,7 @@ entry {
         if cam_z < 0 { cam_z = 0 }
         if cam_z > BAYS * BAY_DEPTH { cam_z = 0 }
 
-        let fb: u32 = display.get()
+        let fb = display.get()
         rdpq.attach_clear(fb, 0x0000_11FF)
         rdpq.clear_z()
 

@@ -3960,6 +3960,22 @@ oo::class create pak::MipsCodegen {
                 # `ss.len()` had no receiver type to mangle a call from.
                 if {[pak::kindof $f] eq "DotAccess"} {
                     set robj [pak::nfield $f obj]
+                    # An associated function called on its type -- `P.init()`.
+                    # It has no receiver, so the receiver-type lookup below
+                    # finds nothing and `let p = P.init()` came out untyped,
+                    # taking every later `p.method()` down with it.
+                    if {[pak::kindof $robj] eq "Ident"} {
+                        set atn [pak::fval $robj name]
+                        set amn [pak::fval $f field]
+                        if {[dict exists $fn_decls "${atn}_${amn}"]} {
+                            set amd [dict get $fn_decls "${atn}_${amn}"]
+                            set amp [pak::items [pak::nfield $amd params]]
+                            if {[llength $amp] == 0
+                                    || [pak::fval [lindex $amp 0] name] ne "self"} {
+                                return [pak::nfield $amd ret_type]
+                            }
+                        }
+                    }
                     set rt [my unwrap_type [my expr_type $robj]]
                     set rtrait [my trait_of_type $rt]
                     if {$rtrait ne ""} {
@@ -5165,6 +5181,19 @@ oo::class create pak::MipsCodegen {
                     }
                 }
             }
+            # An associated function: a method in `impl T` whose first
+            # parameter is not `self`, called on the TYPE -- `Player.init()`.
+            # It is the same T_method symbol as any other impl method, called
+            # with no receiver. Checked here, after the receiver-typed paths,
+            # so a local that happens to share a type's name still wins.
+            if {[dict exists $fn_decls "${obj_name}_${fn}"]} {
+                set md [dict get $fn_decls "${obj_name}_${fn}"]
+                set mp [pak::items [pak::nfield $md params]]
+                if {[llength $mp] == 0 || [pak::fval [lindex $mp 0] name] ne "self"} {
+                    my emit_direct_call "${obj_name}_${fn}" [pak::nfield $expr args] $dst
+                    return
+                }
+            }
             # Method call: foo.method(args) → TypeName_method(&foo, args...)
             my emit_method_call $func [pak::nfield $expr args] $dst
             return
@@ -5660,6 +5689,14 @@ oo::class create pak::MipsCodegen {
             return
         }
         my marshal_args $args_seq
+        # Zero the argument slots the call did not supply. A HAL function's
+        # parameter list is fixed, so `rdpq.attach_clear(fb)` -- one argument
+        # to a two-parameter HAL function -- left $a1 holding whatever the
+        # last expression had put there, and the screen cleared to garbage.
+        # API_ARITY is the documented surface arity, so its maximum is how
+        # many slots the callee may read; padding past what a particular HAL
+        # function takes is harmless, since it just does not look.
+        my pad_module_args $mod $fn [llength [pak::items $args_seq]]
         if {[dict exists $::pak::MIPS_API [list $mod $fn]]} {
             set sym [dict get $::pak::MIPS_API [list $mod $fn]]
         } else {
@@ -5668,6 +5705,20 @@ oo::class create pak::MipsCodegen {
         if {$sym eq ""} { set sym "${mod}_${fn}" }
         my emit_jal $sym
         if {$dst ne {$v0}} { $em move $dst {$v0} }
+    }
+
+    method pad_module_args {mod fn n} {
+        set key [list $mod $fn]
+        if {![dict exists $::pak::API_ARITY $key]} return
+        set want [lindex [dict get $::pak::API_ARITY $key] 1]
+        if {$want eq "" || $want <= $n} return
+        for {set slot $n} {$slot < $want} {incr slot} {
+            if {$slot < 4} {
+                $em move [lindex $::pak::ARG_GPRS $slot] {$zero}
+            } else {
+                $em sw {$zero} [expr {($slot - 4) * 4 + 16}] {$sp}
+            }
+        }
     }
 
     # Inline C-string helpers. The sim halts on jal to libc, and the

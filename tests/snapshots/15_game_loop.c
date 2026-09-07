@@ -87,7 +87,7 @@ void update(GameState * gs) {
 
 void render(GameState * gs) {
     __auto_type fb = display_get();
-    rdpq_attach_clear(fb, NULL);
+    pak_rdpq_attach_clear(fb, 0x000000FF);
     pak_rdpq_set_mode_fill(0xFF0000FF);
     rdpq_fill_rectangle(gs->x, gs->y, (gs->x + 16), (gs->y + 16));
     rdpq_detach_show();

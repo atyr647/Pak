@@ -146,3 +146,100 @@ static inline void pak_rdpq_set_fill_color(uint32_t c) {
 static inline void pak_rdpq_set_mode_fill(uint32_t c) {
     rdpq_set_mode_fill(color_from_packed32(c));
 }
+
+/* Pak's rdpq.attach_clear(surface, color) attaches and clears to that colour,
+ * which is what the standalone HAL does. libdragon's rdpq_attach_clear takes
+ * a Z SURFACE as its second argument and clears the colour buffer to black,
+ * so the two names meant different things and the colour Pak passed was being
+ * handed over as a pointer. Attaching and filling here keeps one meaning. */
+static inline void pak_rdpq_attach_clear(surface_t *fb, uint32_t color) {
+    rdpq_attach(fb, NULL);
+    rdpq_set_mode_fill(color_from_packed32(color));
+    rdpq_fill_rectangle(0, 0, fb->width, fb->height);
+}
+
+/* ── the raw RDP surface ──────────────────────────────────────────────────── */
+/* Pak's rdpq.set_tile_mask / set_texture_image / set_tri_z / triangle_tex_z
+ * name the RDP's own command fields, in screen-space integers, because that is
+ * what the standalone HAL emits: it writes the command words itself. libdragon
+ * reaches the same commands through its own shapes -- a tileparms struct, and
+ * rdpq_triangle over float vertex arrays that the RSP turns into the edge and
+ * coefficient blocks -- so these adapt one to the other. Without them the raw
+ * surface was standalone-only and examples/chroma/church.pk64 could not be
+ * built for libdragon at all. */
+
+/* SET_TILE. libdragon takes tmem address and pitch in BYTES; the RDP field
+ * (and so Pak's argument) counts 64-bit words, hence the x8. cms/cmt are the
+ * GBI clamp/mirror bit pair: bit 1 clamp, bit 0 mirror. */
+static inline void pak_rdpq_set_tile_mask(uint32_t tile, uint32_t fmt, uint32_t size,
+                                          uint32_t line, uint32_t tmem_addr,
+                                          uint32_t palette, uint32_t cms, uint32_t cmt,
+                                          uint32_t mask_s, uint32_t mask_t)
+{
+    rdpq_tileparms_t parms = {0};
+    parms.palette  = (uint8_t)palette;
+    parms.s.clamp  = (cms >> 1) & 1;
+    parms.s.mirror = cms & 1;
+    parms.s.mask   = (uint8_t)mask_s;
+    parms.t.clamp  = (cmt >> 1) & 1;
+    parms.t.mirror = cmt & 1;
+    parms.t.mask   = (uint8_t)mask_t;
+    rdpq_set_tile((rdpq_tile_t)tile, (tex_format_t)((fmt << 2) | size),
+                  (int32_t)(tmem_addr * 8), (uint16_t)(line * 8), &parms);
+}
+
+/* SET_TEXTURE_IMAGE. libdragon also encodes a height, which the RDP ignores --
+ * it is there for libdragon's own command validator. Pak's surface carries no
+ * height (neither does the RDP command), so this passes the width; the only
+ * consequence is that the validator's bounds hint is wrong for a non-square
+ * source image. */
+static inline void pak_rdpq_set_texture_image(uint32_t addr, uint32_t fmt,
+                                              uint32_t size, uint32_t width)
+{
+    rdpq_set_texture_image_raw(0, PhysicalAddr((void *)addr),
+                               (tex_format_t)((fmt << 2) | size),
+                               (uint16_t)width, (uint16_t)width);
+}
+
+/* Pak's set_tri_z sets the three vertex depths for the NEXT triangle, matching
+ * the standalone HAL, which holds them in statics because the RDP takes them
+ * inside the triangle command rather than as a command of their own. */
+static int32_t _pak_tri_z[3];
+
+static inline void pak_rdpq_set_tri_z(int32_t z0, int32_t z1, int32_t z2) {
+    _pak_tri_z[0] = z0; _pak_tri_z[1] = z1; _pak_tri_z[2] = z2;
+}
+
+/* Vertex layout {X, Y, S, T, W, Z}: pos at 0, tex (S,T,W) at 2, Z at 5.
+ * W is 1 because Pak's surface takes screen-space S/T, already divided.
+ * rdpq_triangle scales Z by 0x7FFF, so a 15-bit depth goes in as z/32767. */
+static inline void pak_rdpq_triangle_tex_z(uint32_t tile,
+    int32_t x0, int32_t y0, int32_t s0, int32_t t0,
+    int32_t x1, int32_t y1, int32_t s1, int32_t t1,
+    int32_t x2, int32_t y2, int32_t s2, int32_t t2)
+{
+    rdpq_trifmt_t fmt = {0};
+    fmt.pos_offset   = 0;
+    fmt.shade_offset = -1;
+    fmt.tex_offset   = 2;
+    fmt.tex_tile     = (rdpq_tile_t)tile;
+    fmt.tex_mipmaps  = 0;
+    fmt.z_offset     = 5;
+    float v0[6] = { (float)x0, (float)y0, (float)s0, (float)t0, 1.0f, _pak_tri_z[0] / 32767.0f };
+    float v1[6] = { (float)x1, (float)y1, (float)s1, (float)t1, 1.0f, _pak_tri_z[1] / 32767.0f };
+    float v2[6] = { (float)x2, (float)y2, (float)s2, (float)t2, 1.0f, _pak_tri_z[2] / 32767.0f };
+    rdpq_triangle(&fmt, v0, v1, v2);
+}
+
+/* Standard 1-cycle mode with the Z buffer on, which is one call on the
+ * standalone HAL and two here. */
+static inline void pak_rdpq_set_mode_standard_z(void) {
+    rdpq_set_mode_standard();
+    rdpq_mode_zbuf(true, true);
+}
+
+/* Pak's clear_z() takes no argument: it fills with the farthest depth, which
+ * is what a depth buffer is cleared to. libdragon spells that value out. */
+static inline void pak_rdpq_clear_z(void) {
+    rdpq_clear_z(0xFFFC);
+}

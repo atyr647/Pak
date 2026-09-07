@@ -76,6 +76,7 @@ proc hal_stub_header {} {
     lappend out "typedef struct { int _pak_opaque; } T3DModel;"
     lappend out "typedef struct { int _pak_opaque; } T3DSkeleton;"
     lappend out "typedef struct { int _pak_opaque; } T3DAnim;"
+    lappend out "typedef struct { int matrixStackSize; } T3DInitParams;"
     lappend out "typedef struct { int _pak_opaque; } rspq_block_t;"
     lappend out "typedef struct { int _pak_opaque; } surface_t;"
     lappend out ""
@@ -104,6 +105,7 @@ proc hal_stub_header {} {
     # so the stub is self-consistent; everything about their arguments is
     # still libdragon_api_test.tcl's business, against the real headers.
     set ret_override [dict create \
+        rdpq_font_load_builtin {void *} \
         t3d_viewport_create T3DViewport \
         t3d_skeleton_create T3DSkeleton \
         t3d_anim_create     T3DAnim \
@@ -252,15 +254,42 @@ proc read_known {} {
     return $names
 }
 
+# Rewrite the NAMES, keeping the comment block that is already there. The
+# reasons written into that block are the point of the file -- a name with no
+# reason is just a suppression -- and a --regen that reprinted a canned header
+# deleted them every time the list changed.
+proc known_header {} {
+    global KNOWN
+    if {![file exists $KNOWN]} { return [default_header] }
+    set fh [open $KNOWN r]; set t [read $fh]; close $fh
+    set out {}
+    foreach line [split $t "\n"] {
+        set trimmed [string trim $line]
+        if {$trimmed ne "" && [string index $trimmed 0] ne "#"} break
+        lappend out $line
+    }
+    while {[llength $out] > 0 && [string trim [lindex $out end]] eq ""} {
+        set out [lrange $out 0 end-1]
+    }
+    if {[llength $out] == 0} { return [default_header] }
+    return $out
+}
+
+proc default_header {} {
+    return [list \
+        "# Programs whose generated C does NOT compile." \
+        "#" \
+        "# Maintained by tcl/tools/c_compile_test.tcl. This is debt, not" \
+        "# configuration: fix a backend bug, drop the name, and the gate holds" \
+        "# the new floor. Adding a name is how a regression gets waved through," \
+        "# so add one only with the bug it records written down."]
+}
+
 proc write_known {names} {
     global KNOWN
+    set header [known_header]
     set fh [open $KNOWN w]
-    puts $fh "# Canonical examples whose generated C does NOT compile."
-    puts $fh "#"
-    puts $fh "# Maintained by tcl/tools/c_compile_test.tcl. This is debt, not"
-    puts $fh "# configuration: fix a backend bug, drop the name, and the gate holds"
-    puts $fh "# the new floor. Adding a name is how a regression gets waved through,"
-    puts $fh "# so add one only with the bug it records written down."
+    foreach line $header { puts $fh $line }
     puts $fh ""
     foreach n [lsort $names] { puts $fh $n }
     close $fh

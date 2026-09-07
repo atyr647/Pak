@@ -301,8 +301,8 @@ compiling the examples that use them.
 | `cpak` | `write_sector` | `cpak_write_sector` | no | no |
 | `debug` | `assert` | `assert` | yes | yes |
 | `debug` | `flush` | `flush` | no | no |
-| `debug` | `init` | `debug_init_isviewer` | yes | no |
-| `debug` | `init_isviewer` | `debug_init_isviewer` | yes | no |
+| `debug` | `init` | `debug_init_isviewer` | yes | yes |
+| `debug` | `init_isviewer` | `debug_init_isviewer` | yes | yes |
 | `debug` | `init_usbfs` | `debug_init_usbfs` | no | no |
 | `debug` | `log` | `debugf` | yes | yes |
 | `debug` | `log_value` | `debugf` | yes* | yes |
@@ -386,7 +386,7 @@ compiling the examples that use them.
 | `mixer` | `ch_stop` | `mixer_ch_stop` | yes | no |
 | `mixer` | `close` | `mixer_close` | yes | no |
 | `mixer` | `init` | `mixer_init` | yes | no |
-| `mixer` | `poll` | `audio_poll` | no | no |
+| `mixer` | `poll` | `mixer_poll` | yes* | no |
 | `mouse` | `get_buttons` | `mouse_get_buttons` | yes* | no |
 | `mouse` | `get_delta_x` | `mouse_get_delta_x` | yes* | no |
 | `mouse` | `get_delta_y` | `mouse_get_delta_y` | yes* | no |
@@ -399,7 +399,7 @@ compiling the examples that use them.
 | `rdpq` | `block_free` | `rdpq_block_free` | no | no |
 | `rdpq` | `block_run` | `rdpq_block_run` | no | no |
 | `rdpq` | `call` | `rdpq_call` | no | no |
-| `rdpq` | `clear_z` | `rdpq_clear_z` | yes | yes |
+| `rdpq` | `clear_z` | `rdpq_clear_z` | yes* | yes |
 | `rdpq` | `close` | `rdpq_close` | yes | yes |
 | `rdpq` | `detach` | `rdpq_detach` | yes | yes |
 | `rdpq` | `detach_show` | `rdpq_detach_show` | yes | yes |
@@ -421,16 +421,16 @@ compiling the examples that use them.
 | `rdpq` | `set_mode_copy` | `rdpq_set_mode_copy` | yes* | yes |
 | `rdpq` | `set_mode_fill` | `rdpq_set_mode_fill` | yes* | yes |
 | `rdpq` | `set_mode_standard` | `rdpq_set_mode_standard` | yes | yes |
-| `rdpq` | `set_mode_standard_z` | `rdpq_set_mode_standard_z` | no | yes |
+| `rdpq` | `set_mode_standard_z` | `rdpq_set_mode_standard_z` | yes* | yes |
 | `rdpq` | `set_other_modes_raw` | `rdpq_set_other_modes_raw` | yes | yes |
 | `rdpq` | `set_prim_color` | `rdpq_set_prim_color` | yes | yes |
 | `rdpq` | `set_prim_depth` | `rdpq_set_prim_depth_raw` | yes | yes |
 | `rdpq` | `set_scissor` | `rdpq_set_scissor` | yes | yes |
-| `rdpq` | `set_texture_image` | `rdpq_set_texture_image` | yes | yes |
+| `rdpq` | `set_texture_image` | `rdpq_set_texture_image` | yes* | yes |
 | `rdpq` | `set_tile` | `rdpq_set_tile` | yes | yes |
-| `rdpq` | `set_tile_mask` | `rdpq_set_tile_mask` | no | yes |
+| `rdpq` | `set_tile_mask` | `rdpq_set_tile_mask` | yes* | yes |
 | `rdpq` | `set_tile_size` | `rdpq_set_tile_size` | yes | yes |
-| `rdpq` | `set_tri_z` | `rdpq_set_tri_z` | no | yes |
+| `rdpq` | `set_tri_z` | `rdpq_set_tri_z` | yes* | yes |
 | `rdpq` | `set_z_image` | `rdpq_set_z_image` | yes | yes |
 | `rdpq` | `sync_full` | `rdpq_sync_full` | yes | yes |
 | `rdpq` | `sync_load` | `rdpq_sync_load` | yes | yes |
@@ -445,13 +445,15 @@ compiling the examples that use them.
 | `rdpq` | `triangle_shade_tex_z` | `rdpq_triangle_shade_tex_z` | no | yes |
 | `rdpq` | `triangle_shade_z` | `rdpq_triangle_shade_z` | no | yes |
 | `rdpq` | `triangle_tex` | `rdpq_triangle_tex` | no | yes |
-| `rdpq` | `triangle_tex_z` | `rdpq_triangle_tex_z` | no | yes |
+| `rdpq` | `triangle_tex_z` | `rdpq_triangle_tex_z` | yes* | yes |
 | `rdpq` | `triangle_z` | `rdpq_triangle_z` | no | yes |
 | `rdpq_font` | `draw_text` | `rdpq_text_print` | yes | no |
 | `rdpq_font` | `free` | `rdpq_font_free` | yes | no |
 | `rdpq_font` | `load` | `rdpq_font_load` | yes | no |
 | `rdpq_font` | `measure` | `rdpq_text_measure` | no | no |
+| `rdpq_font` | `printf` | `rdpq_font_printf` | yes* | no |
 | `rdpq_font` | `register` | `rdpq_font_register` | no | no |
+| `rdpq_font` | `register_builtin_mono` | `rdpq_font_register_builtin_mono` | yes* | no |
 | `rdpq_mode` | `antialias` | `rdpq_mode_antialias` | yes* | no |
 | `rdpq_mode` | `blending` | `rdpq_mode_blending` | yes* | no |
 | `rdpq_mode` | `combiner` | `rdpq_mode_combiner` | yes | no |
@@ -482,10 +484,10 @@ compiling the examples that use them.
 | `rtc` | `is_running` | `rtc_is_running` | yes* | no |
 | `rtc` | `is_stopped` | `rtc_is_stopped` | no | no |
 | `rtc` | `set` | `rtc_set` | yes | no |
-| `rumble` | `init` | `rumble_init` | yes* | no |
-| `rumble` | `is_plugged` | `rumble_is_plugged` | yes* | no |
-| `rumble` | `start` | `rumble_start` | yes* | no |
-| `rumble` | `stop` | `rumble_stop` | yes* | no |
+| `rumble` | `init` | `rumble_init` | yes* | yes |
+| `rumble` | `is_plugged` | `rumble_is_plugged` | yes* | yes |
+| `rumble` | `start` | `rumble_start` | yes* | yes |
+| `rumble` | `stop` | `rumble_stop` | yes* | yes |
 | `sp` | `done` | `pak_sp_done` | no | yes |
 | `sp` | `init` | `pak_sp_init` | no | yes |
 | `sp` | `load_data` | `pak_sp_load_data` | no | yes |
@@ -523,19 +525,19 @@ compiling the examples that use them.
 | `t3d` | `destroy` | `t3d_destroy` | tiny3d | no |
 | `t3d` | `draw_indexed` | `t3d_draw_indexed` | no | no |
 | `t3d` | `draw_object` | `t3d_draw_object` | no | no |
-| `t3d` | `fog_set_color` | `t3d_fog_set_color` | no | no |
+| `t3d` | `fog_set_color` | `t3d_fog_set_color` | yes* | no |
 | `t3d` | `fog_set_enabled` | `t3d_fog_set_enabled` | yes* | no |
 | `t3d` | `fog_set_range` | `t3d_fog_set_range` | tiny3d | no |
-| `t3d` | `frame_end` | `rspq_block_run` | yes | no |
+| `t3d` | `frame_end` | `rspq_block_run` | yes* | no |
 | `t3d` | `frame_start` | `t3d_frame_start` | tiny3d | no |
-| `t3d` | `init` | `t3d_init` | tiny3d | no |
-| `t3d` | `light_set_ambient` | `t3d_light_set_ambient` | tiny3d | no |
+| `t3d` | `init` | `t3d_init` | yes* | no |
+| `t3d` | `light_set_ambient` | `t3d_light_set_ambient` | yes* | no |
 | `t3d` | `light_set_count` | `t3d_light_set_count` | tiny3d | no |
-| `t3d` | `light_set_directional` | `t3d_light_set_directional` | tiny3d | no |
+| `t3d` | `light_set_directional` | `t3d_light_set_directional` | yes* | no |
 | `t3d` | `light_set_point` | `t3d_light_set_point` | tiny3d | no |
 | `t3d` | `light_set_point_params` | `t3d_light_set_point_params` | no | no |
 | `t3d` | `light_set_spot` | `t3d_light_set_spot` | no | no |
-| `t3d` | `look_at` | `t3d_look_at` | no | no |
+| `t3d` | `look_at` | `t3d_look_at` | yes* | no |
 | `t3d` | `mat4_from_srt` | `t3d_mat4_from_srt` | yes* | no |
 | `t3d` | `mat4_from_srt_euler` | `t3d_mat4_from_srt_euler` | yes* | no |
 | `t3d` | `mat4_identity` | `t3d_mat4_identity` | yes* | no |
@@ -547,6 +549,9 @@ compiling the examples that use them.
 | `t3d` | `mat4_scale` | `t3d_mat4_scale` | yes* | no |
 | `t3d` | `mat4_translate` | `t3d_mat4_translate` | yes* | no |
 | `t3d` | `mat4_transpose` | `t3d_mat4_transpose` | yes* | no |
+| `t3d` | `mat4fp_from_srt_euler` | `t3d_mat4fp_from_srt_euler` | yes* | no |
+| `t3d` | `matrix_pop` | `t3d_matrix_pop` | tiny3d | no |
+| `t3d` | `matrix_push` | `t3d_matrix_push` | tiny3d | no |
 | `t3d` | `model_bake_pos` | `t3d_model_bake_pos` | no | no |
 | `t3d` | `model_draw` | `t3d_model_draw` | tiny3d | no |
 | `t3d` | `model_free` | `t3d_model_free` | tiny3d | no |
@@ -568,7 +573,7 @@ compiling the examples that use them.
 | `t3d` | `set_camera` | `t3d_set_camera` | no | no |
 | `t3d` | `skeleton_create` | `t3d_skeleton_create` | tiny3d | no |
 | `t3d` | `skeleton_destroy` | `t3d_skeleton_destroy` | tiny3d | no |
-| `t3d` | `skeleton_draw` | `t3d_skeleton_draw` | no | no |
+| `t3d` | `skeleton_draw` | `t3d_skeleton_draw` | yes* | no |
 | `t3d` | `skeleton_update` | `t3d_skeleton_update` | tiny3d | no |
 | `t3d` | `state_set_drawflags` | `t3d_state_set_drawflags` | tiny3d | no |
 | `t3d` | `state_set_vertex_fx` | `t3d_state_set_vertex_fx` | tiny3d | no |
@@ -617,9 +622,9 @@ compiling the examples that use them.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**344 functions** across the module surface; **135** exist on the standalone HAL.
+**349 functions** across the module surface; **141** exist on the standalone HAL.
 
-Of the 246 lowered as a direct call: **123** are libdragon's own, **32** need Tiny3D, and **91** are **standalone-only**.
+Of the 234 lowered as a direct call: **120** are libdragon's own, **31** need Tiny3D, and **83** are **standalone-only**.
 
 Standalone-only is mostly by design rather than debt. libdragon owns the
 subsystem and exposes a different shape for it: interrupts are callbacks
@@ -721,7 +726,7 @@ use n64.rdpq             -- #include <rdpq.h> + <rdpq_gfx.h>
 | `rdpq.init` | `()` | Initialize RDP queue |
 | `rdpq.close` | `()` | Shut down RDP queue |
 | `rdpq.attach` | `(surface: *surface_t)` | Attach RDP output to surface |
-| `rdpq.attach_clear` | `(surface: *surface_t)` | Attach and clear surface |
+| `rdpq.attach_clear` | `(surface, color: u32 = 0x000000FF)` | Attach the surface and clear it to `color` (packed `0xRRGGBBAA`) |
 | `rdpq.detach` | `()` | Detach current surface |
 | `rdpq.detach_show` | `()` | Detach and show surface (flip) |
 | `rdpq.set_mode_standard` | `()` | Standard rendering mode |
@@ -1118,7 +1123,7 @@ use n64.mixer            -- #include <audio.h> + <mixer.h>
 | `mixer.ch_stop` | `mixer_ch_stop` | Stop a channel |
 | `mixer.ch_set_vol` | `mixer_ch_set_vol` | Set channel volume (L, R) |
 | `mixer.ch_set_freq` | `mixer_ch_set_freq` | Set channel frequency |
-| `mixer.poll` | `audio_poll` | Pump the mixer (call each frame) |
+| `mixer.poll` | `mixer_poll` | Pump the mixer once per frame. Takes the buffer `audio.get_buffer()` returned — the pointer, not a dereference of it |
 
 ---
 
@@ -1242,10 +1247,18 @@ use n64.rumble           -- #include <joypad.h>
 | `rumble.stop` | `(port: i32)` | `joypad_set_rumble_active(port, false)` |
 | `rumble.is_plugged` | `(port: i32) -> bool` | True if a Rumble Pak is in the port |
 
-**libdragon only.** The standalone HAL has no Rumble Pak support: driving the
-motor means joybus accessory writes with the address and data CRCs, and
-`runtime/standalone/runtime.pk64` does not implement them. `pak check --backend
-mips` reports E010 on each of these.
+**Behavioral rules:**
+- The Rumble Pak is an *accessory behind a controller*, not a device of its
+  own, so every call takes the controller's port and talks on that port's
+  Joybus channel.
+- `rumble.start` and `rumble.stop` probe first and do nothing when no Rumble
+  Pak answers, so a game that always rumbles costs nothing on a controller
+  without one.
+- The probe result is cached per port. Call `rumble.init()` to re-probe after
+  the player may have swapped paks.
+- On the standalone HAL these are real Joybus accessory transactions: write
+  0x01/0x00 to address 0xC000, with the 5-bit address checksum the pak
+  requires. A pak silently ignores a write whose checksum is wrong.
 
 ---
 
@@ -1365,7 +1378,17 @@ use n64.debug            -- #include <debug.h>
 | `debug.init_usbfs` | `debug_init_usbfs` | Initialize USB filesystem debug channel |
 | `debug.flush` | `flush` | Flush debug output |
 
-Output goes to the libdragon debug channel — visible only on dev hardware/emu.
+**Behavioral rules:**
+- Call `debug.init()` (or `debug.init_isviewer()`, the same thing) once before
+  any `debug.log`. Nothing prints until you do.
+- ISViewer is a console in the cartridge address space: the magic `IS64` at
+  `0x13FF0000`, the text at `0x13FF0020`, the byte count at `0x13FF0014`.
+  Everdrive, 64drive and every emulator worth debugging on implement it.
+- The standalone HAL probes for that magic and, when nothing answers, makes
+  every later `debug.log` a no-op — a store into cartridge space with no
+  device behind it faults on real hardware.
+- `debug.init_usbfs` and `debug.flush` are libdragon-only; `pak check` warns
+  W005 on the standalone backend.
 
 ---
 

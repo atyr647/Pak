@@ -69,7 +69,7 @@ int main(void) {
     while (true) {
         fill_audio_buffer();
         __auto_type fb = display_get();
-        rdpq_attach_clear(fb, NULL);
+        pak_rdpq_attach_clear(fb, 0x000000FF);
         pak_rdpq_set_mode_fill(0x1A1A2EFF);
         rdpq_fill_rectangle(0, 0, 320, 240);
         rdpq_detach_show();

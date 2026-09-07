@@ -346,7 +346,7 @@ void update_playing(GameState * gs, pak_joypad_status_t pad) {
 
 void render_screen(GameState * gs) {
     __auto_type fb = display_get();
-    rdpq_attach_clear(fb, NULL);
+    pak_rdpq_attach_clear(fb, 0x000000FF);
     switch (gs->phase) {
         case GamePhase_title:
         {

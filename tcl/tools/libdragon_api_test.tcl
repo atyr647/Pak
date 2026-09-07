@@ -156,15 +156,40 @@ foreach name [lsort [dict keys $results]] {
     if {$rc} { lappend broken $name }
 }
 
+# Rewrite the NAMES, keeping whatever comment block is already at the top of
+# the file. The reasons written there are the point -- a name with no reason
+# is just a suppression -- and reprinting a canned header on every --regen
+# deleted them.
+proc known_header {} {
+    global KNOWN
+    set fallback [list \
+        "# Programs whose generated C does NOT compile against the real libdragon" \
+        "# and Tiny3D headers, pinned by tools/fetch_libdragon.sh and" \
+        "# tools/fetch_tiny3d.sh." \
+        "#" \
+        "# Maintained by tcl/tools/libdragon_api_test.tcl. This is debt, not" \
+        "# configuration: fix the binding, drop the name, and the gate holds the" \
+        "# new floor. Adding a name is how a regression gets waved through, so add" \
+        "# one only with the reason written down."]
+    if {![file exists $KNOWN]} { return $fallback }
+    set fh [open $KNOWN r]; set t [read $fh]; close $fh
+    set out {}
+    foreach line [split $t "\n"] {
+        set trimmed [string trim $line]
+        if {$trimmed ne "" && [string index $trimmed 0] ne "#"} break
+        lappend out $line
+    }
+    while {[llength $out] > 0 && [string trim [lindex $out end]] eq ""} {
+        set out [lrange $out 0 end-1]
+    }
+    if {[llength $out] == 0} { return $fallback }
+    return $out
+}
+
 if {$MODE eq "regen"} {
+    set header [known_header]
     set fh [open $KNOWN w]
-    puts $fh "# Canonical examples whose generated C does NOT compile against the real"
-    puts $fh "# libdragon headers, pinned by tools/fetch_libdragon.sh."
-    puts $fh "#"
-    puts $fh "# Maintained by tcl/tools/libdragon_api_test.tcl. This is debt, not"
-    puts $fh "# configuration: fix the binding, drop the name, and the gate holds the"
-    puts $fh "# new floor. Adding a name is how a regression gets waved through, so add"
-    puts $fh "# one only with the reason written down."
+    foreach line $header { puts $fh $line }
     puts $fh ""
     foreach n $broken { puts $fh $n }
     close $fh

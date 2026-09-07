@@ -264,7 +264,7 @@ proc codegen::shmup::_audio_block_assets {doc} {
     lappend lines ""
     lappend lines "fn fill_audio() \{"
     lappend lines "    let abuf = audio.get_buffer()"
-    lappend lines "    if abuf != none \{ mixer.poll(*abuf) \}"
+    lappend lines "    if abuf != none \{ mixer.poll(abuf) \}"
     lappend lines "\}"
     lappend lines ""
     if {[_has_audio $doc music]} {

@@ -60,7 +60,7 @@ int main(void) {
     rdpq_init();
     while (true) {
         __auto_type fb = display_get();
-        rdpq_attach_clear(fb, NULL);
+        pak_rdpq_attach_clear(fb, 0x000000FF);
         rdpq_set_mode_copy(true);
         rdpq_sprite_blit(bg_sprite, 0, 0, NULL);
         rdpq_sprite_blit(player_sprite, 160, 120, NULL);

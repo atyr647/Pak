@@ -72,6 +72,7 @@
 	.extern audio_write_silence
 	.extern audio_set_buffer_num
 	.extern debugf
+	.extern debug_init_isviewer
 	.extern assert
 	.extern dma_read
 	.extern dma_write
@@ -310,6 +311,7 @@ main:
     move $t9, $v0
     sw $t9, 136($sp)
     lw $a0, 136($sp)
+    move $a1, $zero
     sw $t9, 96($sp)
     jal rdpq_attach_clear
     nop

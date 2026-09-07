@@ -64,6 +64,55 @@ proc chk {what src sym want} {
     }
 }
 
+puts "== associated functions (impl methods with no self) =="
+
+# `Player.init()` -- a method in `impl T` that takes no self, called on the
+# TYPE. Both backends emitted the type name as an expression: the C read
+# `Player.init()` (a member access on an undeclared variable) and the MIPS
+# backend refused with "cannot determine the receiver type".
+chk "associated fn returns a struct" {
+struct P { x: i32, y: i32 }
+impl P {
+    fn init() -> P { return P { x: 40, y: 2 } }
+    fn sum(self: *P) -> i32 { return self.x + self.y }
+}
+static out: i32 = 0
+entry {
+    let mut p = P.init()
+    out = p.sum()
+}
+} out 0000002A
+
+# The return type has to flow into the untyped `let`, or the very next method
+# call on it has no receiver type to mangle a symbol from.
+chk "associated fn with arguments" {
+struct P { x: i32, y: i32 }
+impl P {
+    fn at(x: i32, y: i32) -> P { return P { x: x, y: y } }
+    fn sum(self: *P) -> i32 { return self.x + self.y }
+}
+static out: i32 = 0
+entry {
+    let mut p = P.at(11, 31)
+    out = p.sum()
+}
+} out 0000002A
+
+# A method WITH self is still a method: calling it on the type must not
+# silently become an associated call with the arguments shifted.
+chk "self methods still take a receiver" {
+struct P { x: i32 }
+impl P {
+    fn get(self: *P) -> i32 { return self.x }
+}
+static out: i32 = 0
+entry {
+    let mut p: P = P { x: 42 }
+    out = p.get()
+}
+} out 0000002A
+
+puts ""
 puts "== consts that used to be undefined symbols =="
 
 # eval_const_expr had no FloatLit case, so a fixed-point const never entered

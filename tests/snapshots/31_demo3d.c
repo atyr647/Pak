@@ -346,7 +346,7 @@ int main(void) {
             break;
         }
         __auto_type fb = display_get();
-        rdpq_attach_clear(fb, NULL);
+        pak_rdpq_attach_clear(fb, 0x000000FF);
         render_sky_ground();
         render_stars();
         render_cube(&gs.cube_a);
