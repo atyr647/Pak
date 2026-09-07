@@ -357,6 +357,16 @@ set ::pak::CG_API_LAMBDA [dict create \
     {vi wait_vblank} {1} \
 ]
 
+# Asset type -> {C handle type, loader function}. An asset whose type is not
+# here gets its `<name>_path` string and nothing else: there is no loader to
+# turn it into a handle, so reading the bare name is an error the checker
+# reports. Read by the codegen (to emit the lazy getter) and by the checker
+# (to know which names have a handle at all), so the two cannot disagree.
+set ::pak::CG_ASSET_LOADERS [dict create \
+    Sprite {{sprite_t *} sprite_load} \
+    Model  {{T3DModel *} t3d_model_load} \
+]
+
 set ::pak::CG_USE_INCLUDES [dict create \
     {n64.audio} {#include <audio.h>
 #include <xm64.h>

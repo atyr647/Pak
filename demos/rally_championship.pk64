@@ -324,7 +324,7 @@ fn car_physics(car: *Car, throttle: f32, brk: f32, steer: f32,
 -- ============================================================
 -- Player input
 -- ============================================================
-fn player_input(dt: f32, pad: *controller_data) {
+fn player_input(dt: f32, pad: *joypad_status_t) {
     let car: *Car = &cars[0]
 
     -- analog steer with deadzone

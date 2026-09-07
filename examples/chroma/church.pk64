@@ -202,7 +202,7 @@ entry {
 
     loop {
         controller.poll()
-        let pad: *ControllerState = controller.read(0)
+        let pad = controller.read(0)
 
         -- Walk the nave. The stick nudges it; it drifts forward regardless so
         -- the demo shows motion on a pad-less emulator.

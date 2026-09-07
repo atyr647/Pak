@@ -4,7 +4,7 @@
  * Thin wrappers around Tiny3D's vector and matrix types. All functions are
  * static inline so they compile away when unused.
  *
- * EVERY declaration below needs T3DVec2/T3DVec3/T3DMat4/T3DMat4FP, so the
+ * EVERY declaration below needs T3DVec3/T3DMat4/T3DMat4FP, so the
  * whole file is conditional on Tiny3D being available. It used to guard only
  * the #include and then use the types unconditionally, which meant the header
  * -- included by every file the C backend emits -- did not compile at all for
@@ -14,7 +14,7 @@
  * PAK_HAS_TINY3D is defined by the generated Makefile when pak.toml asks for
  * tiny3d. __has_include is the fallback for a hand-rolled build.
  *
- * Requires:  t3d/t3d.h  (for T3DVec2/T3DVec3/T3DMat4/T3DMat4FP)
+ * Requires:  t3d/t3d.h  (for T3DVec3/T3DMat4/T3DMat4FP; T3DVec2 is defined here)
  *            math.h     (sqrtf)
  */
 #pragma once
@@ -83,6 +83,17 @@ static inline T3DVec3 pak_vec3_lerp(T3DVec3 a, T3DVec3 b, float t) {
 }
 
 /* ── Vec2 ─────────────────────────────────────────────────────────────────── */
+
+/* Tiny3D has no 2D vector type -- T3DVec3 and T3DVec4 are typedefs of
+ * libdragon's fm_vec3_t / fm_vec4_t, and there is no fm_vec2_t. Everything
+ * below named it anyway, so this whole block was six declarations of an
+ * unknown type, and any program including this header failed to compile
+ * before the compiler reached a line of generated code. It is ours: shaped
+ * like the Tiny3D ones so `.v[0]` reads the same way in all three. */
+#ifndef PAK_T3DVEC2_DEFINED
+#define PAK_T3DVEC2_DEFINED
+typedef struct { float v[2]; } T3DVec2;
+#endif
 
 static inline T3DVec2 pak_vec2_add(T3DVec2 a, T3DVec2 b) {
     return (T3DVec2){{a.v[0]+b.v[0], a.v[1]+b.v[1]}};

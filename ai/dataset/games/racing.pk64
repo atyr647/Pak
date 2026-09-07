@@ -182,7 +182,7 @@ fn init_cars() {
 -- ============================================================
 -- Player Input
 -- ============================================================
-fn player_car_input(car: *Car, dt: f32, pad: *controller_data) {
+fn player_car_input(car: *Car, dt: f32, pad: *joypad_status_t) {
     if car.car_state == CarState.spinning { return }
 
     let throttle: f32 = 0.0

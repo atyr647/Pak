@@ -47,6 +47,8 @@ set HERE [file dirname [file normalize [info script]]]
 set REPO [file normalize [file join $HERE .. ..]]
 cd $REPO
 
+source [file join $HERE gate_corpus.tcl]
+
 set KNOWN [file join $REPO tests libdragon_api_known_broken.txt]
 set CC    [expr {[info exists ::env(CC)] ? $::env(CC) : "cc"}]
 set CACHE [expr {[info exists ::env(TMPDIR)] ? $::env(TMPDIR) : "/tmp"}]
@@ -106,19 +108,28 @@ proc known_broken {} {
 set WORK [file join $CACHE pak-libdragon-api]
 file mkdir $WORK
 
+# Tiny3D's headers, when the fetch script has them. They are added only for a
+# file that names t3d: runtime/pak_math.h includes <t3d/t3d.h> whenever it is
+# on the path, so putting them there unconditionally would drag Tiny3D into
+# every program.
+set T3INC [file join $CACHE pak-tiny3d tiny3d src]
+set have_t3d [file isdirectory $T3INC]
+
 set results [dict create]
-foreach src [lsort [glob -nocomplain [file join $REPO examples canonical *.pk64]]] {
-    set name [file rootname [file tail $src]]
-    set cfile [file join $WORK "$name.c"]
+foreach name [pak::gate_corpus $REPO] {
+    set src [file join $REPO $name]
+    set cfile [file join $WORK "[string map {/ _} [file rootname $name]].c"]
     if {[catch {exec [info nameofexecutable] [file join $REPO tcl cli.tcl] explain $src} c]} {
         dict set results $name [list 1 "pak explain failed: [lindex [split $c "\n"] 0]"]
         continue
     }
     set fh [open $cfile w]; puts $fh $c; close $fh
+    set inc [list -I$LDINC -I[file join $REPO runtime]]
+    if {$have_t3d && [string match "*t3d*" $c]} { lappend inc -I$T3INC }
     set rc 0
     set err ""
     if {[catch {
-        exec $CC -fsyntax-only {*}$::CFLAGS -I$LDINC -I[file join $REPO runtime] $cfile 2>@1
+        exec $CC -fsyntax-only {*}$::CFLAGS {*}$inc $cfile 2>@1
     } err]} { set rc 1 }
     dict set results $name [list $rc $err]
 }
@@ -172,7 +183,7 @@ foreach name $known {
     if {$name ni $broken} { lappend fixed $name }
 }
 
-puts "libdragon api gate: [expr {$total - [llength $broken]}]/$total canonical examples"
+puts "libdragon api gate: [expr {$total - [llength $broken]}]/$total programs"
 puts "                    compile against libdragon [string range [exec sh -c "cd $CACHE/pak-libdragon/libdragon && git rev-parse --short HEAD 2>/dev/null || echo unknown"] 0 11]"
 puts "                    [llength $known] known-broken, [llength $regressed] regressed, [llength $fixed] newly fixed"
 

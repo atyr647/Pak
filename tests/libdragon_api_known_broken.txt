@@ -1,8 +1,46 @@
-# Canonical examples whose generated C does NOT compile against the real
-# libdragon headers, pinned by tools/fetch_libdragon.sh.
+# Programs whose generated C does NOT compile against the real libdragon and
+# Tiny3D headers, pinned by tools/fetch_libdragon.sh and tools/fetch_tiny3d.sh.
+#
+# The corpus is tcl/tools/gate_corpus.tcl: examples/canonical plus every
+# single-file demo. Widening it past canonical is what first compiled the
+# demos at all, and what the six Tiny3D entries below record.
+#
+# Six of these are the same debt: the `t3d` module's bindings have never been
+# checked against Tiny3D's headers, and they do not match. t3d_init takes an
+# argument, t3d_light_set_ambient and t3d_light_set_directional take pointers
+# and fewer arguments than Pak passes, rspq_block_run takes the block, and
+# `use t3d` includes t3d/t3dlight.h, which does not exist. None of that is
+# reachable on the standalone backend either -- Tiny3D is RSP microcode -- so
+# fixing the bindings makes these libdragon-only programs.
+#
+#   ai/dataset/games/action_adventure.pk64
+#   ai/dataset/games/fps_arena.pk64
+#   ai/dataset/games/platformer_3d.pk64
+#   ai/dataset/games/racing.pk64
+#   ai/dataset/games/t3d_scene.pk64
+#   demos/rally_championship.pk64
+#   examples/model_viewer.pk64
+#
+# examples/chroma/church.pk64 is standalone-only BY DESIGN: it drives the RDP
+# through rdpq.set_tile_mask / rdpq.triangle_tex_z / rdpq.set_tri_z, which the
+# standalone HAL implements and libdragon does not expose. `pak check` warns
+# W005 on each. It builds with --backend mips.
+#
+# examples/dungeon_of_types/src/main.pk64 -- see
+# tests/c_compile_known_broken.txt; it does not compile against the stubs
+# either, for reasons that have nothing to do with libdragon.
 #
 # Maintained by tcl/tools/libdragon_api_test.tcl. This is debt, not
 # configuration: fix the binding, drop the name, and the gate holds the
 # new floor. Adding a name is how a regression gets waved through, so add
 # one only with the reason written down.
 
+ai/dataset/games/action_adventure.pk64
+ai/dataset/games/fps_arena.pk64
+ai/dataset/games/platformer_3d.pk64
+ai/dataset/games/racing.pk64
+ai/dataset/games/t3d_scene.pk64
+demos/rally_championship.pk64
+examples/chroma/church.pk64
+examples/dungeon_of_types/src/main.pk64
+examples/model_viewer.pk64

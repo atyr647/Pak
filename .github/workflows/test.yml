@@ -106,6 +106,7 @@ jobs:
       - name: Generated C matches libdragon's real API
         run: |
           bash tools/fetch_libdragon.sh
+          bash tools/fetch_tiny3d.sh
           tclsh tcl/tools/libdragon_api_test.tcl
 
       # STDLIB.md's libdragon column used to be the hardcoded string "yes" for

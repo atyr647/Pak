@@ -372,7 +372,7 @@ extern "C" {
     fn c_function_name(arg: i32) -> i32
     fn another(ptr: *u8, len: u32)
     -- trailing `...` declares a C-style variadic function (e.g. printf-family)
-    fn rdpq_text_printf(x: i32, y: i32, font: i32, fmt: *c_char, ...) -> i32
+    fn my_c_printf(level: i32, fmt: CStr, ...) -> i32
     static some_global: i32
 }
 
@@ -383,6 +383,12 @@ extern const SCREEN_WIDTH: i32
 The `...` marker is only meaningful for `extern` declarations — it tells the
 compiler the C function accepts extra trailing arguments. Pak itself has no
 `va_arg` mechanism, so you cannot write a variadic Pak function body.
+
+Use `CStr` for a C `const char *` and `*c_char` for a writable `char *`. Pak
+has no `const`, so these are the only two spellings, and picking the wrong one
+is a compile error at the C stage rather than at `pak check`: most C libraries
+take `const char *` for a string they only read, so `CStr` is almost always the
+one you want.
 
 ---
 
@@ -1055,6 +1061,12 @@ An asset name is a handle, not a path string: reading it the first time loads
 the file, and every read after that reuses what was loaded. Loading is lazy
 because the archive is read from the cartridge, which cannot happen before the
 entry block runs.
+
+Only a type the compiler has a loader for gets a handle: `Sprite` on both
+backends, `Model` on libdragon. Every asset also declares `<name>_path`, the
+string the file is looked up by, and for an asset with no loader -- `asset
+level_data from "levels/level1.bin"` above -- that path is all there is: it is
+the blob you DMA yourself. Reading the bare name of such an asset is `E010`.
 
 The standalone backend loads `Sprite` assets; see the `n64.sprite` section of
 `STDLIB.md` for how the archive reaches the ROM and which sprite formats it

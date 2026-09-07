@@ -228,7 +228,7 @@ fn init_player() {
     player.fire_cooldown = 0.0
 }
 
-fn player_update(dt: f32, pad: *controller_data) {
+fn player_update(dt: f32, pad: *joypad_status_t) {
     -- movement
     let sx: i32 = pad.stick_x as i32
     let sy: i32 = pad.stick_y as i32

@@ -11,7 +11,7 @@ use t3d.math
 use t3d.viewport
 use t3d.light
 
-asset character_model from "character.t3dm"
+asset character_model: Model from "character.t3dm"
 
 entry {
     let camera_pos = Vec3 { x: 0, y: 25, z: -50 }
@@ -26,7 +26,7 @@ entry {
     loop {
         let input = controller.read(0)
         let dt = timer.delta()
-        let stick_x = input.stick.x
+        let stick_x = input.stick_x
 
         -- Rotate model with stick
         rotation += stick_x * 2.0 * dt

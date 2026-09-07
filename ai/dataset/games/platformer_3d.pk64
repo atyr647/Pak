@@ -164,7 +164,7 @@ fn check_coin_collection() {
     }
 }
 
-fn update_player(dt: f32, pad: *controller_data) {
+fn update_player(dt: f32, pad: *joypad_status_t) {
     -- movement relative to camera
     let sx: i32 = pad.stick_x as i32
     let sy: i32 = pad.stick_y as i32
@@ -217,7 +217,7 @@ fn update_player(dt: f32, pad: *controller_data) {
     }
 }
 
-fn update_camera(dt: f32, pad: *controller_data) {
+fn update_camera(dt: f32, pad: *joypad_status_t) {
     -- rotate camera with C buttons
     if pad.held.c_left { cam.yaw = cam.yaw + 2.0 * dt }
     if pad.held.c_right { cam.yaw = cam.yaw - 2.0 * dt }

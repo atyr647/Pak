@@ -110,13 +110,13 @@ oo::class create pak::Checker {
                     # too late: `pak check --backend mips` had already said
                     # the program was a valid standalone program.
                     if {$backend eq "mips"} { my check_asset $decl }
-                    # An untyped asset is a path and nothing else -- there is
-                    # no loader to give the name a handle (LANGUAGE.md 14:
+                    # An asset with no loader is a path and nothing else --
+                    # nothing gives the name a handle (LANGUAGE.md 14:
                     # `asset level_data from "levels/level1.bin"` is the blob
                     # you DMA yourself). Reading the bare name lowered to an
                     # identifier the generated C never declares. Remember the
                     # name so the use site can say so.
-                    if {[pak::isnil [pak::nfield $decl asset_type]]} {
+                    if {![my asset_has_loader $decl]} {
                         dict set pathonly_assets [pak::fval $decl name] $decl
                     }
                 }
@@ -161,6 +161,15 @@ oo::class create pak::Checker {
     }
 
     # ── assets ────────────────────────────────────────────────────────────────
+    # Does this asset declaration produce a loaded handle, or only a path?
+    method asset_has_loader {decl} {
+        set t [pak::nfield $decl asset_type]
+        if {[pak::isnil $t]} { return 0 }
+        set tname [expr {[pak::kindof $t] eq "TypeName"
+                         ? [pak::fval $t name] : [pak::sval $t]}]
+        return [dict exists $::pak::CG_ASSET_LOADERS $tname]
+    }
+
     method check_asset {decl} {
         set t [pak::nfield $decl asset_type]
         set tname ""
@@ -371,10 +380,11 @@ oo::class create pak::Checker {
             Ident {
                 set nm [pak::fval $expr name]
                 if {[dict exists $pathonly_assets $nm]} {
-                    my err E010 "asset '$nm' has no type, so it has no handle to read" \
-                        "An untyped asset declares a path only. Give it a type\
-                         (`asset $nm: Sprite from ...`) to get a loaded handle,\
-                         or read `${nm}_path` and load it yourself." \
+                    my err E010 "asset '$nm' has no loader, so it has no handle to read" \
+                        "Only [join [lsort [dict keys $::pak::CG_ASSET_LOADERS]] { and }]\
+                         assets are loaded for you. Give it one of those types\
+                         (`asset $nm: Sprite from ...`), or read `${nm}_path`\
+                         and load it yourself." \
                         $expr
                 }
             }

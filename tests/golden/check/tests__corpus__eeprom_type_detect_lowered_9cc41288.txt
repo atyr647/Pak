@@ -1,1 +1,0 @@
-(W005 warning "'eeprom.type_detect' is not implemented on the libdragon backend" "Pak names it but neither libdragon nor Tiny3D defines it, so the generated C will not compile. It exists on the standalone HAL: build with --backend mips. See STDLIB.md.")

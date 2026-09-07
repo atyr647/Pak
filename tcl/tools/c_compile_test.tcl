@@ -26,6 +26,8 @@
 set HERE [file dirname [file normalize [info script]]]
 set REPO [file normalize [file join $HERE .. ..]]
 source [file join $HERE .. module_api.tcl]
+source [file join $HERE gate_corpus.tcl]
+cd $REPO
 
 set KNOWN [file join $REPO tests c_compile_known_broken.txt]
 set CC [expr {[info exists ::env(CC)] ? $::env(CC) : "cc"}]
@@ -59,6 +61,23 @@ proc hal_stub_header {} {
     lappend out " * Both exist because the two backends genuinely differ here. */"
     lappend out "typedef pak_joypad_buttons_t joypad_buttons_t;"
     lappend out "typedef pak_joypad_status_t  joypad_status_t;"
+    lappend out "/* The audio and Tiny3D handle types. Opaque here for the same"
+    lappend out " * reason sprite_t is: a program names them to declare a static,"
+    lappend out " * and the question this gate asks is whether the generated C"
+    lappend out " * parses and scopes, not what is inside them. Their real layouts"
+    lappend out " * and signatures are libdragon_api_test.tcl's job. */"
+    lappend out "typedef struct { int _pak_opaque; } wav64_t;"
+    lappend out "typedef struct { int _pak_opaque; } xm64player_t;"
+    lappend out "typedef union { struct { float x, y, z; }; float v\[3\]; } T3DVec3;"
+    lappend out "typedef union { struct { float x, y, z, w; }; float v\[4\]; } T3DVec4;"
+    lappend out "typedef struct { float m\[4\]\[4\]; } T3DMat4;"
+    lappend out "typedef struct { int _pak_opaque; } T3DMat4FP;"
+    lappend out "typedef struct { int _pak_opaque; } T3DViewport;"
+    lappend out "typedef struct { int _pak_opaque; } T3DModel;"
+    lappend out "typedef struct { int _pak_opaque; } T3DSkeleton;"
+    lappend out "typedef struct { int _pak_opaque; } T3DAnim;"
+    lappend out "typedef struct { int _pak_opaque; } rspq_block_t;"
+    lappend out "typedef struct { int _pak_opaque; } surface_t;"
     lappend out ""
     lappend out "/* The runtime/pak_libdragon.h shims. They are not in MODULE_API --"
     lappend out " * MODULE_API names the symbol the STANDALONE HAL defines -- so the"
@@ -68,6 +87,7 @@ proc hal_stub_header {} {
     lappend out " * generated C parse. */"
     lappend out "void pak_display_init(int, int, int, int, int);"
     lappend out "pak_joypad_status_t pak_joypad_get_status(int);"
+    lappend out "short *pak_audio_get_buffer(void);"
     lappend out "void pak_rdpq_set_fill_color(uint32_t);"
     lappend out "void pak_rdpq_set_mode_fill(uint32_t);"
     lappend out ""
@@ -78,11 +98,25 @@ proc hal_stub_header {} {
     lappend out " * rather than by a Pak call. */"
     lappend out "#define DFS_DEFAULT_LOCATION 0"
     lappend out "int dfs_init(uint32_t);"
+    # The generic declaration below is `long sym();`, which is enough for a
+    # call but not for `T3DViewport vp = t3d_viewport_create();`. The handful
+    # of API entries that return a struct BY VALUE get a real return type here
+    # so the stub is self-consistent; everything about their arguments is
+    # still libdragon_api_test.tcl's business, against the real headers.
+    set ret_override [dict create \
+        t3d_viewport_create T3DViewport \
+        t3d_skeleton_create T3DSkeleton \
+        t3d_anim_create     T3DAnim \
+        t3d_model_load      {T3DModel *} \
+    ]
+    dict for {sym rt} $ret_override { lappend out "$rt ${sym}();" }
+
     set seen [dict create]
     foreach key [pak::module_api_keys] {
         lassign $key mod fn
         set sym [pak::module_api_symbol $mod $fn]
         if {[dict exists $seen $sym]} continue
+        if {[dict exists $ret_override $sym]} continue
         # The codegen defines these itself in the generated prelude.
         if {[string match "pak_str_*" $sym] || [string match "pak_arena_*" $sym]} continue
         dict set seen $sym 1
@@ -180,10 +214,12 @@ proc explain_c {pk} {
 # Returns {errcount firstlines}. The stub dir is rebuilt per file so a header
 # one example includes cannot mask a missing include in another.
 proc compile_one {pk workdir} {
+    # $pk is repo-relative: two programs both called main.pk64 must not share
+    # a scratch directory.
     global CC
     set csrc [explain_c $pk]
     if {$csrc eq ""} { return [list 1 "pak explain produced no output"] }
-    set dir [file join $workdir [file rootname [file tail $pk]]]
+    set dir [file join $workdir [string map {/ _} [file rootname $pk]]]
     file delete -force $dir
     write_stubs $dir $csrc
     set cfile [file join $dir gen.c]
@@ -245,13 +281,12 @@ set workdir [file join [expr {[info exists ::env(TMPDIR)] ? $::env(TMPDIR) : "/t
 file delete -force $workdir
 file mkdir $workdir
 
-set examples [lsort [glob -nocomplain [file join $REPO examples canonical *.pk64]]]
+set examples [pak::gate_corpus $REPO]
 set broken {}
 set clean {}
 set detail [dict create]
-foreach pk $examples {
-    set name [file tail $pk]
-    lassign [compile_one $pk $workdir] n first
+foreach name $examples {
+    lassign [compile_one $name $workdir] n first
     if {$n > 0} {
         lappend broken $name
         dict set detail $name [list $n $first]
@@ -283,7 +318,7 @@ set fixed {}       ;# on the list but now compiles
 foreach name $broken   { if {$name ni $known}  { lappend regressed $name } }
 foreach name $known    { if {$name ni $broken} { lappend fixed $name } }
 
-puts "c compile gate: [llength $clean]/[llength $examples] canonical examples compile"
+puts "c compile gate: [llength $clean]/[llength $examples] programs compile"
 puts "                [llength $known] known-broken, [llength $regressed] regressed, [llength $fixed] newly fixed"
 
 set rc 0

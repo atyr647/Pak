@@ -1165,9 +1165,9 @@ use n64.eeprom           -- #include <eeprom.h>
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `eeprom.init` | `()` | Probe the cartridge EEPROM (`eeprom_init`) |
+| `eeprom.init` | `()` | Probe the cartridge EEPROM. Standalone only; a no-op on libdragon |
 | `eeprom.present` | `() -> i32` | 1 if 4K or 16K EEPROM is on the cart |
-| `eeprom.type_detect` | `() -> i32` | 0 = none, 1 = 4K (64 blocks), 2 = 16K (256 blocks) |
+| `eeprom.type_detect` | `() -> i32` | 0 = none, 1 = 4K (64 blocks), 2 = 16K (256 blocks). `eeprom_present()` on libdragon, whose return IS the type |
 | `eeprom.read` | `(block: i32, dst: *u8)` | Read an 8-byte block |
 | `eeprom.write` | `(block: i32, src: *u8)` | Write an 8-byte block |
 
@@ -1177,6 +1177,10 @@ use n64.eeprom           -- #include <eeprom.h>
 - Writes are slow (~15 ms/block) — only write when save data changes.
 - Always call `eeprom.present()` before read/write. On the standalone HAL this
   is a real SI/PIF Joybus identify (channel 4); there is no libdragon fallback.
+- `eeprom.init` exists because the standalone HAL drives the PIF itself and has
+  to probe. libdragon reaches the EEPROM over joybus, which `joypad_init`
+  already brings up, so there is nothing to do and the call lowers to nothing.
+  Calling it is portable; skipping it is not.
 - See `N64_HARDWARE.md` → EEPROM for the save/load pattern.
 
 ---
@@ -1228,15 +1232,20 @@ use n64.backup           -- #include <backup.h>
 ### `n64.rumble` — Rumble Pak
 
 ```pak
-use n64.rumble           -- #include <joypad.h> + <rumble.h>
+use n64.rumble           -- #include <joypad.h>
 ```
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `rumble.init` | `()` | Initialize rumble |
-| `rumble.start` | `(port: i32)` | Start rumble on port |
-| `rumble.stop` | `(port: i32)` | Stop rumble on port |
+| `rumble.init` | `()` | No-op: the Rumble Pak is reached through the joypad subsystem, which `controller.init` already brings up |
+| `rumble.start` | `(port: i32)` | `joypad_set_rumble_active(port, true)` |
+| `rumble.stop` | `(port: i32)` | `joypad_set_rumble_active(port, false)` |
 | `rumble.is_plugged` | `(port: i32) -> bool` | True if a Rumble Pak is in the port |
+
+**libdragon only.** The standalone HAL has no Rumble Pak support: driving the
+motor means joybus accessory writes with the address and data CRCs, and
+`runtime/standalone/runtime.pk64` does not implement them. `pak check --backend
+mips` reports E010 on each of these.
 
 ---
 

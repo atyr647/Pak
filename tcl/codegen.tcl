@@ -1151,6 +1151,15 @@ oo::class create pak::Codegen {
         if {[llength $type_args] > 0 && [dict exists $generic_structs $tname]} {
             return [my monomorphize_struct $tname $type_args]
         }
+        # A struct literal names a type, so the builtin type map applies to it
+        # the same way it does in a declaration: `let v: Vec3` already lowered
+        # to T3DVec3, but `Vec3 { x: 0, y: 25, z: -50 }` came out as
+        # `(Vec3){...}`, naming a type the generated C never declares. Only
+        # for a name the program does not itself define, so a user struct
+        # called Vec3 still wins.
+        if {![dict exists $struct_fields $tname] && [dict exists $::pak::CG_PRIM $tname]} {
+            return [dict get $::pak::CG_PRIM $tname]
+        }
         return $tname
     }
 
@@ -3206,7 +3215,7 @@ oo::class create pak::Codegen {
         # until the entry block runs, so loading at static-init time is too
         # early. Untyped assets keep the path alone; there is nothing to load
         # them with.
-        set asset_loaders [dict create Sprite [list {sprite_t *} sprite_load]]
+        set asset_loaders $::pak::CG_ASSET_LOADERS
         foreach asset $assets {
             set aname [pak::fval $asset name]
             set apath [pak::fval $asset path]
