@@ -177,6 +177,13 @@ main:
 check_eq "vmadh leaves ACCL untouched" \
     [run_with_operands $asm {2 0 0 0 0 0 0 0} {3 0 0 0 0 0 0 0}] {6 0 0 0 0 0 0 0}
 
+# vmulf: fresh (not accumulating) signed fractional multiply with rounding,
+# used by rsp.vacc.mul (tcl/rsp_codegen.tcl). 0.5*0.5 in Q1.15 (0x4000)
+# should read back as 0.25 (0x2000) -- the +0x8000 rounding bias is what
+# makes 0x2000 exact here rather than 0x1FFF or 0x2001.
+check_eq "vmulf: 0.5*0.5 in Q1.15 = 0.25" \
+    [vecop vmulf {16384 0 0 0 0 0 0 0} {16384 0 0 0 0 0 0 0}] {8192 0 0 0 0 0 0 0}
+
 puts ""
 puts "== compare/merge (veq/vne/vlt/vge/vmrg) =="
 # veq selects vs where equal, vt where not -- lanes 1 and 3 are unequal

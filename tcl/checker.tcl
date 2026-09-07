@@ -219,6 +219,23 @@ oo::class create pak::Checker {
             }
         } elseif {$prefix eq "t3d"} {
             dict set used_modules t3d t3d
+        } elseif {$prefix eq "rsp"} {
+            # `use rsp.vacc`: the RSP target's accumulator module (see
+            # docs/rsp-microcode-in-pak.md). Deliberately NOT added to
+            # used_modules -- that dict feeds check_module_call's E010
+            # MODULE_API lookup, and MODULE_API (a libdragon/standalone
+            # HAL table) has no entry for rsp.* and never will; vacc has no
+            # HAL, it lowers directly in tcl/rsp_codegen.tcl. This exists
+            # only so `use rsp.vacc` itself doesn't read as an unknown
+            # project module (E105) -- the call-order checks the design
+            # note describes (vacc.mac needs a prior vacc.mul, etc.) live in
+            # the RSP codegen, which is the only backend that ever sees this
+            # module for real.
+            set mod [lindex $parts 1]
+            if {$mod ne "vacc"} {
+                my err E104 "Unknown module '[pak::fval $decl path]'" \
+                    "Known rsp modules: vacc" $decl
+            }
         }
     }
 

@@ -215,8 +215,10 @@ proc pak::_nodeline {node} { if {[catch {pak::fval $node line} v]} { return 0 };
 proc pak::_nodecol {node}  { if {[catch {pak::fval $node col} v]} { return 0 }; return $v }
 
 # Verify every project-local `use` path resolves to a declared module. Builtin
-# namespaces (n64.*, t3d.*, std) are validated per-file by the semantic checker;
-# this cross-file pass catches `use foo.bar` with no matching `module foo.bar`.
+# namespaces (n64.*, t3d.*, std, rsp.* -- the RSP target's rsp.vacc module,
+# see tcl/checker.tcl's check_use) are validated per-file by the semantic
+# checker; this cross-file pass catches `use foo.bar` with no matching
+# `module foo.bar`.
 proc pak::cli_check_module_imports {parsed} {
     set declared [dict create]
     foreach pr $parsed {
@@ -227,7 +229,7 @@ proc pak::cli_check_module_imports {parsed} {
             }
         }
     }
-    set builtins {n64 t3d std}
+    set builtins {n64 t3d std rsp}
     set diags {}
     foreach pr $parsed {
         lassign $pr fn prog

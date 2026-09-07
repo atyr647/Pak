@@ -942,7 +942,7 @@ proc exec_insn {op args} {
         vnop { return "" }
 
         vadd - vsub - vaddc - vsubc - vand - vnand - vor - vnor - vxor - vnxor - \
-        vabs - vmudn - vmudm - vmudl - vmudh - vmacf - vmacu - \
+        vabs - vmudn - vmudm - vmudl - vmudh - vmacf - vmacu - vmulf - \
         vmadl - vmadm - vmadn - vmadh - veq - vne - vlt - vge - vmrg - vsar {
             # RSP vector unit (COP2): 3-operand compute, vd,vs,vt[e].
             # Semantics transcribed from ares' RSP interpreter (the SISD path
@@ -1021,6 +1021,15 @@ proc exec_insn {op args} {
                         accset $n [expr {[accget $n] + [vs16 $a] * [vs16 $b] * 2}]
                         vsetlane $vd $n [accsat $n 1 -32768 32767]
                     }
+                    vmulf {
+                        # Fresh (not accumulating) signed fractional multiply
+                        # with rounding: the +0x8000 bias, present here and
+                        # absent from vmacf, is real hardware behavior, not
+                        # a typo -- only the first multiply in an accumulate
+                        # chain rounds.
+                        accset $n [expr {[vs16 $a] * [vs16 $b] * 2 + 0x8000}]
+                        vsetlane $vd $n [accsat $n 1 -32768 32767]
+                    }
                     vmacu {
                         accset $n [expr {[accget $n] + [vs16 $a] * [vs16 $b] * 2}]
                         set h [acch $n]; set m [accm $n]
@@ -1095,7 +1104,7 @@ proc exec_insn {op args} {
         }
 
         vmov - vrcp - vrcpl - vrcph - vrsq - vrsql - vrsqh - vch - vcl - vcr - \
-        vmulf - vmulu - vmulq - vrndp - vrndn - vmacq - vsut - \
+        vmulu - vmulq - vrndp - vrndn - vmacq - vsut - \
         lrv - srv - lpv - spv - luv - suv - lhv - shv - lfv - sfv - ltv - stv - lwv - swv {
             # Deferred: real semantics need either the reciprocal/rsqrt LUT
             # (VRCP/VRCPL/VRCPH/VRSQ/VRSQL/VRSQH/VMOV) or the carry/compare-

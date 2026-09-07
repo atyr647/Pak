@@ -466,6 +466,47 @@ if {$lit} {
 }
 
 puts ""
+puts "== a Pak PROGRAM with rsp.vacc runs a MULTIPLY-ACCUMULATE task on the RSP =="
+# Step 3 of docs/rsp-microcode-in-pak.md's suggested order: rsp_task_vacc
+# uses `use rsp.vacc` and vacc.mul/vacc.mac/vacc.mid() in real Pak source,
+# compiled by tcl/rsp_codegen.tcl to VMULF/VMACF/VSAR against the real
+# accumulator.
+set fh [open tcl/tests/ares/rsp_task_vacc.pk64 r]; set ractask_src [read $fh]; close $fh
+set ractask_ast [pak::parse_tokens [[pak::Lexer new $ractask_src] tokenize]]
+set ractask_recs [pak::rsp_generate_records $ractask_ast]
+set ractask_ctx [pak::enc::encode $ractask_recs]
+set ractask_bytes [dict get $ractask_ctx secdata .text bytes]
+set ractaskwant {}
+for {set i 0} {$i < [llength $ractask_bytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $ractask_bytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend ractaskwant [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp_task_vacc_driver.pk64 r]; set ractaskdrv [read $fh]; close $fh
+set ractaskgot {}
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $ractaskdrv -> ractaskbody]} {
+    foreach tok [split [string map {"\n" " "} $ractaskbody] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend ractaskgot [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp_task_vacc_driver.pk64 is what rsp_task_vacc.pk64 compiles to" \
+    [join $ractaskgot " "] [join $ractaskwant " "]
+
+set rom [build_rom rsp_task_vacc tcl/tests/ares/rsp_task_vacc_driver.pk64 "PAKRTC"]
+lassign [run_rom rsp_task_vacc $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_task_vacc $log
+ok_true "rsp_task_vacc: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_task_vacc: $where is green (Pak's rsp.vacc.mul/mac/mid compiled to real VMULF/VMACF/VSAR)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
 puts "== the RSP runs a VECTOR task =="
 # Same contract as rsp_add.S/rsp.pk64 above, one level up: tcl/tests/ares/
 # rsp_vecadd.S uses the RSP's VECTOR unit (LQV/VADD/SQV), which is the half

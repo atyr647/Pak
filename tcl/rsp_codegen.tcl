@@ -60,7 +60,7 @@ proc pak::rsp_unported {what} { return -code error "RSPUNPORTED\t$what" }
 set ::pak::RSP_DMEM_SIZE 4096
 
 oo::class create pak::RspCodegen {
-    variable em statics dmem_used scopes free_regs vfree_regs label_n
+    variable em statics dmem_used scopes free_regs vfree_regs label_n vacc_started
 
     constructor {} {
         set em [pak::Emitter new]
@@ -82,6 +82,16 @@ oo::class create pak::RspCodegen {
         set vfree_regs {}
         for {set i 0} {$i < 32} {incr i} { lappend vfree_regs "\$v$i" }
         set label_n 0
+        # rsp.vacc's checker rule: has SOME vacc.mul run before this point in
+        # program order? Set by gen_vacc_call on "mul", required by "mac"
+        # and by "high"/"mid"/"low". This is a lexical/program-order check
+        # (matches the E201-style call-order rules elsewhere in Pak, e.g.
+        # cache.writeback before dma.read), not a full dataflow proof -- a
+        # `vacc.mul` reachable only through an untaken branch would still
+        # satisfy it. Sound enough for the shape every real transform
+        # microcode actually has (mul once, mac the rest, read once), and
+        # honest about not being more than that.
+        set vacc_started 0
     }
 
     method getrecords {} { return [$em getrecords] }
@@ -241,8 +251,16 @@ oo::class create pak::RspCodegen {
                     if {$entry_decl ne ""} { pak::rsp_unported "more than one `entry` block (a microcode is one program)" }
                     set entry_decl $decl
                 }
+                UseDecl {
+                    # `use rsp.vacc` (and any other `use`): accepted and
+                    # ignored. `vacc.*` is recognized in gen_call by the
+                    # literal identifier "vacc" regardless of whether it was
+                    # `use`d, so this isn't real import resolution -- just
+                    # not rejecting syntax the design note's own examples
+                    # use at the top of every microcode.
+                }
                 default {
-                    pak::rsp_unported "top-level '[pak::kindof $decl]' -- the RSP target (step 1) only accepts `static` and one `entry`"
+                    pak::rsp_unported "top-level '[pak::kindof $decl]' -- the RSP target only accepts `use`, `static`, and one `entry`"
                 }
             }
         }
@@ -603,18 +621,75 @@ oo::class create pak::RspCodegen {
         return $r
     }
 
+    # rsp.vacc: the multiply family and the accumulator, per docs/rsp-
+    # microcode-in-pak.md's "vacc -- the accumulator is hardware, so it is a
+    # module". `vacc.mul(a, b)` starts the accumulator fresh (VMULF, signed
+    # Q1.15 multiply with rounding); `vacc.mac(a, b)` adds into it (VMACF);
+    # `.high()`/`.mid()`/`.low()` read one of its three 16-bit slices back
+    # (VSAR). vd on the multiply instructions is a required field with no
+    # meaningful use here -- the accumulator, not vd, is what vacc.mac/high
+    # care about -- so a throwaway temp fills it, same as real microcode
+    # does with a scratch register in that slot.
+    method gen_vacc_call {field args_nodes} {
+        switch -- $field {
+            mul - mac {
+                if {[llength $args_nodes] != 2} { pak::rsp_unported "vacc.$field takes exactly two vec8x16 arguments" }
+                if {$field eq "mac" && !$vacc_started} {
+                    pak::rsp_unported "vacc.mac with no vacc.mul before it -- accumulating onto a stale value"
+                }
+                lassign [my gen_expr [lindex $args_nodes 0]] areg aisvec
+                if {!$aisvec} { pak::rsp_unported "vacc.$field's first argument must be a vec8x16" }
+                set funct [expr {$field eq "mul" ? "vmulf" : "vmacf"}]
+                set dst [my valloc_reg]
+                set bc [my broadcast_call [lindex $args_nodes 1]]
+                if {$bc ne ""} {
+                    lassign $bc obj_node e
+                    lassign [my gen_expr $obj_node] breg bisvec
+                    if {!$bisvec} { pak::rsp_unported "vacc.$field's second argument must be a vec8x16" }
+                    $em instr $funct "[my vreg_tok $dst]," [my vreg_tok $areg] [my vreg_tok $breg $e]
+                    my vfree_reg $breg
+                } else {
+                    lassign [my gen_expr [lindex $args_nodes 1]] breg bisvec
+                    if {!$bisvec} { pak::rsp_unported "vacc.$field's second argument must be a vec8x16" }
+                    $em instr $funct "[my vreg_tok $dst]," [my vreg_tok $areg] [my vreg_tok $breg]
+                    my vfree_reg $breg
+                }
+                my vfree_reg $areg
+                set vacc_started 1
+                return [list $dst 1]
+            }
+            high - mid - low {
+                if {[llength $args_nodes] != 0} { pak::rsp_unported "vacc.$field takes no arguments" }
+                if {!$vacc_started} {
+                    pak::rsp_unported "vacc.$field with no vacc.mul or vacc.mac before it -- reading whatever the last unrelated multiply left behind"
+                }
+                set e [dict get {high 8 mid 9 low 10} $field]
+                set dst [my valloc_reg]
+                $em instr vsar "[my vreg_tok $dst]," [my vreg_tok $dst] [my vreg_tok $dst $e]
+                return [list $dst 1]
+            }
+            default { pak::rsp_unported "unknown rsp.vacc method '$field'" }
+        }
+    }
+
     # `v.broadcast(n)` -- a value, materialized here as a real register:
     # zero a fresh vector temp (self-XOR, since RSP has no register that is
     # hardwired to zero the way $zero is for GPRs) and OR it with v's lane n
     # broadcast, since 0|x = x. When this call appears as a vector binop's
-    # right-hand operand instead, gen_binop fuses it into that instruction's
-    # own element-select field for free (a real instruction, not a temp) --
-    # see gen_binop's own check for exactly this AST shape before it ever
-    # calls gen_expr on the right operand.
+    # (or vacc.mul/vacc.mac's) right-hand operand instead, that caller fuses
+    # it into the instruction's own element-select field for free (a real
+    # instruction, not a temp) -- see broadcast_call, checked before ever
+    # calling gen_expr on the right operand.
     method gen_call {node} {
         set func [pak::nfield $node func]
+        if {[pak::kindof $func] eq "DotAccess"} {
+            set obj [pak::nfield $func obj]
+            if {[pak::kindof $obj] eq "Ident" && [pak::fval $obj name] eq "vacc"} {
+                return [my gen_vacc_call [pak::fval $func field] [pak::items [pak::nfield $node args]]]
+            }
+        }
         if {[pak::kindof $func] ne "DotAccess" || [pak::fval $func field] ne "broadcast"} {
-            pak::rsp_unported "the RSP target does not support function or module calls yet (only v.broadcast(n) on a vec8x16)"
+            pak::rsp_unported "the RSP target does not support function or module calls yet (only v.broadcast(n) on a vec8x16 and rsp.vacc.mul/mac/high/mid/low)"
         }
         set args [pak::items [pak::nfield $node args]]
         if {[llength $args] != 1 || [pak::kindof [lindex $args 0]] ne "IntLit"} {

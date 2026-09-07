@@ -253,6 +253,33 @@ set m [run_dmem $standalone_bc_src [pack_lanes {10 20 30 40 50 60 70 80} 0]]
 check_eq "standalone broadcast computed correctly" [unpack_lanes $m 16 8] {30 30 30 30 30 30 30 30}
 
 puts ""
+puts "== rsp.vacc: mul/mac/mid, matching the design note's own worked example =="
+set vacc_src {
+use rsp.vacc
+
+static m0: vec8x16
+static m1: vec8x16
+static v: vec8x16
+static result: vec8x16
+
+entry {
+    vacc.mul(m0, v.broadcast(0))
+    vacc.mac(m1, v.broadcast(1))
+    result = vacc.mid()
+}
+}
+check_eq "vacc mul/mac/mid golden bytes" [words_of $vacc_src] \
+    {0xC8002000 0xC8022002 0x4B020040 0xC8012001 0xC8022002 0x4B220808 0x4B20001D 0xE8002003 0x0000000D 0x00000000}
+# lane0: m0[0]=0.5, v[0]=0.5 -> mul contributes 0.25; m1[0]=0.5, v[1]=0.5 ->
+# mac contributes 0.25 more -> 0.5, all in Q1.15 (0x4000 = 16384 = 0.5).
+set preset [pack_lanes {16384 0 0 0 0 0 0 0} 0]
+dict for {a val} [pack_lanes {16384 0 0 0 0 0 0 0} 16] { dict set preset $a $val }
+dict for {a val} [pack_lanes {16384 16384 0 0 0 0 0 0} 32] { dict set preset $a $val }
+set m [run_dmem $vacc_src $preset]
+check_eq "vacc mul/mac/mid computed correctly (0.5*0.5 + 0.5*0.5 = 0.5)" \
+    [unpack_lanes $m 48 8] {16384 0 0 0 0 0 0 0}
+
+puts ""
 puts "== vec8x16: lane read/write round-trip (MTC2 then MFC2) =="
 set lane_src {
 static v: vec8x16
@@ -323,6 +350,23 @@ entry {
     let x: i16 = v[i]
     out = x as u32
 }
+}
+expect_unported "vacc.mac with no vacc.mul before it" {
+static m1: vec8x16
+static v: vec8x16
+entry { vacc.mac(m1, v) }
+}
+expect_unported "vacc.high() with no vacc.mul or vacc.mac before it" {
+static v: vec8x16
+entry { let r: vec8x16 = vacc.high() }
+}
+expect_unported "vacc.mid() with no vacc.mul or vacc.mac before it" {
+static v: vec8x16
+entry { let r: vec8x16 = vacc.mid() }
+}
+expect_unported "vacc.low() with no vacc.mul or vacc.mac before it" {
+static v: vec8x16
+entry { let r: vec8x16 = vacc.low() }
 }
 
 puts ""
