@@ -67,6 +67,51 @@ check {i mflo {$t0}}               0x00004012
 check {i li {$t0} 5}               0x24080005
 check {i xori {$t0} {$t0} 1}       0x39080001
 
+puts "== RSP vector unit (COP2) =="
+# Field layout (op=0x12, bit25=1, e(24-21) vt(20-16) vs(15-11) vd(10-6)
+# funct(5-0)) is not just hand-computed: every word below was cross-checked
+# against armips (github.com/Kingcom/armips), the assembler real N64
+# homebrew microcode is written with -- built from source and run on the
+# equivalent instructions (translating its named/biased element spellings to
+# Pak's raw field-value spelling), and it produced these exact words.
+check {i vmudn {$v2} {$v3} {$v4[1]}}   0x4A241886
+check {i vadd  {$v0} {$v1} {$v2}}      0x4A020810
+check {i vsub  {$v6} {$v7} {$v8}}      0x4A083991
+check {i vand  {$v1} {$v2} {$v3}}      0x4A031068
+check {i vmadh {$v9} {$v9} {$v9[8]}}   0x4B094A4F
+check {i vsar  {$v5} {$v5} {$v5[8]}}   0x4B05295D
+check {i vmov  {$v4[8]} {$v4[8]}}      0x4B044133
+check {i vnop}                          0x4A000037
+# de/e = 3+8/0+8: armips spells this vrcp $v1[3],$v2[0] (its Rm/Rl slots take
+# an unbiased lane 0-7 and add the 8 themselves); Pak's raw-value convention
+# writes the already-biased field value, same as everywhere else.
+check {i vrcp  {$v1[11]} {$v2[8]}}     0x4B025870
+# A value in the 0-7 range is a legal 4-bit field, just not one hardware
+# defines a lane for on this class of opcode -- the encoder assembles it
+# unchanged rather than second-guessing what the microcode meant.
+check {i vrcp  {$v1[3]} {$v2[0]}}      0x4A021870
+
+puts "== RSP vector load/store (LWC2/SWC2) =="
+# lqv $v1[0], 0x10($a0): base=$a0(4) vt=1 subop=4(qv,scale16) elem=0 off7=1
+check {i lqv {$v1[0]} 0x10($a0)}       0xC8812001
+check {i sqv {$v3[0]} 0x20($a1)}       0xE8A32002
+check {i ldv {$v2[8]} 8($sp)}          0xCBA21C01
+check {i sdv {$v2[0]} 0($sp)}          0xEBA21800
+check {i lbv {$v0[0]} 3($a0)}          0xC8800003
+
+puts "== RSP scalar<->vector transfer (mfc2/mtc2/cfc2/ctc2) =="
+check {i mfc2 {$t0} {$v3[2]}}          0x48081900
+check {i mtc2 {$t0} {$v3[2]}}          0x48881900
+check {i cfc2 {$t1} vco}               0x48490000
+check {i ctc2 {$t1} vcc}               0x48C90800
+
+puts "== RSP vector load/store: offset scale is enforced =="
+if {[catch {pak::enc::word_of {i lqv {$v0[0]} 3($a0)}} err]} {
+    incr ::pass; puts "ok    lqv with unaligned offset rejected ($err)"
+} else {
+    incr ::fail; puts "FAIL  lqv with unaligned offset should have been rejected"
+}
+
 puts "== branch offset (local label) =="
 # Label L at byte offset 0, beq at byte offset 4: offset=(0-(4+4))>>2 = -2.
 set ctx [pak::enc::encode {

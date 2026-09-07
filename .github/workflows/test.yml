@@ -260,6 +260,14 @@ jobs:
       - name: Encoded exec goldens (optimizer on records, calls + MMIO)
         run: tclsh tcl/tools/enc_exec_test.tcl
 
+      # tcl/n64enc.tcl's RSP vector opcodes (COP2 compute + vector load/
+      # store) were cross-checked bit-for-bit against armips, the assembler
+      # real N64 homebrew microcode is written with; this checks the other
+      # half, tcl/mips_sim.tcl's execution of them, against semantics
+      # transcribed from ares' silicon-accurate RSP interpreter.
+      - name: RSP vector unit execution (accumulator, carry, broadcast, loads)
+        run: tclsh tcl/tools/rsp_vector_test.tcl
+
       - name: Array address-of and u8 index (sb, not scale-4 sw)
         run: tclsh tcl/tools/array_addr_test.tcl
 

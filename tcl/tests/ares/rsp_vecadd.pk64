@@ -1,0 +1,76 @@
+-- Runs a VECTOR task on the RSP and checks the answer it gives back.
+--
+-- The microcode is tcl/tests/ares/rsp_vecadd.S, assembled by tcl/n64enc.tcl:
+-- it loads two 8-lane vectors out of DMEM, adds them lane-by-lane with a
+-- single VADD, and writes the sum back to DMEM. tcl/tools/ares_test.tcl
+-- re-assembles the .S and refuses to run if these words have drifted from
+-- it -- same contract rsp.pk64 has for the scalar-only task.
+--
+-- Green means the RSP ran real vector microcode and every one of the 8
+-- lanes came back right. Red means at least one lane is wrong. If it never
+-- starts, sp.wait() never returns and the screen stays black.
+
+use n64.sp
+
+const FB_PIXELS: i32 = 76800
+const GREEN: u16 = 0x07C1
+const RED: u16 = 0xF801
+
+@aligned(16)
+static ucode: [6]u32 = [
+    0xC8012000, 0xC8022001, 0x4A0208D0, 0xE8032002, 0x0000000D, 0x00000000
+]
+
+-- v1 = {1,2,3,4,5,6,7,8}, one lane per halfword, big-endian.
+@aligned(16)
+static v1: [8]u16 = [1, 2, 3, 4, 5, 6, 7, 8]
+
+-- v2 = {10,20,30,40,50,60,70,80}.
+@aligned(16)
+static v2: [8]u16 = [10, 20, 30, 40, 50, 60, 70, 80]
+
+-- Expected sum, lane by lane.
+@aligned(16)
+static want: [8]u16 = [11, 22, 33, 44, 55, 66, 77, 88]
+
+@aligned(16)
+static got: [8]u16 = [0, 0, 0, 0, 0, 0, 0, 0]
+
+fn fill(fb: u32, px: u16) {
+    let mut i: i32 = 0
+    while i < FB_PIXELS {
+        let p: *volatile u16 = (fb + (i * 2) as u32) as *volatile u16
+        *p = px
+        i = i + 1
+    }
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+
+    sp.init()
+    sp.load_ucode(&ucode[0] as u32, 24)
+    sp.load_data(&v1[0] as u32, 0, 16)
+    sp.load_data(&v2[0] as u32, 16, 16)
+    sp.run(0)
+    sp.wait()
+    sp.read_data(&got[0] as u32, 32, 16)
+
+    let fb: u32 = display.get()
+    let mut all_ok: bool = true
+    let mut i: i32 = 0
+    while i < 8 {
+        if got[i] != want[i] {
+            all_ok = false
+        }
+        i = i + 1
+    }
+    if all_ok {
+        fill(fb, GREEN)
+    } else {
+        fill(fb, RED)
+    }
+    loop {
+        display.show(fb)
+    }
+}

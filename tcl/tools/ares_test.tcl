@@ -344,6 +344,86 @@ if {$lit} {
 }
 
 puts ""
+puts "== the RSP runs a VECTOR task =="
+# Same contract as rsp_add.S/rsp.pk64 above, one level up: tcl/tests/ares/
+# rsp_vecadd.S uses the RSP's VECTOR unit (LQV/VADD/SQV), which is the half
+# tcl/n64enc.tcl and tcl/mips_sim.tcl gained this session. Re-assemble and
+# compare against what shipped in rsp_vecadd.pk64, same as the scalar case.
+set fh [open tcl/tests/ares/rsp_vecadd.S r]; set vucode_src [read $fh]; close $fh
+set vuctx [pak::enc::encode [pak::enc::parse_asm $vucode_src]]
+set vucode_bytes [dict get $vuctx secdata .text bytes]
+set vwant {}
+for {set i 0} {$i < [llength $vucode_bytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $vucode_bytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend vwant [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp_vecadd.pk64 r]; set vrsp_src [read $fh]; close $fh
+set vgot {}
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $vrsp_src -> vbody]} {
+    foreach tok [split [string map {"\n" " "} $vbody] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend vgot [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp_vecadd.pk64 is what rsp_vecadd.S assembles to" \
+    [join $vgot " "] [join $vwant " "]
+
+# Green means the RSP ran LQV/VADD/SQV and all 8 lanes of the sum came back
+# right -- ground truth from paraLLEl's RSP core, not from this repo's own
+# simulator (rsp_vector_test.tcl checks the simulator; this checks hardware).
+set rom [build_rom rsp_vecadd tcl/tests/ares/rsp_vecadd.pk64 "PAKRVA"]
+lassign [run_rom rsp_vecadd $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_vecadd $log
+ok_true "rsp_vecadd: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_vecadd: $where is green (all 8 lanes summed correctly)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
+puts "== the RSP runs a MULTIPLY-ACCUMULATE task =="
+# rsp_vecadd.S proved plain vector arithmetic; this proves the other half
+# every real transform/lighting microcode leans on -- VMUDN starting the
+# 48-bit accumulator, VMADH adding into it, VSAR reading a slice back out.
+set fh [open tcl/tests/ares/rsp_vecmac.S r]; set macsrc [read $fh]; close $fh
+set macctx [pak::enc::encode [pak::enc::parse_asm $macsrc]]
+set macbytes [dict get $macctx secdata .text bytes]
+set macwant {}
+for {set i 0} {$i < [llength $macbytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $macbytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend macwant [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp_vecmac.pk64 r]; set macpk [read $fh]; close $fh
+set macgot {}
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $macpk -> macbody]} {
+    foreach tok [split [string map {"\n" " "} $macbody] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend macgot [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp_vecmac.pk64 is what rsp_vecmac.S assembles to" \
+    [join $macgot " "] [join $macwant " "]
+
+set rom [build_rom rsp_vecmac tcl/tests/ares/rsp_vecmac.pk64 "PAKRVM"]
+lassign [run_rom rsp_vecmac $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_vecmac $log
+ok_true "rsp_vecmac: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_vecmac: $where is green (VMUDN/VMADH/VSAR all correct)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
 puts "== an asset is read out of the ROM and drawn =="
 # The whole asset path in one ROM: `pak link --fs` appended the archive and
 # patched where it is, the runtime walked the index and pulled the file over

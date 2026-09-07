@@ -37,6 +37,186 @@ proc rn {name} {
     return $REGNUM($n)
 }
 
+# ── RSP vector unit (COP2) state ──────────────────────────────────────────────
+# Namespace-global rather than threaded through `run`'s upvar chain like R/F:
+# every helper below is called both directly from exec_insn and from other
+# helpers (vreglist calling vget, for instance), and upvar's "level 1 means my
+# immediate caller" rule breaks across that second hop. A plain `variable` is
+# reachable from any depth, at the cost of one thing `run` must do that R/F
+# don't need help with: clear it at the top of every run (see `run` below),
+# so a previous test's vector state can never leak into the next.
+#
+# VR($regnum,$lane): signed 16-bit, lane 0-7. ACCH/ACCM/ACCL($lane): unsigned
+# 16-bit slices of the 48-bit accumulator (value = ACCH<<32 | ACCM<<16 | ACCL).
+# VCOL/VCOH($lane): the vco carry/not-equal flags. VCCL/VCCH($lane): the vcc
+# compare-code flags. VCE($lane): the vce compare-extension flag.
+variable VR
+variable ACCH
+variable ACCM
+variable ACCL
+variable VCOL
+variable VCOH
+variable VCCL
+variable VCCH
+variable VCE
+
+# Element-broadcast table: e -> which of vt's 8 lanes feeds each output lane.
+# Transcribed from ares' RSP interpreter (ares/n64/rsp/interpreter-vpu.cpp),
+# a silicon-accurate reference -- not reconstructed from documentation.
+variable BCAST
+array set BCAST {
+    0  {0 1 2 3 4 5 6 7}   1  {0 1 2 3 4 5 6 7}
+    2  {0 0 2 2 4 4 6 6}   3  {1 1 3 3 5 5 7 7}
+    4  {0 0 0 0 4 4 4 4}   5  {1 1 1 1 5 5 5 5}
+    6  {2 2 2 2 6 6 6 6}   7  {3 3 3 3 7 7 7 7}
+    8  {0 0 0 0 0 0 0 0}   9  {1 1 1 1 1 1 1 1}
+    10 {2 2 2 2 2 2 2 2}   11 {3 3 3 3 3 3 3 3}
+    12 {4 4 4 4 4 4 4 4}   13 {5 5 5 5 5 5 5 5}
+    14 {6 6 6 6 6 6 6 6}   15 {7 7 7 7 7 7 7 7}
+}
+
+proc vs16 {v} {
+    set v [expr {$v & 0xFFFF}]
+    if {$v >= 0x8000} { return [expr {$v - 0x10000}] }
+    return $v
+}
+proc vu16 {v} { expr {$v & 0xFFFF} }
+proc vclamp16 {v} {
+    if {$v > 32767}  { return 32767 }
+    if {$v < -32768} { return -32768 }
+    return $v
+}
+
+# A vector-register operand token: usually a raw string ("$v3", "$v3[2]"),
+# because the CPU tokenizer below only pre-resolves bare "$word" registers it
+# recognises by name. $v0/$v1 collide with the GPR ABI names of the same
+# spelling (the return-value registers), so those two DO arrive pre-resolved
+# to plain integers (2, 3) -- recovered here rather than special-cased in the
+# shared tokenizer, so the CPU-side path stays untouched. Returns {regnum
+# element} (element 0 when no bracket is present).
+proc vparse {tok} {
+    if {[string is integer -strict $tok]} {
+        if {$tok == 2} { return {0 0} }
+        if {$tok == 3} { return {1 0} }
+        return [list $tok 0]
+    }
+    if {[regexp {^\$v([0-9]+)(?:\[([0-9]+)\])?$} $tok -> n e]} {
+        return [list $n [expr {$e eq "" ? 0 : $e}]]
+    }
+    error "pak::mips_sim: not a vector register operand: '$tok'"
+}
+
+proc vget {n l} {
+    variable VR
+    return [expr {[info exists VR($n,$l)] ? $VR($n,$l) : 0}]
+}
+proc vsetlane {n l val} {
+    variable VR
+    set VR($n,$l) [vs16 $val]
+}
+proc vreglist {n} {
+    set out {}
+    for {set l 0} {$l < 8} {incr l} { lappend out [vget $n $l] }
+    return $out
+}
+# vt after this instruction's element-broadcast is applied.
+proc vbcast {n e} {
+    variable BCAST
+    set src [vreglist $n]
+    set out {}
+    foreach idx $BCAST($e) { lappend out [lindex $src $idx] }
+    return $out
+}
+
+# Byte-precise access into a vector register: index 0-15, where byte 2k is
+# lane k's high byte and byte 2k+1 is its low byte. Needed verbatim -- several
+# RSP loads/stores/MFC2 read a byte RANGE that straddles lane boundaries.
+proc vbyteget {n idx} {
+    set idx [expr {$idx % 16}]
+    set lane [expr {$idx / 2}]
+    set u [vu16 [vget $n $lane]]
+    return [expr {($idx % 2 == 0) ? (($u >> 8) & 0xFF) : ($u & 0xFF)}]
+}
+proc vbyteset {n idx val} {
+    set idx [expr {$idx % 16}]
+    set lane [expr {$idx / 2}]
+    set u [vu16 [vget $n $lane]]
+    if {$idx % 2 == 0} { set u [expr {($u & 0x00FF) | (($val & 0xFF) << 8)}] } \
+    else               { set u [expr {($u & 0xFF00) | ($val & 0xFF)}] }
+    vsetlane $n $lane $u
+}
+
+proc acch {n} { variable ACCH; expr {[info exists ACCH($n)] ? $ACCH($n) : 0} }
+proc accm {n} { variable ACCM; expr {[info exists ACCM($n)] ? $ACCM($n) : 0} }
+proc accl {n} { variable ACCL; expr {[info exists ACCL($n)] ? $ACCL($n) : 0} }
+proc accl_set {n v} { variable ACCL; set ACCL($n) [expr {$v & 0xFFFF}] }
+# The full 48-bit accumulator as a signed Tcl integer (arbitrary precision,
+# so this never overflows the way a fixed 64-bit type would have to be
+# careful about). accget sign-extends the top slice first so accset's `>>`
+# arithmetic-shifts the value back apart correctly.
+proc accget {n} {
+    set hs [vs16 [acch $n]]
+    return [expr {($hs << 32) | ([accm $n] << 16) | [accl $n]}]
+}
+proc accset {n val} {
+    variable ACCH; variable ACCM; variable ACCL
+    set ACCH($n) [expr {($val >> 32) & 0xFFFF}]
+    set ACCM($n) [expr {($val >> 16) & 0xFFFF}]
+    set ACCL($n) [expr {$val & 0xFFFF}]
+}
+# Sets only the high 32 bits (ACCH:ACCM), leaving ACCL untouched -- what
+# VMADH does, since its addend has no fractional part to add into ACCL.
+proc acchm_set {n val} {
+    variable ACCH; variable ACCM
+    set ACCH($n) [expr {($val >> 16) & 0xFFFF}]
+    set ACCM($n) [expr {$val & 0xFFFF}]
+}
+# accumulatorSaturate, transcribed exactly: which slice a non-saturated read
+# returns (mid for most multiply-accumulates, low for VMADL/VMADN) varies by
+# instruction, so it is a parameter rather than a fixed choice.
+proc accsat {n slice neg pos} {
+    set h [acch $n]; set m [accm $n]; set l [accl $n]
+    if {[vs16 $h] < 0} {
+        if {$h != 0xFFFF} { return $neg }
+        if {[vs16 $m] >= 0} { return $neg }
+    } else {
+        if {$h != 0x0000} { return $pos }
+        if {[vs16 $m] < 0} { return $pos }
+    }
+    return [expr {!$slice ? $l : $m}]
+}
+
+proc vco_l {n} { variable VCOL; expr {[info exists VCOL($n)] ? $VCOL($n) : 0} }
+proc vco_h {n} { variable VCOH; expr {[info exists VCOH($n)] ? $VCOH($n) : 0} }
+proc vco_l_set {n v} { variable VCOL; set VCOL($n) [expr {$v ? 1 : 0}] }
+proc vco_h_set {n v} { variable VCOH; set VCOH($n) [expr {$v ? 1 : 0}] }
+proc vcc_l {n} { variable VCCL; expr {[info exists VCCL($n)] ? $VCCL($n) : 0} }
+proc vcc_h {n} { variable VCCH; expr {[info exists VCCH($n)] ? $VCCH($n) : 0} }
+proc vcc_l_set {n v} { variable VCCL; set VCCL($n) [expr {$v ? 1 : 0}] }
+proc vcc_h_set {n v} { variable VCCH; set VCCH($n) [expr {$v ? 1 : 0}] }
+proc vce_get {n} { variable VCE; expr {[info exists VCE($n)] ? $VCE($n) : 0} }
+proc vce_set {n v} { variable VCE; set VCE($n) [expr {$v ? 1 : 0}] }
+
+# Byte-addressed DMEM access, sharing the same word-keyed `mw` dict the CPU
+# memory ops use (merge logic identical to sb/lbu below). Called only from
+# exec_insn's own frame, where `mw` is already an upvar'd local -- exactly
+# like dmem_rb/dmem_wb's own `upvar 1 mw mw` expects.
+proc dmem_rb {addr} {
+    upvar 1 mw mw
+    set addr [expr {$addr & 0xFFFFFFFF}]
+    set w [expr {$addr & ~3}]
+    set word [expr {[dict exists $mw $w] ? [dict get $mw $w] : 0}]
+    return [expr {($word >> ((3 - ($addr & 3)) * 8)) & 0xFF}]
+}
+proc dmem_wb {addr val} {
+    upvar 1 mw mw
+    set addr [expr {$addr & 0xFFFFFFFF}]
+    set w [expr {$addr & ~3}]
+    set shift [expr {(3 - ($addr & 3)) * 8}]
+    set cur [expr {[dict exists $mw $w] ? [dict get $mw $w] : 0}]
+    dict set mw $w [expr {($cur & ~(0xFF << $shift)) | (($val & 0xFF) << $shift)}]
+}
+
 # ── arithmetic helpers ────────────────────────────────────────────────────────
 
 proc u32 {v} { expr {$v & 0xFFFFFFFF} }
@@ -752,6 +932,287 @@ proc exec_insn {op args} {
             if {$n eq "" || $R($n) == 0xFFFFFFFF} { return "done" }
             return "callidx:$R($n)"
         }
+
+        break {
+            # SPECIAL 0x0D: how an RSP task signals it is finished. The scalar
+            # CPU never emits this, so giving it real semantics here only
+            # affects RSP microcode running through this same instruction set.
+            return "done"
+        }
+        vnop { return "" }
+
+        vadd - vsub - vaddc - vsubc - vand - vnand - vor - vnor - vxor - vnxor - \
+        vabs - vmudn - vmudm - vmudl - vmudh - vmacf - vmacu - \
+        vmadl - vmadm - vmadn - vmadh - veq - vne - vlt - vge - vmrg - vsar {
+            # RSP vector unit (COP2): 3-operand compute, vd,vs,vt[e].
+            # Semantics transcribed from ares' RSP interpreter (the SISD path
+            # in ares/n64/rsp/interpreter-vpu.cpp) -- a silicon-accurate
+            # reference, not reconstructed from documentation or memory.
+            #
+            # A comment here, not between this arm and the last: switch's
+            # pattern list is parsed as a plain word list with no concept of
+            # `#` comments, so a multi-word comment BETWEEN arms is read as
+            # extra patterns/bodies and silently shifts every pairing after
+            # it -- Tcl doesn't always catch this itself (see `switch`'s own
+            # docs on stray comments), it just quietly dispatches the wrong
+            # body. Comments belong inside the body they document, as they
+            # already do everywhere else in this switch.
+            lassign [vparse [lindex $args 0]] vd _vde
+            lassign [vparse [lindex $args 1]] vsr _vse
+            lassign [vparse [lindex $args 2]] vt e
+            set vslanes [vreglist $vsr]
+            set vte     [vbcast $vt $e]
+            for {set n 0} {$n < 8} {incr n} {
+                set a  [lindex $vslanes $n]
+                set b  [lindex $vte $n]
+                set au [vu16 $a]; set bu [vu16 $b]
+                switch -- $op {
+                    vadd {
+                        set r [expr {$a + $b + [vco_l $n]}]
+                        accl_set $n $r
+                        vsetlane $vd $n [vclamp16 $r]
+                        vco_l_set $n 0; vco_h_set $n 0
+                    }
+                    vsub {
+                        set r [expr {$a - $b - [vco_l $n]}]
+                        accl_set $n $r
+                        vsetlane $vd $n [vclamp16 $r]
+                        vco_l_set $n 0; vco_h_set $n 0
+                    }
+                    vaddc {
+                        set r [expr {$au + $bu}]
+                        accl_set $n $r
+                        vco_l_set $n [expr {($r >> 16) & 1}]
+                        vco_h_set $n 0
+                        vsetlane $vd $n [accl $n]
+                    }
+                    vsubc {
+                        set d [expr {$au - $bu}]
+                        accl_set $n $d
+                        vco_l_set $n [expr {$d < 0}]
+                        vco_h_set $n [expr {$d != 0}]
+                        vsetlane $vd $n [accl $n]
+                    }
+                    vand  { accl_set $n [expr {$au & $bu}];    vsetlane $vd $n [accl $n] }
+                    vnand { accl_set $n [expr {~($au & $bu)}]; vsetlane $vd $n [accl $n] }
+                    vor   { accl_set $n [expr {$au | $bu}];    vsetlane $vd $n [accl $n] }
+                    vnor  { accl_set $n [expr {~($au | $bu)}]; vsetlane $vd $n [accl $n] }
+                    vxor  { accl_set $n [expr {$au ^ $bu}];    vsetlane $vd $n [accl $n] }
+                    vnxor { accl_set $n [expr {~($au ^ $bu)}]; vsetlane $vd $n [accl $n] }
+                    vabs {
+                        set sa [vs16 $a]; set sb [vs16 $b]
+                        if {$sa < 0} {
+                            if {$sb == -32768} { accl_set $n -32768; vsetlane $vd $n 32767 } \
+                            else { accl_set $n [expr {-$sb}]; vsetlane $vd $n [expr {-$sb}] }
+                        } elseif {$sa > 0} {
+                            accl_set $n $sb; vsetlane $vd $n $sb
+                        } else {
+                            accl_set $n 0; vsetlane $vd $n 0
+                        }
+                    }
+                    vmudn { accset $n [expr {$au * [vs16 $b]}];             vsetlane $vd $n [accl $n] }
+                    vmudm { accset $n [expr {[vs16 $a] * $bu}];             vsetlane $vd $n [accm $n] }
+                    vmudl { accset $n [expr {($au * $bu) >> 16}];          vsetlane $vd $n [accl $n] }
+                    vmudh {
+                        accset $n [expr {([vs16 $a] * [vs16 $b]) << 16}]
+                        vsetlane $vd $n [accsat $n 1 -32768 32767]
+                    }
+                    vmacf {
+                        accset $n [expr {[accget $n] + [vs16 $a] * [vs16 $b] * 2}]
+                        vsetlane $vd $n [accsat $n 1 -32768 32767]
+                    }
+                    vmacu {
+                        accset $n [expr {[accget $n] + [vs16 $a] * [vs16 $b] * 2}]
+                        set h [acch $n]; set m [accm $n]
+                        if {[vs16 $h] < 0} { vsetlane $vd $n 0 } \
+                        elseif {$h != 0 || [vs16 $m] < 0} { vsetlane $vd $n -1 } \
+                        else { vsetlane $vd $n $m }
+                    }
+                    vmadl {
+                        accset $n [expr {[accget $n] + (($au * $bu) >> 16)}]
+                        vsetlane $vd $n [accsat $n 0 0 -1]
+                    }
+                    vmadm {
+                        accset $n [expr {[accget $n] + [vs16 $a] * $bu}]
+                        vsetlane $vd $n [accsat $n 1 -32768 32767]
+                    }
+                    vmadn {
+                        accset $n [expr {[accget $n] + $au * [vs16 $b]}]
+                        vsetlane $vd $n [accsat $n 0 0 -1]
+                    }
+                    vmadh {
+                        # Only the top 32 bits (ACCH:ACCM) change -- the
+                        # addend has no fractional part to add into ACCL.
+                        set r [expr {([accget $n] >> 16) + [vs16 $a] * [vs16 $b]}]
+                        acchm_set $n $r
+                        vsetlane $vd $n [accsat $n 1 -32768 32767]
+                    }
+                    veq {
+                        set f [expr {![vco_h $n] && $au == $bu}]
+                        vcc_l_set $n $f
+                        set r [expr {$f ? $a : $b}]
+                        accl_set $n $r; vsetlane $vd $n $r
+                        vcc_h_set $n 0; vco_l_set $n 0; vco_h_set $n 0
+                    }
+                    vne {
+                        set f [expr {$au != $bu || [vco_h $n]}]
+                        vcc_l_set $n $f
+                        set r [expr {$f ? $a : $b}]
+                        accl_set $n $r; vsetlane $vd $n $r
+                        vcc_h_set $n 0; vco_l_set $n 0; vco_h_set $n 0
+                    }
+                    vlt {
+                        set sa [vs16 $a]; set sb [vs16 $b]
+                        set f [expr {$sa < $sb || ($sa == $sb && [vco_l $n] && [vco_h $n])}]
+                        vcc_l_set $n $f
+                        set r [expr {$f ? $a : $b}]
+                        accl_set $n $r; vsetlane $vd $n $r
+                        vcc_h_set $n 0; vco_l_set $n 0; vco_h_set $n 0
+                    }
+                    vge {
+                        set sa [vs16 $a]; set sb [vs16 $b]
+                        set f [expr {$sa > $sb || ($sa == $sb && (![vco_l $n] || ![vco_h $n]))}]
+                        vcc_l_set $n $f
+                        set r [expr {$f ? $a : $b}]
+                        accl_set $n $r; vsetlane $vd $n $r
+                        vcc_h_set $n 0; vco_l_set $n 0; vco_h_set $n 0
+                    }
+                    vmrg {
+                        set r [expr {[vcc_l $n] ? $a : $b}]
+                        accl_set $n $r; vsetlane $vd $n $r
+                        vco_l_set $n 0; vco_h_set $n 0
+                    }
+                    vsar {
+                        switch -- $e {
+                            8       { vsetlane $vd $n [acch $n] }
+                            9       { vsetlane $vd $n [accm $n] }
+                            10      { vsetlane $vd $n [accl $n] }
+                            default { vsetlane $vd $n 0 }
+                        }
+                    }
+                }
+            }
+        }
+
+        vmov - vrcp - vrcpl - vrcph - vrsq - vrsql - vrsqh - vch - vcl - vcr - \
+        vmulf - vmulu - vmulq - vrndp - vrndn - vmacq - vsut - \
+        lrv - srv - lpv - spv - luv - suv - lhv - shv - lfv - sfv - ltv - stv - lwv - swv {
+            # Deferred: real semantics need either the reciprocal/rsqrt LUT
+            # (VRCP/VRCPL/VRCPH/VRSQ/VRSQL/VRSQH/VMOV) or the carry/compare-
+            # extension logic that is the single most bug-prone corner of RSP
+            # emulation even in mature emulators (VCH/VCL/VCR), or are
+            # opcodes real hardware never executes (VMULF/VMULU/VMULQ/VRNDP/
+            # VRNDN/VMACQ/VSUT). Refusing loudly beats silently returning a
+            # wrong answer -- run these on ares instead.
+            error "pak::mips_sim: RSP opcode '$op' is not simulated (needs LUT/carry-flag/byte-rotation logic ares already gets right) -- run this microcode on ares instead"
+        }
+
+        lbv {
+            # RSP vector load/store: byte-precise, direct DMEM addressing.
+            # Offsets here are plain byte offsets, same as any other memory
+            # operand in this file -- there is no encode/decode round-trip in
+            # a text interpreter, so (unlike n64enc.tcl) no scale-by-element-
+            # size step is needed.
+            lassign [vparse [lindex $args 0]] vt e
+            lassign [lindex $args 1] off base
+            set addr [expr {$R($base) + $off}]
+            vbyteset $vt $e [dmem_rb $addr]
+        }
+        sbv {
+            lassign [vparse [lindex $args 0]] vt e
+            lassign [lindex $args 1] off base
+            set addr [expr {$R($base) + $off}]
+            dmem_wb $addr [vbyteget $vt $e]
+        }
+        lsv - llv - ldv {
+            lassign [vparse [lindex $args 0]] vt e
+            lassign [lindex $args 1] off base
+            set addr [expr {$R($base) + $off}]
+            set n [dict get {lsv 2 llv 4 ldv 8} $op]
+            set end [expr {min($e + $n, 16)}]
+            for {set o $e} {$o < $end} {incr o} {
+                vbyteset $vt [expr {$o & 15}] [dmem_rb $addr]
+                incr addr
+            }
+        }
+        ssv - slv - sdv {
+            lassign [vparse [lindex $args 0]] vt e
+            lassign [lindex $args 1] off base
+            set addr [expr {$R($base) + $off}]
+            set n [dict get {ssv 2 slv 4 sdv 8} $op]
+            # Stores do NOT clip at the 16-byte register boundary the way the
+            # matching loads do -- an element offset near 16 wraps the tail
+            # of the transfer back around into vt's own low bytes.
+            set end [expr {$e + $n}]
+            for {set o $e} {$o < $end} {incr o} {
+                dmem_wb $addr [vbyteget $vt [expr {$o & 15}]]
+                incr addr
+            }
+        }
+        lqv {
+            lassign [vparse [lindex $args 0]] vt e
+            lassign [lindex $args 1] off base
+            set addr [expr {$R($base) + $off}]
+            set end [expr {min(16 + $e - ($addr & 15), 16)}]
+            for {set o $e} {$o < $end} {incr o} {
+                vbyteset $vt [expr {$o & 15}] [dmem_rb $addr]
+                incr addr
+            }
+        }
+        sqv {
+            lassign [vparse [lindex $args 0]] vt e
+            lassign [lindex $args 1] off base
+            set addr [expr {$R($base) + $off}]
+            set end [expr {$e + (16 - ($addr & 15))}]
+            for {set o $e} {$o < $end} {incr o} {
+                dmem_wb $addr [vbyteget $vt [expr {$o & 15}]]
+                incr addr
+            }
+        }
+
+        mfc2 {
+            # RSP scalar<->vector transfer.
+            set n [lindex $args 0]
+            lassign [vparse [lindex $args 1]] vs e
+            set hi [vbyteget $vs $e]
+            set lo [vbyteget $vs [expr {($e + 1) % 16}]]
+            if {$n} { set R($n) [expr {[vs16 [expr {($hi << 8) | $lo}]] & 0xFFFFFFFF}] }
+        }
+        mtc2 {
+            set n [lindex $args 0]
+            lassign [vparse [lindex $args 1]] vs e
+            set rtv $R($n)
+            vbyteset $vs $e [expr {($rtv >> 8) & 0xFF}]
+            if {$e != 15} { vbyteset $vs [expr {$e + 1}] [expr {$rtv & 0xFF}] }
+        }
+        cfc2 {
+            set n [lindex $args 0]
+            set c [lindex $args 1]
+            set v 0
+            for {set k 0} {$k < 8} {incr k} {
+                switch -- $c {
+                    vco { set lo [vco_l $k]; set hi [vco_h $k] }
+                    vcc { set lo [vcc_l $k]; set hi [vcc_h $k] }
+                    vce { set lo [vce_get $k]; set hi 0 }
+                }
+                set v [expr {$v | ($lo << $k) | ($hi << (8 + $k))}]
+            }
+            if {$n} { set R($n) [expr {[vs16 $v] & 0xFFFFFFFF}] }
+        }
+        ctc2 {
+            set n [lindex $args 0]
+            set c [lindex $args 1]
+            set rtv $R($n)
+            for {set k 0} {$k < 8} {incr k} {
+                set lo [expr {($rtv >> $k) & 1}]
+                set hi [expr {($rtv >> (8 + $k)) & 1}]
+                switch -- $c {
+                    vco { vco_l_set $k $lo; vco_h_set $k $hi }
+                    vcc { vcc_l_set $k $lo; vcc_h_set $k $hi }
+                    vce { vce_set $k $lo }
+                }
+            }
+        }
     }
     return ""
 }
@@ -819,6 +1280,18 @@ proc run {text {start "main"} {limit 20000000} {preset {}} {cart ""} {text_base 
     array set F {}         ;# FP registers, as 32-bit IEEE-754 bit patterns
     set FCC 0              ;# the FPU condition bit bc1t/bc1f test
     set C0 [dict create]   ;# CP0 registers, by number
+    # RSP vector-unit state is namespace-global (see the comment above VR's
+    # declaration), so a run that never touches it would otherwise inherit
+    # whatever a previous run in this process left behind.
+    variable VR;   array unset VR
+    variable ACCH; array unset ACCH
+    variable ACCM; array unset ACCM
+    variable ACCL; array unset ACCL
+    variable VCOL; array unset VCOL
+    variable VCOH; array unset VCOH
+    variable VCCL; array unset VCCL
+    variable VCCH; array unset VCCH
+    variable VCE;  array unset VCE
     set mh [dict create]   ;# sh stores
     set mb [dict create]   ;# sb stores
     # Seed memory with the data sections so a static's initialiser is readable,

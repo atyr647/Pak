@@ -70,6 +70,85 @@ proc pak::enc::is_reg {tok} {
     return [expr {[dict exists $::pak::enc::GPR $t] || [regexp {^\$f[0-9]+$} $t]}]
 }
 
+# ── RSP vector unit (COP2) register file ─────────────────────────────────────
+# 32 vector registers, $v0..$v31, each 8 lanes of 16 bits. The names collide
+# textually with the GPR aliases $v0/$v1 (the standard $v0/$v1 return-value
+# registers) -- real RSP assemblers have lived with this for decades, because
+# the mnemonic always says which register file is meant: a vector-unit opcode
+# (vmudn, lqv, mfc2's vector operand, ...) resolves through this table, every
+# scalar opcode resolves through GPR. Neither ever consults the other.
+set ::pak::enc::VPR [dict create]
+for {set _i 0} {$_i < 32} {incr _i} { dict set ::pak::enc::VPR "\$v$_i" $_i }
+unset _i
+
+# Vector control registers, for cfc2/ctc2.
+set ::pak::enc::VCTRL [dict create vco 0 vcc 1 vce 2]
+
+# A vector-register operand, with an optional element-select suffix: "$v4" or
+# "$v4[5]". The bracket is Pak's own encoder syntax -- real hardware's element
+# field is a raw 4-bit number (0-15; see the RSP Programmer's Guide), and
+# rather than reproduce some other assembler's mnemonic broadcast forms
+# (`[0q]`, `[1h]`, ...) from memory and risk getting the naming wrong, this
+# just takes the field value directly. Returns {regnum element} (element 0
+# when the bracket is omitted).
+proc pak::enc::vpr_elem {tok} {
+    set t [string trim $tok ,]
+    if {[regexp {^(\$v[0-9]+)(?:\[([0-9]+)\])?$} $t -> reg e]} {
+        if {![dict exists $::pak::enc::VPR $reg]} {
+            error "n64enc: unknown vector register '$reg'"
+        }
+        set elem [expr {$e eq "" ? 0 : $e}]
+        if {$elem < 0 || $elem > 15} {
+            error "n64enc: element select out of range 0-15 in '$tok'"
+        }
+        return [list [dict get $::pak::enc::VPR $reg] $elem]
+    }
+    error "n64enc: not a vector register operand: '$tok'"
+}
+
+proc pak::enc::is_vreg {tok} {
+    set t [string trim $tok ,]
+    return [regexp {^\$v[0-9]+(\[[0-9]+\])?$} $t]
+}
+
+# Vector compute (COP2) funct field, 3-operand form: vd,vs,vt[e].
+# Values verified against the armips assembler's RSP opcode table (the
+# assembler real N64 homebrew microcode is written with), not reconstructed
+# from memory. vrndp/vmulq/vrndn/vmacq/vsut are here because the encoder can
+# assemble them -- they exist as opcodes -- even though real RSP hardware
+# never executes them (they were reserved for an MPEG codec Nintendo dropped).
+set ::pak::enc::VFUNCT3 [dict create \
+    vmulf 0x00 vmulu 0x01 vrndp 0x02 vmulq 0x03 \
+    vmudl 0x04 vmudm 0x05 vmudn 0x06 vmudh 0x07 \
+    vmacf 0x08 vmacu 0x09 vrndn 0x0a vmacq 0x0b \
+    vmadl 0x0c vmadm 0x0d vmadn 0x0e vmadh 0x0f \
+    vadd  0x10 vsub  0x11 vsut  0x12 vabs  0x13 \
+    vaddc 0x14 vsubc 0x15 \
+    vsar  0x1d \
+    vlt   0x20 veq   0x21 vne   0x22 vge   0x23 \
+    vcl   0x24 vch   0x25 vcr   0x26 vmrg  0x27 \
+    vand  0x28 vnand 0x29 vor   0x2a vnor  0x2b vxor 0x2c vnxor 0x2d]
+
+# Vector compute funct, 2-operand form: vd[de],vt[e]. There is no second
+# source register for this class -- de rides in the vs field position
+# instead, as a raw 4-bit value exactly like e. Hardware only defines 8-15
+# there (single-lane select, the same numbering e's broadcast table uses for
+# elements 8-15); 0-7 are unused encodings, not "lane 0-7" -- picking lane N
+# means writing N+8, same as it does for e.
+set ::pak::enc::VFUNCT2 [dict create \
+    vrcp 0x30 vrcpl 0x31 vrcph 0x32 vmov 0x33 \
+    vrsq 0x34 vrsql 0x35 vrsqh 0x36]
+
+# Vector load/store (LWC2/SWC2) subop + byte-count, keyed by the mnemonic's
+# suffix after the l/s. The 7-bit offset in the instruction is the byte
+# offset divided by this scale (real hardware address = base + offset*scale),
+# which is why an unaligned offset is a hard encoder error rather than a
+# silently truncated one. lwv is omitted: it is a documented opcode slot that
+# is not implemented in RSP hardware, so there is nothing to assemble to.
+set ::pak::enc::VLS_KIND [dict create \
+    bv {0 1} sv {1 2} lv {2 4} dv {3 8} qv {4 16} rv {5 16} \
+    pv {6 8} uv {7 8} hv {8 16} fv {9 16} wv {10 16} tv {11 16}]
+
 # ── Immediate parsing ────────────────────────────────────────────────────────
 # Accepts decimal (possibly negative) and hex (0x...). Returns an integer.
 proc pak::enc::imm {tok} {
@@ -116,6 +195,19 @@ proc pak::enc::I {op rs rt imm} {
 }
 proc pak::enc::J {op target} {
     return [expr {(($op & 0x3f) << 26) | (($target >> 2) & 0x3ffffff)}]
+}
+# RSP vector compute (COP2, bit 25 set): op=0x12, bit25=1, e(24-21) vt(20-16)
+# vs(15-11) vd(10-6) funct(5-0). Field layout verified against armips'
+# MIPS_RSP_COP2 macro, not reconstructed from memory.
+proc pak::enc::RSPV {funct e vt vs vd} {
+    return [expr {(0x12 << 26) | (1 << 25) | (($e & 0xf) << 21) | (($vt & 0x1f) << 16) \
+        | (($vs & 0x1f) << 11) | (($vd & 0x1f) << 6) | ($funct & 0x3f)}]
+}
+# RSP vector load/store (LWC2/SWC2): op base(25-21) vt(20-16) subop(15-11)
+# element(10-7) offset(6-0, signed, pre-scaled by the caller).
+proc pak::enc::RSPLS {op subop base vt elem off7} {
+    return [expr {(($op & 0x3f) << 26) | (($base & 0x1f) << 21) | (($vt & 0x1f) << 16) \
+        | (($subop & 0x1f) << 11) | (($elem & 0xf) << 7) | ($off7 & 0x7f)}]
 }
 
 # ── R-type funct / I-type op tables ──────────────────────────────────────────
@@ -428,6 +520,67 @@ proc pak::enc::emit_real {ctxVar mnem args} {
         add_branch_fixup ctx $woff $label
         set sec [dict get $ctx cur]
         dict set ctx secdata $sec brmeta $woff [list 0x11 0x08 $tf]
+        return
+    }
+    # RSP vector unit (COP2). Three-operand compute: vd,vs,vt[e].
+    if {[dict exists $::pak::enc::VFUNCT3 $mnem]} {
+        lassign $ops vdtok vstok vttok
+        lassign [vpr_elem $vdtok] vd _de
+        lassign [vpr_elem $vstok] vs _ve
+        lassign [vpr_elem $vttok] vt e
+        emit_word ctx [RSPV [dict get $::pak::enc::VFUNCT3 $mnem] $e $vt $vs $vd]
+        return
+    }
+    # Two-operand compute: vd[de],vt[e] -- de (0-7) rides in the vs field.
+    if {[dict exists $::pak::enc::VFUNCT2 $mnem]} {
+        lassign $ops vdtok vttok
+        lassign [vpr_elem $vdtok] vd de
+        lassign [vpr_elem $vttok] vt e
+        emit_word ctx [RSPV [dict get $::pak::enc::VFUNCT2 $mnem] $e $vt $de $vd]
+        return
+    }
+    if {$mnem eq "vnop"} {
+        emit_word ctx [RSPV 0x37 0 0 0 0]
+        return
+    }
+    # Vector load/store: lqv/sqv/ldv/sdv/... vt[elem], offset(base)
+    if {[string length $mnem] == 3 \
+            && [string index $mnem 0] in {l s} \
+            && [dict exists $::pak::enc::VLS_KIND [string range $mnem 1 end]]} {
+        lassign [dict get $::pak::enc::VLS_KIND [string range $mnem 1 end]] subop scale
+        set lsop [expr {[string index $mnem 0] eq "l" ? 0x32 : 0x3A}]
+        lassign $ops vttok memtok
+        lassign [vpr_elem $vttok] vt elem
+        lassign [mem $memtok] byteoff base
+        if {$byteoff % $scale != 0} {
+            error "n64enc: '$mnem' offset $byteoff is not a multiple of $scale bytes"
+        }
+        set off7 [expr {$byteoff / $scale}]
+        if {$off7 < -64 || $off7 > 63} {
+            error "n64enc: '$mnem' offset $byteoff out of range (7-bit field, scale $scale)"
+        }
+        emit_word ctx [RSPLS $lsop $subop $base $vt $elem $off7]
+        return
+    }
+    # mfc2/mtc2: GPR <-> one lane of a vector register. cfc2/ctc2: GPR <-> a
+    # vector control register (vco/vcc/vce). All four reuse the standard I()
+    # layout: rd/element/control-reg number pack into the 16-bit imm field
+    # exactly the way a real MFC2 instruction's rd(15-11)+element(10-7) does.
+    if {$mnem eq "mfc2" || $mnem eq "mtc2"} {
+        lassign $ops g v
+        set rs [expr {$mnem eq "mfc2" ? 0x00 : 0x04}]
+        lassign [vpr_elem $v] vreg elem
+        emit_word ctx [I 0x12 $rs [gpr $g] [expr {($vreg << 11) | ($elem << 7)}]]
+        return
+    }
+    if {$mnem eq "cfc2" || $mnem eq "ctc2"} {
+        lassign $ops g c
+        set rs [expr {$mnem eq "cfc2" ? 0x02 : 0x06}]
+        set cn [string trim $c ,]
+        if {![dict exists $::pak::enc::VCTRL $cn]} {
+            error "n64enc: unknown vector control register '$cn' (want vco/vcc/vce)"
+        }
+        emit_word ctx [I 0x12 $rs [gpr $g] [expr {[dict get $::pak::enc::VCTRL $cn] << 11}]]
         return
     }
     # CACHE instruction: cache hint, off(base)  op=0x2F (47)
