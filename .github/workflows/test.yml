@@ -194,11 +194,14 @@ jobs:
         run: bash tools/build_ares.sh /opt/pak-ares
 
       # The CPU writing a framebuffer, the RDP drawing, the VI interrupt
-      # firing, and the RSP running scalar and vector tasks -- four of them
-      # (rsp_task_add/rsp_task_loop/rsp_task_vecadd/rsp_task_vacc) compiled
-      # from real Pak source (including vec8x16's `+` and rsp.vacc's
-      # VMULF/VMACF/VSAR accumulator chain) by tcl/rsp_codegen.tcl, not hand-
-      # written .S. Each is the only check on its subsystem there is -- the
+      # firing, and the RSP running scalar and vector tasks -- five of them
+      # (rsp_task_add/rsp_task_loop/rsp_task_vecadd/rsp_task_vacc/
+      # rsp_task_vtx) compiled from real Pak source (including vec8x16's
+      # `+`, rsp.vacc's VMULF/VMACF/VSAR accumulator chain, and a `struct`
+      # with array-of-vec8x16 fields indexed by a loop variable -- the
+      # design note's own vertex-transform worked example) by
+      # tcl/rsp_codegen.tcl, not hand-written .S. Each is the only check on
+      # its subsystem there is -- the
       # simulator has no interrupts, no RSP and no cache model, so a wrong
       # VR4300 cache opcode, an unacknowledged MI source, or an RSP codegen
       # bug the text simulator's own label-by-name jump resolution can't see
@@ -274,15 +277,17 @@ jobs:
         run: tclsh tcl/tools/rsp_vector_test.tcl
 
       # tcl/rsp_codegen.tcl compiles ordinary Pak source (static/entry/while/
-      # if, vec8x16's elementwise operators + .broadcast, and rsp.vacc's
-      # mul/mac/high/mid/low) for the RSP instead of the CPU -- steps 1, 2
-      # and 3 of docs/rsp-microcode-in-pak.md. Checks real encoded bytes, not
-      # just the text simulator: that distinction is what catches an
-      # unresolved J-type relocation the simulator's own label-by-name jump
-      # resolution can't see (see the file's own header comment). Hardware
-      # confirmation is tcl/tools/ares_test.tcl's "rsp_task_add"/
-      # "rsp_task_loop"/"rsp_task_vecadd"/"rsp_task_vacc" cases.
-      - name: RSP codegen (Pak source, scalar/vec8x16/vacc, compiled for the RSP)
+      # if, vec8x16's elementwise operators + .broadcast, rsp.vacc's
+      # mul/mac/high/mid/low, and struct/array-of-vec8x16 field access) for
+      # the RSP instead of the CPU -- steps 1, 2 and 3 of docs/rsp-
+      # microcode-in-pak.md, plus the struct/array machinery its step 4
+      # worked example needs. Checks real encoded bytes, not just the text
+      # simulator: that distinction is what catches an unresolved J-type
+      # relocation the simulator's own label-by-name jump resolution can't
+      # see (see the file's own header comment). Hardware confirmation is
+      # tcl/tools/ares_test.tcl's "rsp_task_add"/"rsp_task_loop"/
+      # "rsp_task_vecadd"/"rsp_task_vacc"/"rsp_task_vtx" cases.
+      - name: RSP codegen (Pak source, scalar/vec8x16/vacc/structs, compiled for the RSP)
         run: tclsh tcl/tools/rsp_codegen_test.tcl
 
       - name: Array address-of and u8 index (sb, not scale-4 sw)

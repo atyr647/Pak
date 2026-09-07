@@ -1,8 +1,10 @@
-# tcl/rsp_codegen.tcl — restricted codegen for the RSP target. Steps 1 and 2
-# of docs/rsp-microcode-in-pak.md's suggested order: step 1 is "No vectors at
-# all. entry, statics in DMEM, while, integer math -- compiled to the RSP's
-# scalar half, which is a MIPS I subset tcl/n64enc.tcl already assembles
-# correctly"; step 2 is "vec8x16 and the elementwise operators."
+# tcl/rsp_codegen.tcl — restricted codegen for the RSP target. Steps 1-3 of
+# docs/rsp-microcode-in-pak.md's suggested order (scalar-only, vec8x16 +
+# elementwise ops, rsp.vacc) plus the struct/array-of-vec8x16 machinery step
+# 4's worked vertex-transform example needs: step 1 is "No vectors at all.
+# entry, statics in DMEM, while, integer math -- compiled to the RSP's scalar
+# half, which is a MIPS I subset tcl/n64enc.tcl already assembles correctly";
+# step 2 is "vec8x16 and the elementwise operators"; step 3 is "vacc."
 #
 # A microcode is a program, not a function (same note): there is no crt0, no
 # stack, no calling convention to set up, no linker. `entry {}` compiles
@@ -11,21 +13,32 @@
 # microcode never references a symbol outside itself -- unlike the CPU
 # backend's statics, which are resolved later by n64link.tcl, these are
 # baked into the instruction stream directly, the same way rsp_add.S's
-# hand-written `lw $8, 0($0)` bakes in DMEM offset 0.
+# hand-written `lw $8, 0($0)` bakes in DMEM offset 0. A `struct` (the design
+# note's `VtxJob`) is the same idea one level down: a named sub-region of
+# whatever static uses it, laid out by the same bump allocator, with no ABI
+# padding rules to match some other compiler -- see register_struct.
 #
 # This is deliberately narrow, matching the design note's refusal table.
 # Rejected (as an immediate Tcl error, RSPUNPORTED\t..., mirroring
 # pak::mips_unported) rather than silently miscompiled:
-#   - anything at top level besides `static` and exactly one `entry`
+#   - anything at top level besides `use`, `struct`, `static`, and exactly
+#     one `entry`
 #   - a `static` with an initializer (DMEM content comes from what the CPU
-#     DMAs in before `sp.run()`, not from a Pak-level init)
+#     DMAs in before `sp.run()`, not from a Pak-level init), or a struct
+#     field with a default value (same reason)
 #   - a scalar type other than bool/u8/i8/u16/i16/u32/i32, or an array of
 #     one of those
 #   - `*` `/` `%` (no multiply or divide on the RSP scalar unit), any float
 #     type, any `Call` besides `.broadcast(n)` on a vec8x16 (no functions,
 #     no modules -- yet)
 #   - `<<`/`>>` on a vec8x16 (no vector shift instruction on real hardware),
-#     a non-literal vec8x16 lane index, an array of vec8x16
+#     a non-literal vec8x16 lane index
+#   - field access more than one level deep (`job.foo` is fine; `job.foo.bar`
+#     is not -- no worked example needs it, and a struct field whose type is
+#     itself a struct must already be a REGISTERED struct, i.e. declared
+#     earlier in the same file: this is one file's worth of forward
+#     declarations, not real cross-file `module` resolution, which is
+#     project/CLI wiring task #45 still has open)
 #   - running out of the ten scratch GPRs or 32 vector registers this v1
 #     allocator uses (no spilling; "correct and slow" per the design note,
 #     not optimized)
@@ -38,18 +51,18 @@
 # usual reason short-circuiting is load-bearing) and no function calls.
 #
 # vec8x16 (step 2): a value type, 8 lanes of 16 bits, exactly the design
-# note's shape -- statics/locals of it, `+ - & | ^` (VADD/VSUB/VAND/VOR/
-# VXOR), `.broadcast(n)` with a literal lane (fused into the very next
-# vector instruction's element-select field when it is that instruction's
-# right operand -- no extra instruction -- or materialized as a real value
-# otherwise), and lane read/write (`v[i]` / `v[i] = x`, MFC2/MTC2, literal
-# index only -- "the encoding has a field for it, not a register"). `<<`/
-# `>>` are refused, correcting the design note's own aspirational example:
-# real RSP hardware has no vector shift instruction (checked against
-# armips' opcode table, not memory) -- a vector shift needs a VMUDL/VMUDH-
-# style multiply trick, not implemented yet. Arrays of vec8x16 are not
-# supported yet either (needed for the design note's own `[64]vec8x16`
-# vertex-batch example -- a later step).
+# note's shape -- statics/locals of it, arrays of it (`[64]vec8x16`, the
+# design note's own vertex-batch shape -- LQV/SQV addressed the same way a
+# scalar array is, just scaled by 16 instead of 1/2/4), `+ - & | ^` (VADD/
+# VSUB/VAND/VOR/VXOR), `.broadcast(n)` with a literal lane (fused into the
+# very next vector instruction's element-select field when it is that
+# instruction's right operand -- no extra instruction -- or materialized as
+# a real value otherwise), and lane read/write (`v[i]` / `v[i] = x`, MFC2/
+# MTC2, literal index only -- "the encoding has a field for it, not a
+# register"). `<<`/`>>` are refused, correcting the design note's own
+# aspirational example: real RSP hardware has no vector shift instruction
+# (checked against armips' opcode table, not memory) -- a vector shift needs
+# a VMUDL/VMUDH-style multiply trick, not implemented yet.
 
 namespace eval pak {}
 
@@ -60,11 +73,17 @@ proc pak::rsp_unported {what} { return -code error "RSPUNPORTED\t$what" }
 set ::pak::RSP_DMEM_SIZE 4096
 
 oo::class create pak::RspCodegen {
-    variable em statics dmem_used scopes free_regs vfree_regs label_n vacc_started
+    variable em statics structs dmem_used scopes free_regs vfree_regs label_n vacc_started
 
     constructor {} {
         set em [pak::Emitter new]
         set statics [dict create]
+        # name -> {size align fields}; fields is name -> {offset layout}. A
+        # struct field whose type is itself a struct must name one already
+        # registered (single forward pass, source order) -- no need for
+        # anything cleverer since the design note's own example (VtxJob)
+        # never nests structs.
+        set structs [dict create]
         set dmem_used 0
         set scopes {}
         # $t0-$t9: ten scratch GPRs. $zero/$at/$v0-$a3 are left alone (a
@@ -204,30 +223,77 @@ oo::class create pak::RspCodegen {
             default    { pak::rsp_unported "type '$name' (RSP scalars are bool/u8/i8/u16/i16/u32/i32 -- no float, no i64/u64)" }
         }
     }
+    # Layout dicts always carry the same 8 keys (size align is_array
+    # elem_size is_signed is_vector is_struct struct_name) regardless of
+    # branch, so every caller can destructure uniformly instead of
+    # special-casing which type shape it got. `is_vector` does double duty,
+    # deliberately: when is_array is 0 it means "this IS one vec8x16
+    # register value"; when is_array is 1 it means "each ELEMENT is a
+    # vec8x16" (elem_size 16, which no scalar type ever uses, so the two
+    # never collide). That reuse is why arrays of vec8x16 needed no new
+    # field to stop being refused -- every caller that already branched on
+    # is_array before looking at is_vector (gen_assign, gen_ident) already
+    # had the right shape.
     method layout_type {typenode} {
         if {[pak::isnil $typenode]} { pak::rsp_unported "a static or local needs an explicit type on the RSP target" }
         switch -- [pak::kindof $typenode] {
             TypeName {
-                if {[pak::fval $typenode name] eq "vec8x16"} {
-                    return [dict create size 16 align 16 is_array 0 elem_size 0 is_signed 0 is_vector 1]
+                set tname [pak::fval $typenode name]
+                if {$tname eq "vec8x16"} {
+                    return [dict create size 16 align 16 is_array 0 elem_size 0 is_signed 0 is_vector 1 is_struct 0 struct_name ""]
                 }
-                lassign [my layout_scalar [pak::fval $typenode name]] size align is_signed
-                return [dict create size $size align $align is_array 0 elem_size 0 is_signed $is_signed is_vector 0]
+                if {[dict exists $structs $tname]} {
+                    set sdef [dict get $structs $tname]
+                    return [dict create size [dict get $sdef size] align [dict get $sdef align] \
+                        is_array 0 elem_size 0 is_signed 0 is_vector 0 is_struct 1 struct_name $tname]
+                }
+                lassign [my layout_scalar $tname] size align is_signed
+                return [dict create size $size align $align is_array 0 elem_size 0 is_signed $is_signed is_vector 0 is_struct 0 struct_name ""]
             }
             TypeArray {
                 set inner [pak::nfield $typenode inner]
                 if {[pak::kindof $inner] ne "TypeName"} {
-                    pak::rsp_unported "array element type must be a plain scalar (got [pak::kindof $inner])"
+                    pak::rsp_unported "array element type must be a plain scalar or vec8x16 (got [pak::kindof $inner])"
                 }
+                set n [pak::fval [pak::nfield $typenode size] value]
                 if {[pak::fval $inner name] eq "vec8x16"} {
-                    pak::rsp_unported "arrays of vec8x16 are not supported yet"
+                    return [dict create size [expr {16 * $n}] align 16 is_array 1 elem_size 16 is_signed 0 is_vector 1 is_struct 0 struct_name ""]
                 }
                 lassign [my layout_scalar [pak::fval $inner name]] esize align is_signed
-                set n [pak::fval [pak::nfield $typenode size] value]
-                return [dict create size [expr {$esize * $n}] align $align is_array 1 elem_size $esize is_signed $is_signed is_vector 0]
+                return [dict create size [expr {$esize * $n}] align $align is_array 1 elem_size $esize is_signed $is_signed is_vector 0 is_struct 0 struct_name ""]
             }
-            default { pak::rsp_unported "type kind '[pak::kindof $typenode]' is not a scalar, scalar array, or vec8x16" }
+            default { pak::rsp_unported "type kind '[pak::kindof $typenode]' is not a scalar, scalar array, vec8x16, vec8x16 array, or a declared struct" }
         }
+    }
+
+    # Struct layout: fields laid out in declaration order, each rounded up
+    # to its own alignment, exactly like layout_static's DMEM bump
+    # allocator -- a struct here is just a named sub-region of DMEM, not an
+    # ABI with padding rules to match some other compiler. `@aligned(16)`
+    # on the struct decl itself (the design note's own `VtxJob` example)
+    # widens the whole struct's alignment and rounds its total size up to
+    # match, same as it does for a static.
+    method register_struct {decl} {
+        set name [pak::fval $decl name]
+        if {[dict exists $structs $name]} { pak::rsp_unported "struct '$name' declared more than once" }
+        set used 0
+        set salign 1
+        set fields [dict create]
+        foreach f [pak::items [pak::nfield $decl fields]] {
+            set fname [pak::fval $f name]
+            if {![pak::isnil [pak::nfield $f default_value]]} {
+                pak::rsp_unported "struct field '$name.$fname' has a default value -- RSP struct statics have no Pak-level initializer, same as any other static"
+            }
+            set flayout [my layout_type [pak::nfield $f type]]
+            set fa [dict get $flayout align]
+            set off [expr {($used + $fa - 1) & ~($fa - 1)}]
+            dict set fields $fname [list $off $flayout]
+            set used [expr {$off + [dict get $flayout size]}]
+            if {$fa > $salign} { set salign $fa }
+        }
+        set salign [pak::mips_ann_align [pak::mips_annlist $decl] $salign]
+        set used [expr {($used + $salign - 1) & ~($salign - 1)}]
+        dict set structs $name [dict create size $used align $salign fields $fields]
     }
     method load_op {size is_signed} {
         switch -- $size {
@@ -244,8 +310,10 @@ oo::class create pak::RspCodegen {
     method generate {program} {
         set entry_decl ""
         set static_decls {}
+        set struct_decls {}
         foreach decl [pak::items [pak::nfield $program decls]] {
             switch -- [pak::kindof $decl] {
+                StructDecl { lappend struct_decls $decl }
                 StaticDecl { lappend static_decls $decl }
                 EntryBlock {
                     if {$entry_decl ne ""} { pak::rsp_unported "more than one `entry` block (a microcode is one program)" }
@@ -257,15 +325,23 @@ oo::class create pak::RspCodegen {
                     # literal identifier "vacc" regardless of whether it was
                     # `use`d, so this isn't real import resolution -- just
                     # not rejecting syntax the design note's own examples
-                    # use at the top of every microcode.
+                    # use at the top of every microcode. A shared-module
+                    # struct (the design note's `use shared.vtxjob`) works
+                    # the same way: the struct must be declared in THIS
+                    # file today (see register_struct's own comment on
+                    # single-pass, source-order registration) -- real
+                    # cross-file struct sharing is CLI/project wiring
+                    # (task #45's still-open `--target rsp` flag), not a
+                    # codegen limitation.
                 }
                 default {
-                    pak::rsp_unported "top-level '[pak::kindof $decl]' -- the RSP target only accepts `use`, `static`, and one `entry`"
+                    pak::rsp_unported "top-level '[pak::kindof $decl]' -- the RSP target only accepts `use`, `struct`, `static`, and one `entry`"
                 }
             }
         }
         if {$entry_decl eq ""} { pak::rsp_unported "no `entry` block (a microcode needs exactly one)" }
 
+        foreach decl $struct_decls { my register_struct $decl }
         foreach decl $static_decls { my layout_static $decl }
         if {$dmem_used > $::pak::RSP_DMEM_SIZE} {
             pak::rsp_unported "statics use $dmem_used bytes of DMEM, which is only $::pak::RSP_DMEM_SIZE"
@@ -299,7 +375,8 @@ oo::class create pak::RspCodegen {
         set align [pak::mips_ann_align [pak::mips_annlist $decl] [dict get $layout align]]
         set off [expr {($dmem_used + $align - 1) & ~($align - 1)}]
         dict set statics $name [list $off [dict get $layout size] [dict get $layout is_array] \
-            [dict get $layout elem_size] [dict get $layout is_signed] [dict get $layout is_vector]]
+            [dict get $layout elem_size] [dict get $layout is_signed] [dict get $layout is_vector] \
+            [dict get $layout is_struct] [dict get $layout struct_name]]
         set dmem_used [expr {$off + [dict get $layout size]}]
     }
 
@@ -359,8 +436,10 @@ oo::class create pak::RspCodegen {
     }
 
     # target must be an Ident (local or static scalar/vec8x16), a lane of a
-    # vec8x16 (`v[i] = ...`), or an IndexAccess into a static scalar array --
-    # the only things memory (or a vector lane) means on the RSP target.
+    # vec8x16 (`v[i] = ...`), a DotAccess into a struct-typed static's scalar
+    # or vec8x16 field (`job.count = ...`), or an IndexAccess into a static
+    # array or a struct field array (`job.vertices[i] = ...`) -- the only
+    # things memory (or a vector lane) means on the RSP target.
     method gen_assign {node} {
         set op [pak::fval $node op]
         if {$op ne "="} { pak::rsp_unported "compound assignment '$op' is not supported yet -- write it as 'x = x $op...'" }
@@ -369,14 +448,15 @@ oo::class create pak::RspCodegen {
             Ident {
                 set r [my resolve [pak::fval $target name]]
                 if {$r eq ""} { pak::rsp_unported "assignment to undefined name '[pak::fval $target name]'" }
-                lassign $r kind a b c d e f
+                lassign $r kind a b c d e f g
                 if {$kind eq "local"} {
                     lassign [my gen_expr [pak::nfield $node value]] vreg visvec
                     if {$c} { my vec_move $a $vreg; my vfree_reg $vreg } \
                     else { $em move $a $vreg; my free_reg $vreg }
                 } else {
-                    # static: a b c d e f = offset size is_array elem_size is_signed is_vector
+                    # static: a b c d e f g = offset size is_array elem_size is_signed is_vector is_struct
                     if {$c} { pak::rsp_unported "'[pak::fval $target name]' is an array -- index it to assign an element" }
+                    if {$g} { pak::rsp_unported "'[pak::fval $target name]' is a struct -- assign one of its fields" }
                     lassign [my gen_expr [pak::nfield $node value]] vreg visvec
                     if {$f} {
                         $em instr sqv "[my vreg_tok $vreg]," "${a}(\$zero)"
@@ -387,15 +467,33 @@ oo::class create pak::RspCodegen {
                     }
                 }
             }
+            DotAccess {
+                lassign [my resolve_field $target] addr flayout
+                if {[dict get $flayout is_array]} { pak::rsp_unported "field '[pak::fval $target field]' is an array -- index it to assign an element" }
+                if {[dict get $flayout is_struct]} { pak::rsp_unported "field '[pak::fval $target field]' is a struct -- assign one of its fields" }
+                lassign [my gen_expr [pak::nfield $node value]] vreg visvec
+                if {[dict get $flayout is_vector]} {
+                    $em instr sqv "[my vreg_tok $vreg]," "${addr}(\$zero)"
+                    my vfree_reg $vreg
+                } else {
+                    $em instr [my store_op [dict get $flayout size]] "$vreg," "${addr}(\$zero)"
+                    my free_reg $vreg
+                }
+            }
             IndexAccess {
                 if {[my is_lane_index [pak::nfield $target obj]]} {
                     my gen_lane_write $target [pak::nfield $node value]
                     return
                 }
-                lassign [my gen_element_addr $target] areg elem_size is_signed store_op_
+                lassign [my gen_element_addr $target] areg elem_size is_signed is_vec
                 lassign [my gen_expr [pak::nfield $node value]] vreg visvec
-                $em instr $store_op_ "$vreg," "0($areg)"
-                my free_reg $vreg
+                if {$is_vec} {
+                    $em instr sqv "[my vreg_tok $vreg]," "0($areg)"
+                    my vfree_reg $vreg
+                } else {
+                    $em instr [my store_op $elem_size] "$vreg," "0($areg)"
+                    my free_reg $vreg
+                }
                 my free_reg $areg
             }
             default { pak::rsp_unported "assignment target kind '[pak::kindof $target]' is not supported" }
@@ -411,7 +509,11 @@ oo::class create pak::RspCodegen {
         set r [my resolve [pak::fval $obj name]]
         if {$r eq ""} { return 0 }
         if {[lindex $r 0] eq "local"} { return [lindex $r 3] }
-        return [lindex $r 6]
+        # static: {static offset size is_array elem_size is_signed is_vector ...}.
+        # is_vector alone is not enough once arrays of vec8x16 exist -- it
+        # also means "elements are vec8x16" when is_array is 1, and indexing
+        # THAT is element addressing (gen_element_addr), not a lane read.
+        return [expr {![lindex $r 3] && [lindex $r 6]}]
     }
 
     # A vec8x16 lane index is a hardware FIELD (MFC2/MTC2's element byte),
@@ -457,19 +559,70 @@ oo::class create pak::RspCodegen {
         my free_reg $vsrc
     }
 
+    # `job.field` -- a struct-typed static's field. Every struct instance on
+    # the RSP target is a single static (there is no array-of-struct, no
+    # struct local, no pointer to reach one some other way), so the
+    # object's own address is always a compile-time constant and so is the
+    # field's offset within it -- there is never a register involved in
+    # computing WHERE a field is, only in what's read from or written there.
+    # Returns {const_addr field_layout}.
+    method resolve_field {node} {
+        set obj [pak::nfield $node obj]
+        set field [pak::fval $node field]
+        if {[pak::kindof $obj] ne "Ident"} {
+            pak::rsp_unported "field access on '[pak::kindof $obj]' is not supported -- only one level of field access on a plain struct-typed static name"
+        }
+        set r [my resolve [pak::fval $obj name]]
+        if {$r eq "" || [lindex $r 0] ne "static" || ![lindex $r 7]} {
+            pak::rsp_unported "'[pak::fval $obj name]' is not a struct-typed static"
+        }
+        set base [lindex $r 1]
+        set sname [lindex $r 8]
+        set fields [dict get $structs $sname fields]
+        if {![dict exists $fields $field]} {
+            pak::rsp_unported "struct '$sname' has no field '$field'"
+        }
+        lassign [dict get $fields $field] foff flayout
+        return [list [expr {$base + $foff}] $flayout]
+    }
+
+    # The base address and element layout of whatever `arr[...]` in
+    # `obj[idx]` is indexing: either a plain static array name, or a struct
+    # field that is itself an array (`job.vertices[i]`). Returns
+    # {base_addr elem_size is_signed elem_is_vector}.
+    method resolve_array {obj} {
+        switch -- [pak::kindof $obj] {
+            Ident {
+                set r [my resolve [pak::fval $obj name]]
+                if {$r eq "" || [lindex $r 0] ne "static" || ![lindex $r 3]} {
+                    pak::rsp_unported "'[pak::fval $obj name]' is not a static array"
+                }
+                return [list [lindex $r 1] [lindex $r 4] [lindex $r 5] [lindex $r 6]]
+            }
+            DotAccess {
+                lassign [my resolve_field $obj] base flayout
+                if {![dict get $flayout is_array]} {
+                    pak::rsp_unported "field '[pak::fval $obj field]' is not an array"
+                }
+                return [list $base [dict get $flayout elem_size] [dict get $flayout is_signed] [dict get $flayout is_vector]]
+            }
+            default { pak::rsp_unported "only a static array name or a struct field can be indexed (got [pak::kindof $obj])" }
+        }
+    }
+
     # Computes the runtime byte address of `arr[i]` into a fresh register.
-    # Returns {addr_reg elem_size is_signed store_op}. A constant index folds
-    # to a single immediate; a variable index costs a shift-and-add, same as
-    # any MIPS backend -- there is no addressing mode that takes a scaled
-    # register operand.
+    # Returns {addr_reg elem_size is_signed elem_is_vector}. A constant index
+    # folds to a single immediate; a variable index costs a shift-and-add,
+    # same as any MIPS backend -- there is no addressing mode that takes a
+    # scaled register operand. A vec8x16 element (elem_size 16) scales by
+    # shifting 4 instead of 2 -- same idea as the byte/halfword/word cases,
+    # just a wider element -- and the caller picks LQV/SQV over a scalar
+    # load/store based on elem_is_vector rather than this method choosing an
+    # instruction itself, since which one to use also depends on whether the
+    # caller is reading or writing.
     method gen_element_addr {node} {
         set obj [pak::nfield $node obj]
-        if {[pak::kindof $obj] ne "Ident"} { pak::rsp_unported "only a plain array name can be indexed (got [pak::kindof $obj])" }
-        set r [my resolve [pak::fval $obj name]]
-        if {$r eq "" || [lindex $r 0] ne "static" || ![lindex $r 3]} {
-            pak::rsp_unported "'[pak::fval $obj name]' is not a static array"
-        }
-        lassign $r _ base total_size is_array elem_size is_signed
+        lassign [my resolve_array $obj] base elem_size is_signed elem_is_vector
         set idx [pak::nfield $node index]
         set areg [my alloc_reg]
         if {[pak::kindof $idx] eq "IntLit"} {
@@ -479,13 +632,13 @@ oo::class create pak::RspCodegen {
             if {$elem_size == 1} {
                 $em instr addiu "$areg," "$ireg," $base
             } else {
-                set shift [expr {$elem_size == 2 ? 1 : 2}]
+                set shift [expr {$elem_size == 2 ? 1 : ($elem_size == 16 ? 4 : 2)}]
                 $em sll $areg $ireg $shift
                 $em instr addiu "$areg," "$areg," $base
             }
             my free_reg $ireg
         }
-        return [list $areg $elem_size $is_signed [my store_op $elem_size]]
+        return [list $areg $elem_size $is_signed $elem_is_vector]
     }
 
     method gen_if {node} {
@@ -558,14 +711,37 @@ oo::class create pak::RspCodegen {
                 if {[my is_lane_index [pak::nfield $node obj]]} {
                     return [list [my gen_lane_read $node] 0]
                 }
-                lassign [my gen_element_addr $node] areg elem_size is_signed _
+                lassign [my gen_element_addr $node] areg elem_size is_signed elem_is_vector
+                if {$elem_is_vector} {
+                    set vdst [my valloc_reg]
+                    $em instr lqv "[my vreg_tok $vdst]," "0($areg)"
+                    my free_reg $areg
+                    return [list $vdst 1]
+                }
                 $em instr [my load_op $elem_size $is_signed] "$areg," "0($areg)"
                 return [list $areg 0]
             }
+            DotAccess { return [my gen_field_read $node] }
             Cast { return [list [my gen_cast $node] 0] }
             Call { return [my gen_call $node] }
             default { pak::rsp_unported "expression kind '[pak::kindof $node]' is not supported in the RSP target yet" }
         }
+    }
+
+    # `job.count`, `job.mvp` (the latter only useful as an IndexAccess's obj,
+    # not read directly -- see the is_array refusal below).
+    method gen_field_read {node} {
+        lassign [my resolve_field $node] addr flayout
+        if {[dict get $flayout is_array]} { pak::rsp_unported "field '[pak::fval $node field]' is an array -- index it to read an element" }
+        if {[dict get $flayout is_struct]} { pak::rsp_unported "field '[pak::fval $node field]' is a struct -- access one of its fields" }
+        if {[dict get $flayout is_vector]} {
+            set dst [my valloc_reg]
+            $em instr lqv "[my vreg_tok $dst]," "${addr}(\$zero)"
+            return [list $dst 1]
+        }
+        set dst [my alloc_reg]
+        $em instr [my load_op [dict get $flayout size] [dict get $flayout is_signed]] "$dst," "${addr}(\$zero)"
+        return [list $dst 0]
     }
 
     method gen_ident {name} {
@@ -583,9 +759,10 @@ oo::class create pak::RspCodegen {
             $em move $dst $a
             return [list $dst 0]
         }
-        # static: a b c d e f = offset size is_array elem_size is_signed is_vector
+        # static: a b c d e f g = offset size is_array elem_size is_signed is_vector is_struct
         set f [lindex $r 6]
         if {$c} { pak::rsp_unported "'$name' is an array -- index it to read an element" }
+        if {[lindex $r 7]} { pak::rsp_unported "'$name' is a struct -- access one of its fields" }
         if {$f} {
             set dst [my valloc_reg]
             $em instr lqv "[my vreg_tok $dst]," "${a}(\$zero)"

@@ -1,7 +1,8 @@
 #!/usr/bin/env tclsh
 # tcl/tools/rsp_codegen_test.tcl — goldens for tcl/rsp_codegen.tcl, the
-# restricted scalar codegen for the RSP target (step 1 of
-# docs/rsp-microcode-in-pak.md's suggested order).
+# restricted codegen for the RSP target (steps 1-3 of docs/rsp-microcode-in-
+# pak.md's suggested order, plus the struct/array-of-vec8x16 machinery step
+# 4's worked vertex-transform example needs).
 #
 # Every control-flow test here goes through pak::enc::encode and checks the
 # real bytes, not just pak::mips_sim_run on the assembly TEXT. That
@@ -280,6 +281,73 @@ check_eq "vacc mul/mac/mid computed correctly (0.5*0.5 + 0.5*0.5 = 0.5)" \
     [unpack_lanes $m 48 8] {16384 0 0 0 0 0 0 0}
 
 puts ""
+puts "== struct + array-of-vec8x16: the design note's vertex-transform example =="
+# docs/rsp-microcode-in-pak.md's "A whole microcode" worked example, minus
+# shrinking 64 vertices to 4 (see tcl/tests/ares/rsp_task_vtx.pk64, which
+# this mirrors) -- a struct with vec8x16 array fields, a struct-typed
+# static, a `while` bounded by one of the struct's own fields, and
+# per-iteration indexing of two different array fields, one by a loop
+# variable.
+set vtx_src {
+use rsp.vacc
+
+@aligned(16)
+struct VtxJob {
+    mvp: [4]vec8x16,
+    count: i32,
+    vertices: [4]vec8x16
+}
+
+@aligned(16)
+static job: VtxJob
+
+entry {
+    let mut i: i32 = 0
+    while i < job.count {
+        let v: vec8x16 = job.vertices[i]
+
+        vacc.mul(job.mvp[0], v.broadcast(0))
+        vacc.mac(job.mvp[1], v.broadcast(1))
+        vacc.mac(job.mvp[2], v.broadcast(2))
+        vacc.mac(job.mvp[3], v.broadcast(3))
+
+        job.vertices[i] = vacc.mid()
+        i = i + 1
+    }
+}
+}
+check_eq "vertex-transform golden bytes" [words_of $vtx_src] \
+    {0x24080000 0x01004825 0x8C0A0040 0x012A482B 0x11200021 0x00000000 0x01005025 0x000A4900 0x25290050 0xC9202000 0x4A00006A 0x24090000 0xC9202000 0x4A0108EA 0x4B030080 0x24090010 0xC9222000 0x4A0108EA 0x4B231008 0x24090020 0xC9202000 0x4A0108EA 0x4B430088 0x24090030 0xC9222000 0x4A0108EA 0x4B631008 0x01005025 0x000A4900 0x25290050 0x4B20001D 0xE9202000 0x01004825 0x240A0001 0x012A4821 0x01204025 0x1000FFDC 0x00000000 0x0000000D 0x00000000}
+# DMEM layout, the same bump allocator as every other static: job.mvp[0..3]
+# at 0/16/32/48, job.count at 64, job.vertices[0..3] at 80/96/112/128
+# (rounded up from 68 to vec8x16's own 16-byte alignment). mvp is a uniform
+# 0.25 (0x2000) in every lane of every one of its 4 entries, so the
+# transform reduces to output_lane = 0.25 * (v[0]+v[1]+v[2]+v[3]) for every
+# lane, independent of which lane -- distinct per-vertex data (only lane 0
+# of each vertex varies: 0x1000/0x2000/0x3000/0x4000, the rest held at
+# 0x4000) is chosen specifically so a bug that indexed the wrong vertex (a
+# fixed one, or always vertex 0) would show up as a wrong or duplicated
+# value instead of accidentally reading back correct-looking data.
+set preset [dict create]
+foreach base {0 16 32 48} {
+    dict for {a v} [pack_lanes {0x2000 0x2000 0x2000 0x2000 0x2000 0x2000 0x2000 0x2000} $base] { dict set preset $a $v }
+}
+dict set preset 64 4
+dict for {a v} [pack_lanes {0x1000 0x4000 0x4000 0x4000 0x4000 0x4000 0x4000 0x4000} 80]  { dict set preset $a $v }
+dict for {a v} [pack_lanes {0x2000 0x4000 0x4000 0x4000 0x4000 0x4000 0x4000 0x4000} 96]  { dict set preset $a $v }
+dict for {a v} [pack_lanes {0x3000 0x4000 0x4000 0x4000 0x4000 0x4000 0x4000 0x4000} 112] { dict set preset $a $v }
+dict for {a v} [pack_lanes {0x4000 0x4000 0x4000 0x4000 0x4000 0x4000 0x4000 0x4000} 128] { dict set preset $a $v }
+set m [run_dmem $vtx_src $preset]
+check_eq "vertex 0 (lane0=0.125, rest 0.5 -> 0.25*1.625=0.40625)" [unpack_lanes $m 80 8] \
+    {13312 13312 13312 13312 13312 13312 13312 13312}
+check_eq "vertex 1 (lane0=0.25 -> 0.25*1.75=0.4375)" [unpack_lanes $m 96 8] \
+    {14336 14336 14336 14336 14336 14336 14336 14336}
+check_eq "vertex 2 (lane0=0.375 -> 0.25*1.875=0.46875)" [unpack_lanes $m 112 8] \
+    {15360 15360 15360 15360 15360 15360 15360 15360}
+check_eq "vertex 3 (lane0=0.5 -> 0.25*2.0=0.5)" [unpack_lanes $m 128 8] \
+    {16384 16384 16384 16384 16384 16384 16384 16384}
+
+puts ""
 puts "== vec8x16: lane read/write round-trip (MTC2 then MFC2) =="
 set lane_src {
 static v: vec8x16
@@ -328,10 +396,24 @@ static a: u32
 entry { a = a }
 entry { a = a }
 }
-expect_unported "a struct at top level (not yet supported)" {
+expect_unported "assigning a whole struct-typed static (not a value -- assign its fields)" {
 struct Foo { x: u32 }
+static job: Foo
+static a: Foo
+entry { job = a }
+}
+expect_unported "a struct declared twice" {
+struct Foo { x: u32 }
+struct Foo { y: u32 }
 static a: u32
 entry { a = a }
+}
+expect_unported "field access more than one level deep" {
+struct Inner { x: u32 }
+struct Outer { inner: Inner }
+static o: Outer
+static a: u32
+entry { a = o.inner.x }
 }
 expect_unported "a function call (no modules, no functions yet)" {
 static a: u32
