@@ -193,11 +193,15 @@ jobs:
         if: steps.ares.outputs.cache-hit != 'true'
         run: bash tools/build_ares.sh /opt/pak-ares
 
-      # Five ROMs: the CPU writing a framebuffer, the RDP drawing, the VI
-      # interrupt firing, and the RSP running a task. Each one is the only
-      # check on its subsystem there is -- the simulator has no interrupts, no
-      # RSP and no cache model, so a wrong VR4300 cache opcode or an
-      # unacknowledged MI source is invisible everywhere else.
+      # The CPU writing a framebuffer, the RDP drawing, the VI interrupt
+      # firing, and the RSP running scalar and vector tasks -- two of them
+      # (rsp_task_add/rsp_task_loop) compiled from real Pak source by
+      # tcl/rsp_codegen.tcl, not hand-written .S. Each is the only check on
+      # its subsystem there is -- the simulator has no interrupts, no RSP and
+      # no cache model, so a wrong VR4300 cache opcode, an unacknowledged MI
+      # source, or an RSP codegen bug the text simulator's own label-by-name
+      # jump resolution can't see (an unresolved J-type relocation, once)
+      # is invisible everywhere else.
       - name: Standalone ROMs boot, draw, interrupt and run RSP tasks on ares
         run: |
           sudo apt-get install -y xvfb imagemagick mesa-vulkan-drivers libgl1-mesa-dri
@@ -267,6 +271,16 @@ jobs:
       # transcribed from ares' silicon-accurate RSP interpreter.
       - name: RSP vector unit execution (accumulator, carry, broadcast, loads)
         run: tclsh tcl/tools/rsp_vector_test.tcl
+
+      # tcl/rsp_codegen.tcl compiles ordinary Pak source (static/entry/while/
+      # if) for the RSP's scalar half instead of the CPU -- step 1 of
+      # docs/rsp-microcode-in-pak.md. Checks real encoded bytes, not just the
+      # text simulator: that distinction is what catches an unresolved J-type
+      # relocation the simulator's own label-by-name jump resolution can't
+      # see (see the file's own header comment). Hardware confirmation is
+      # tcl/tools/ares_test.tcl's "rsp_task_add"/"rsp_task_loop" cases.
+      - name: RSP scalar codegen (Pak source compiled for the RSP, not the CPU)
+        run: tclsh tcl/tools/rsp_codegen_test.tcl
 
       - name: Array address-of and u8 index (sb, not scale-4 sw)
         run: tclsh tcl/tools/array_addr_test.tcl

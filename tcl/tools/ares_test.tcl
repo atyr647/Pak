@@ -25,6 +25,7 @@ set REPO [file normalize [file join $HERE .. ..]]
 cd $REPO
 source [file join $REPO tcl parser.tcl]
 source [file join $REPO tcl mips_codegen.tcl]
+source [file join $REPO tcl rsp_codegen.tcl]
 source [file join $REPO tcl optimize.tcl]
 source [file join $REPO tcl n64enc.tcl]
 source [file join $REPO tcl n64link.tcl]
@@ -339,6 +340,87 @@ ok_true "rsp: a frame reached the screen" $lit
 if {$lit} {
     foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
         ok_colour "rsp: $where is green (the task returned the right sum)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
+puts "== a Pak PROGRAM, compiled for the RSP, runs a task =="
+# Step 1 of docs/rsp-microcode-in-pak.md's suggested order: rsp_task_add.pk64
+# is not hand-written .S -- it is ordinary Pak source (static/entry/+),
+# compiled by tcl/rsp_codegen.tcl instead of the CPU backend. Recompile it
+# fresh and compare against the words checked into rsp_task_add_driver.pk64.
+set fh [open tcl/tests/ares/rsp_task_add.pk64 r]; set task_src [read $fh]; close $fh
+set task_ast [pak::parse_tokens [[pak::Lexer new $task_src] tokenize]]
+set task_recs [pak::rsp_generate_records $task_ast]
+set task_ctx [pak::enc::encode $task_recs]
+set task_bytes [dict get $task_ctx secdata .text bytes]
+set taskwant {}
+for {set i 0} {$i < [llength $task_bytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $task_bytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend taskwant [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp_task_add_driver.pk64 r]; set taskdrv [read $fh]; close $fh
+set taskgot {}
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $taskdrv -> taskbody]} {
+    foreach tok [split [string map {"\n" " "} $taskbody] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend taskgot [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp_task_add_driver.pk64 is what rsp_task_add.pk64 compiles to" \
+    [join $taskgot " "] [join $taskwant " "]
+
+set rom [build_rom rsp_task_add tcl/tests/ares/rsp_task_add_driver.pk64 "PAKRTA"]
+lassign [run_rom rsp_task_add $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_task_add $log
+ok_true "rsp_task_add: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_task_add: $where is green (a Pak-compiled RSP task returned the right sum)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
+puts "== a Pak PROGRAM with a while loop runs on the RSP =="
+# rsp_task_add.pk64 above is straight-line -- no branch, so it could not
+# catch a codegen that gets delay-slot filling wrong. rsp_task_loop.pk64
+# has a while loop, a comparison and a variable array index instead.
+set fh [open tcl/tests/ares/rsp_task_loop.pk64 r]; set loop_src [read $fh]; close $fh
+set loop_ast [pak::parse_tokens [[pak::Lexer new $loop_src] tokenize]]
+set loop_recs [pak::rsp_generate_records $loop_ast]
+set loop_ctx [pak::enc::encode $loop_recs]
+set loop_bytes [dict get $loop_ctx secdata .text bytes]
+set loopwant {}
+for {set i 0} {$i < [llength $loop_bytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $loop_bytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend loopwant [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp_task_loop_driver.pk64 r]; set loopdrv [read $fh]; close $fh
+set loopgot {}
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $loopdrv -> loopbody]} {
+    foreach tok [split [string map {"\n" " "} $loopbody] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend loopgot [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp_task_loop_driver.pk64 is what rsp_task_loop.pk64 compiles to" \
+    [join $loopgot " "] [join $loopwant " "]
+
+set rom [build_rom rsp_task_loop tcl/tests/ares/rsp_task_loop_driver.pk64 "PAKRTL"]
+lassign [run_rom rsp_task_loop $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_task_loop $log
+ok_true "rsp_task_loop: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_task_loop: $where is green (the while loop summed the right elements)" \
             [probe $shot $DISPLAY $fx $fy] {0 255 0}
     }
 }

@@ -1,0 +1,66 @@
+-- Runs rsp_task_loop.pk64 -- a Pak-compiled RSP microcode with a `while`
+-- loop, a comparison and a variable array index, not just straight-line
+-- arithmetic (rsp_task_add.pk64 already proved that much). Every branch it
+-- compiles to needs its delay slot filled correctly; this is the test that
+-- would catch getting that wrong, where straight-line code could not.
+--
+-- tcl/tools/ares_test.tcl recompiles rsp_task_loop.pk64 fresh and refuses to
+-- run if these words have drifted from it.
+--
+-- DMEM layout (n=0, values=4..35 as 8 u32, total=36): one 40-byte buffer,
+-- DMA'd in before the run and back out after -- sp_io[0]=n, sp_io[1..8]=
+-- values, sp_io[9]=total. n=5 sums only the first 5 of the 8 values.
+--
+-- Green means the loop ran the right number of times and read the right
+-- array elements. If it never starts, sp.wait() never returns and the
+-- screen stays black.
+
+use n64.sp
+
+const FB_PIXELS: i32 = 76800
+const GREEN: u16 = 0x07C1
+const RED: u16 = 0xF801
+
+const N: u32 = 5
+const WANT_TOTAL: u32 = 150 -- 10+20+30+40+50, the first 5 of 8 values
+
+@aligned(16)
+static ucode: [24]u32 = [
+    0x24080000, 0x24090000, 0x01005025, 0x8C0B0000, 0x014B502B, 0x1140000E,
+    0x00000000, 0x01205025, 0x01006025, 0x000C5880, 0x256B0004, 0x8D6B0000,
+    0x014B5021, 0x01404825, 0x01005025, 0x240B0001, 0x014B5021, 0x01404025,
+    0x1000FFEF, 0x00000000, 0x01205025, 0xAC0A0024, 0x0000000D, 0x00000000
+]
+
+@aligned(16)
+static sp_io: [10]u32 = [N, 10, 20, 30, 40, 50, 60, 70, 80, 0]
+
+fn fill(fb: u32, px: u16) {
+    let mut i: i32 = 0
+    while i < FB_PIXELS {
+        let p: *volatile u16 = (fb + (i * 2) as u32) as *volatile u16
+        *p = px
+        i = i + 1
+    }
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+
+    sp.init()
+    sp.load_ucode(&ucode[0] as u32, 96)
+    sp.load_data(&sp_io[0] as u32, 0, 40)
+    sp.run(0)
+    sp.wait()
+    sp.read_data(&sp_io[0] as u32, 0, 40)
+
+    let fb: u32 = display.get()
+    if sp_io[9] == WANT_TOTAL {
+        fill(fb, GREEN)
+    } else {
+        fill(fb, RED)
+    }
+    loop {
+        display.show(fb)
+    }
+}
