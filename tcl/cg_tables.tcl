@@ -213,6 +213,7 @@ set ::pak::CG_API [dict create \
     {t3d viewport_attach} {t3d_viewport_attach} \
     {t3d viewport_create} {t3d_viewport_create} \
     {t3d viewport_set_fov} {t3d_viewport_set_fov} \
+    {t3d viewport_set_area} {t3d_viewport_set_area} \
     {t3d viewport_set_projection} {t3d_viewport_set_projection} \
     {timer get_ticks} {get_ticks} \
     {timer init} {timer_init} \

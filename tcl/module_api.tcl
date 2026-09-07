@@ -160,6 +160,19 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     eeprom_present 1 \
     eeprom_type_detect 1 \
     debug_init_isviewer 1 \
+    t3d_init 1 \
+    t3d_destroy 1 \
+    t3d_viewport_create 1 \
+    t3d_viewport_set_projection 1 \
+    t3d_viewport_set_area 1 \
+    t3d_viewport_attach 1 \
+    t3d_light_set_ambient 1 \
+    t3d_light_set_count 1 \
+    t3d_light_set_directional 1 \
+    t3d_fog_set_enabled 1 \
+    t3d_fog_set_range 1 \
+    t3d_frame_start 1 \
+    t3d_frame_end 1 \
     rumble_init 1 \
     rumble_is_plugged 1 \
     rumble_start 1 \

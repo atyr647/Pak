@@ -871,7 +871,7 @@ entry {
 
         -- Begin frame
         let disp = display.get()
-        rdpq.attach_clear(disp, none)
+        rdpq.attach_clear(disp)
 
         -- ── Game logic here ─────────────────────────────────────────────
 

@@ -522,18 +522,18 @@ compiling the examples that use them.
 | `t3d` | `anim_set_playing` | `t3d_anim_set_playing` | tiny3d | no |
 | `t3d` | `anim_set_speed` | `t3d_anim_set_speed` | tiny3d | no |
 | `t3d` | `anim_update` | `t3d_anim_update` | tiny3d | no |
-| `t3d` | `destroy` | `t3d_destroy` | tiny3d | no |
+| `t3d` | `destroy` | `t3d_destroy` | tiny3d | yes |
 | `t3d` | `draw_indexed` | `t3d_draw_indexed` | no | no |
 | `t3d` | `draw_object` | `t3d_draw_object` | no | no |
 | `t3d` | `fog_set_color` | `t3d_fog_set_color` | yes* | no |
-| `t3d` | `fog_set_enabled` | `t3d_fog_set_enabled` | yes* | no |
-| `t3d` | `fog_set_range` | `t3d_fog_set_range` | tiny3d | no |
-| `t3d` | `frame_end` | `rspq_block_run` | yes* | no |
-| `t3d` | `frame_start` | `t3d_frame_start` | tiny3d | no |
-| `t3d` | `init` | `t3d_init` | yes* | no |
-| `t3d` | `light_set_ambient` | `t3d_light_set_ambient` | yes* | no |
-| `t3d` | `light_set_count` | `t3d_light_set_count` | tiny3d | no |
-| `t3d` | `light_set_directional` | `t3d_light_set_directional` | yes* | no |
+| `t3d` | `fog_set_enabled` | `t3d_fog_set_enabled` | yes* | yes |
+| `t3d` | `fog_set_range` | `t3d_fog_set_range` | tiny3d | yes |
+| `t3d` | `frame_end` | `t3d_frame_end` | yes* | yes |
+| `t3d` | `frame_start` | `t3d_frame_start` | tiny3d | yes |
+| `t3d` | `init` | `t3d_init` | yes* | yes |
+| `t3d` | `light_set_ambient` | `t3d_light_set_ambient` | yes* | yes |
+| `t3d` | `light_set_count` | `t3d_light_set_count` | tiny3d | yes |
+| `t3d` | `light_set_directional` | `t3d_light_set_directional` | yes* | yes |
 | `t3d` | `light_set_point` | `t3d_light_set_point` | tiny3d | no |
 | `t3d` | `light_set_point_params` | `t3d_light_set_point_params` | no | no |
 | `t3d` | `light_set_spot` | `t3d_light_set_spot` | no | no |
@@ -585,10 +585,11 @@ compiling the examples that use them.
 | `t3d` | `vec3_norm` | `t3d_vec3_norm` | yes* | no |
 | `t3d` | `vert_load` | `t3d_vert_load` | tiny3d | no |
 | `t3d` | `vert_load_srt` | `t3d_vert_load_srt` | no | no |
-| `t3d` | `viewport_attach` | `t3d_viewport_attach` | tiny3d | no |
-| `t3d` | `viewport_create` | `t3d_viewport_create` | tiny3d | no |
+| `t3d` | `viewport_attach` | `t3d_viewport_attach` | tiny3d | yes |
+| `t3d` | `viewport_create` | `t3d_viewport_create` | tiny3d | yes |
+| `t3d` | `viewport_set_area` | `t3d_viewport_set_area` | tiny3d | yes |
 | `t3d` | `viewport_set_fov` | `t3d_viewport_set_fov` | no | no |
-| `t3d` | `viewport_set_projection` | `t3d_viewport_set_projection` | tiny3d | no |
+| `t3d` | `viewport_set_projection` | `t3d_viewport_set_projection` | tiny3d | yes |
 | `timer` | `delta` | `_pak_delta_time` | yes* | yes |
 | `timer` | `get_ticks` | `get_ticks` | yes | yes |
 | `timer` | `init` | `timer_init` | yes | yes |
@@ -622,9 +623,9 @@ compiling the examples that use them.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**349 functions** across the module surface; **141** exist on the standalone HAL.
+**350 functions** across the module surface; **154** exist on the standalone HAL.
 
-Of the 234 lowered as a direct call: **120** are libdragon's own, **31** need Tiny3D, and **83** are **standalone-only**.
+Of the 235 lowered as a direct call: **120** are libdragon's own, **32** need Tiny3D, and **83** are **standalone-only**.
 
 Standalone-only is mostly by design rather than debt. libdragon owns the
 subsystem and exposes a different shape for it: interrupts are callbacks
@@ -1573,6 +1574,20 @@ Headers pulled in by submodule:
 For T3D math functions, **the output is the first argument** (a pointer); codegen
 inserts `&` automatically if you pass a value.
 
+**Standalone support is state-only.** Tiny3D's geometry pipeline is RSP
+microcode, and the standalone HAL has no RSP path for it, so nothing that
+draws -- `model_load`, `model_draw`, the skeleton and animation calls,
+`look_at` (it needs `*Vec3` field access, which this backend does not have
+at all) -- works there; `pak check --backend mips` reports E010 on each.
+What does work standalone is the STATE half: `init`/`destroy`, a viewport's
+creation, area, and projection, `viewport_attach`, the ambient/directional
+lights, `light_set_count`, fog, and the frame boundary calls. That is enough
+for a program that sets up a 3D context and lighting and draws everything
+through `rdpq` instead of through Tiny3D -- see `ai/dataset/games/fps_arena.pk64`
+and `platformer_3d.pk64`. A program that loads and draws a `.t3dm` model is a
+libdragon-backend program; check STDLIB's `standalone` column per function, or
+just build with `--backend mips` and read the E010s.
+
 ### Core / Frame
 
 | Function | Description |
@@ -1580,7 +1595,7 @@ inserts `&` automatically if you pass a value.
 | `t3d.init()` | Initialize T3D |
 | `t3d.destroy()` | Shut down T3D |
 | `t3d.frame_start()` | Begin a 3D frame |
-| `t3d.frame_end()` | End/submit a frame (`rspq_block_run`) |
+| `t3d.frame_end()` | End a frame. A frame boundary; the actual submit is `rdpq.detach_show()` |
 | `t3d.screen_projection(...)` | Set screen-space projection |
 | `t3d.segment_set(...)` | Bind a memory segment for the RSP |
 
@@ -1590,10 +1605,11 @@ inserts `&` automatically if you pass a value.
 |----------|-------------|
 | `t3d.viewport_create() -> T3DViewport` | Create a viewport |
 | `t3d.viewport_attach(vp: *T3DViewport)` | Make a viewport active |
+| `t3d.viewport_set_area(vp, x, y, w, h)` | Set the screen rectangle a viewport renders into |
 | `t3d.viewport_set_projection(vp, fov, near, far)` | Set perspective projection |
 | `t3d.viewport_set_fov(vp, fov)` | Set FOV only |
 | `t3d.set_camera(vp, eye, target)` | Set camera (`t3d_set_camera`) |
-| `t3d.look_at(vp, eye, target, up)` | Look-at camera (`t3d_look_at`) |
+| `t3d.look_at(vp, eye, target, up)` | Look-at camera. **libdragon only** -- takes `*Vec3`, and Vec3 field access has no support on the standalone backend |
 
 ### Model
 

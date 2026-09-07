@@ -212,6 +212,7 @@ tiny3d t3d.vert_load
 missing t3d.vert_load_srt
 tiny3d t3d.viewport_attach
 tiny3d t3d.viewport_create
+tiny3d t3d.viewport_set_area
 missing t3d.viewport_set_fov
 tiny3d t3d.viewport_set_projection
 libdragon timer.get_ticks

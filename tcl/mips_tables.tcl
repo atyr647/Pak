@@ -338,7 +338,11 @@ set ::pak::MIPS_API [dict create \
     {t3d init} {t3d_init} \
     {t3d destroy} {t3d_destroy} \
     {t3d frame_start} {t3d_frame_start} \
-    {t3d frame_end} {rspq_block_run} \
+    {t3d frame_end} {t3d_frame_end} \
+    {t3d viewport_attach} {t3d_viewport_attach} \
+    {t3d viewport_set_area} {t3d_viewport_set_area} \
+    {t3d fog_set_enabled} {t3d_fog_set_enabled} \
+    {t3d fog_set_range} {t3d_fog_set_range} \
     {t3d screen_projection} {t3d_screen_projection} \
     {t3d viewport_create} {t3d_viewport_create} \
     {t3d viewport_set_projection} {t3d_viewport_set_projection} \
@@ -371,12 +375,9 @@ set ::pak::MIPS_API [dict create \
     {t3d light_set_point} {t3d_light_set_point} \
     {t3d light_set_spot} {t3d_light_set_spot} \
     {t3d light_set_point_params} {t3d_light_set_point_params} \
-    {t3d viewport_attach} {t3d_viewport_attach} \
     {t3d viewport_set_fov} {t3d_viewport_set_fov} \
     {t3d set_camera} {t3d_set_camera} \
     {t3d look_at} {t3d_look_at} \
-    {t3d fog_set_enabled} {t3d_fog_set_enabled} \
-    {t3d fog_set_range} {t3d_fog_set_range} \
     {t3d fog_set_color} {t3d_fog_set_color} \
     {t3d anim_create} {t3d_anim_create} \
     {t3d anim_destroy} {t3d_anim_destroy} \

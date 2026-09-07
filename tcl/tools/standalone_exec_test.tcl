@@ -9,6 +9,7 @@
 
 set HERE [file dirname [file normalize [info script]]]
 source [file join $HERE .. parser.tcl]
+source [file join $HERE .. checker.tcl]
 source [file join $HERE .. mips_codegen.tcl]
 source [file join $HERE .. optimize.tcl]
 source [file join $HERE .. mips_sim.tcl]
@@ -36,10 +37,17 @@ proc runtime_helpers {} {
     set f [open [file join $::HERE .. .. runtime standalone runtime.pk64] r]
     set rt [read $f]
     close $f
-    # From the heap onwards: the Vec helpers allocate, so __pak_alloc has to
-    # come along. Everything between is plain Pak with no hardware in it.
-    set i [string first "Heap (bump allocator)" $rt]
-    if {$i < 0} { error "runtime.pk64: heap block not found" }
+    # From memset/memcpy onwards: the Vec helpers allocate, so __pak_alloc has
+    # to come along, and returning a struct bigger than 8 bytes by value --
+    # which t3d_viewport_create does -- lowers to a memcpy under the hood.
+    # That one was invisible for a long time: a jal to a symbol this slice
+    # does not define does not error, it silently halts the simulator right
+    # there, so a case exercising it read back the static's zero initialiser
+    # and looked like a passing assertion on the wrong value. Sections in
+    # between (PI DMA, Rumble, EEPROM, Audio) are pulled in along with it;
+    # they are unused unless a case calls them, and harmless either way.
+    set i [string first "libc-style memory helpers" $rt]
+    if {$i < 0} { error "runtime.pk64: memset/memcpy block not found" }
     set i [string last "\n" [string range $rt 0 $i]]
     return [string range $rt $i end]
 }
@@ -64,6 +72,83 @@ proc chk {what src sym want} {
     }
 }
 
+puts "== the t3d state surface =="
+
+# Tiny3D's geometry pipeline is RSP microcode and is not here, but its STATE
+# -- the viewport, its projection, the camera and the lights -- is arithmetic,
+# and a program that sets up a 3D context and then draws through rdpq (which
+# fps_arena.pk64 and platformer_3d.pk64 do) needs exactly that much. These run
+# the real HAL code.
+chk_rt "viewport_create fills the projection defaults" {
+static out: i32 = 0
+entry {
+    let mut vp = t3d_viewport_create()
+    out = vp.vw
+}
+} out 00000140
+
+chk_rt "set_projection writes through the pointer" {
+static out: i32 = 0
+entry {
+    let mut vp = t3d_viewport_create()
+    t3d_viewport_set_projection(&vp, 70.0, 1.0, 200.0)
+    out = (vp.far_plane as i32)
+}
+} out 000000C8
+
+# t3d.look_at is deliberately not in the standalone HAL: it takes *Vec3, and
+# Vec3 field access has no support in this backend (see the comment in
+# runtime.pk64 next to where t3d_viewport_attach is defined). Checked here as
+# a rejection, not a working call, so a future attempt to add it half-done
+# fails this instead of shipping a function that silently reads garbage.
+proc checker_rejects_mips {src pattern} {
+    set errs [pak::semantic_check [pak::parse_tokens [[pak::Lexer new $src] tokenize]] "<test>" mips]
+    foreach d $errs {
+        if {[dict exists $d severity] && [dict get $d severity] eq "error"
+                && [string match "*$pattern*" [dict get $d message]]} {
+            return 1
+        }
+    }
+    return 0
+}
+if {[checker_rejects_mips {
+use t3d
+entry {
+    let mut vp = t3d.viewport_create()
+    let mut eye: Vec3 = Vec3.zero()
+    let mut tgt: Vec3 = Vec3.zero()
+    let mut up: Vec3 = Vec3.up()
+    t3d.look_at(&vp, &eye, &tgt, &up)
+}
+} "t3d.look_at"]} {
+    puts "ok    t3d.look_at is rejected on the standalone backend"; incr pass
+} else {
+    puts "FAIL  t3d.look_at should be rejected (E010) on the standalone backend"; incr fail
+}
+
+# The directional lights are per index, and an index past the fourth is
+# dropped rather than scribbling over the array's neighbours.
+chk_rt "directional light lands in its own slot" {
+static out: i32 = 0
+entry {
+    t3d_init()
+    t3d_light_set_directional(0, 11, 0, 0, 0.0, 0.0, 0.0)
+    t3d_light_set_directional(2, 31, 0, 0, 0.0, 0.0, 0.0)
+    out = g_t3d_dir_r[0] + g_t3d_dir_r[2]
+}
+} out 0000002A
+
+chk_rt "an out-of-range light index is dropped" {
+static out: i32 = 0
+entry {
+    t3d_init()
+    t3d_light_set_directional(0, 42, 0, 0, 0.0, 0.0, 0.0)
+    t3d_light_set_directional(9, 99, 0, 0, 0.0, 0.0, 0.0)
+    out = g_t3d_dir_r[0]
+}
+} out 0000002A
+
+puts ""
 puts "== associated functions (impl methods with no self) =="
 
 # `Player.init()` -- a method in `impl T` that takes no self, called on the

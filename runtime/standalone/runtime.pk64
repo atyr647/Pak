@@ -3400,3 +3400,157 @@ fn rdpq_sprite_blit(spr: *u8, x: i32, y: i32, flags: u32) {
         t0 = t1
     }
 }
+
+-- ── Tiny3D state surface ────────────────────────────────────────────────────
+-- Tiny3D itself is 4,300 lines of C driving 4,700 lines of RSP microcode, and
+-- none of that runs here: the standalone HAL has no geometry pipeline. What it
+-- does have is the STATE half of the t3d surface -- the viewport, its
+-- projection, the camera, and the lights -- which is arithmetic and nothing
+-- else.
+--
+-- That is enough for a program that sets up a 3D context and draws through
+-- rdpq, which is what fps_arena.pk64 and platformer_3d.pk64 do. It is NOT
+-- enough for one that loads a .t3dm and draws it: t3d.model_load,
+-- t3d.model_draw, the skeleton and the animation calls are not here, and
+-- `pak check --backend mips` reports E010 on each of them rather than
+-- pretending. See STDLIB.md, the `t3d` section.
+--
+-- The matrices are stored, not applied. Nothing on this backend consumes them
+-- yet, so they exist to be read back and to keep the surface honest about what
+-- a viewport holds.
+struct T3DViewport {
+    fov: f32,
+    near_plane: f32,
+    far_plane: f32,
+    eye_x: f32,
+    eye_y: f32,
+    eye_z: f32,
+    target_x: f32,
+    target_y: f32,
+    target_z: f32,
+    up_x: f32,
+    up_y: f32,
+    up_z: f32,
+    vx: i32,
+    vy: i32,
+    vw: i32,
+    vh: i32
+}
+
+static g_t3d_ready: i32 = 0
+static g_t3d_vp: *T3DViewport = none
+static g_t3d_light_count: i32 = 0
+static g_t3d_amb_r: i32 = 0
+static g_t3d_amb_g: i32 = 0
+static g_t3d_amb_b: i32 = 0
+static g_t3d_fog_on: i32 = 0
+static g_t3d_fog_near: f32 = 0.0
+static g_t3d_fog_far: f32 = 0.0
+
+fn t3d_init() {
+    g_t3d_ready = 1
+    g_t3d_vp = none
+    g_t3d_light_count = 0
+    g_t3d_amb_r = 0
+    g_t3d_amb_g = 0
+    g_t3d_amb_b = 0
+    g_t3d_fog_on = 0
+}
+
+fn t3d_destroy() {
+    g_t3d_ready = 0
+    g_t3d_vp = none
+}
+
+-- A viewport covering the whole screen, with a projection a caller is expected
+-- to set before using it. Returned by value, which is what Tiny3D does too.
+fn t3d_viewport_create() -> T3DViewport {
+    return T3DViewport {
+        fov: 1.22,
+        near_plane: 1.0,
+        far_plane: 100.0,
+        eye_x: 0.0, eye_y: 0.0, eye_z: 0.0,
+        target_x: 0.0, target_y: 0.0, target_z: -1.0,
+        up_x: 0.0, up_y: 1.0, up_z: 0.0,
+        -- Literal, not SCREEN_W/SCREEN_H: this is the only place past the
+        -- heap section that would reach up to those top-of-file consts, and
+        -- every other field in this literal is already a bare number for the
+        -- same reason -- a viewport's default has no dependency on where in
+        -- the file it is constructed from.
+        vx: 0, vy: 0, vw: 320, vh: 240
+    }
+}
+
+fn t3d_viewport_set_projection(vp: *T3DViewport, fov: f32, near_plane: f32, far_plane: f32) {
+    vp.fov = fov
+    vp.near_plane = near_plane
+    vp.far_plane = far_plane
+}
+
+fn t3d_viewport_set_area(vp: *T3DViewport, x: i32, y: i32, w: i32, h: i32) {
+    vp.vx = x
+    vp.vy = y
+    vp.vw = w
+    vp.vh = h
+}
+
+fn t3d_viewport_attach(vp: *T3DViewport) {
+    g_t3d_vp = vp
+}
+
+-- t3d.look_at is NOT here. It takes *Vec3 for eye/target/up, and Vec3 field
+-- access (.x/.y/.z) has no support in this backend at all -- Vec3 is
+-- pre-registered as an opaque 12-byte blob with no field layout, the same way
+-- T3DModel and T3DSkeleton are, because nothing on this backend has ever
+-- needed to read a component out of one. `pak check --backend mips` reports
+-- E010 on it, the same as model_draw and the skeleton/anim calls: camera
+-- look-at is vector math this backend cannot do, for the same reason it
+-- cannot draw a model.
+
+fn t3d_light_set_ambient(r: i32, g: i32, b: i32) {
+    g_t3d_amb_r = r
+    g_t3d_amb_g = g
+    g_t3d_amb_b = b
+}
+
+fn t3d_light_set_count(n: i32) {
+    g_t3d_light_count = n
+}
+
+-- Directional lights are recorded per index. Four is what the RSP side of
+-- Tiny3D supports, so anything past that is dropped rather than scribbling.
+static g_t3d_dir_r: [4]i32
+static g_t3d_dir_g: [4]i32
+static g_t3d_dir_b: [4]i32
+static g_t3d_dir_x: [4]f32
+static g_t3d_dir_y: [4]f32
+static g_t3d_dir_z: [4]f32
+
+fn t3d_light_set_directional(index: i32, r: i32, g: i32, b: i32,
+                             dx: f32, dy: f32, dz: f32) {
+    if index < 0 { return }
+    if index > 3 { return }
+    g_t3d_dir_r[index] = r
+    g_t3d_dir_g[index] = g
+    g_t3d_dir_b[index] = b
+    g_t3d_dir_x[index] = dx
+    g_t3d_dir_y[index] = dy
+    g_t3d_dir_z[index] = dz
+}
+
+fn t3d_fog_set_enabled(on: bool) {
+    if on { g_t3d_fog_on = 1 } else { g_t3d_fog_on = 0 }
+}
+
+fn t3d_fog_set_range(near_plane: f32, far_plane: f32) {
+    g_t3d_fog_near = near_plane
+    g_t3d_fog_far = far_plane
+}
+
+-- A frame boundary. Tiny3D uses these to reset RSP state between frames;
+-- there is no RSP task here, so they only bracket the state.
+fn t3d_frame_start() {
+}
+
+fn t3d_frame_end() {
+}
