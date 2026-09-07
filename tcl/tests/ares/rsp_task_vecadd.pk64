@@ -1,0 +1,21 @@
+-- tcl/tests/ares/rsp_task_vecadd.pk64 -- vec8x16 arithmetic, written in Pak.
+--
+-- Step 2 of docs/rsp-microcode-in-pak.md's suggested order: "vec8x16 and
+-- the elementwise operators." Same shape as rsp_task_add.pk64 (step 1),
+-- but `c = a + b` here is real vector arithmetic (VADD), not scalar
+-- integer addition -- and it compiles to the exact same instruction
+-- sequence the hand-written tcl/tests/ares/rsp_vecadd.S was hardware-
+-- verified with, just with $v0/$v1 instead of $v1/$v2/$v3.
+--
+-- Compiled by tcl/rsp_codegen.tcl (pak::rsp_generate_records). DMEM layout
+-- is the same bump allocator, in declaration order: a=0, b=16, c=32 (each
+-- vec8x16 is 16 bytes, @aligned(16) already). The driver must agree, and
+-- does -- see rsp_task_vecadd_driver.pk64.
+
+static a: vec8x16
+static b: vec8x16
+static c: vec8x16
+
+entry {
+    c = a + b
+}

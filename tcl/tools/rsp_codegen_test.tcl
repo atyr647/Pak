@@ -60,6 +60,26 @@ proc words_of {src} {
     return $out
 }
 
+# Pack/unpack 8 lanes as 4 big-endian words at `base`, element 0 first --
+# the same convention rsp_vector_test.tcl uses for the vector-unit goldens.
+proc pack_lanes {lanes {base 0}} {
+    set d [dict create]; set addr $base
+    foreach {a b} $lanes { dict set d $addr [expr {(($a & 0xFFFF) << 16) | ($b & 0xFFFF)}]; incr addr 4 }
+    return $d
+}
+proc unpack_lanes {mw addr n} {
+    set out {}
+    for {set i 0} {$i < $n} {incr i 2} {
+        set a [expr {$addr + $i*2}]
+        set w [expr {[dict exists $mw $a] ? [dict get $mw $a] : 0}]
+        foreach v [list [expr {($w>>16)&0xFFFF}] [expr {$w&0xFFFF}]] {
+            if {$v >= 0x8000} { set v [expr {$v - 0x10000}] }
+            lappend out $v
+        }
+    }
+    return $out
+}
+
 # Run the compiled program in the fast simulator with a preset DMEM image
 # (dict addr->word), and return the resulting mem_w dict.
 proc run_dmem {src preset {limit 2000}} {
@@ -178,6 +198,76 @@ if {[catch {words_of $loop_stmt_src} err]} {
 }
 
 puts ""
+puts "== vec8x16: static-to-static add (golden bytes match rsp_vecadd.S's proven encoding) =="
+# Same LQV/VADD/SQV shape hand-verified on ares in rsp_vecadd.S -- this is
+# the identical instruction sequence, generated from real Pak source
+# (static/entry/vec8x16/+) instead of hand-written .S, with $v0/$v1 in
+# place of $v1/$v2/$v3.
+set vadd_src {
+static a: vec8x16
+static b: vec8x16
+static c: vec8x16
+
+entry {
+    c = a + b
+}
+}
+check_eq "vec8x16 add golden bytes" [words_of $vadd_src] \
+    {0xC8002000 0xC8012001 0x4A010010 0xE8002002 0x0000000D 0x00000000}
+set pa [pack_lanes {1 2 3 4 5 6 7 8} 0]
+set pb [pack_lanes {10 20 30 40 50 60 70 80} 16]
+set preset [dict merge $pa $pb]
+set m [run_dmem $vadd_src $preset]
+check_eq "vec8x16 add computed correctly" [unpack_lanes $m 32 8] {11 22 33 44 55 66 77 88}
+
+puts ""
+puts "== vec8x16: broadcast, fused into the next instruction's element-select =="
+set fused_src {
+static a: vec8x16
+static b: vec8x16
+static c: vec8x16
+
+entry {
+    c = a + b.broadcast(0)
+}
+}
+check_eq "fused broadcast golden bytes (e=8 in the vadd itself, no extra instruction)" \
+    [words_of $fused_src] {0xC8002000 0xC8012001 0x4B010010 0xE8002002 0x0000000D 0x00000000}
+set pa [pack_lanes {1 2 3 4 5 6 7 8} 0]
+set pb [pack_lanes {100 0 0 0 0 0 0 0} 16]
+set m [run_dmem $fused_src [dict merge $pa $pb]]
+check_eq "fused broadcast computed correctly" [unpack_lanes $m 32 8] {101 102 103 104 105 106 107 108}
+
+puts ""
+puts "== vec8x16: broadcast materialized as a standalone value =="
+set standalone_bc_src {
+static a: vec8x16
+static c: vec8x16
+
+entry {
+    let bc: vec8x16 = a.broadcast(2)
+    c = bc
+}
+}
+set m [run_dmem $standalone_bc_src [pack_lanes {10 20 30 40 50 60 70 80} 0]]
+check_eq "standalone broadcast computed correctly" [unpack_lanes $m 16 8] {30 30 30 30 30 30 30 30}
+
+puts ""
+puts "== vec8x16: lane read/write round-trip (MTC2 then MFC2) =="
+set lane_src {
+static v: vec8x16
+static out: u32
+
+entry {
+    v[3] = 999 as i16
+    let x: i16 = v[3]
+    out = x as u32
+}
+}
+set m [run_dmem $lane_src [pack_lanes {1 2 3 4 5 6 7 8} 0]]
+check_eq "lane write then read round-trips" [dict get $m 16] 999
+
+puts ""
 puts "== refusals: the RSP target says no by name, not by miscompiling =="
 proc expect_unported {name src} {
     if {[catch {words_of $src} err]} {
@@ -219,6 +309,20 @@ entry { a = a }
 expect_unported "a function call (no modules, no functions yet)" {
 static a: u32
 entry { a = foo(a) }
+}
+expect_unported "vec8x16 << (no vector shift on real RSP hardware)" {
+static a: vec8x16
+static b: vec8x16
+entry { a = a << b }
+}
+expect_unported "a variable vec8x16 lane index (the encoding needs a literal)" {
+static v: vec8x16
+static i: u32
+static out: u32
+entry {
+    let x: i16 = v[i]
+    out = x as u32
+}
 }
 
 puts ""

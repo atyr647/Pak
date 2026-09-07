@@ -426,6 +426,46 @@ if {$lit} {
 }
 
 puts ""
+puts "== a Pak PROGRAM with vec8x16 runs a VECTOR task on the RSP =="
+# Step 2 of docs/rsp-microcode-in-pak.md's suggested order: rsp_task_vecadd
+# uses vec8x16's `+` operator in real Pak source, compiled by
+# tcl/rsp_codegen.tcl to VADD instead of scalar addu.
+set fh [open tcl/tests/ares/rsp_task_vecadd.pk64 r]; set vtask_src [read $fh]; close $fh
+set vtask_ast [pak::parse_tokens [[pak::Lexer new $vtask_src] tokenize]]
+set vtask_recs [pak::rsp_generate_records $vtask_ast]
+set vtask_ctx [pak::enc::encode $vtask_recs]
+set vtask_bytes [dict get $vtask_ctx secdata .text bytes]
+set vtaskwant {}
+for {set i 0} {$i < [llength $vtask_bytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $vtask_bytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend vtaskwant [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp_task_vecadd_driver.pk64 r]; set vtaskdrv [read $fh]; close $fh
+set vtaskgot {}
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $vtaskdrv -> vtaskbody]} {
+    foreach tok [split [string map {"\n" " "} $vtaskbody] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend vtaskgot [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp_task_vecadd_driver.pk64 is what rsp_task_vecadd.pk64 compiles to" \
+    [join $vtaskgot " "] [join $vtaskwant " "]
+
+set rom [build_rom rsp_task_vecadd tcl/tests/ares/rsp_task_vecadd_driver.pk64 "PAKRTV"]
+lassign [run_rom rsp_task_vecadd $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_task_vecadd $log
+ok_true "rsp_task_vecadd: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_task_vecadd: $where is green (Pak's vec8x16 + compiled to real VADD)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
 puts "== the RSP runs a VECTOR task =="
 # Same contract as rsp_add.S/rsp.pk64 above, one level up: tcl/tests/ares/
 # rsp_vecadd.S uses the RSP's VECTOR unit (LQV/VADD/SQV), which is the half
