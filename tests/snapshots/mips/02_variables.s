@@ -59,6 +59,8 @@
 	.extern rdpq_triangle_shade_tex_z
 	.extern rdpq_set_tri_z
 	.extern sprite_load
+	.extern pakfs_read
+	.extern pakfs_size
 	.extern rdpq_sprite_blit
 	.extern timer_init
 	.extern _pak_delta_time
@@ -72,6 +74,7 @@
 	.extern audio_write_silence
 	.extern audio_set_buffer_num
 	.extern debugf
+	.extern debug_init_isviewer
 	.extern assert
 	.extern dma_read
 	.extern dma_write
@@ -208,9 +211,10 @@ main:
     sw $t8, 136($sp)
     move $t9, $t8
     lwc1 $f12, 140($sp)
-    mov.s $f14, $f12
+    swc1 $f12, 152($sp)
     la $t5, .Lf322
     lwc1 $f12, 0($t5)
+    lwc1 $f14, 152($sp)
     mul.s $f12, $f14, $f12
     swc1 $f12, 140($sp)
     move $t9, $t8
@@ -231,15 +235,15 @@ main:
     move $t9, $t8
     li $t8, 2
     lw $t7, 136($sp)
-    div $t7, $t8
+    div $zero, $t7, $t8
     mflo $t8
     sw $t8, 136($sp)
     move $t9, $t8
     li $t9, 0
-    sw $t9, 152($sp)
+    sw $t9, 156($sp)
     la $t8, .Lf323
     lwc1 $f12, 0($t8)
-    swc1 $f12, 156($sp)
+    swc1 $f12, 160($sp)
     li $t8, 1
     la $t7, frame_count
     lw $t7, 0($t7)
@@ -259,14 +263,15 @@ main:
     move $t9, $t8
     la $t8, frame_count
     lw $t8, 0($t8)
-    sw $t8, 152($sp)
+    sw $t8, 156($sp)
     move $t9, $t8
-    lwc1 $f12, 156($sp)
-    mov.s $f14, $f12
+    lwc1 $f12, 160($sp)
+    swc1 $f12, 152($sp)
     la $t5, .Lf325
     lwc1 $f12, 0($t5)
+    lwc1 $f14, 152($sp)
     add.s $f12, $f14, $f12
-    swc1 $f12, 156($sp)
+    swc1 $f12, 160($sp)
     move $t9, $t8
     la $t8, .Lstr6
     sw $t8, 148($sp)

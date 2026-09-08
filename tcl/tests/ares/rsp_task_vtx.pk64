@@ -1,0 +1,62 @@
+-- tcl/tests/ares/rsp_task_vtx.pk64 -- the design note's vertex-transform
+-- worked example, written in Pak and actually compiled.
+--
+-- Step 4 of docs/rsp-microcode-in-pak.md's suggested order needs the pieces
+-- this file exercises: a `struct` whose fields include arrays of vec8x16
+-- (`VtxJob.mvp`/`VtxJob.vertices`), a struct-typed `static` with no
+-- initializer, a `while` loop bounded by one of the struct's own scalar
+-- fields (`job.count`), and per-iteration indexing of two different array
+-- fields -- one by a compile-time-irrelevant loop variable
+-- (`job.vertices[i]`, read AND written), one by a literal
+-- (`job.mvp[0..3]`). This is the note's own shape almost verbatim (4
+-- vertices instead of 64, everything else identical) -- see the note's "A
+-- whole microcode" section.
+--
+-- Test data is chosen to stay hand-verifiable rather than to look like a
+-- real MVP matrix: mvp[0..3] are all 0.25 (Q1.15, 0x2000) in every lane,
+-- and every vertex is all 0.5 (Q1.15, 0x4000) in every lane, in all 4
+-- lanes/vertices identically. Each of the 4 mul/mac terms is then
+-- 0.25*0.5=0.125 exactly (a power of two -- no rounding remainder to
+-- track), so all 4 terms sum to exactly 0.5 (0x4000) with no accumulated
+-- error, for every one of the 4 vertices.
+--
+-- This reads back via `vacc.mid()`, not the design note's own `.high()`:
+-- `.high()` (ACCH, the integer-overflow slice) correctly reads 0 whenever
+-- the accumulated magnitude never leaves the fractional range, which is
+-- true here by construction -- a real fact about the hardware, not a bug,
+-- and the same choice tcl/tests/ares/rsp_task_vacc.pk64 already made and
+-- documented in step 3's own test. `.high()`'s codegen path is unchanged
+-- from step 3 and still covered there.
+--
+-- DMEM layout, in declaration order (the bump allocator, same rule as
+-- every other static): job.mvp[0..3]=0/16/32/48, job.count=64,
+-- job.vertices[0..3]=80/96/112/128 (rounded up from 68 to vertices'
+-- vec8x16 alignment). Total 144 bytes. The driver must agree, and does --
+-- see rsp_task_vtx_driver.pk64.
+
+use rsp.vacc
+
+@aligned(16)
+struct VtxJob {
+    mvp: [4]vec8x16,
+    count: i32,
+    vertices: [4]vec8x16
+}
+
+@aligned(16)
+static job: VtxJob
+
+entry {
+    let mut i: i32 = 0
+    while i < job.count {
+        let v: vec8x16 = job.vertices[i]
+
+        vacc.mul(job.mvp[0], v.broadcast(0))
+        vacc.mac(job.mvp[1], v.broadcast(1))
+        vacc.mac(job.mvp[2], v.broadcast(2))
+        vacc.mac(job.mvp[3], v.broadcast(3))
+
+        job.vertices[i] = vacc.mid()
+        i = i + 1
+    }
+}

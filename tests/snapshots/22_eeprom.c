@@ -7,10 +7,14 @@
 #include <math.h>
 #include "pak_math.h"
 #include "pak_containers.h"
+#include "pak_libdragon.h"
 #include <eeprom.h>
 #include <display.h>
 #include <rdpq.h>
-#include <rdpq_gfx.h>
+#include <rdpq_attach.h>
+#include <rdpq_mode.h>
+#include <rdpq_rect.h>
+#include <rdpq_tri.h>
 
 
 /* -- Pak runtime types -- */
@@ -25,6 +29,10 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
+
+/* -- Function prototypes -- */
+void save_game(void);
+bool load_game(void);
 enum { SAVE_MAGIC_HI = 0xDE };
 
 enum { SAVE_MAGIC_LO = 0xAD };
@@ -85,7 +93,7 @@ bool load_game(void) {
 }
 
 int main(void) {
-    display_init(0, 2, 2, 0, 0);
+    pak_display_init(0, 2, 2, 0, 0);
     rdpq_init();
     __auto_type loaded = load_game();
     if (!loaded) {
@@ -97,8 +105,8 @@ int main(void) {
     save_game();
     while (true) {
         __auto_type fb = display_get();
-        rdpq_attach_clear(fb);
-        rdpq_set_mode_fill(0x1A1A2EFF);
+        pak_rdpq_attach_clear(fb, 0x000000FF);
+        pak_rdpq_set_mode_fill(0x1A1A2EFF);
         rdpq_fill_rectangle(0, 0, 320, 240);
         rdpq_detach_show();
     }

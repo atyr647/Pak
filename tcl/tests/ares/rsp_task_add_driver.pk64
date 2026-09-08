@@ -1,0 +1,66 @@
+-- Runs an RSP task COMPILED FROM PAK SOURCE (tcl/tests/ares/rsp_task_add.pk64)
+-- and checks the answer it gives back.
+--
+-- rsp.pk64 and rsp_vecadd.pk64 proved hand-written .S microcode. This proves
+-- the other half of docs/rsp-microcode-in-pak.md's step 1: a Pak PROGRAM,
+-- compiled by tcl/rsp_codegen.tcl for the RSP's scalar half instead of the
+-- CPU, running on real hardware. tcl/tools/ares_test.tcl recompiles
+-- rsp_task_add.pk64 fresh and refuses to run if these words have drifted
+-- from it -- same contract every other checked-in microcode here has.
+--
+-- rsp_task_add.pk64's DMEM layout (a bump allocator, in declaration order):
+--   a=DMEM[0], b=DMEM[4], sum=DMEM[8]  (each a plain u32, so no padding)
+--
+-- Green means a Pak program ran on the RSP and computed the right sum. If it
+-- never starts, sp.wait() never returns and the screen stays black.
+
+use n64.sp
+
+const FB_PIXELS: i32 = 76800
+const GREEN: u16 = 0x07C1
+const RED: u16 = 0xF801
+
+const LHS: u32 = 0x12340000
+const RHS: u32 = 0x0000ABCD
+const SUM: u32 = 0x1234ABCD
+
+@aligned(16)
+static ucode: [6]u32 = [
+    0x8C080000, 0x8C090004, 0x01094021, 0xAC080008, 0x0000000D, 0x00000000
+]
+
+@aligned(16)
+static sp_in: [2]u32 = [LHS, RHS]
+
+@aligned(16)
+static sp_out: [2]u32 = [0, 0]
+
+fn fill(fb: u32, px: u16) {
+    let mut i: i32 = 0
+    while i < FB_PIXELS {
+        let p: *volatile u16 = (fb + (i * 2) as u32) as *volatile u16
+        *p = px
+        i = i + 1
+    }
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+
+    sp.init()
+    sp.load_ucode(&ucode[0] as u32, 24)
+    sp.load_data(&sp_in[0] as u32, 0, 8)
+    sp.run(0)
+    sp.wait()
+    sp.read_data(&sp_out[0] as u32, 8, 8)
+
+    let fb: u32 = display.get()
+    if sp_out[0] == SUM {
+        fill(fb, GREEN)
+    } else {
+        fill(fb, RED)
+    }
+    loop {
+        display.show(fb)
+    }
+}

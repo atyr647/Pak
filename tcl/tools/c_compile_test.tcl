@@ -26,6 +26,8 @@
 set HERE [file dirname [file normalize [info script]]]
 set REPO [file normalize [file join $HERE .. ..]]
 source [file join $HERE .. module_api.tcl]
+source [file join $HERE gate_corpus.tcl]
+cd $REPO
 
 set KNOWN [file join $REPO tests c_compile_known_broken.txt]
 set CC [expr {[info exists ::env(CC)] ? $::env(CC) : "cc"}]
@@ -52,14 +54,71 @@ proc hal_stub_header {} {
     lappend out " * codegen bug, not to reimplement libdragon. */"
     lappend out "typedef struct { int _pak_opaque; } sprite_t;"
     lappend out "typedef struct { bool a, b, z, start, l, r, up, down, left, right;"
-    lappend out "                 bool c_up, c_down, c_left, c_right; } joypad_buttons_t;"
-    lappend out "typedef struct { joypad_buttons_t held, pressed, released;"
-    lappend out "                 int stick_x, stick_y; } joypad_status_t;"
+    lappend out "                 bool c_up, c_down, c_left, c_right; } pak_joypad_buttons_t;"
+    lappend out "typedef struct { pak_joypad_buttons_t held, pressed, released;"
+    lappend out "                 int stick_x, stick_y; } pak_joypad_status_t;"
+    lappend out "/* The standalone HAL's spelling, which is what MODULE_API names."
+    lappend out " * Both exist because the two backends genuinely differ here. */"
+    lappend out "typedef pak_joypad_buttons_t joypad_buttons_t;"
+    lappend out "typedef pak_joypad_status_t  joypad_status_t;"
+    lappend out "/* The audio and Tiny3D handle types. Opaque here for the same"
+    lappend out " * reason sprite_t is: a program names them to declare a static,"
+    lappend out " * and the question this gate asks is whether the generated C"
+    lappend out " * parses and scopes, not what is inside them. Their real layouts"
+    lappend out " * and signatures are libdragon_api_test.tcl's job. */"
+    lappend out "typedef struct { int _pak_opaque; } wav64_t;"
+    lappend out "typedef struct { int _pak_opaque; } xm64player_t;"
+    lappend out "typedef union { struct { float x, y, z; }; float v\[3\]; } T3DVec3;"
+    lappend out "typedef union { struct { float x, y, z, w; }; float v\[4\]; } T3DVec4;"
+    lappend out "typedef struct { float m\[4\]\[4\]; } T3DMat4;"
+    lappend out "typedef struct { int _pak_opaque; } T3DMat4FP;"
+    lappend out "typedef struct { int _pak_opaque; } T3DViewport;"
+    lappend out "typedef struct { int _pak_opaque; } T3DModel;"
+    lappend out "typedef struct { int _pak_opaque; } T3DSkeleton;"
+    lappend out "typedef struct { int _pak_opaque; } T3DAnim;"
+    lappend out "typedef struct { int matrixStackSize; } T3DInitParams;"
+    lappend out "typedef struct { int _pak_opaque; } rspq_block_t;"
+    lappend out "typedef struct { int _pak_opaque; } surface_t;"
+    lappend out ""
+    lappend out "/* The runtime/pak_libdragon.h shims. They are not in MODULE_API --"
+    lappend out " * MODULE_API names the symbol the STANDALONE HAL defines -- so the"
+    lappend out " * C backend's adapter names are declared here. The real"
+    lappend out " * signatures are checked by tcl/tools/libdragon_api_test.tcl"
+    lappend out " * against libdragon's own headers; these only have to let the"
+    lappend out " * generated C parse. */"
+    lappend out "void pak_display_init(int, int, int, int, int);"
+    lappend out "pak_joypad_status_t pak_joypad_get_status(int);"
+    lappend out "short *pak_audio_get_buffer(void);"
+    lappend out "void pak_rdpq_set_fill_color(uint32_t);"
+    lappend out "void pak_rdpq_set_mode_fill(uint32_t);"
+    lappend out ""
+    lappend out "/* DragonFS. `main` mounts it when the file declares an asset,"
+    lappend out " * so the generated C names these two whether or not the program"
+    lappend out " * calls anything from dragonfs.h itself. Neither is in"
+    lappend out " * MODULE_API: they are emitted by the entry-block prologue"
+    lappend out " * rather than by a Pak call. */"
+    lappend out "#define DFS_DEFAULT_LOCATION 0"
+    lappend out "int dfs_init(uint32_t);"
+    # The generic declaration below is `long sym();`, which is enough for a
+    # call but not for `T3DViewport vp = t3d_viewport_create();`. The handful
+    # of API entries that return a struct BY VALUE get a real return type here
+    # so the stub is self-consistent; everything about their arguments is
+    # still libdragon_api_test.tcl's business, against the real headers.
+    set ret_override [dict create \
+        rdpq_font_load_builtin {void *} \
+        t3d_viewport_create T3DViewport \
+        t3d_skeleton_create T3DSkeleton \
+        t3d_anim_create     T3DAnim \
+        t3d_model_load      {T3DModel *} \
+    ]
+    dict for {sym rt} $ret_override { lappend out "$rt ${sym}();" }
+
     set seen [dict create]
     foreach key [pak::module_api_keys] {
         lassign $key mod fn
         set sym [pak::module_api_symbol $mod $fn]
         if {[dict exists $seen $sym]} continue
+        if {[dict exists $ret_override $sym]} continue
         # The codegen defines these itself in the generated prelude.
         if {[string match "pak_str_*" $sym] || [string match "pak_arena_*" $sym]} continue
         dict set seen $sym 1
@@ -157,10 +216,12 @@ proc explain_c {pk} {
 # Returns {errcount firstlines}. The stub dir is rebuilt per file so a header
 # one example includes cannot mask a missing include in another.
 proc compile_one {pk workdir} {
+    # $pk is repo-relative: two programs both called main.pk64 must not share
+    # a scratch directory.
     global CC
     set csrc [explain_c $pk]
     if {$csrc eq ""} { return [list 1 "pak explain produced no output"] }
-    set dir [file join $workdir [file rootname [file tail $pk]]]
+    set dir [file join $workdir [string map {/ _} [file rootname $pk]]]
     file delete -force $dir
     write_stubs $dir $csrc
     set cfile [file join $dir gen.c]
@@ -193,15 +254,42 @@ proc read_known {} {
     return $names
 }
 
+# Rewrite the NAMES, keeping the comment block that is already there. The
+# reasons written into that block are the point of the file -- a name with no
+# reason is just a suppression -- and a --regen that reprinted a canned header
+# deleted them every time the list changed.
+proc known_header {} {
+    global KNOWN
+    if {![file exists $KNOWN]} { return [default_header] }
+    set fh [open $KNOWN r]; set t [read $fh]; close $fh
+    set out {}
+    foreach line [split $t "\n"] {
+        set trimmed [string trim $line]
+        if {$trimmed ne "" && [string index $trimmed 0] ne "#"} break
+        lappend out $line
+    }
+    while {[llength $out] > 0 && [string trim [lindex $out end]] eq ""} {
+        set out [lrange $out 0 end-1]
+    }
+    if {[llength $out] == 0} { return [default_header] }
+    return $out
+}
+
+proc default_header {} {
+    return [list \
+        "# Programs whose generated C does NOT compile." \
+        "#" \
+        "# Maintained by tcl/tools/c_compile_test.tcl. This is debt, not" \
+        "# configuration: fix a backend bug, drop the name, and the gate holds" \
+        "# the new floor. Adding a name is how a regression gets waved through," \
+        "# so add one only with the bug it records written down."]
+}
+
 proc write_known {names} {
     global KNOWN
+    set header [known_header]
     set fh [open $KNOWN w]
-    puts $fh "# Canonical examples whose generated C does NOT compile."
-    puts $fh "#"
-    puts $fh "# Maintained by tcl/tools/c_compile_test.tcl. This is debt, not"
-    puts $fh "# configuration: fix a backend bug, drop the name, and the gate holds"
-    puts $fh "# the new floor. Adding a name is how a regression gets waved through,"
-    puts $fh "# so add one only with the bug it records written down."
+    foreach line $header { puts $fh $line }
     puts $fh ""
     foreach n [lsort $names] { puts $fh $n }
     close $fh
@@ -222,13 +310,12 @@ set workdir [file join [expr {[info exists ::env(TMPDIR)] ? $::env(TMPDIR) : "/t
 file delete -force $workdir
 file mkdir $workdir
 
-set examples [lsort [glob -nocomplain [file join $REPO examples canonical *.pk64]]]
+set examples [pak::gate_corpus $REPO]
 set broken {}
 set clean {}
 set detail [dict create]
-foreach pk $examples {
-    set name [file tail $pk]
-    lassign [compile_one $pk $workdir] n first
+foreach name $examples {
+    lassign [compile_one $name $workdir] n first
     if {$n > 0} {
         lappend broken $name
         dict set detail $name [list $n $first]
@@ -260,7 +347,7 @@ set fixed {}       ;# on the list but now compiles
 foreach name $broken   { if {$name ni $known}  { lappend regressed $name } }
 foreach name $known    { if {$name ni $broken} { lappend fixed $name } }
 
-puts "c compile gate: [llength $clean]/[llength $examples] canonical examples compile"
+puts "c compile gate: [llength $clean]/[llength $examples] programs compile"
 puts "                [llength $known] known-broken, [llength $regressed] regressed, [llength $fixed] newly fixed"
 
 set rc 0

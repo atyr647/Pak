@@ -7,6 +7,7 @@
 #include <math.h>
 #include "pak_math.h"
 #include "pak_containers.h"
+#include "pak_libdragon.h"
 
 
 /* -- Pak runtime types -- */
@@ -31,7 +32,11 @@ typedef enum {
 
 
 typedef struct { bool is_ok; union { int32_t value; LoadError error; } data; } PakResult_int32_t_LoadError;
-PakResult_int32_t_LoadError load_data(char * path) {
+
+/* -- Function prototypes -- */
+PakResult_int32_t_LoadError load_level(char * path);
+PakResult_int32_t_LoadError divide(int32_t a, int32_t b);
+PakResult_int32_t_LoadError load_level(char * path) {
     if (path == NULL) {
         return (PakResult_int32_t_LoadError){ .is_ok = false, .data.error = LoadError_file_not_found };
     }
@@ -48,7 +53,7 @@ PakResult_int32_t_LoadError divide(int32_t a, int32_t b) {
 static int32_t sink = 0;
 
 int main(void) {
-    __auto_type r = load_data("level.bin");
+    __auto_type r = load_level("level.bin");
     if (r.is_ok) {
         __auto_type data = r.data.value;
         sink = data;
@@ -70,6 +75,7 @@ int main(void) {
                 sink = -3;
                 break;
             }
+            default: __builtin_unreachable();
         }
     }
     __auto_type d = divide(10, 2);

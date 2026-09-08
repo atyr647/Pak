@@ -59,6 +59,8 @@
 	.extern rdpq_triangle_shade_tex_z
 	.extern rdpq_set_tri_z
 	.extern sprite_load
+	.extern pakfs_read
+	.extern pakfs_size
 	.extern rdpq_sprite_blit
 	.extern timer_init
 	.extern _pak_delta_time
@@ -72,6 +74,7 @@
 	.extern audio_write_silence
 	.extern audio_set_buffer_num
 	.extern debugf
+	.extern debug_init_isviewer
 	.extern assert
 	.extern dma_read
 	.extern dma_write
@@ -186,9 +189,9 @@
 
 
 	.section .text
-	.globl load_data
-	.type load_data, @function
-load_data:
+	.globl load_level
+	.type load_level, @function
+load_level:
     addiu $sp, $sp, -320
     sw $ra, 316($sp)
     sw $fp, 312($sp)
@@ -212,7 +215,7 @@ load_data:
     lw $t7, 4($t9)
     sw $t7, 4($t8)
     move $v0, $t8
-    j .Lload_data_ret_0
+    j .Lload_level_ret_0
     nop
 .Lif_end_1:
     sw $zero, 152($sp)
@@ -228,15 +231,15 @@ load_data:
     lw $t7, 4($t9)
     sw $t7, 4($t8)
     move $v0, $t8
-    j .Lload_data_ret_0
+    j .Lload_level_ret_0
     nop
-.Lload_data_ret_0:
+.Lload_level_ret_0:
     lw $fp, 312($sp)
     lw $ra, 316($sp)
     addiu $sp, $sp, 320
     jr $ra
     nop
-	.size load_data, . - load_data
+	.size load_level, . - load_level
 
 	.section .text
 	.globl divide
@@ -275,7 +278,7 @@ divide:
     sb $t9, 156($sp)
     lw $t7, 140($sp)
     lw $t6, 144($sp)
-    div $t7, $t6
+    div $zero, $t7, $t6
     mflo $t8
     sw $t8, 160($sp)
     addiu $t9, $sp, 156
@@ -307,7 +310,7 @@ main:
     la $a1, .Lstr0
     sw $t9, 96($sp)
     sw $t8, 100($sp)
-    jal load_data
+    jal load_level
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)

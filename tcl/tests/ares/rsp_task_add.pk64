@@ -1,0 +1,27 @@
+-- tcl/tests/ares/rsp_task_add.pk64 -- an RSP microcode written in Pak.
+--
+-- Step 1 of docs/rsp-microcode-in-pak.md's suggested order: "No vectors at
+-- all. entry, statics in DMEM, while, integer math -- compiled to the RSP's
+-- scalar half." This is the Pak-source equivalent of the hand-written
+-- tcl/tests/ares/rsp_add.S: DMEM[0] + DMEM[4] -> DMEM[8].
+--
+-- Compiled by tcl/rsp_codegen.tcl (pak::rsp_generate_records), not the
+-- libdragon or standalone-CPU backend -- there is no `pak build --target
+-- rsp` CLI wired up yet, so tcl/tools/ares_test.tcl calls the codegen
+-- directly, the same way it re-assembles a hand-written .S. The words this
+-- compiles to are checked into rsp_task_add_driver.pk64; ares_test.tcl
+-- recompiles this file and refuses to run if the two have drifted apart.
+--
+-- Every `static` here has no initializer: DMEM content comes from what the
+-- CPU DMAs in before sp.run(), not from a Pak-level init (the RSP target
+-- checker forbids `static X = value`, since nothing here would ever apply
+-- that value). Layout is a bump allocator in declaration order: a=0, b=4,
+-- sum=8. The driver must agree, and does -- see its own comment.
+
+static a: u32
+static b: u32
+static sum: u32
+
+entry {
+    sum = a + b
+}

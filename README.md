@@ -95,12 +95,14 @@ cd my_game
 pak check src/main.pk64              # type-check only
 pak explain src/main.pk64            # show the generated C
 pak explain --backend mips src/main.pk64   # show the generated MIPS
+pak dlist src/main.pk64              # show the RDP commands the scene builds
 pak build src/main.pk64              # compile + pack assets + generate Makefile
 pak run src/main.pk64                # build, then launch in the ares emulator
 ```
 
 `pak build` emits C and a libdragon Makefile. To go all the way to a `.z64`
-you need a libdragon toolchain (Path A below) **or** nothing at all (Path B).
+you need a libdragon toolchain (the **libdragon path** below) **or** nothing at
+all (the **standalone path**).
 
 ---
 
@@ -115,25 +117,25 @@ you need a libdragon toolchain (Path A below) **or** nothing at all (Path B).
                    ▼           ▼
               clean C      MIPS assembly
                    │           │
-    Path A         │           │ Path B
+  libdragon path   │           │ standalone path
     + libdragon    │           │ in-compiler:
     + make ──▶.z64 │           │  n64enc.tcl  ──▶ object
                                │  n64link.tcl ──▶ image
                                │  n64rom.tcl  ──▶ .z64
 ```
 
-**Path A — libdragon (full-featured).**
+**The libdragon path (full-featured).**
 The generated C uses the libdragon API (`display_*`, `rdpq_*`, `joypad_*`, …).
 `pak build` writes a libdragon-compatible Makefile; `make` produces the ROM.
 This is the path for serious games — full RDP/RSP, audio mixer, filesystem.
 
 ```bash
-# Path A
+# libdragon path
 export N64_INST=/opt/libdragon
 pak build && make
 ```
 
-**Path B — fully standalone (no external toolchain).**
+**The standalone path (no external toolchain).**
 The Tcl backend contains a complete MIPS pipeline with no external dependencies:
 
 - **`tcl/mips_codegen.tcl`** — AST → VR4300 MIPS-III assembly (o32 ABI, with
@@ -236,10 +238,11 @@ every feature tagged `[IMPLEMENTED]`, `[PARTIAL]`, or `[PLANNED]`.
 | `pak build <file>`   | Compile `.pk64` → C / MIPS, pack assets, generate Makefile |
 | `pak explain <file>` | Print the generated C for inspection |
 | `pak explain --backend mips <file>` | Print the generated MIPS assembly |
+| `pak dlist <file>`   | Run the scene against the standalone HAL and disassemble the RDP display list it builds |
 | `pak objgen <file>`  | Compile `.pk64` → `.pakobj` relocatable binary (no external tools) |
 | `pak run <file>`     | Build, then `make run` (launches in ares) |
 | `pak init <name>`    | Scaffold a new project |
-| `pak pack`           | Pack converted assets into a PakFS archive |
+| `pak pack`           | Pack converted assets into a PakFS archive (for `pak link --fs`) |
 | `pak convert <src>`  | Transpile an existing C file/directory to Pak (`c2pak`) |
 | `pak clean`          | Remove build artifacts |
 
@@ -261,11 +264,11 @@ tcl/              Primary compiler implementation (Tcl): lexer, parser,
   n64link.tcl         Flat linker: .pakobj files → RDRAM image, relocs patched
   c2pak.tcl           C → Pak transpiler (pak convert)
 bin/pak           The CLI entry point: a shell wrapper around tcl/cli.tcl
-runtime/          C runtime for the libdragon backend (containers, math, RNG, PakFS)
+runtime/          C runtime for the libdragon backend (containers, math, RNG)
 runtime/standalone/  Toolchain-free runtime: the HAL in Pak + a hand-written crt0
 examples/canonical/  32 gold-standard, known-correct reference programs
 examples/         51 example programs total (games, std-lib middleware, baremetal)
-tests/corpus/     588-file source corpus the golden suite compiles
+tests/corpus/     source corpus the golden suite compiles
 tests/golden/     Pinned output of every compiler stage across that corpus
 tests/snapshots/  Human-readable generated C and MIPS per canonical example
 ```
@@ -274,8 +277,8 @@ The compiler is a single implementation in Tcl, with no build step and no
 dependency beyond `tclsh` and `tcllib`. It is held in place by the **golden
 suite**: `tests/golden/` pins the output of every stage — tokens, AST,
 generated C, MIPS assembly, checker and typechecker diagnostics, module
-headers, transpiler output, Makefile and PakFS layout — across all 588 corpus
-files. Any change in compiler behaviour surfaces there.
+headers, transpiler output, Makefile and PakFS layout — across every corpus
+file. Any change in compiler behaviour surfaces there.
 
 ---
 
@@ -307,7 +310,18 @@ REGEN=1 tclsh tcl/tools/golden_test.tcl   # re-bless the goldens (read them firs
 
 tclsh tcl/tools/n64enc_test.tcl           # MIPS instruction encodings
 tclsh tcl/tools/n64link_test.tcl          # linker + ROM packer
+tclsh tcl/tools/libdragon_api_test.tcl    # generated C vs libdragon's REAL headers
+tclsh tcl/tools/libdragon_symbols.tcl     # STDLIB's libdragon column is the truth
+tools/build_n64_toolchain.sh /opt/pak-n64 # mips64-elf gcc (~40 min, once)
+N64_INST=/opt/pak-n64 tools/build_libdragon.sh
+N64_INST=/opt/pak-n64 tclsh tcl/tools/libdragon_link_test.tcl   # real ROM
+tclsh tcl/tools/dlist_test.tcl            # the RDP disassembler behind `pak dlist`
+tclsh tcl/tools/pixel_test.tcl            # render on angrylion, compare pixels
 bash  tcl/tools/lint.sh                   # nagelfar static lint
+
+tclsh tcl/tools/fuzz_test.tcl             # mutated sources must never crash it
+ITERATIONS=50000 SEED=7 tclsh tcl/tools/fuzz_test.tcl
+tclsh tcl/tools/fuzz_test.tcl --file /tmp/pak-fuzz/crash-....pk64
 
 pak check examples/canonical/*.pk64       # all must pass
 pak explain examples/canonical/01_hello.pk64
@@ -316,8 +330,38 @@ pak explain --backend mips examples/canonical/01_hello.pk64
 
 CI (GitHub Actions) runs on every push: the golden suite over the whole corpus,
 canonical-example validation, "invalid programs must fail" checks, the
-`pak explain` snapshots, the binary back end (encoder, linker, objgen for every
-canonical example, and a full source-to-`.z64` build), and nagelfar lint.
+`pak explain` snapshots, a compile of that C against libdragon's real headers,
+a front-end fuzz run, the binary back end (encoder,
+linker, objgen for every canonical example, the RDP display-list disassembler,
+a pixel-level render against the angrylion reference, and a full
+source-to-`.z64` build), and nagelfar lint.
+
+There are three libdragon gates, and each answers a question the one before
+it structurally cannot.
+`tcl/tools/c_compile_test.tcl` stubs libdragon, declaring every symbol as
+`long sym();` — an unprototyped declaration that accepts any argument count and
+any types — so a missing header, a renamed function, the wrong arity and the
+wrong argument types all compile clean there and fail at a user's `make`.
+`tcl/tools/libdragon_api_test.tcl` compiles the same C against real headers
+pinned by `tools/fetch_libdragon.sh`, and keeps a shrinking debt list.
+
+That still runs the *host* compiler, so it cannot see anything the target
+decides — on `mips64-elf` a `long` is 32 bits, which is why `fn abs(x: i32)`
+matched C's `abs(int)` on the host and conflicted when cross-compiled — and it
+never links. `tcl/tools/libdragon_link_test.tcl` builds every example with the
+real `mips64-elf-gcc` under libdragon's own `-Werror` flags, then takes
+`pak init` → `pak build` → `make` all the way to a bootable `.z64` and checks
+its header and IPL3. `tools/build_n64_toolchain.sh` builds the toolchain
+(binutils 2.45, gcc 16.2.0, newlib 4.4.0 — libdragon's own pinned versions);
+both gates skip cleanly when it is absent rather than failing CI over a
+40-minute build.
+
+The fuzzer mutates the corpus and demands the compiler answer with a
+diagnostic, never a Tcl stack trace: the lexer may raise `LEXERROR`, the parser
+`PARSEERROR`, codegen `CGUNPORTED`/`MIPSUNPORTED`; the checker and typechecker
+must return diagnostics and never raise. It is seeded, so a failure reproduces
+exactly, and it reports how far mutants got — a run where nothing reaches the
+parser fails rather than passing quietly.
 
 ---
 

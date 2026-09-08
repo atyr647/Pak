@@ -95,7 +95,7 @@ fn init_bullets() {
     }
 }
 
-fn update_player(dt: f32, pad: *controller_data) {
+fn update_player(dt: f32, pad: *joypad_status_t) {
     -- look with C buttons
     if pad.held.c_left { player.yaw = player.yaw + LOOK_SPEED * dt }
     if pad.held.c_right { player.yaw = player.yaw - LOOK_SPEED * dt }

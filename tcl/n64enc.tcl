@@ -10,7 +10,7 @@
 # The internal dict returned by encode is:
 #   sections   : ordered list of section names that received content
 #   <sec>      : dict {bytes <bytelist> syms <name->off> relocs <list of {off kind sym}>
-#                      size <bytes-emitted>}
+#                      align <strongest .align seen, in bytes> size <bytes-emitted>}
 #   globals    : list of names marked .globl
 #   externs    : list of names marked .extern
 #   symsizes   : dict name -> size-expr (from .size)
@@ -70,6 +70,85 @@ proc pak::enc::is_reg {tok} {
     return [expr {[dict exists $::pak::enc::GPR $t] || [regexp {^\$f[0-9]+$} $t]}]
 }
 
+# ── RSP vector unit (COP2) register file ─────────────────────────────────────
+# 32 vector registers, $v0..$v31, each 8 lanes of 16 bits. The names collide
+# textually with the GPR aliases $v0/$v1 (the standard $v0/$v1 return-value
+# registers) -- real RSP assemblers have lived with this for decades, because
+# the mnemonic always says which register file is meant: a vector-unit opcode
+# (vmudn, lqv, mfc2's vector operand, ...) resolves through this table, every
+# scalar opcode resolves through GPR. Neither ever consults the other.
+set ::pak::enc::VPR [dict create]
+for {set _i 0} {$_i < 32} {incr _i} { dict set ::pak::enc::VPR "\$v$_i" $_i }
+unset _i
+
+# Vector control registers, for cfc2/ctc2.
+set ::pak::enc::VCTRL [dict create vco 0 vcc 1 vce 2]
+
+# A vector-register operand, with an optional element-select suffix: "$v4" or
+# "$v4[5]". The bracket is Pak's own encoder syntax -- real hardware's element
+# field is a raw 4-bit number (0-15; see the RSP Programmer's Guide), and
+# rather than reproduce some other assembler's mnemonic broadcast forms
+# (`[0q]`, `[1h]`, ...) from memory and risk getting the naming wrong, this
+# just takes the field value directly. Returns {regnum element} (element 0
+# when the bracket is omitted).
+proc pak::enc::vpr_elem {tok} {
+    set t [string trim $tok ,]
+    if {[regexp {^(\$v[0-9]+)(?:\[([0-9]+)\])?$} $t -> reg e]} {
+        if {![dict exists $::pak::enc::VPR $reg]} {
+            error "n64enc: unknown vector register '$reg'"
+        }
+        set elem [expr {$e eq "" ? 0 : $e}]
+        if {$elem < 0 || $elem > 15} {
+            error "n64enc: element select out of range 0-15 in '$tok'"
+        }
+        return [list [dict get $::pak::enc::VPR $reg] $elem]
+    }
+    error "n64enc: not a vector register operand: '$tok'"
+}
+
+proc pak::enc::is_vreg {tok} {
+    set t [string trim $tok ,]
+    return [regexp {^\$v[0-9]+(\[[0-9]+\])?$} $t]
+}
+
+# Vector compute (COP2) funct field, 3-operand form: vd,vs,vt[e].
+# Values verified against the armips assembler's RSP opcode table (the
+# assembler real N64 homebrew microcode is written with), not reconstructed
+# from memory. vrndp/vmulq/vrndn/vmacq/vsut are here because the encoder can
+# assemble them -- they exist as opcodes -- even though real RSP hardware
+# never executes them (they were reserved for an MPEG codec Nintendo dropped).
+set ::pak::enc::VFUNCT3 [dict create \
+    vmulf 0x00 vmulu 0x01 vrndp 0x02 vmulq 0x03 \
+    vmudl 0x04 vmudm 0x05 vmudn 0x06 vmudh 0x07 \
+    vmacf 0x08 vmacu 0x09 vrndn 0x0a vmacq 0x0b \
+    vmadl 0x0c vmadm 0x0d vmadn 0x0e vmadh 0x0f \
+    vadd  0x10 vsub  0x11 vsut  0x12 vabs  0x13 \
+    vaddc 0x14 vsubc 0x15 \
+    vsar  0x1d \
+    vlt   0x20 veq   0x21 vne   0x22 vge   0x23 \
+    vcl   0x24 vch   0x25 vcr   0x26 vmrg  0x27 \
+    vand  0x28 vnand 0x29 vor   0x2a vnor  0x2b vxor 0x2c vnxor 0x2d]
+
+# Vector compute funct, 2-operand form: vd[de],vt[e]. There is no second
+# source register for this class -- de rides in the vs field position
+# instead, as a raw 4-bit value exactly like e. Hardware only defines 8-15
+# there (single-lane select, the same numbering e's broadcast table uses for
+# elements 8-15); 0-7 are unused encodings, not "lane 0-7" -- picking lane N
+# means writing N+8, same as it does for e.
+set ::pak::enc::VFUNCT2 [dict create \
+    vrcp 0x30 vrcpl 0x31 vrcph 0x32 vmov 0x33 \
+    vrsq 0x34 vrsql 0x35 vrsqh 0x36]
+
+# Vector load/store (LWC2/SWC2) subop + byte-count, keyed by the mnemonic's
+# suffix after the l/s. The 7-bit offset in the instruction is the byte
+# offset divided by this scale (real hardware address = base + offset*scale),
+# which is why an unaligned offset is a hard encoder error rather than a
+# silently truncated one. lwv is omitted: it is a documented opcode slot that
+# is not implemented in RSP hardware, so there is nothing to assemble to.
+set ::pak::enc::VLS_KIND [dict create \
+    bv {0 1} sv {1 2} lv {2 4} dv {3 8} qv {4 16} rv {5 16} \
+    pv {6 8} uv {7 8} hv {8 16} fv {9 16} wv {10 16} tv {11 16}]
+
 # ── Immediate parsing ────────────────────────────────────────────────────────
 # Accepts decimal (possibly negative) and hex (0x...). Returns an integer.
 proc pak::enc::imm {tok} {
@@ -117,6 +196,19 @@ proc pak::enc::I {op rs rt imm} {
 proc pak::enc::J {op target} {
     return [expr {(($op & 0x3f) << 26) | (($target >> 2) & 0x3ffffff)}]
 }
+# RSP vector compute (COP2, bit 25 set): op=0x12, bit25=1, e(24-21) vt(20-16)
+# vs(15-11) vd(10-6) funct(5-0). Field layout verified against armips'
+# MIPS_RSP_COP2 macro, not reconstructed from memory.
+proc pak::enc::RSPV {funct e vt vs vd} {
+    return [expr {(0x12 << 26) | (1 << 25) | (($e & 0xf) << 21) | (($vt & 0x1f) << 16) \
+        | (($vs & 0x1f) << 11) | (($vd & 0x1f) << 6) | ($funct & 0x3f)}]
+}
+# RSP vector load/store (LWC2/SWC2): op base(25-21) vt(20-16) subop(15-11)
+# element(10-7) offset(6-0, signed, pre-scaled by the caller).
+proc pak::enc::RSPLS {op subop base vt elem off7} {
+    return [expr {(($op & 0x3f) << 26) | (($base & 0x1f) << 21) | (($vt & 0x1f) << 16) \
+        | (($subop & 0x1f) << 11) | (($elem & 0xf) << 7) | ($off7 & 0x7f)}]
+}
 
 # ── R-type funct / I-type op tables ──────────────────────────────────────────
 # Real SPECIAL (op=0) 3-register: rd,rs,rt  (funct)
@@ -130,6 +222,9 @@ set ::pak::enc::RCSHIFT [dict create sll 0x00 srl 0x02 sra 0x03]
 set ::pak::enc::RHILO [dict create mult 0x18 multu 0x19 div 0x1a divu 0x1b]
 # Move-from hi/lo: rd only
 set ::pak::enc::RMF [dict create mfhi 0x10 mflo 0x12]
+# Hi/Lo writes: mthi/mtlo $rs. An interrupt handler has to put HI and LO back
+# the way it found them, so these are the other half of mfhi/mflo.
+set ::pak::enc::RMT [dict create mthi 0x11 mtlo 0x13]
 
 # I-type op codes
 set ::pak::enc::IARITH [dict create \
@@ -150,7 +245,7 @@ proc pak::enc::new_section {ctxVar name} {
     if {![dict exists $ctx sections]} { dict set ctx sections {} }
     if {![dict exists $ctx secdata $name]} {
         dict lappend ctx sections $name
-        dict set ctx secdata $name [dict create bytes {} syms {} relocs {} branches {}]
+        dict set ctx secdata $name [dict create bytes {} syms {} relocs {} branches {} align 4]
     }
 }
 
@@ -238,13 +333,50 @@ proc pak::enc::emit_real {ctxVar mnem args} {
         emit_word ctx [R 0 0 [gpr $t] [gpr $d] [imm $sa] [dict get $::pak::enc::RCSHIFT $mnem]]
         return
     }
-    # mult/multu/div/divu: rs,rt
+    # mult/multu/div/divu: rs,rt -- or, for div/divu, the three-operand
+    # `div $zero, rs, rt` GNU as requires to mean the bare instruction rather
+    # than its checked macro. $zero is the only destination accepted: any other
+    # would be the macro form, which this encoder does not implement.
     if {[dict exists $::pak::enc::RHILO $mnem]} {
+        if {[llength $ops] == 3} {
+            set d [string trim [lindex $ops 0] ,]
+            if {[gpr $d] != 0} {
+                error "n64enc: '$mnem $d, ...' is GNU as's checked macro form, not supported; write '$mnem \$zero, rs, rt'"
+            }
+            set ops [lrange $ops 1 2]
+        }
         lassign $ops s t
         emit_word ctx [R 0 [gpr $s] [gpr $t] 0 0 [dict get $::pak::enc::RHILO $mnem]]
         return
     }
     # mfhi/mflo: rd
+    # mthi/mtlo: rs
+    if {[dict exists $::pak::enc::RMT $mnem]} {
+        lassign $ops sreg
+        emit_word ctx [R 0 [gpr $sreg] 0 0 0 [dict get $::pak::enc::RMT $mnem]]
+        return
+    }
+    # BREAK: SPECIAL funct 0x0D, with an optional 20-bit code in bits 25..6.
+    # The RSP's scalar unit is a MIPS I subset and this is how a microcode task
+    # signals that it is finished.
+    if {$mnem eq "break"} {
+        # The 20-bit code is two fields. GNU as puts a single operand in the
+        # upper one (bits 25..16) and a second, if given, in the lower
+        # (bits 15..6); `break 0x7` is 0x0007000D, not 0x000001CD.
+        set hi 0
+        set lo 0
+        if {[llength $ops] >= 1} { set hi [expr {[imm [lindex $ops 0]] & 0x3FF}] }
+        if {[llength $ops] >= 2} { set lo [expr {[imm [lindex $ops 1]] & 0x3FF}] }
+        emit_word ctx [expr {($hi << 16) | ($lo << 6) | 0x0D}]
+        return
+    }
+    # ERET: return from an exception. COP0 with the CO bit set, function 0x18.
+    # It restores Status.EXL and jumps to EPC atomically, which is why an
+    # interrupt handler cannot be written with a plain `jr`.
+    if {$mnem eq "eret"} {
+        emit_word ctx 0x42000018
+        return
+    }
     if {[dict exists $::pak::enc::RMF $mnem]} {
         lassign $ops d
         emit_word ctx [R 0 0 0 [gpr $d] 0 [dict get $::pak::enc::RMF $mnem]]
@@ -390,6 +522,67 @@ proc pak::enc::emit_real {ctxVar mnem args} {
         dict set ctx secdata $sec brmeta $woff [list 0x11 0x08 $tf]
         return
     }
+    # RSP vector unit (COP2). Three-operand compute: vd,vs,vt[e].
+    if {[dict exists $::pak::enc::VFUNCT3 $mnem]} {
+        lassign $ops vdtok vstok vttok
+        lassign [vpr_elem $vdtok] vd _de
+        lassign [vpr_elem $vstok] vs _ve
+        lassign [vpr_elem $vttok] vt e
+        emit_word ctx [RSPV [dict get $::pak::enc::VFUNCT3 $mnem] $e $vt $vs $vd]
+        return
+    }
+    # Two-operand compute: vd[de],vt[e] -- de (0-7) rides in the vs field.
+    if {[dict exists $::pak::enc::VFUNCT2 $mnem]} {
+        lassign $ops vdtok vttok
+        lassign [vpr_elem $vdtok] vd de
+        lassign [vpr_elem $vttok] vt e
+        emit_word ctx [RSPV [dict get $::pak::enc::VFUNCT2 $mnem] $e $vt $de $vd]
+        return
+    }
+    if {$mnem eq "vnop"} {
+        emit_word ctx [RSPV 0x37 0 0 0 0]
+        return
+    }
+    # Vector load/store: lqv/sqv/ldv/sdv/... vt[elem], offset(base)
+    if {[string length $mnem] == 3 \
+            && [string index $mnem 0] in {l s} \
+            && [dict exists $::pak::enc::VLS_KIND [string range $mnem 1 end]]} {
+        lassign [dict get $::pak::enc::VLS_KIND [string range $mnem 1 end]] subop scale
+        set lsop [expr {[string index $mnem 0] eq "l" ? 0x32 : 0x3A}]
+        lassign $ops vttok memtok
+        lassign [vpr_elem $vttok] vt elem
+        lassign [mem $memtok] byteoff base
+        if {$byteoff % $scale != 0} {
+            error "n64enc: '$mnem' offset $byteoff is not a multiple of $scale bytes"
+        }
+        set off7 [expr {$byteoff / $scale}]
+        if {$off7 < -64 || $off7 > 63} {
+            error "n64enc: '$mnem' offset $byteoff out of range (7-bit field, scale $scale)"
+        }
+        emit_word ctx [RSPLS $lsop $subop $base $vt $elem $off7]
+        return
+    }
+    # mfc2/mtc2: GPR <-> one lane of a vector register. cfc2/ctc2: GPR <-> a
+    # vector control register (vco/vcc/vce). All four reuse the standard I()
+    # layout: rd/element/control-reg number pack into the 16-bit imm field
+    # exactly the way a real MFC2 instruction's rd(15-11)+element(10-7) does.
+    if {$mnem eq "mfc2" || $mnem eq "mtc2"} {
+        lassign $ops g v
+        set rs [expr {$mnem eq "mfc2" ? 0x00 : 0x04}]
+        lassign [vpr_elem $v] vreg elem
+        emit_word ctx [I 0x12 $rs [gpr $g] [expr {($vreg << 11) | ($elem << 7)}]]
+        return
+    }
+    if {$mnem eq "cfc2" || $mnem eq "ctc2"} {
+        lassign $ops g c
+        set rs [expr {$mnem eq "cfc2" ? 0x02 : 0x06}]
+        set cn [string trim $c ,]
+        if {![dict exists $::pak::enc::VCTRL $cn]} {
+            error "n64enc: unknown vector control register '$cn' (want vco/vcc/vce)"
+        }
+        emit_word ctx [I 0x12 $rs [gpr $g] [expr {[dict get $::pak::enc::VCTRL $cn] << 11}]]
+        return
+    }
     # CACHE instruction: cache hint, off(base)  op=0x2F (47)
     if {$mnem eq "cache"} {
         lassign $ops hint m
@@ -428,14 +621,24 @@ proc pak::enc::expand {mnem ops} {
             return [list [list sll {$zero} {$zero} 0]]
         }
         move {
-            # move $d,$s -> addu $d,$s,$zero  (rs=$s, rt=$zero).
-            # Golden: move $t0,$t1 = 0x01204021 (rs=9,rt=0,rd=8), i.e. $s in rs.
+            # move $d,$s -> or $d,$s,$zero  (rs=$s, rt=$zero), which is what
+            # GNU as emits. `addu $d,$s,$zero` also copies, but it sign-extends
+            # the low 32 bits into the VR4300's 64-bit register, so the two
+            # spellings can disagree once a value reaches a 64-bit-wide
+            # comparison such as sltu. Match the assembler everyone else uses.
+            # Golden: move $t0,$t1 = 0x01204025 (rs=9,rt=0,rd=8), i.e. $s in rs.
             lassign $ops d s
-            return [list [list addu $d $s {$zero}]]
+            return [list [list or $d $s {$zero}]]
         }
         li {
             lassign $ops d im
             set v [imm $im]
+            # Normalise to a signed 32-bit value first. The codegen writes
+            # masks as unsigned hex (0xFFFFFFF8), and without this they miss
+            # the addiu case that GNU as takes for the same constant, costing
+            # a word and putting the two assemblers out of step.
+            set v [expr {$v & 0xFFFFFFFF}]
+            if {$v >= 0x80000000} { set v [expr {$v - 0x100000000}] }
             if {$v >= -32768 && $v <= 32767} {
                 return [list [list addiu $d {$zero} $v]]
             } elseif {$v >= 0 && $v <= 65535} {
@@ -443,6 +646,12 @@ proc pak::enc::expand {mnem ops} {
             } else {
                 set hi [expr {($v >> 16) & 0xffff}]
                 set lo [expr {$v & 0xffff}]
+                # A constant whose low half is zero needs no `ori`, and GNU as
+                # drops it. Most of the N64 MMIO bases (0xA4000000, 0xA4400000,
+                # 0xA0100000 ...) are exactly that shape, so this is not a rare
+                # case -- and one word instead of two also means such a `li` is
+                # legal in a branch delay slot again.
+                if {$lo == 0} { return [list [list lui $d $hi]] }
                 return [list [list lui $d $hi] [list ori $d $d $lo]]
             }
         }
@@ -470,21 +679,46 @@ proc pak::enc::expand {mnem ops} {
             lassign $ops d s1 s2
             return [list [list slt $d $s2 $s1]]
         }
+        sleu {
+            lassign $ops d s1 s2
+            return [list [list sltu $d $s2 $s1] [list xori $d $d 1]]
+        }
+        sgtu {
+            lassign $ops d s1 s2
+            return [list [list sltu $d $s2 $s1]]
+        }
+        sgeu {
+            lassign $ops d s1 s2
+            return [list [list sltu $d $s1 $s2] [list xori $d $d 1]]
+        }
         sge {
             lassign $ops d s1 s2
             return [list [list slt $d $s1 $s2] [list xori $d $d 1]]
         }
         seq {
+            # xor, not subu: GNU as uses xor, and on the VR4300's 64-bit
+            # registers subu sign-extends its 32-bit result where xor does not.
+            # Both are zero exactly when the operands are equal, so the choice
+            # only matters for matching the assembler -- which is the point.
             lassign $ops d s1 s2
-            return [list [list subu $d $s1 $s2] [list sltiu $d $d 1]]
+            # Comparing against zero needs no xor: the value is already the
+            # difference. GNU as folds this, so folding it here keeps the two
+            # in step -- and `x == 0` is the commonest comparison there is.
+            if {[gpr $s2] == 0} { return [list [list sltiu $d $s1 1]] }
+            if {[gpr $s1] == 0} { return [list [list sltiu $d $s2 1]] }
+            return [list [list xor $d $s1 $s2] [list sltiu $d $d 1]]
         }
         sne {
             lassign $ops d s1 s2
-            return [list [list subu $d $s1 $s2] [list sltu $d {$zero} $d]]
+            if {[gpr $s2] == 0} { return [list [list sltu $d {$zero} $s1]] }
+            if {[gpr $s1] == 0} { return [list [list sltu $d {$zero} $s2]] }
+            return [list [list xor $d $s1 $s2] [list sltu $d {$zero} $d]]
         }
         mul {
+            # multu, not mult: the low 32 bits are the same either way, and
+            # multu is what GNU as emits for this macro.
             lassign $ops d s1 s2
-            return [list [list mult $s1 $s2] [list mflo $d]]
+            return [list [list multu $s1 $s2] [list mflo $d]]
         }
     }
     return ""  ;# not a pseudo
@@ -492,7 +726,7 @@ proc pak::enc::expand {mnem ops} {
 
 # Is this mnemonic a pseudo we expand here?
 proc pak::enc::is_pseudo {mnem} {
-    return [expr {$mnem in {nop move li la beqz bnez bge sle sgt sge seq sne mul}}]
+    return [expr {$mnem in {nop move li la beqz bnez bge sle sgt sge sleu sgtu sgeu seq sne mul}}]
 }
 
 # ── Data-directive value: number or label ────────────────────────────────────
@@ -555,7 +789,15 @@ proc pak::enc::do_directive {ctxVar args} {
         }
         align {
             set exp [lindex $rest 0]
+            set a [expr {1 << $exp}]
             pad_to ctx [expr {1 << $exp}]
+            # Padding inside the section is only half of it. The linker has to
+            # know the section itself needs that alignment, or a 16-byte-aligned
+            # DMA buffer lands wherever the section base happened to fall.
+            set sec [dict get $ctx cur]
+            if {$a > [dict get $ctx secdata $sec align]} {
+                dict set ctx secdata $sec align $a
+            }
         }
         word {
             lassign [data_val [lindex $rest 0]] vk vv
@@ -576,8 +818,13 @@ proc pak::enc::do_directive {ctxVar args} {
             emit_bytes ctx [list [expr {$v & 0xff}]]
         }
         space {
+            # One call, not one per byte. emit_bytes does a dict get/set of the
+            # whole section buffer, so calling it n times made .space quadratic:
+            # a 2 MB .bss (the size a texture atlas would be) took long enough
+            # to look like a hang rather than the memory-map error it should
+            # have reached.
             set n [imm [lindex $rest 0]]
-            for {set i 0} {$i < $n} {incr i} { emit_bytes ctx {0} }
+            if {$n > 0} { emit_bytes ctx [lrepeat $n 0] }
         }
         asciiz {
             # rest is the raw (already-unescaped) string. Rejoin in case it
@@ -687,6 +934,7 @@ proc pak::enc::format_object {ctx} {
     set out "# pak object v1\n"
     foreach sec [dict get $ctx sections] {
         append out "section $sec\n"
+        append out "align [dict get $ctx secdata $sec align]\n"
         set syms [dict get $ctx secdata $sec syms]
         foreach name [dict keys $syms] {
             append out "sym $name [dict get $syms $name]\n"

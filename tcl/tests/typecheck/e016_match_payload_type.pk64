@@ -1,0 +1,26 @@
+-- A match binding carries the payload's type. Every binding used to be `auto`,
+-- so a field access on one was never checked: `v.nope` on an i32 payload
+-- passed. Each arm below is a field that does not exist on the bound type.
+
+enum LoadError: u8 { bad }
+
+variant Shape {
+    circle(f32)
+    rect { w: f32, h: f32 }
+}
+
+fn load() -> Result(i32, LoadError) { return ok(7) }
+
+static sink: i32 = 0
+
+entry {
+    match load() {
+        .ok(v)  => { sink = v.nope }
+        .err(e) => { sink = 0 }
+    }
+    let s: Shape = Shape.circle(1.0)
+    match s {
+        .circle(r)             => { sink = r.bogus as i32 }
+        .rect { w: ww, h: hh } => { sink = ww.missing as i32 }
+    }
+}

@@ -26,6 +26,69 @@ const VI_V_BURST: u32   = 0xA440002C
 const VI_X_SCALE: u32   = 0xA4400030
 const VI_Y_SCALE: u32   = 0xA4400034
 
+-- ── MI (MIPS Interface): the RCP's interrupt controller ───────────────────
+-- MI_INTERRUPT reads which of the six RCP sources is asserting. MI_MASK is
+-- write-only and takes a pair of bits per source -- clear then set -- so
+-- enabling one source never disturbs the others.
+const MI_MODE: u32      = 0xA4300000
+const MI_INTERRUPT: u32 = 0xA4300008
+const MI_MASK: u32      = 0xA430000C
+
+const MI_INTR_SP: u32 = 0x01
+const MI_INTR_SI: u32 = 0x02
+const MI_INTR_AI: u32 = 0x04
+const MI_INTR_VI: u32 = 0x08
+const MI_INTR_PI: u32 = 0x10
+const MI_INTR_DP: u32 = 0x20
+
+const MI_MASK_SET_VI: u32   = 0x0080
+const MI_MASK_CLEAR_VI: u32 = 0x0040
+const MI_MASK_SET_AI: u32   = 0x0020
+const MI_MASK_SET_PI: u32   = 0x0200
+const MI_MASK_SET_SI: u32   = 0x0008
+const MI_MASK_SET_DP: u32   = 0x0800
+const MI_MASK_CLEAR_ALL: u32 = 0x0555
+
+-- ── SP (RSP) registers ────────────────────────────────────────────────────
+-- SP_MEM_ADDR names a location inside the RSP's own 8 KiB: bit 12 picks IMEM
+-- (1) over DMEM (0), bits 11..0 the offset. RD_LEN moves RDRAM -> SP and
+-- WR_LEN moves SP -> RDRAM, both taking length-1 and both requiring the two
+-- addresses and the length to be 8-byte aligned.
+const SP_MEM_ADDR:  u32 = 0xA4040000
+const SP_DRAM_ADDR: u32 = 0xA4040004
+const SP_RD_LEN:    u32 = 0xA4040008
+const SP_WR_LEN:    u32 = 0xA404000C
+const SP_STATUS:    u32 = 0xA4040010
+const SP_DMA_FULL:  u32 = 0xA4040014
+const SP_DMA_BUSY:  u32 = 0xA4040018
+const SP_SEMAPHORE: u32 = 0xA404001C
+const SP_PC:        u32 = 0xA4080000
+
+const SP_IMEM: u32 = 0x1000       -- SP_MEM_ADDR bit 12
+
+-- SP_STATUS reads one set of bits and writes another. Reading: bit 0 halted,
+-- bit 1 broke, bit 2 DMA busy, bit 3 DMA full. Writing: each control is a
+-- clear/set pair, so touching one never disturbs another.
+const SP_ST_HALT:      u32 = 0x0001
+const SP_ST_BROKE:     u32 = 0x0002
+const SP_ST_DMA_BUSY:  u32 = 0x0004
+const SP_ST_DMA_FULL:  u32 = 0x0008
+
+const SP_SET_CLR_HALT:     u32 = 0x00001
+const SP_SET_SET_HALT:     u32 = 0x00002
+const SP_SET_CLR_BROKE:    u32 = 0x00004
+const SP_SET_CLR_INTR:     u32 = 0x00008
+const SP_SET_CLR_SSTEP:    u32 = 0x00020
+const SP_SET_CLR_INTBRK:   u32 = 0x00080
+const SP_SET_SET_INTBRK:   u32 = 0x00100
+
+-- The halfline VI_V_INTR fires at. vi_program parks it at 0x200, past the end
+-- of the frame, so a ROM that never calls interrupt.init sees no interrupts at
+-- all. 0x200 is also what a game sets it back to in order to turn VI
+-- interrupts off without touching the MI mask.
+const VI_INTR_OFF: u32  = 0x00000200
+const VI_INTR_LINE: u32 = 0x00000002
+
 const VI_CTRL_BLANK: u32 = 0x00000000
 const VI_CTRL_16BPP: u32 = 0x00003202   -- 16bpp RGBA5551, AA off, non-interlaced
 
@@ -38,10 +101,38 @@ const FB0: u32 = 0xA0200000
 const FB1: u32 = 0xA0225800
 const FB2: u32 = 0xA024B000
 const ZB:  u32 = 0xA0271000        -- 320×240×16-bit Z, after FB2
-const NUM_BUFS: i32 = 3
+const MAX_BUFS: i32 = 3        -- FB0..FB2; the map has room for no more
 
 static g_draw: i32       = 1
 static g_shown: i32      = 0
+-- How many of FB0..FB2 display.init asked for. 3 until it says otherwise.
+static g_nbufs: i32      = 3
+-- The VI_CTRL word display.init assembled from its gamma/filters arguments.
+static g_vi_ctrl: u32    = 0x00003202
+
+-- ── interrupt state ───────────────────────────────────────────────────────
+-- Bumped by the VI interrupt, once per frame. vi_wait_vblank watches it
+-- instead of polling VI_V_CURRENT once interrupts are running, which is the
+-- difference between a spin loop that owns the CPU and one that does not.
+static g_vi_count: u32   = 0
+static g_irq_on: i32     = 0
+-- Sources seen since interrupt.init, so a ROM can tell "the ISR never ran"
+-- from "the ISR ran and it was not the VI".
+static g_irq_seen: u32   = 0
+-- The MI sources interrupt.init armed. MI_INTERRUPT reports every source that
+-- is asserting, masked or not, so the handler filters by this rather than
+-- acknowledging -- and so discarding -- a flag nobody asked it to touch.
+static g_irq_mask: u32   = 0
+
+-- ── CP0, which Pak cannot name ─────────────────────────────────────────────
+-- Status.IE and Status.IM2 live in a coprocessor register, and there is no
+-- syntax for mfc0/mtc0. runtime/standalone/boot.S provides these three; they
+-- are part of the standalone HAL, not libdragon.
+extern "C" {
+    fn __pak_irq_enable()
+    fn __pak_irq_disable() -> u32
+    fn __pak_irq_restore(status: u32)
+}
 
 -- ── MMIO helpers ───────────────────────────────────────────────────────────
 fn vi_write(reg: u32, val: u32) {
@@ -98,18 +189,29 @@ fn vi_program() {
     vi_write(VI_V_BURST, 0x000E0204)
     vi_write(VI_X_SCALE, 0x00000200)
     vi_write(VI_Y_SCALE, 0x00000400)
-    vi_write(VI_CTRL,    VI_CTRL_16BPP)
+    vi_write(VI_CTRL,    g_vi_ctrl)
 }
 
 fn vi_init() {
     vi_program()
     fb_fill(FB0, 0x0000 as u16)
-    fb_fill(FB1, 0x0000 as u16)
-    fb_fill(FB2, 0x0000 as u16)
+    if g_nbufs > 1 { fb_fill(FB1, 0x0000 as u16) }
+    if g_nbufs > 2 { fb_fill(FB2, 0x0000 as u16) }
 }
 
 fn vi_wait_vblank() {
-    -- Wait until past the active region (line >= 480), then for the new frame.
+    if g_irq_on != 0 {
+        -- Interrupt-driven: sit on the counter the ISR bumps. The read has to
+        -- happen each time round rather than once into a local, or the
+        -- optimizer is free to hoist it and the loop never ends.
+        let start: u32 = g_vi_count
+        loop {
+            if g_vi_count != start { break }
+        }
+        return
+    }
+    -- No interrupts: poll. Wait until past the active region (line >= 480),
+    -- then for the new frame.
     loop {
         let line: u32 = vi_read(VI_V_CURRENT) & 0x3FF
         if line >= 0x1E0 { break }
@@ -127,11 +229,52 @@ fn vi_show(fb: u32) {
     if fb == FB0 { g_shown = 0 }
     elif fb == FB1 { g_shown = 1 }
     else { g_shown = 2 }
-    g_draw = (g_shown + 1) % NUM_BUFS
+    g_draw = (g_shown + 1) % g_nbufs
 }
 
 -- ── display API (called by generated game code) ────────────────────────────
+-- VI_CTRL fields. aa_mode lives in bits 8-9, the gamma pair in bits 2-3, and
+-- the dither filter in bit 16. pixel_advance (bits 12-15) is 3 for RDRAM.
+const VI_CTRL_BASE: u32       = 0x00003000   -- pixel_advance = 3
+const VI_CTRL_TYPE_16BPP: u32 = 0x00000002
+const VI_CTRL_GAMMA: u32      = 0x00000008
+const VI_CTRL_GAMMA_DITHER: u32 = 0x00000004
+const VI_CTRL_DITHER_FILTER: u32 = 0x00010000
+
+-- filters -> aa_mode. 0 = AA + resample always fetch, 1 = AA + resample fetch
+-- when needed, 2 = resample only, 3 = neither (replicate pixels).
+fn vi_aa_mode(filters: i32) -> u32 {
+    if filters == 0 { return 3 }        -- FILTERS_DISABLED
+    if filters == 1 { return 2 }        -- FILTERS_RESAMPLE
+    if filters == 2 { return 3 }        -- FILTERS_DEDITHER
+    if filters == 3 { return 1 }        -- FILTERS_RESAMPLE_ANTIALIAS
+    return 0                            -- ..._ANTIALIAS_DEDITHER
+}
+
+-- The standalone HAL carves three fixed 320x240x16 framebuffers out of RDRAM
+-- (FB0..FB2, then the Z buffer and the display list). Another resolution or
+-- bit depth would move every one of those addresses, so it is refused rather
+-- than silently ignored -- rendering a 640x480 scene into a 320x240 buffer
+-- produces garbage that looks like a game bug.
 fn display_init(res: i32, bpp: i32, bufs: i32, gamma: i32, filters: i32) {
+    if res != 0 { __pak_panic() }
+    if bpp != 2 { __pak_panic() }
+    if bufs < 1 or bufs > MAX_BUFS { __pak_panic() }
+
+    g_nbufs = bufs
+    -- Draw into the buffer the VI is not showing. With one buffer there is no
+    -- other one, so drawing and scanout share it.
+    g_shown = 0
+    g_draw  = 0
+    if bufs > 1 { g_draw = 1 }
+
+    let mut ctrl: u32 = VI_CTRL_BASE | VI_CTRL_TYPE_16BPP
+    ctrl = ctrl | (vi_aa_mode(filters) << 8)
+    if filters == 2 or filters == 4 { ctrl = ctrl | VI_CTRL_DITHER_FILTER }
+    if gamma != 0 { ctrl = ctrl | VI_CTRL_GAMMA }
+    if gamma >= 2 { ctrl = ctrl | VI_CTRL_GAMMA_DITHER }
+    g_vi_ctrl = ctrl
+
     vi_init()
 }
 
@@ -149,7 +292,11 @@ fn display_close() {
 -- ── SI (Serial Interface) controller ─────────────────────────────────────────
 const SI_DRAM_ADDR:      u32 = 0xA4800000
 const SI_PIF_ADDR_RD64B: u32 = 0xA4800004
-const SI_STATUS:         u32 = 0xA480000C
+-- SI_STATUS is at 0x04800018. 0x0480000C is a reserved register that reads
+-- back zero, so si_wait() returned immediately and every Joybus transaction --
+-- controller polling and EEPROM alike -- raced the SI instead of waiting for
+-- it. ares' PIF is strict enough to notice; mupen64plus was not.
+const SI_STATUS:         u32 = 0xA4800018
 const SI_PIF_ADDR_WR64B: u32 = 0xA4800010
 const PIF_RAM_PHYS:      u32 = 0x1FC007C0
 
@@ -206,10 +353,25 @@ struct ControllerState {
     stick_y:  i32
 }
 
+-- One block per port. controller.read is documented for ports 0-3, so all
+-- four are polled and all four have their own state; the HAL used to poll
+-- channel 0 only and hand every port port 0's buttons.
 static g_held_0:     ButtonState
 static g_pressed_0:  ButtonState
 static g_released_0: ButtonState
 static g_cs_0:       ControllerState
+static g_held_1:     ButtonState
+static g_pressed_1:  ButtonState
+static g_released_1: ButtonState
+static g_cs_1:       ControllerState
+static g_held_2:     ButtonState
+static g_pressed_2:  ButtonState
+static g_released_2: ButtonState
+static g_cs_2:       ControllerState
+static g_held_3:     ButtonState
+static g_pressed_3:  ButtonState
+static g_released_3: ButtonState
+static g_cs_3:       ControllerState
 
 -- D-cache helpers — inline asm uses $a0/$a1 directly (avoids the parameter
 -- save/load offset bug; prologue does not clobber argument registers).
@@ -225,10 +387,14 @@ fn data_cache_hit_writeback(ptr: *u8, sz: i32) {
     }
 }
 
+-- Hit_Invalidate_D is (4 << 2) | 1 = 0x11. 0x14 is (5 << 2) | 0 --
+-- Hit_Writeback_Invalidate on the INSTRUCTION cache -- so this invalidated
+-- nothing in the D-cache and every DMA destination kept reading whatever the
+-- CPU had cached: dma.read, EEPROM reads, controller polling, SP reads.
 fn data_cache_hit_invalidate(ptr: *u8, sz: i32) {
     asm {
         ".Ldciv_1:"
-        "cache 0x14, 0($a0)"
+        "cache 0x11, 0($a0)"
         "addiu $a0, $a0, 16"
         "addiu $a1, $a1, -16"
         "bgtz $a1, .Ldciv_1"
@@ -259,37 +425,55 @@ fn si_exec() {
     data_cache_hit_invalidate(b as *u8, 64)
 }
 
--- Initialise the ControllerState pointer fields for port 0.
--- Uses *u32 index (element size = 4, which is correct for pointer-sized fields).
-fn joypad_init() {
-    let cs0: *u32 = &g_cs_0 as *u32
-    cs0[0] = (&g_held_0    as u32)
-    cs0[1] = (&g_pressed_0 as u32)
-    cs0[2] = (&g_released_0 as u32)
+-- Per-port state block addresses. Four separate statics rather than an array
+-- so each address stays a link-time constant.
+fn held_addr(port: i32) -> u32 {
+    if port == 1 { return &g_held_1 as u32 }
+    if port == 2 { return &g_held_2 as u32 }
+    if port == 3 { return &g_held_3 as u32 }
+    return &g_held_0 as u32
 }
 
-fn joypad_poll() {
-    -- Build PIF command buffer in g_pif_buf via poke8 (real `sb` to the
-    -- buffer, not the stack). Byte 0: tx=1, byte 1: rx=4, byte 2: cmd=0x01.
-    -- Byte 7: 0xFE (end channels). Byte 63: 0x01 (execute PIF).
-    let b: u32 = pif_addr()
-    poke8(b + 0, 0x01)
-    poke8(b + 1, 0x04)
-    poke8(b + 2, 0x01)
-    poke8(b + 7, 0xFE)
-    poke8(b + 63, 0x01)
+fn pressed_addr(port: i32) -> u32 {
+    if port == 1 { return &g_pressed_1 as u32 }
+    if port == 2 { return &g_pressed_2 as u32 }
+    if port == 3 { return &g_pressed_3 as u32 }
+    return &g_pressed_0 as u32
+}
 
-    si_exec()
+fn released_addr(port: i32) -> u32 {
+    if port == 1 { return &g_released_1 as u32 }
+    if port == 2 { return &g_released_2 as u32 }
+    if port == 3 { return &g_released_3 as u32 }
+    return &g_released_0 as u32
+}
 
-    -- Response: bytes 3=buttons_hi, 4=buttons_lo, 5=stick_x, 6=stick_y.
-    let bhi: u32 = peek8(b + 3)
-    let blo: u32 = peek8(b + 4)
-    let cur: u32 = (bhi << 8) | blo
-    let sx:  i32 = peek8(b + 5) as i32
-    let sy:  i32 = peek8(b + 6) as i32
+fn cs_addr(port: i32) -> u32 {
+    if port == 1 { return &g_cs_1 as u32 }
+    if port == 2 { return &g_cs_2 as u32 }
+    if port == 3 { return &g_cs_3 as u32 }
+    return &g_cs_0 as u32
+}
+
+-- Point each port's ControllerState at its own three button blocks. Indexed
+-- as *u32 (element size 4, which is what the pointer fields are).
+fn joypad_init() {
+    let mut p: i32 = 0
+    while p < 4 {
+        let cs: *u32 = cs_addr(p) as *u32
+        cs[0] = held_addr(p)
+        cs[1] = pressed_addr(p)
+        cs[2] = released_addr(p)
+        p = p + 1
+    }
+}
+
+-- Fold one port's PIF response into its held/pressed/released blocks.
+-- `cur` is the 16-bit button word; sx/sy are the already-signed stick axes.
+fn joypad_store(port: i32, cur: u32, sx: i32, sy: i32) {
+    let hb: u32 = held_addr(port)
 
     -- Read previous held state per-button (each field = one bool byte, 0 or 1).
-    let hb: u32 = &g_held_0 as u32
     let prev_a:     u32 = (*((hb + 0)  as *volatile u8)) as u32
     let prev_b:     u32 = (*((hb + 1)  as *volatile u8)) as u32
     let prev_z:     u32 = (*((hb + 2)  as *volatile u8)) as u32
@@ -321,7 +505,7 @@ fn joypad_poll() {
     let cur_clt:   u32 = ((cur & 0x0002) != 0) as u32
     let cur_crt:   u32 = ((cur & 0x0001) != 0) as u32
 
-    -- Write g_held_0.
+    -- Write held.
     *((hb + 0)  as *volatile u8) = cur_a     as u8
     *((hb + 1)  as *volatile u8) = cur_b     as u8
     *((hb + 2)  as *volatile u8) = cur_z     as u8
@@ -337,9 +521,9 @@ fn joypad_poll() {
     *((hb + 12) as *volatile u8) = cur_clt   as u8
     *((hb + 13) as *volatile u8) = cur_crt   as u8
 
-    -- Write g_pressed_0: pressed = (cur=1) & (prev=0) = cur & (1-prev).
+    -- Write pressed: pressed = (cur=1) & (prev=0) = cur & (1-prev).
     -- For single-bit 0/1 values this is equivalent to cur & ~prev.
-    let pb: u32 = &g_pressed_0 as u32
+    let pb: u32 = pressed_addr(port)
     *((pb + 0)  as *volatile u8) = (cur_a     & (1 - prev_a))     as u8
     *((pb + 1)  as *volatile u8) = (cur_b     & (1 - prev_b))     as u8
     *((pb + 2)  as *volatile u8) = (cur_z     & (1 - prev_z))     as u8
@@ -355,8 +539,8 @@ fn joypad_poll() {
     *((pb + 12) as *volatile u8) = (cur_clt   & (1 - prev_clt))   as u8
     *((pb + 13) as *volatile u8) = (cur_crt   & (1 - prev_crt))   as u8
 
-    -- Write g_released_0: released = (cur=0) & (prev=1) = (1-cur) & prev.
-    let rbase: u32 = &g_released_0 as u32
+    -- Write released: released = (cur=0) & (prev=1) = (1-cur) & prev.
+    let rbase: u32 = released_addr(port)
     *((rbase + 0)  as *volatile u8) = ((1 - cur_a)     & prev_a)     as u8
     *((rbase + 1)  as *volatile u8) = ((1 - cur_b)     & prev_b)     as u8
     *((rbase + 2)  as *volatile u8) = ((1 - cur_z)     & prev_z)     as u8
@@ -372,14 +556,67 @@ fn joypad_poll() {
     *((rbase + 12) as *volatile u8) = ((1 - cur_clt)   & prev_clt)   as u8
     *((rbase + 13) as *volatile u8) = ((1 - cur_crt)   & prev_crt)   as u8
 
-    -- Update stick axes in g_cs_0 at offsets 12 and 16.
-    let cs_base: u32 = &g_cs_0 as u32
+    -- Update stick axes in the ControllerState at offsets 12 and 16.
+    let cs_base: u32 = cs_addr(port)
     let p_sx: *volatile i32 = (cs_base + 12) as *volatile i32; *p_sx = sx
     let p_sy: *volatile i32 = (cs_base + 16) as *volatile i32; *p_sy = sy
 }
 
+-- The stick axes are int8 on the wire. Reading them as unsigned made a
+-- left push (0x80..0xFF) look like a hard right.
+fn si_s8(v: u32) -> i32 {
+    let b: i32 = (v & 0xFF) as i32
+    if b > 127 { return b - 256 }
+    return b
+}
+
+fn joypad_poll() {
+    -- Build the PIF command buffer in g_pif_buf via poke8 (real `sb` to the
+    -- buffer, not the stack). One read-controller command per port, back to
+    -- back: [tx=1][rx=4][cmd=0x01][4 result bytes] is 7 bytes and advances
+    -- one channel, so four of them cover ports 0-3 and end at byte 28.
+    -- Byte 28: 0xFE (end channels). Byte 63: 0x01 (execute PIF).
+    let b: u32 = pif_addr()
+    let mut p: i32 = 0
+    while p < 4 {
+        let c: u32 = (p * 7) as u32
+        poke8(b + c + 0, 0x01)
+        poke8(b + c + 1, 0x04)
+        poke8(b + c + 2, 0x01)
+        poke8(b + c + 3, 0xFF)
+        poke8(b + c + 4, 0xFF)
+        poke8(b + c + 5, 0xFF)
+        poke8(b + c + 6, 0xFF)
+        p = p + 1
+    }
+    poke8(b + 28, 0xFE)
+    poke8(b + 63, 0x01)
+
+    si_exec()
+
+    -- Response per port: bytes +3=buttons_hi, +4=buttons_lo, +5=stick_x,
+    -- +6=stick_y. The PIF ORs an error code into the rx byte -- 0x80 for no
+    -- device, 0x40 for a timeout -- and the result bytes are junk when it does,
+    -- so an empty port reads as all-buttons-up rather than as noise.
+    p = 0
+    while p < 4 {
+        let c: u32 = (p * 7) as u32
+        let rx: u32 = peek8(b + c + 1)
+        let mut cur: u32 = 0
+        let mut sx: i32 = 0
+        let mut sy: i32 = 0
+        if (rx & 0xC0) == 0 {
+            cur = (peek8(b + c + 3) << 8) | peek8(b + c + 4)
+            sx = si_s8(peek8(b + c + 5))
+            sy = si_s8(peek8(b + c + 6))
+        }
+        joypad_store(p, cur, sx, sy)
+        p = p + 1
+    }
+}
+
 fn joypad_get_status(port: i32) -> *ControllerState {
-    return &g_cs_0 as *ControllerState
+    return cs_addr(port) as *ControllerState
 }
 
 -- ── RDP (Display Processor) ─────────────────────────────────────────────────
@@ -455,6 +692,13 @@ const CYCLE_2CYCLE: u32 = 1
 const CYCLE_COPY:   u32 = 2
 const CYCLE_FILL:   u32 = 3
 
+-- The cycle type the last mode setter selected. texture_rectangle needs it:
+-- in COPY the RDP retires four pixels per cycle and the S step is written 4x,
+-- which is the convention every GBI blit uses. In 1- or 2-cycle the same value
+-- advances S four texels per pixel, so a 32-texel page is consumed in eight
+-- pixels and everything past that samples unloaded TMEM.
+static g_cycle: u32 = 3
+
 static g_current_fb: u32 = 0
 static g_fill_color: u16 = 0xFFFF
 
@@ -507,12 +751,33 @@ fn dl_word(w: u32) {
     g_dl_off = g_dl_off + 4
 }
 
--- Screen coordinate -> the RDP's 10.2 fixed point, clamped to the 12-bit field.
+-- Screen coordinate -> the RDP's 10.2 fixed point, clamped to the 12-bit
+-- unsigned field. Correct for SET_SCISSOR and the rectangle commands, whose
+-- corners are genuinely screen-space and unsigned. WRONG for a triangle's
+-- YL/YM/YH -- see to_fx142 below.
 fn to_fx102(v: i32) -> u32 {
     let mut x: i32 = v
     if x < 0 { x = 0 }
     if x > 1023 { x = 1023 }
     return (x * 4) as u32
+}
+
+-- A triangle's YL/YM/YH are a signed 14-bit field (11.2), not the unsigned
+-- 12-bit field the scissor and rectangles use. A vertex above the top of the
+-- screen has a real negative Y, and the RDP is meant to walk the edge down
+-- from that Y at the given slope, relying on its own scissor test to clip
+-- what falls outside 0..239 -- the X value at YH is only correct if YH is the
+-- vertex's true Y, not a Y clamped to 0.
+--
+-- Using to_fx102 here clamped YH to 0 while leaving XH as the X at the real
+-- (negative) Y, so the RDP started rasterizing at scanline 0 with the wrong
+-- X: every triangle with an off-screen vertex came out sheared, missing a
+-- third of its on-screen area and painting pixels outside its geometry.
+fn to_fx142(v: i32) -> u32 {
+    let mut x: i32 = v
+    if x < -2048 { x = -2048 }
+    if x > 2047 { x = 2047 }
+    return ((x * 4) as u32) & 0x3FFF
 }
 
 -- ── surface + mode state ───────────────────────────────────────────────────
@@ -585,6 +850,7 @@ fn rdpq_detach_show() {
 -- instead of a CPU loop over 76 800 uncached halfword stores.
 fn rdpq_set_mode_fill(color: u32) {
     dl_cmd(RDP_SYNC_PIPE << 24, 0)
+    g_cycle = CYCLE_FILL
     rdpq_set_other_modes_raw(CYCLE_FILL << 20, 0)
     rdpq_set_fill_color(color)
 }
@@ -594,6 +860,7 @@ fn rdpq_set_mode_fill(color: u32) {
 fn rdpq_set_mode_copy() {
     dl_cmd(RDP_SYNC_PIPE << 24, 0)
     -- alpha_compare_en (bit 0) so fully transparent texels are dropped.
+    g_cycle = CYCLE_COPY
     rdpq_set_other_modes_raw(CYCLE_COPY << 20, 0x00000001)
 }
 
@@ -611,7 +878,13 @@ fn rdp_set_mode_1cycle(zbuf: i32) {
     let blend: u32 = (1 << 22) | (1 << 20)
     let mut lo: u32 = blend | 0x00006040
     if zbuf != 0 { lo = lo | 0x30 }
-    rdpq_set_other_modes_raw(CYCLE_1CYCLE << 20, lo)
+    g_cycle = CYCLE_1CYCLE
+    -- bi_lerp0 (bit 11) and bi_lerp1 (bit 10) put the texture filter unit in
+    -- bilerp mode. With them clear the RDP runs every texel through the YUV
+    -- colour-convert path instead, which returns black for an RGBA texture --
+    -- so every textured triangle and every 1-cycle blit came out untextured.
+    let filt: u32 = (1 << 11) | (1 << 10)
+    rdpq_set_other_modes_raw((CYCLE_1CYCLE << 20) | filt, lo)
     -- Combiner (A-B)*C+D with A=B=C=0 and D=TEX0, for colour and alpha, in
     -- both cycles: sub_A=0, sub_B=0, mul=0, add=TEX0.
     rdpq_set_combiner_raw(0x00887F10, 0x88FCF279)
@@ -631,6 +904,7 @@ fn rdpq_clear_z() {
     let fb: u32 = g_current_fb
     rdpq_set_color_image(ZB, 0, 2, SCREEN_W)
     dl_cmd(RDP_SYNC_PIPE << 24, 0)
+    g_cycle = CYCLE_FILL
     rdpq_set_other_modes_raw(CYCLE_FILL << 20, 0)
     dl_cmd(RDP_SET_FILL_COLOR << 24, 0xFFFCFFFC)
     rdpq_fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
@@ -824,7 +1098,13 @@ fn rdpq_texture_rectangle_scaled(tile: u32, x0: i32, y0: i32, x1: i32, y1: i32,
                                  s: i32, t: i32, dsdx: i32, dtdy: i32) {
     if x1 <= x0 { return }
     if y1 <= y0 { return }
-    let w0: u32 = (RDP_TEXTURE_RECT << 24) | (to_fx102(x1 - 1) << 12) | to_fx102(y1 - 1)
+    -- XL/YL are the last pixel in COPY and FILL, but one past it in 1- and
+    -- 2-cycle. Using the COPY form everywhere dropped the right column and the
+    -- bottom row of every 1-cycle blit.
+    let mut xl: i32 = x1
+    let mut yl: i32 = y1
+    if g_cycle == CYCLE_COPY { xl = x1 - 1; yl = y1 - 1 }
+    let w0: u32 = (RDP_TEXTURE_RECT << 24) | (to_fx102(xl) << 12) | to_fx102(yl)
     let w1: u32 = ((tile & 7) << 24) | (to_fx102(x0) << 12) | to_fx102(y0)
     dl_cmd(w0, w1)
     let w2: u32 = (((s * 32) as u32 & 0xFFFF) << 16) | ((t * 32) as u32 & 0xFFFF)
@@ -832,10 +1112,14 @@ fn rdpq_texture_rectangle_scaled(tile: u32, x0: i32, y0: i32, x1: i32, y1: i32,
     dl_cmd(w2, w3)
 }
 
--- 1:1 blit: one texel per pixel. In COPY cycle the S step is four texels per
--- cycle, which the RDP expects as 4<<10 rather than 1<<10.
+-- A 1:1 blit. The S step is s5.10 texels per pixel: 1024 is one texel, and
+-- COPY wants it written 4x because the RDP retires four pixels per cycle
+-- there. Hardcoding the COPY value made every 1-cycle blit walk S four times
+-- too fast.
 fn rdpq_texture_rectangle(tile: u32, x0: i32, y0: i32, x1: i32, y1: i32, s: i32, t: i32) {
-    rdpq_texture_rectangle_scaled(tile, x0, y0, x1, y1, s, t, 4096, 1024)
+    let mut dsdx: i32 = 1024
+    if g_cycle == CYCLE_COPY { dsdx = 4096 }
+    rdpq_texture_rectangle_scaled(tile, x0, y0, x1, y1, s, t, dsdx, 1024)
 }
 
 -- TEXTURE_RECTANGLE_FLIP (0x25): same 1:1 blit as texture_rectangle, but T
@@ -847,7 +1131,9 @@ fn rdpq_texture_rectangle_flip(tile: u32, x0: i32, y0: i32, x1: i32, y1: i32, s:
     let w1: u32 = ((tile & 7) << 24) | (to_fx102(x0) << 12) | to_fx102(y0)
     dl_cmd(w0, w1)
     let w2: u32 = (((s * 32) as u32 & 0xFFFF) << 16) | ((t * 32) as u32 & 0xFFFF)
-    let w3: u32 = (4096 as u32 << 16) | 1024
+    let mut step: u32 = 1024
+    if g_cycle == CYCLE_COPY { step = 4096 }
+    let w3: u32 = (step << 16) | 1024
     dl_cmd(w2, w3)
 }
 
@@ -891,15 +1177,15 @@ fn rdpq_triangle(x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
     -- Which side the major edge falls on. Comparing the two cross-product
     -- terms avoids forming the product's sign separately.
     let mut lft: u32 = 0
-    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+    if (yc - ya) * (xb - xa) > (xc - xa) * (yb - ya) { lft = 1 }
 
     -- Major edge spans the full height; the minor edges meet at the middle.
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
 
-    let w0: u32 = (RDP_TRI_FILL << 24) | (lft << 23) | to_fx102(yc)
-    let w1: u32 = (to_fx102(yb) << 16) | to_fx102(ya)
+    let w0: u32 = (RDP_TRI_FILL << 24) | (lft << 23) | to_fx142(yc)
+    let w1: u32 = (to_fx142(yb) << 16) | to_fx142(ya)
     dl_cmd(w0, w1)
     dl_cmd((xb * 65536) as u32, dxldy as u32)
     dl_cmd((xa * 65536) as u32, dxhdy as u32)
@@ -939,14 +1225,14 @@ fn rdpq_triangle_z(x0: i32, y0: i32, z0: i32,
     if ya == yc { return }
 
     let mut lft: u32 = 0
-    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+    if (yc - ya) * (xb - xa) > (xc - xa) * (yb - ya) { lft = 1 }
 
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
 
-    dl_cmd((RDP_TRI_FILL_Z << 24) | (lft << 23) | to_fx102(yc),
-           (to_fx102(yb) << 16) | to_fx102(ya))
+    dl_cmd((RDP_TRI_FILL_Z << 24) | (lft << 23) | to_fx142(yc),
+           (to_fx142(yb) << 16) | to_fx142(ya))
     dl_cmd((xb * 65536) as u32, dxldy as u32)
     dl_cmd((xa * 65536) as u32, dxhdy as u32)
     dl_cmd((xa * 65536) as u32, dxmdy as u32)
@@ -1024,14 +1310,14 @@ fn rdpq_triangle_tex(tile: u32,
     if ya == yc { return }
 
     let mut lft: u32 = 0
-    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+    if (yc - ya) * (xb - xa) > (xc - xa) * (yb - ya) { lft = 1 }
 
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
 
-    let w0: u32 = (RDP_TRI_TEX << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx102(yc)
-    let w1: u32 = (to_fx102(yb) << 16) | to_fx102(ya)
+    let w0: u32 = (RDP_TRI_TEX << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx142(yc)
+    let w1: u32 = (to_fx142(yb) << 16) | to_fx142(ya)
     dl_cmd(w0, w1)
     dl_cmd((xb * 65536) as u32, dxldy as u32)
     dl_cmd((xa * 65536) as u32, dxhdy as u32)
@@ -1153,14 +1439,14 @@ fn rdp_tri_shade(opcode: u32,
     if ya == yc { return }
 
     let mut lft: u32 = 0
-    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+    if (yc - ya) * (xb - xa) > (xc - xa) * (yb - ya) { lft = 1 }
 
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
 
-    let w0: u32 = (opcode << 24) | (lft << 23) | to_fx102(yc)
-    let w1: u32 = (to_fx102(yb) << 16) | to_fx102(ya)
+    let w0: u32 = (opcode << 24) | (lft << 23) | to_fx142(yc)
+    let w1: u32 = (to_fx142(yb) << 16) | to_fx142(ya)
     dl_cmd(w0, w1)
     dl_cmd((xb * 65536) as u32, dxldy as u32)
     dl_cmd((xa * 65536) as u32, dxhdy as u32)
@@ -1338,12 +1624,12 @@ fn rdpq_triangle_shade_tex(tile: u32,
     }
     if ya == yc { return }
     let mut lft: u32 = 0
-    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+    if (yc - ya) * (xb - xa) > (xc - xa) * (yb - ya) { lft = 1 }
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
-    dl_cmd((RDP_TRI_SHADE_TXTR << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx102(yc),
-           (to_fx102(yb) << 16) | to_fx102(ya))
+    dl_cmd((RDP_TRI_SHADE_TXTR << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx142(yc),
+           (to_fx142(yb) << 16) | to_fx142(ya))
     dl_cmd((xb * 65536) as u32, dxldy as u32)
     dl_cmd((xa * 65536) as u32, dxhdy as u32)
     dl_cmd((xa * 65536) as u32, dxmdy as u32)
@@ -1397,12 +1683,12 @@ fn rdpq_triangle_shade_tex_z(tile: u32,
     }
     if ya == yc { return }
     let mut lft: u32 = 0
-    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+    if (yc - ya) * (xb - xa) > (xc - xa) * (yb - ya) { lft = 1 }
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
-    dl_cmd((RDP_TRI_SHADE_TXTR_Z << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx102(yc),
-           (to_fx102(yb) << 16) | to_fx102(ya))
+    dl_cmd((RDP_TRI_SHADE_TXTR_Z << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx142(yc),
+           (to_fx142(yb) << 16) | to_fx142(ya))
     dl_cmd((xb * 65536) as u32, dxldy as u32)
     dl_cmd((xa * 65536) as u32, dxhdy as u32)
     dl_cmd((xa * 65536) as u32, dxmdy as u32)
@@ -1457,14 +1743,14 @@ fn rdpq_triangle_tex_z(tile: u32,
     if ya == yc { return }
 
     let mut lft: u32 = 0
-    if (yc - ya) * (xb - xa) < (xc - xa) * (yb - ya) { lft = 1 }
+    if (yc - ya) * (xb - xa) > (xc - xa) * (yb - ya) { lft = 1 }
 
     let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
     let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
     let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
 
-    dl_cmd((RDP_TRI_TEX_Z << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx102(yc),
-           (to_fx102(yb) << 16) | to_fx102(ya))
+    dl_cmd((RDP_TRI_TEX_Z << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx142(yc),
+           (to_fx142(yb) << 16) | to_fx142(ya))
     dl_cmd((xb * 65536) as u32, dxldy as u32)
     dl_cmd((xa * 65536) as u32, dxhdy as u32)
     dl_cmd((xa * 65536) as u32, dxmdy as u32)
@@ -1619,6 +1905,145 @@ fn dma_write(src: *u8, cart: u32, len: i32) {
     vi_write(PI_CART_ADDR, cart)
     vi_write(PI_RD_LEN, (len - 1) as u32)
     dma_wait()
+}
+
+-- ── Rumble Pak (Joybus accessory, controller ports 0-3) ─────────────────────
+-- The Rumble Pak is not a device of its own: it sits behind a controller and
+-- is reached with Joybus commands 0x02 (read 32 bytes) and 0x03 (write 32
+-- bytes) on that controller's own channel. So the frame below skips one
+-- channel per lower port with a 0x00 byte, exactly the way the EEPROM code
+-- below skips channels 0-3 to reach channel 4.
+--
+-- The 16-bit address field carries a 5-bit CRC in its low bits. It is not
+-- optional: a pak rejects a write whose address CRC is wrong, so a rumble
+-- that "does nothing" is usually this.
+--
+--   probe (0x8000): write 0xFE x32, then 0x80 x32, then read back.
+--                   A Rumble Pak answers 0x80 in all 32 bytes.
+--   motor (0xC000): write 0x01 x32 to start, 0x00 x32 to stop.
+const RUMBLE_ADDR_PROBE: u32 = 0x8000
+const RUMBLE_ADDR_MOTOR: u32 = 0xC000
+
+static g_rumble_probed: [4]i32
+static g_rumble_present: [4]i32
+
+-- Per-bit contribution to the address CRC-5, for address bits 15 down to 5.
+-- A CRC is linear over GF(2), so the checksum is the XOR of the entries for
+-- the bits that are set -- which is why this is a table lookup and not a
+-- shift register.
+fn rumble_crc_bit(i: i32) -> u32 {
+    if i == 5  { return 0x15 }
+    if i == 6  { return 0x1F }
+    if i == 7  { return 0x0B }
+    if i == 8  { return 0x16 }
+    if i == 9  { return 0x19 }
+    if i == 10 { return 0x07 }
+    if i == 11 { return 0x0E }
+    if i == 12 { return 0x1C }
+    if i == 13 { return 0x0D }
+    if i == 14 { return 0x1A }
+    if i == 15 { return 0x01 }
+    return 0
+}
+
+-- The address as it goes on the wire: offset in the top 11 bits, CRC in the
+-- low 5.
+fn rumble_addr(addr: u32) -> u32 {
+    let a: u32 = addr & 0xFFE0
+    let mut crc: u32 = 0
+    let mut i: i32 = 15
+    while i >= 5 {
+        if ((a >> (i as u32)) & 1) != 0 { crc = crc ^ rumble_crc_bit(i) }
+        i = i - 1
+    }
+    return a | (crc & 0x1F)
+}
+
+-- Write the same byte to all 32 bytes of one accessory block. Every value the
+-- Rumble Pak takes is a fill (0xFE, 0x80, 0x01, 0x00), so there is no reason
+-- for a caller-supplied buffer.
+fn rumble_write_fill(port: i32, addr: u32, val: u32) {
+    pif_zero()
+    let b: u32 = pif_addr()
+    let off: u32 = port as u32
+    poke8(b + off + 0, 35)      -- tx: cmd + 2 address bytes + 32 data
+    poke8(b + off + 1, 1)       -- rx: the data CRC comes back
+    poke8(b + off + 2, 0x03)
+    let ac: u32 = rumble_addr(addr)
+    poke8(b + off + 3, ac >> 8)
+    poke8(b + off + 4, ac & 0xFF)
+    let mut i: i32 = 0
+    while i < 32 {
+        poke8(b + off + 5 + (i as u32), val)
+        i = i + 1
+    }
+    poke8(b + off + 38, 0xFE)
+    poke8(b + 63, 0x01)
+    si_exec()
+}
+
+-- Read one accessory block and report whether every byte equals `want`.
+-- That is the only question the probe asks, so the 32 bytes never have to
+-- leave PIF RAM.
+fn rumble_read_is_fill(port: i32, addr: u32, want: u32) -> i32 {
+    pif_zero()
+    let b: u32 = pif_addr()
+    let off: u32 = port as u32
+    poke8(b + off + 0, 3)       -- tx: cmd + 2 address bytes
+    poke8(b + off + 1, 33)      -- rx: 32 data bytes + CRC
+    poke8(b + off + 2, 0x02)
+    let ac: u32 = rumble_addr(addr)
+    poke8(b + off + 3, ac >> 8)
+    poke8(b + off + 4, ac & 0xFF)
+    poke8(b + off + 38, 0xFE)
+    poke8(b + 63, 0x01)
+    si_exec()
+    -- The PIF ORs 0x80 (no device) or 0x40 (timeout) into the rx byte, and the
+    -- payload is junk when it does.
+    if (peek8(b + off + 1) & 0xC0) != 0 { return 0 }
+    let mut i: i32 = 0
+    while i < 32 {
+        if peek8(b + off + 5 + (i as u32)) != want { return 0 }
+        i = i + 1
+    }
+    return 1
+}
+
+fn rumble_probe(port: i32) -> i32 {
+    if port < 0 { return 0 }
+    if port > 3 { return 0 }
+    if g_rumble_probed[port] != 0 { return g_rumble_present[port] }
+    rumble_write_fill(port, RUMBLE_ADDR_PROBE, 0xFE)
+    rumble_write_fill(port, RUMBLE_ADDR_PROBE, 0x80)
+    let r: i32 = rumble_read_is_fill(port, RUMBLE_ADDR_PROBE, 0x80)
+    g_rumble_present[port] = r
+    g_rumble_probed[port] = 1
+    return r
+}
+
+-- Re-probe every port. The pak can be swapped between calls, which is the
+-- only reason this exists: nothing here needs setting up.
+fn rumble_init() {
+    let mut p: i32 = 0
+    while p < 4 {
+        g_rumble_probed[p] = 0
+        g_rumble_present[p] = 0
+        p = p + 1
+    }
+}
+
+fn rumble_is_plugged(port: i32) -> i32 {
+    return rumble_probe(port)
+}
+
+fn rumble_start(port: i32) {
+    if rumble_probe(port) == 0 { return }
+    rumble_write_fill(port, RUMBLE_ADDR_MOTOR, 0x01)
+}
+
+fn rumble_stop(port: i32) {
+    if rumble_probe(port) == 0 { return }
+    rumble_write_fill(port, RUMBLE_ADDR_MOTOR, 0x00)
 }
 
 -- ── EEPROM (SI / PIF Joybus channel 4) ──────────────────────────────────────
@@ -1931,7 +2356,53 @@ fn assert(cond: i32) {
 
 -- No ISViewer on a bare cartridge; debug output is a no-op rather than a
 -- link error.
+-- ── ISViewer debug channel ──────────────────────────────────────────────────
+-- ISViewer is a serial console that lives in the cartridge address space:
+-- everdrives, 64drive and every emulator worth debugging on implement it. The
+-- magic word "IS64" sits at 0x13FF0000, the write pointer at 0x13FF0014, and
+-- the text buffer runs from 0x13FF0020. Writing the length last is what makes
+-- the host print, so it goes last here too.
+--
+-- All four accesses are single 32-bit PI reads and writes through KSEG1, not
+-- DMA: the buffer is device memory, and the transfers are one word each.
+const IS_MAGIC:  u32 = 0xB3FF0000
+const IS_PUTLEN: u32 = 0xB3FF0014
+const IS_BUFFER: u32 = 0xB3FF0020
+const IS_BUFSZ:  i32 = 0xFFC
+
+static g_is_present: i32 = 0
+
+fn debug_init_isviewer() {
+    -- "IS64" big-endian. Absent hardware reads back as open-bus rather than
+    -- the magic, so every later debugf is a no-op instead of a bus error.
+    let p: *volatile u32 = IS_MAGIC as *volatile u32
+    *p = 0x49533634
+    let back: u32 = *p
+    if back == 0x49533634 { g_is_present = 1 } else { g_is_present = 0 }
+}
+
+-- The buffer takes whole 32-bit words, big-endian, so four characters are
+-- packed per store and the tail is zero-padded.
 fn debugf(fmt: *u8) {
+    if g_is_present == 0 { return }
+    let mut n: i32 = strlen(fmt)
+    if n > IS_BUFSZ { n = IS_BUFSZ }
+    let mut i: i32 = 0
+    while i < n {
+        let mut w: u32 = 0
+        let mut b: i32 = 0
+        while b < 4 {
+            let mut c: u32 = 0
+            if (i + b) < n { c = fmt[i + b] as u32 }
+            w = (w << 8) | c
+            b = b + 1
+        }
+        let dst: *volatile u32 = (IS_BUFFER + i as u32) as *volatile u32
+        *dst = w
+        i = i + 4
+    }
+    let len: *volatile u32 = IS_PUTLEN as *volatile u32
+    *len = n as u32
 }
 
 -- ── libc-style string helpers ───────────────────────────────────────────────
@@ -1991,4 +2462,1095 @@ fn strstr(hay: *u8, needle: *u8) -> *u8 {
         i = i + 1
     }
     return 0 as *u8
+}
+
+-- ── the interrupt handler ─────────────────────────────────────────────────
+-- boot.S jal's this from the general exception vector once it has established
+-- that the exception is an interrupt on IP2 and saved the caller-saved state.
+-- It must acknowledge every source it finds asserting: the RCP holds the line
+-- high until the device is told to drop it, so a source left unacknowledged
+-- re-enters this handler forever.
+--
+-- Do not call anything here that waits on hardware. Status.EXL is set for the
+-- whole of it, so nothing else can be serviced until it returns.
+fn __pak_irq() {
+    -- MI_INTERRUPT shows every source asserting, including ones whose mask
+    -- bit is clear and whose flag therefore belongs to nobody here.
+    let pending: u32 = vi_read(MI_INTERRUPT) & g_irq_mask
+    g_irq_seen = g_irq_seen | pending
+
+    if (pending & MI_INTR_VI) != 0 {
+        -- Any write to VI_V_CURRENT drops the VI's line.
+        vi_write(VI_V_CURRENT, 0)
+        g_vi_count = g_vi_count + 1
+    }
+    if (pending & MI_INTR_PI) != 0 {
+        -- PI_STATUS bit 1 is "clear interrupt".
+        vi_write(PI_STATUS, 0x02)
+    }
+    if (pending & MI_INTR_SI) != 0 {
+        vi_write(SI_STATUS, 0)
+    }
+    if (pending & MI_INTR_AI) != 0 {
+        vi_write(AI_STATUS, 0)
+    }
+    if (pending & MI_INTR_SP) != 0 {
+        -- SP_STATUS bit 3 clears the RSP's interrupt.
+        vi_write(SP_STATUS, 0x08)
+    }
+    if (pending & MI_INTR_DP) != 0 {
+        -- MI_MODE bit 11 clears the DP interrupt.
+        vi_write(MI_MODE, 0x0800)
+    }
+}
+
+-- ── interrupt API (called by generated game code) ─────────────────────────
+fn interrupt_init() {
+    if g_irq_on != 0 { return }
+    -- Start from a clean slate: mask everything off, then arm just the VI.
+    vi_write(MI_MASK, MI_MASK_CLEAR_ALL)
+    vi_write(VI_V_CURRENT, 0)
+    vi_write(VI_V_INTR, VI_INTR_LINE)
+    vi_write(MI_MASK, MI_MASK_SET_VI)
+    g_irq_mask = MI_INTR_VI
+    g_irq_on = 1
+    __pak_irq_enable()
+}
+
+fn interrupt_disable() -> u32 {
+    return __pak_irq_disable()
+}
+
+fn interrupt_restore(status: u32) {
+    __pak_irq_restore(status)
+}
+
+fn interrupt_vi_count() -> u32 {
+    return g_vi_count
+}
+
+fn interrupt_pending() -> u32 {
+    return g_irq_seen
+}
+
+fn interrupt_enabled() -> i32 {
+    return g_irq_on
+}
+
+-- ── RSP (Reality Signal Processor) ────────────────────────────────────────
+-- Enough to load a microcode task, run it, and get its results back. Pak does
+-- not compile to the RSP -- it is a different instruction set with a vector
+-- unit -- so a task's words come from somewhere else and this moves them.
+--
+-- The scalar half of the RSP is a MIPS I subset, which means tcl/n64enc.tcl
+-- can assemble a task: see tcl/tests/ares/rsp_add.S and the gate that keeps
+-- its listing and the words a program ships in step.
+
+fn sp_wait_dma() {
+    loop {
+        let st: u32 = vi_read(SP_STATUS)
+        if (st & (SP_ST_DMA_BUSY | SP_ST_DMA_FULL)) == 0 { break }
+    }
+}
+
+-- One SP DMA. `mem` is an SP_MEM_ADDR value (add SP_IMEM for instruction
+-- memory), `ram` a cached or uncached RDRAM pointer, `len` a byte count.
+-- Both addresses and the length must be multiples of 8; a misaligned transfer
+-- is silently truncated by the hardware rather than refused, so it is checked
+-- here instead.
+fn sp_dma(mem: u32, ram: u32, len: u32, to_rsp: i32) {
+    if (mem & 7) != 0 { __pak_panic() }
+    if (ram & 7) != 0 { __pak_panic() }
+    if (len & 7) != 0 { __pak_panic() }
+    if len == 0 { return }
+    sp_wait_dma()
+    let p_mem: *volatile u32 = SP_MEM_ADDR as *volatile u32
+    *p_mem = mem
+    let p_ram: *volatile u32 = SP_DRAM_ADDR as *volatile u32
+    *p_ram = ram & 0x1FFFFFFF
+    if to_rsp != 0 {
+        let p_rd: *volatile u32 = SP_RD_LEN as *volatile u32
+        *p_rd = len - 1
+    } else {
+        let p_wr: *volatile u32 = SP_WR_LEN as *volatile u32
+        *p_wr = len - 1
+    }
+    sp_wait_dma()
+}
+
+fn pak_sp_init() {
+    -- Park the RSP: halted, no pending break, no single step, and no
+    -- interrupt on break. A task that wants the interrupt asks for it.
+    let p: *volatile u32 = SP_STATUS as *volatile u32
+    let park: u32 = SP_SET_SET_HALT | SP_SET_CLR_BROKE | SP_SET_CLR_INTR
+    *p = park | SP_SET_CLR_SSTEP | SP_SET_CLR_INTBRK
+    sp_wait_dma()
+}
+
+-- Copy a microcode image from RDRAM into IMEM. `src` must be writeback-clean:
+-- the SP DMA reads RDRAM directly and does not see the CPU's data cache.
+fn pak_sp_load_ucode(src: u32, len: u32) {
+    data_cache_hit_writeback(src as *u8, len as i32)
+    sp_dma(SP_IMEM, src, len, 1)
+}
+
+fn pak_sp_load_data(src: u32, dmem_off: u32, len: u32) {
+    data_cache_hit_writeback(src as *u8, len as i32)
+    sp_dma(dmem_off, src, len, 1)
+}
+
+fn pak_sp_read_data(dst: u32, dmem_off: u32, len: u32) {
+    sp_dma(dmem_off, dst, len, 0)
+    data_cache_hit_invalidate(dst as *u8, len as i32)
+}
+
+-- Start the task at an IMEM byte offset. SP_PC only takes a write while the
+-- RSP is halted, so this sets halt, points it, and then releases it.
+fn pak_sp_run(pc: u32) {
+    let p_st: *volatile u32 = SP_STATUS as *volatile u32
+    *p_st = SP_SET_SET_HALT | SP_SET_CLR_BROKE
+    let p_pc: *volatile u32 = SP_PC as *volatile u32
+    *p_pc = pc & 0xFFC
+    *p_st = SP_SET_CLR_HALT
+}
+
+fn pak_sp_done() -> i32 {
+    let st: u32 = vi_read(SP_STATUS)
+    if (st & (SP_ST_HALT | SP_ST_BROKE)) != 0 { return 1 }
+    return 0
+}
+
+fn pak_sp_wait() {
+    loop {
+        if pak_sp_done() != 0 { break }
+    }
+    sp_wait_dma()
+}
+
+fn pak_sp_status() -> u32 {
+    return vi_read(SP_STATUS)
+}
+
+-- ── math ──────────────────────────────────────────────────────────────────
+-- The whole n64.math surface, in Pak. On the libdragon backend these lower to
+-- <math.h>; there is no libm here, so the standalone HAL has to be the
+-- implementation. Everything below is f32 -- the VR4300's FPU is
+-- single-precision for the codegen's purposes and Pak has no f64.
+--
+-- Accuracy: sin/cos are a six-term Taylor series on a quadrant-reduced
+-- argument (error under 1e-7, at f32's own resolution); atan2 is a
+-- five-coefficient minimax (about 1e-5); sqrt is Newton-Raphson from a scaled
+-- seed, which reaches f32 precision in four steps. Good enough for a game,
+-- and none of it allocates or waits.
+
+const PAK_PI: f32      = 3.14159265
+const PAK_TWO_PI: f32  = 6.28318531
+const PAK_HALF_PI: f32 = 1.57079633
+const PAK_LN2: f32     = 0.69314718
+
+fn math_abs_i32(x: i32) -> i32 {
+    if x < 0 { return 0 - x }
+    return x
+}
+
+fn math_min_i32(a: i32, b: i32) -> i32 {
+    if a < b { return a }
+    return b
+}
+
+fn math_max_i32(a: i32, b: i32) -> i32 {
+    if a > b { return a }
+    return b
+}
+
+fn math_clamp_i32(v: i32, lo: i32, hi: i32) -> i32 {
+    if v < lo { return lo }
+    if v > hi { return hi }
+    return v
+}
+
+fn math_abs_f(x: f32) -> f32 {
+    if x < 0.0 { return 0.0 - x }
+    return x
+}
+
+fn math_min_f(a: f32, b: f32) -> f32 {
+    if a < b { return a }
+    return b
+}
+
+fn math_max_f(a: f32, b: f32) -> f32 {
+    if a > b { return a }
+    return b
+}
+
+fn math_clamp_f(v: f32, lo: f32, hi: f32) -> f32 {
+    if v < lo { return lo }
+    if v > hi { return hi }
+    return v
+}
+
+fn math_lerp_f(a: f32, b: f32, t: f32) -> f32 {
+    return a + (b - a) * t
+}
+
+-- `as i32` truncates toward zero, so the negative cases need the extra step.
+-- Valid for |x| < 2^31; beyond that the cast itself is undefined.
+fn math_floor_f(x: f32) -> f32 {
+    let t: f32 = (x as i32) as f32
+    if x < 0.0 and t != x { return t - 1.0 }
+    return t
+}
+
+fn math_ceil_f(x: f32) -> f32 {
+    let t: f32 = (x as i32) as f32
+    if x > 0.0 and t != x { return t + 1.0 }
+    return t
+}
+
+fn math_fix_to_f(v: i32) -> f32 {
+    return (v as f32) / 65536.0
+}
+
+fn math_f_to_fix(v: f32) -> i32 {
+    return (v * 65536.0) as i32
+}
+
+-- ── sqrt ──────────────────────────────────────────────────────────────────
+-- Scale into [1, 4) by powers of four, Newton there, then scale the answer by
+-- the matching power of two. The scaling is what makes four iterations enough
+-- whatever the magnitude: Pak has no way to reinterpret a float's bits, so
+-- the usual exponent hack for the seed is not available.
+fn math_sqrt_f(x: f32) -> f32 {
+    if x <= 0.0 { return 0.0 }
+    let mut m: f32 = x
+    let mut k: i32 = 0
+    while m >= 4.0 {
+        m = m * 0.25
+        k = k + 1
+    }
+    while m < 1.0 {
+        m = m * 4.0
+        k = k - 1
+    }
+    let mut y: f32 = 0.5 * (m + 1.0)
+    y = 0.5 * (y + m / y)
+    y = 0.5 * (y + m / y)
+    y = 0.5 * (y + m / y)
+    y = 0.5 * (y + m / y)
+    while k > 0 {
+        y = y * 2.0
+        k = k - 1
+    }
+    while k < 0 {
+        y = y * 0.5
+        k = k + 1
+    }
+    return y
+}
+
+-- ── sin / cos / tan ───────────────────────────────────────────────────────
+-- Fold into [0, PI/2] using sin(-t) = -sin(t) and sin(PI - t) = sin(t), then
+-- Taylor. Six terms over a quarter turn is past f32's own resolution; over the
+-- whole turn it would not be, which is why the folding comes first.
+fn math_sin_f(x: f32) -> f32 {
+    let mut t: f32 = x
+    while t > PAK_PI { t = t - PAK_TWO_PI }
+    while t < 0.0 - PAK_PI { t = t + PAK_TWO_PI }
+    let mut sign: f32 = 1.0
+    if t < 0.0 {
+        t = 0.0 - t
+        sign = 0.0 - 1.0
+    }
+    if t > PAK_HALF_PI { t = PAK_PI - t }
+    let t2: f32 = t * t
+    -- Horner on t * (1 - t2/6 + t2^2/120 - t2^3/5040 + t2^4/362880
+    --                - t2^5/39916800)
+    let mut s: f32 = 0.0 - 0.000000025052108
+    s = s * t2 + 0.0000027557319
+    s = s * t2 - 0.00019841270
+    s = s * t2 + 0.0083333333
+    s = s * t2 - 0.16666667
+    s = s * t2 + 1.0
+    return sign * t * s
+}
+
+fn math_cos_f(x: f32) -> f32 {
+    return math_sin_f(x + PAK_HALF_PI)
+}
+
+fn math_tan_f(x: f32) -> f32 {
+    let c: f32 = math_cos_f(x)
+    if c == 0.0 { return 0.0 }
+    return math_sin_f(x) / c
+}
+
+-- ── atan2 ─────────────────────────────────────────────────────────────────
+-- Minimax on |z| <= 1, then the octant fixup. Accurate to about 1e-5, which
+-- is what a five-coefficient fit buys.
+fn math_atan_unit(z: f32) -> f32 {
+    let z2: f32 = z * z
+    let mut p: f32 = 0.0208351
+    p = p * z2 - 0.0851330
+    p = p * z2 + 0.1801410
+    p = p * z2 - 0.3302995
+    p = p * z2 + 0.9998660
+    return z * p
+}
+
+fn math_atan2_f(y: f32, x: f32) -> f32 {
+    if x == 0.0 and y == 0.0 { return 0.0 }
+    let ax: f32 = math_abs_f(x)
+    let ay: f32 = math_abs_f(y)
+    let mut a: f32 = 0.0
+    if ax >= ay {
+        a = math_atan_unit(y / x)
+        if x < 0.0 {
+            if y >= 0.0 { a = a + PAK_PI } else { a = a - PAK_PI }
+        }
+        return a
+    }
+    -- |y| > |x|: reflect through the diagonal so the polynomial keeps its
+    -- argument inside [-1, 1].
+    a = math_atan_unit(x / y)
+    if y >= 0.0 { return PAK_HALF_PI - a }
+    return (0.0 - PAK_HALF_PI) - a
+}
+
+-- ── exp / log / pow ───────────────────────────────────────────────────────
+-- ln by the atanh series on a mantissa scaled into [1, 2); exp by the same
+-- power-of-two split in reverse. pow is exp(y * ln x), so it inherits both.
+fn math_ln_f(x: f32) -> f32 {
+    if x <= 0.0 { return 0.0 }
+    let mut m: f32 = x
+    let mut k: i32 = 0
+    while m >= 2.0 {
+        m = m * 0.5
+        k = k + 1
+    }
+    while m < 1.0 {
+        m = m * 2.0
+        k = k - 1
+    }
+    let s: f32 = (m - 1.0) / (m + 1.0)
+    let s2: f32 = s * s
+    let mut p: f32 = 0.11111111
+    p = p * s2 + 0.14285714
+    p = p * s2 + 0.2
+    p = p * s2 + 0.33333333
+    p = p * s2 + 1.0
+    return 2.0 * s * p + (k as f32) * PAK_LN2
+}
+
+fn math_exp_f(x: f32) -> f32 {
+    -- Split into 2^k * e^r with |r| <= ln2/2, where six Taylor terms are past
+    -- f32's resolution.
+    let mut k: i32 = (x / PAK_LN2) as i32
+    if x < 0.0 and ((k as f32) * PAK_LN2) > x { k = k - 1 }
+    let r: f32 = x - (k as f32) * PAK_LN2
+    let mut e: f32 = 0.0013888889
+    e = e * r + 0.0083333333
+    e = e * r + 0.041666667
+    e = e * r + 0.16666667
+    e = e * r + 0.5
+    e = e * r + 1.0
+    e = e * r + 1.0
+    let mut n: i32 = k
+    while n > 0 {
+        e = e * 2.0
+        n = n - 1
+    }
+    while n < 0 {
+        e = e * 0.5
+        n = n + 1
+    }
+    return e
+}
+
+fn math_pow_f(x: f32, y: f32) -> f32 {
+    if y == 0.0 { return 1.0 }
+    if x == 0.0 { return 0.0 }
+    if x > 0.0 { return math_exp_f(y * math_ln_f(x)) }
+    -- A negative base is only defined for an integer exponent; anything else
+    -- has no real answer, so it comes back as zero rather than a NaN nobody
+    -- checks for.
+    let iy: i32 = y as i32
+    if (iy as f32) != y { return 0.0 }
+    let m: f32 = math_exp_f(y * math_ln_f(0.0 - x))
+    if (iy & 1) != 0 { return 0.0 - m }
+    return m
+}
+
+-- ── fixed-point wrappers ──────────────────────────────────────────────────
+fn math_fix_sin(a: i32) -> i32 {
+    return math_f_to_fix(math_sin_f(math_fix_to_f(a)))
+}
+
+fn math_fix_cos(a: i32) -> i32 {
+    return math_f_to_fix(math_cos_f(math_fix_to_f(a)))
+}
+
+fn math_fix_sqrt(a: i32) -> i32 {
+    return math_f_to_fix(math_sqrt_f(math_fix_to_f(a)))
+}
+
+-- ── PRNG ──────────────────────────────────────────────────────────────────
+-- xorshift32, the same generator and the same default seed as runtime/
+-- pak_rand.h, so a program seeded identically produces the same stream on
+-- both backends.
+static g_rng: u32 = 0x2545F491
+
+fn math_rand_seed(seed: u32) {
+    if seed == 0 {
+        g_rng = 0x2545F491
+    } else {
+        g_rng = seed
+    }
+}
+
+fn math_rand() -> u32 {
+    let mut x: u32 = g_rng
+    x = x ^ (x << 13)
+    x = x ^ (x >> 17)
+    x = x ^ (x << 5)
+    g_rng = x
+    return x
+}
+
+fn math_rand_range(lo: i32, hi: i32) -> i32 {
+    if hi <= lo { return lo }
+    let span: u32 = (hi - lo) as u32
+    return lo + (math_rand() % span) as i32
+}
+
+fn math_rand_f() -> f32 {
+    -- 24 bits, the most an f32 mantissa holds exactly.
+    return ((math_rand() >> 8) as f32) / 16777216.0
+}
+
+-- ── constants a program can declare `extern const` ─────────────────────────
+-- These are libdragon macros on the C backend, so nothing there defines a
+-- symbol for them; a standalone link needs one. Both are hardware facts
+-- rather than libdragon inventions, which is why they belong here:
+--
+--   TICKS_PER_SECOND   the VR4300's COP0 count rate, CPU_FREQUENCY / 2, and
+--                      93.75 MHz is the retail N64's clock.
+--   RDPQ_COMBINER_FLAT the colour combiner set to pass the primitive colour
+--                      through unchanged. libdragon's macro is 64 bits
+--                      (0x00887F1088FDF6FB); a `u32` reference to it takes
+--                      the low half on either backend, so that is what this
+--                      is, and a program wanting the whole word should build
+--                      it with rdpq.set_combiner_raw.
+--
+-- They are `static`, not `const`, because an `extern const` in a program
+-- lowers to a symbol reference and a Pak `const` has no address.
+static TICKS_PER_SECOND: u32   = 46875000
+static RDPQ_COMBINER_FLAT: u32 = 0x88FDF6FB
+
+-- ── FixedMap / Pool helpers ────────────────────────────────────────────────
+-- The MIPS backend lowers FixedMap and Pool methods into calls on these. They
+-- are the standalone counterpart of runtime/pak_containers.h: one helper has
+-- to serve every K and V, so the element sizes travel with the call and the
+-- key and value are passed by address rather than by value.
+--
+-- FixedMap(K, V, N) is laid out
+--     keys[N] @ 0            values[N] @ vals_off
+--     occupied[N] @ occ      len @ (occ + N) rounded up to 4
+-- `vals_off` travels with the call because the backend pads keys[] up to the
+-- wider of align(K) and align(V) -- a value load has to stay aligned -- and
+-- that padding cannot be recovered from N * key_sz alone.
+--
+-- Pool(T, N) is data[N] @ 0 and len @ (N * elem_sz) rounded up to 4.
+
+fn pak_align4(n: i32) -> i32 {
+    return ((n + 3) / 4) * 4
+}
+
+fn pak_bytes_equal(a: u32, b: u32, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        let pa: *u8 = (a + i as u32) as *u8
+        let pb: *u8 = (b + i as u32) as *u8
+        if *pa != *pb { return 0 }
+        i = i + 1
+    }
+    return 1
+}
+
+fn pak_bytes_copy(dst: u32, src: u32, n: i32) {
+    let mut i: i32 = 0
+    while i < n {
+        let ps: *u8 = (src + i as u32) as *u8
+        let pd: *u8 = (dst + i as u32) as *u8
+        *pd = *ps
+        i = i + 1
+    }
+}
+
+fn pak_bytes_zero(dst: u32, n: i32) {
+    let mut i: i32 = 0
+    while i < n {
+        let pd: *u8 = (dst + i as u32) as *u8
+        *pd = 0
+        i = i + 1
+    }
+}
+
+fn pak_bytes_swap(a: u32, b: u32, n: i32) {
+    let mut i: i32 = 0
+    while i < n {
+        let pa: *u8 = (a + i as u32) as *u8
+        let pb: *u8 = (b + i as u32) as *u8
+        let t: u8 = *pa
+        *pa = *pb
+        *pb = t
+        i = i + 1
+    }
+}
+
+-- Address of occupied[0].
+fn pak_map_occ(map: u32, cap: i32, val_sz: i32, vals_off: i32) -> u32 {
+    return map + (vals_off + cap * val_sz) as u32
+}
+
+-- Address of len.
+fn pak_map_lenp(occ: u32, cap: i32) -> u32 {
+    return occ + pak_align4(cap) as u32
+}
+
+-- Index of the slot holding `key`, or -1.
+fn pak_map_find(map: u32, cap: i32, key_ptr: u32, key_sz: i32, occ: u32) -> i32 {
+    let mut i: i32 = 0
+    while i < cap {
+        let o: *u8 = (occ + i as u32) as *u8
+        if *o != 0 {
+            if pak_bytes_equal(map + (i * key_sz) as u32, key_ptr, key_sz) != 0 {
+                return i
+            }
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+fn pak_map_set_raw(map: u32, cap: i32, key_ptr: u32, val_ptr: u32,
+                   key_sz: i32, val_sz: i32, vals_off: i32) -> i32 {
+    let occ: u32 = pak_map_occ(map, cap, val_sz, vals_off)
+    let hit: i32 = pak_map_find(map, cap, key_ptr, key_sz, occ)
+    if hit >= 0 {
+        pak_bytes_copy(map + (vals_off + hit * val_sz) as u32, val_ptr, val_sz)
+        return 1
+    }
+    let mut i: i32 = 0
+    while i < cap {
+        let o: *u8 = (occ + i as u32) as *u8
+        if *o == 0 {
+            pak_bytes_copy(map + (i * key_sz) as u32, key_ptr, key_sz)
+            pak_bytes_copy(map + (vals_off + i * val_sz) as u32, val_ptr, val_sz)
+            *o = 1
+            let lp: *i32 = pak_map_lenp(occ, cap) as *i32
+            *lp = *lp + 1
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+-- Returns the address of the value slot, or 0 (`none`) when absent.
+fn pak_map_get_raw(map: u32, cap: i32, key_ptr: u32,
+                   key_sz: i32, val_sz: i32, vals_off: i32) -> u32 {
+    let occ: u32 = pak_map_occ(map, cap, val_sz, vals_off)
+    let hit: i32 = pak_map_find(map, cap, key_ptr, key_sz, occ)
+    if hit < 0 { return 0 }
+    return map + (vals_off + hit * val_sz) as u32
+}
+
+fn pak_map_has_raw(map: u32, cap: i32, key_ptr: u32,
+                   key_sz: i32, val_sz: i32, vals_off: i32) -> i32 {
+    if pak_map_get_raw(map, cap, key_ptr, key_sz, val_sz, vals_off) != 0 { return 1 }
+    return 0
+}
+
+fn pak_map_remove_raw(map: u32, cap: i32, key_ptr: u32,
+                      key_sz: i32, val_sz: i32, vals_off: i32) -> i32 {
+    let occ: u32 = pak_map_occ(map, cap, val_sz, vals_off)
+    let hit: i32 = pak_map_find(map, cap, key_ptr, key_sz, occ)
+    if hit < 0 { return 0 }
+    let o: *u8 = (occ + hit as u32) as *u8
+    *o = 0
+    let lp: *i32 = pak_map_lenp(occ, cap) as *i32
+    *lp = *lp - 1
+    return 1
+}
+
+-- Returns the address of a zeroed slot, or 0 (`none`) when the pool is full.
+fn pak_pool_acquire_raw(pool: u32, cap: i32, elem_sz: i32) -> u32 {
+    let lp: *i32 = (pool + pak_align4(cap * elem_sz) as u32) as *i32
+    let n: i32 = *lp
+    if n >= cap { return 0 }
+    let slot: u32 = pool + (n * elem_sz) as u32
+    pak_bytes_zero(slot, elem_sz)
+    *lp = n + 1
+    return slot
+}
+
+-- Swap the released slot with the last live one so data[0..len) stays dense.
+fn pak_pool_release_raw(pool: u32, cap: i32, elem_sz: i32, item: u32) {
+    let lp: *i32 = (pool + pak_align4(cap * elem_sz) as u32) as *i32
+    let n: i32 = *lp
+    if n <= 0 { return }
+    let last: u32 = pool + ((n - 1) * elem_sz) as u32
+    *lp = n - 1
+    if item != last {
+        pak_bytes_swap(item, last, elem_sz)
+    }
+}
+
+-- ── Vec helpers ─────────────────────────────────────────────────────────────
+-- Vec(T) is {data, len, cap} with the storage on the heap. Everything that
+-- only reads the header is inlined by the backend; these three are the ones
+-- that can move the storage. As with the map helpers, one helper serves every
+-- T, so the element size travels with the call.
+--
+-- The heap here is the bump allocator above: growing leaks the old block. A
+-- Vec that grows every frame will exhaust it, which is why a game should
+-- reserve once (or use FixedList).
+
+fn pak_vec_grow(vec: u32, elem_sz: i32, want: i32) -> i32 {
+    let cap_p: *i32 = (vec + 8) as *i32
+    if want <= *cap_p { return 1 }
+    let mut ncap: i32 = *cap_p
+    if ncap == 0 { ncap = 8 }
+    while ncap < want { ncap = ncap * 2 }
+    let np: *u8 = __pak_alloc(ncap * elem_sz)
+    if (np as u32) == 0 { return 0 }
+    let data_p: *u32 = vec as *u32
+    let len_p: *i32 = (vec + 4) as *i32
+    if *data_p != 0 { pak_bytes_copy(np as u32, *data_p, (*len_p) * elem_sz) }
+    *data_p = np as u32
+    *cap_p = ncap
+    return 1
+}
+
+fn pak_vec_push_raw(vec: u32, elem_sz: i32, val_ptr: u32) -> i32 {
+    let len_p: *i32 = (vec + 4) as *i32
+    if pak_vec_grow(vec, elem_sz, *len_p + 1) == 0 { return 0 }
+    let data_p: *u32 = vec as *u32
+    pak_bytes_copy(*data_p + ((*len_p) * elem_sz) as u32, val_ptr, elem_sz)
+    *len_p = *len_p + 1
+    return 1
+}
+
+fn pak_vec_reserve_raw(vec: u32, elem_sz: i32, n: i32) -> i32 {
+    return pak_vec_grow(vec, elem_sz, n)
+}
+
+fn pak_vec_free_raw(vec: u32) {
+    let data_p: *u32 = vec as *u32
+    __pak_free(*data_p as *u8)
+    *data_p = 0
+    let len_p: *i32 = (vec + 4) as *i32
+    *len_p = 0
+    let cap_p: *i32 = (vec + 8) as *i32
+    *cap_p = 0
+}
+
+-- ── PakFS: assets in the ROM ────────────────────────────────────────────────
+-- `pak link --fs <archive>` appends a PakFS archive to the ROM past the end of
+-- the payload and patches its ROM offset and length into the two statics
+-- below. Both stay zero in a ROM built without --fs, which is how pakfs_init
+-- tells "this ROM has no assets" from "I could not read the ones it has".
+--
+-- Archive layout (little-endian, written by tcl/pakfs.tcl):
+--   0    "PKFS"
+--   4    version    u16  (1)
+--   6    num_files  u16
+--   8    index_off  u32  (always 12)
+--   12   index      per file: name_len u16, name, data_off u32,
+--                   data_size u32, flags u16
+--   ...  data       16-byte aligned within the archive
+--
+-- The VR4300 is big-endian, so every field is assembled from bytes rather than
+-- loaded as a word.
+
+static g_pakfs_rom:   u32 = 0   -- ROM offset of the archive; patched at link
+static g_pakfs_len:   u32 = 0   -- archive length in bytes; patched at link
+static g_pakfs_idx:   u32 = 0   -- RDRAM copy of the header + index
+static g_pakfs_n:     i32 = 0
+static g_pakfs_state: i32 = 0   -- 0 = untried, 1 = mounted, -1 = failed
+static g_pakfs_size:  i32 = 0   -- size of the file the last lookup found
+
+fn pakfs_le16(p: u32) -> i32 {
+    let a: *u8 = p as *u8
+    let b: *u8 = (p + 1) as *u8
+    return (*a as i32) | ((*b as i32) << 8)
+}
+
+fn pakfs_le32(p: u32) -> u32 {
+    let a: *u8 = p as *u8
+    let b: *u8 = (p + 1) as *u8
+    let c: *u8 = (p + 2) as *u8
+    let d: *u8 = (p + 3) as *u8
+    return (*a as u32) | ((*b as u32) << 8) | ((*c as u32) << 16) | ((*d as u32) << 24)
+}
+
+fn pakfs_be16(p: u32) -> i32 {
+    let a: *u8 = p as *u8
+    let b: *u8 = (p + 1) as *u8
+    return ((*a as i32) << 8) | (*b as i32)
+}
+
+-- PI DMA wants a 16-byte-aligned destination and a length that is a multiple
+-- of 16; __pak_alloc only promises 8, so take the next 16 inside a larger
+-- block. Returns 0 when the heap is exhausted.
+fn pakfs_alloc16(n: i32) -> u32 {
+    let p: *u8 = __pak_alloc(n + 16)
+    if (p as u32) == 0 { return 0 }
+    return ((p as u32) + 15) & 0xFFFFFFF0
+}
+
+fn pakfs_round16(n: i32) -> i32 {
+    return (n + 15) & 0x7FFFFFF0
+}
+
+-- Reads the header and the whole index into RDRAM. Returns 1 mounted,
+-- -1 failed. Safe to call repeatedly: it only does the work once.
+fn pakfs_init() -> i32 {
+    if g_pakfs_state != 0 { return g_pakfs_state }
+    g_pakfs_state = -1
+    if g_pakfs_len < 12 { return -1 }
+
+    -- The index length is not in the header: it ends where the first file's
+    -- data begins. Read a block big enough for the header plus a first entry,
+    -- learn the data offset from it, then re-read if the index is longer.
+    let mut blk: i32 = 512
+    if (g_pakfs_len as i32) < blk { blk = g_pakfs_len as i32 }
+    blk = pakfs_round16(blk)
+    let buf: u32 = pakfs_alloc16(blk)
+    if buf == 0 { return -1 }
+    dma_read(buf as *u8, g_pakfs_rom, blk)
+    if pakfs_le32(buf) != 0x53464B50 { return -1 }      -- "PKFS"
+    if pakfs_le16(buf + 4) != 1 { return -1 }           -- version
+    if pakfs_le32(buf + 8) != 12 { return -1 }          -- index_off
+
+    g_pakfs_n = pakfs_le16(buf + 6)
+    g_pakfs_idx = buf
+    if g_pakfs_n == 0 {
+        g_pakfs_state = 1
+        return 1
+    }
+    let nlen: i32 = pakfs_le16(buf + 12)
+    let dstart: i32 = pakfs_le32(buf + 14 + (nlen as u32)) as i32
+    if dstart > blk {
+        let want: i32 = pakfs_round16(dstart)
+        let b2: u32 = pakfs_alloc16(want)
+        if b2 == 0 { return -1 }
+        dma_read(b2 as *u8, g_pakfs_rom, want)
+        g_pakfs_idx = b2
+    }
+    g_pakfs_state = 1
+    return 1
+}
+
+-- The index name is length-counted; the one a program passes is NUL-
+-- terminated. Equal means same length and same bytes.
+fn pakfs_name_eq(name: u32, stored: u32, nlen: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < nlen {
+        let a: *u8 = (name + i as u32) as *u8
+        let b: *u8 = (stored + i as u32) as *u8
+        if *a != *b { return 0 }
+        i = i + 1
+    }
+    let last: *u8 = (name + nlen as u32) as *u8
+    if *last != 0 { return 0 }
+    return 1
+}
+
+-- Generated asset paths carry a scheme; the archive names do not. `rom:/` is
+-- what both backends emit -- libdragon opens it through DragonFS -- and
+-- `pak:/` is accepted too, so a path written by hand for either one works.
+fn pakfs_has_prefix(p: u32, c0: i32, c1: i32, c2: i32) -> i32 {
+    let a: *u8 = p as *u8
+    let b: *u8 = (p + 1) as *u8
+    let c: *u8 = (p + 2) as *u8
+    let d: *u8 = (p + 3) as *u8
+    let e: *u8 = (p + 4) as *u8
+    if (*a as i32) != c0 { return 0 }
+    if (*b as i32) != c1 { return 0 }
+    if (*c as i32) != c2 { return 0 }
+    if *d != 58 { return 0 }   -- ':'
+    if *e != 47 { return 0 }   -- '/'
+    return 1
+}
+
+fn pakfs_strip_scheme(p: u32) -> u32 {
+    if pakfs_has_prefix(p, 114, 111, 109) != 0 { return p + 5 }   -- "rom:/"
+    if pakfs_has_prefix(p, 112, 97, 107) != 0  { return p + 5 }   -- "pak:/"
+    return p
+}
+
+-- ROM offset of a file, or 0. Its size lands in g_pakfs_size.
+fn pakfs_find(path: *c_char) -> u32 {
+    g_pakfs_size = 0
+    if pakfs_init() != 1 { return 0 }
+    let name: u32 = pakfs_strip_scheme(path as u32)
+    let mut p: u32 = g_pakfs_idx + 12
+    let mut i: i32 = 0
+    while i < g_pakfs_n {
+        let nlen: i32 = pakfs_le16(p)
+        let nptr: u32 = p + 2
+        if pakfs_name_eq(name, nptr, nlen) != 0 {
+            g_pakfs_size = pakfs_le32(nptr + (nlen as u32) + 4) as i32
+            return g_pakfs_rom + pakfs_le32(nptr + (nlen as u32))
+        }
+        p = nptr + (nlen as u32) + 10
+        i = i + 1
+    }
+    return 0
+}
+
+fn pakfs_size(path: *c_char) -> i32 {
+    if pakfs_find(path) == 0 { return 0 }
+    return g_pakfs_size
+}
+
+-- Read a whole file out of the ROM into fresh RDRAM. Returns none when the
+-- archive has no such file or the heap is full.
+fn pakfs_read(path: *c_char) -> *u8 {
+    let off: u32 = pakfs_find(path)
+    if off == 0 { return 0 as *u8 }
+    let n: i32 = pakfs_round16(g_pakfs_size)
+    let p: u32 = pakfs_alloc16(n)
+    if p == 0 { return 0 as *u8 }
+    dma_read(p as *u8, off, n)
+    return p as *u8
+}
+
+-- ── Sprites ─────────────────────────────────────────────────────────────────
+-- A .sprite file is libdragon's, written by mksprite with --compress 0:
+--   0  width   u16 (big-endian)
+--   2  height  u16
+--   4  bitdepth u8   (deprecated, ignored)
+--   5  flags    u8   -- the texture format is the low 5 bits
+--   6  hslices  u8
+--   7  vslices  u8
+--   8  texels
+-- The format code is (rdp_format << 2) | rdp_size, which is exactly the pair
+-- SET_TEXTURE_IMAGE and SET_TILE want. A compressed sprite starts with the
+-- "DCA3" container instead and is rejected: nothing here decompresses.
+
+fn sprite_load(path: *c_char) -> *u8 {
+    return pakfs_read(path)
+}
+
+fn sprite_width(spr: *u8) -> i32 {
+    if (spr as u32) == 0 { return 0 }
+    return pakfs_be16(spr as u32)
+}
+
+fn sprite_height(spr: *u8) -> i32 {
+    if (spr as u32) == 0 { return 0 }
+    return pakfs_be16((spr as u32) + 2)
+}
+
+-- Draw a sprite 1:1 at (x, y). Call rdpq.set_mode_copy() first for an opaque
+-- blit, or set_mode_standard() to blend.
+--
+-- TMEM is 4 KiB, so anything bigger is drawn as horizontal strips: each strip
+-- is loaded on its own and drawn where it belongs. `flags` is accepted for
+-- signature parity with libdragon and is not used.
+fn rdpq_sprite_blit(spr: *u8, x: i32, y: i32, flags: u32) {
+    if (spr as u32) == 0 { return }
+    let base: u32 = spr as u32
+    let w: i32 = pakfs_be16(base)
+    let h: i32 = pakfs_be16(base + 2)
+    if w <= 0 { return }
+    if h <= 0 { return }
+    let fb: *u8 = (base + 5) as *u8
+    let code: i32 = (*fb as i32) & 0x1F
+    let fmt: u32 = (code >> 2) as u32
+    let size: u32 = (code & 3) as u32
+    -- CI4/CI8 need their palette loaded into TMEM first, which this does not
+    -- do; drawing them would show index bytes as colours.
+    if fmt == 2 { return }
+    -- 4-bit formats (I4, IA4) pack two texels per byte, which the whole-byte
+    -- row arithmetic below does not model.
+    if size == 0 { return }
+    let bpp: i32 = rdp_tex_bpp(size)
+    let data: u32 = base + 8
+
+    -- Bytes per row in TMEM, and how many whole rows of them fit in 4 KiB.
+    let row: i32 = w * bpp
+    if row <= 0 { return }
+    let mut strip: i32 = 4096 / row
+    if strip <= 0 { return }
+    if strip > h { strip = h }
+
+    rdpq_set_texture_image(data, fmt, size, w)
+    rdpq_set_tile(0, fmt, size, ((row + 7) / 8) as u32, 0, 0)
+    let mut t0: i32 = 0
+    while t0 < h {
+        let mut t1: i32 = t0 + strip
+        if t1 > h { t1 = h }
+        rdpq_set_tile_size(0, 0, t0, w, t1)
+        rdpq_load_tile(0, 0, t0, w, t1)
+        rdpq_texture_rectangle(0, x, y + t0, x + w, y + t1, 0, t0)
+        t0 = t1
+    }
+}
+
+-- ── Tiny3D state surface ────────────────────────────────────────────────────
+-- Tiny3D itself is 4,300 lines of C driving 4,700 lines of RSP microcode, and
+-- none of that runs here: the standalone HAL has no geometry pipeline. What it
+-- does have is the STATE half of the t3d surface -- the viewport, its
+-- projection, the camera, and the lights -- which is arithmetic and nothing
+-- else.
+--
+-- That is enough for a program that sets up a 3D context and draws through
+-- rdpq, which is what fps_arena.pk64 and platformer_3d.pk64 do. It is NOT
+-- enough for one that loads a .t3dm and draws it: t3d.model_load,
+-- t3d.model_draw, the skeleton and the animation calls are not here, and
+-- `pak check --backend mips` reports E010 on each of them rather than
+-- pretending. See STDLIB.md, the `t3d` section.
+--
+-- The matrices are stored, not applied. Nothing on this backend consumes them
+-- yet, so they exist to be read back and to keep the surface honest about what
+-- a viewport holds.
+struct T3DViewport {
+    fov: f32,
+    near_plane: f32,
+    far_plane: f32,
+    eye_x: f32,
+    eye_y: f32,
+    eye_z: f32,
+    target_x: f32,
+    target_y: f32,
+    target_z: f32,
+    up_x: f32,
+    up_y: f32,
+    up_z: f32,
+    vx: i32,
+    vy: i32,
+    vw: i32,
+    vh: i32
+}
+
+static g_t3d_ready: i32 = 0
+static g_t3d_vp: *T3DViewport = none
+static g_t3d_light_count: i32 = 0
+static g_t3d_amb_r: i32 = 0
+static g_t3d_amb_g: i32 = 0
+static g_t3d_amb_b: i32 = 0
+static g_t3d_fog_on: i32 = 0
+static g_t3d_fog_near: f32 = 0.0
+static g_t3d_fog_far: f32 = 0.0
+
+fn t3d_init() {
+    g_t3d_ready = 1
+    g_t3d_vp = none
+    g_t3d_light_count = 0
+    g_t3d_amb_r = 0
+    g_t3d_amb_g = 0
+    g_t3d_amb_b = 0
+    g_t3d_fog_on = 0
+}
+
+fn t3d_destroy() {
+    g_t3d_ready = 0
+    g_t3d_vp = none
+}
+
+-- A viewport covering the whole screen, with a projection a caller is expected
+-- to set before using it. Returned by value, which is what Tiny3D does too.
+fn t3d_viewport_create() -> T3DViewport {
+    return T3DViewport {
+        fov: 1.22,
+        near_plane: 1.0,
+        far_plane: 100.0,
+        eye_x: 0.0, eye_y: 0.0, eye_z: 0.0,
+        target_x: 0.0, target_y: 0.0, target_z: -1.0,
+        up_x: 0.0, up_y: 1.0, up_z: 0.0,
+        -- Literal, not SCREEN_W/SCREEN_H: this is the only place past the
+        -- heap section that would reach up to those top-of-file consts, and
+        -- every other field in this literal is already a bare number for the
+        -- same reason -- a viewport's default has no dependency on where in
+        -- the file it is constructed from.
+        vx: 0, vy: 0, vw: 320, vh: 240
+    }
+}
+
+fn t3d_viewport_set_projection(vp: *T3DViewport, fov: f32, near_plane: f32, far_plane: f32) {
+    vp.fov = fov
+    vp.near_plane = near_plane
+    vp.far_plane = far_plane
+}
+
+fn t3d_viewport_set_area(vp: *T3DViewport, x: i32, y: i32, w: i32, h: i32) {
+    vp.vx = x
+    vp.vy = y
+    vp.vw = w
+    vp.vh = h
+}
+
+fn t3d_viewport_attach(vp: *T3DViewport) {
+    g_t3d_vp = vp
+}
+
+-- t3d.look_at is NOT here. It takes *Vec3 for eye/target/up, and Vec3 field
+-- access (.x/.y/.z) has no support in this backend at all -- Vec3 is
+-- pre-registered as an opaque 12-byte blob with no field layout, the same way
+-- T3DModel and T3DSkeleton are, because nothing on this backend has ever
+-- needed to read a component out of one. `pak check --backend mips` reports
+-- E010 on it, the same as model_draw and the skeleton/anim calls: camera
+-- look-at is vector math this backend cannot do, for the same reason it
+-- cannot draw a model.
+
+fn t3d_light_set_ambient(r: i32, g: i32, b: i32) {
+    g_t3d_amb_r = r
+    g_t3d_amb_g = g
+    g_t3d_amb_b = b
+}
+
+fn t3d_light_set_count(n: i32) {
+    g_t3d_light_count = n
+}
+
+-- Directional lights are recorded per index. Four is what the RSP side of
+-- Tiny3D supports, so anything past that is dropped rather than scribbling.
+static g_t3d_dir_r: [4]i32
+static g_t3d_dir_g: [4]i32
+static g_t3d_dir_b: [4]i32
+static g_t3d_dir_x: [4]f32
+static g_t3d_dir_y: [4]f32
+static g_t3d_dir_z: [4]f32
+
+fn t3d_light_set_directional(index: i32, r: i32, g: i32, b: i32,
+                             dx: f32, dy: f32, dz: f32) {
+    if index < 0 { return }
+    if index > 3 { return }
+    g_t3d_dir_r[index] = r
+    g_t3d_dir_g[index] = g
+    g_t3d_dir_b[index] = b
+    g_t3d_dir_x[index] = dx
+    g_t3d_dir_y[index] = dy
+    g_t3d_dir_z[index] = dz
+}
+
+fn t3d_fog_set_enabled(on: bool) {
+    if on { g_t3d_fog_on = 1 } else { g_t3d_fog_on = 0 }
+}
+
+fn t3d_fog_set_range(near_plane: f32, far_plane: f32) {
+    g_t3d_fog_near = near_plane
+    g_t3d_fog_far = far_plane
+}
+
+-- A frame boundary. Tiny3D uses these to reset RSP state between frames;
+-- there is no RSP task here, so they only bracket the state.
+fn t3d_frame_start() {
+}
+
+fn t3d_frame_end() {
 }

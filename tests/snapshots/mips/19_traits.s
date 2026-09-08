@@ -59,6 +59,8 @@
 	.extern rdpq_triangle_shade_tex_z
 	.extern rdpq_set_tri_z
 	.extern sprite_load
+	.extern pakfs_read
+	.extern pakfs_size
 	.extern rdpq_sprite_blit
 	.extern timer_init
 	.extern _pak_delta_time
@@ -72,6 +74,7 @@
 	.extern audio_write_silence
 	.extern audio_set_buffer_num
 	.extern debugf
+	.extern debug_init_isviewer
 	.extern assert
 	.extern dma_read
 	.extern dma_write
@@ -255,6 +258,17 @@ Sprite_get_height:
 	.size Sprite_get_height, . - Sprite_get_height
 
 	.section .text
+	.globl Drawable_from_Sprite
+	.type Drawable_from_Sprite, @function
+Drawable_from_Sprite:
+    sw $a1, 0($a0)
+    la $t0, _pak_Drawable_vtable_Sprite
+    sw $t0, 4($a0)
+    jr $ra
+    nop
+	.size Drawable_from_Sprite, . - Drawable_from_Sprite
+
+	.section .text
 	.globl Enemy_update
 	.type Enemy_update, @function
 Enemy_update:
@@ -266,12 +280,14 @@ Enemy_update:
     swc1 $f12, 140($sp)
     lw $t6, 136($sp)
     lwc1 $f12, 8($t6)
-    mov.s $f14, $f12
+    swc1 $f12, 144($sp)
     lwc1 $f12, 140($sp)
+    lwc1 $f14, 144($sp)
     mul.s $f12, $f14, $f12
-    mov.s $f14, $f12
+    swc1 $f12, 144($sp)
     lw $t6, 136($sp)
     lwc1 $f12, 0($t6)
+    lwc1 $f14, 144($sp)
     add.s $f12, $f12, $f14
     lw $t7, 136($sp)
     swc1 $f12, 0($t7)
@@ -283,6 +299,17 @@ Enemy_update:
     jr $ra
     nop
 	.size Enemy_update, . - Enemy_update
+
+	.section .text
+	.globl Updatable_from_Enemy
+	.type Updatable_from_Enemy, @function
+Updatable_from_Enemy:
+    sw $a1, 0($a0)
+    la $t0, _pak_Updatable_vtable_Enemy
+    sw $t0, 4($a0)
+    jr $ra
+    nop
+	.size Updatable_from_Enemy, . - Updatable_from_Enemy
 
 	.section .text
 	.globl main
@@ -363,6 +390,8 @@ main:
     move $a0, $t8
     la $t7, .Lf322
     lwc1 $f12, 0($t7)
+    swc1 $f12, 192($sp)
+    lwc1 $f12, 192($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal Enemy_update
@@ -372,7 +401,8 @@ main:
     move $t9, $v0
     addiu $t6, $sp, 168
     lwc1 $f12, 0($t6)
-    move $t8, $t7
+    cvt.w.s $f12, $f12
+    mfc1 $t8, $f12
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
@@ -396,6 +426,16 @@ main:
 	.word 1015222895
 
 	.section .data
+	.align 2
+	.globl _pak_Drawable_vtable_Sprite
+_pak_Drawable_vtable_Sprite:
+	.word Sprite_draw
+	.word Sprite_get_width
+	.word Sprite_get_height
+	.align 2
+	.globl _pak_Updatable_vtable_Enemy
+_pak_Updatable_vtable_Enemy:
+	.word Enemy_update
 	.align 2
 	.globl sink
 sink:

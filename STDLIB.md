@@ -256,109 +256,129 @@ lowered. The **standalone** column is yes only when the C symbol is
 defined in `runtime/standalone/runtime.pk64`; `pak check --backend mips`
 rejects a no.
 
+The **libdragon** column comes from `tests/libdragon_symbols.txt`,
+which `tcl/tools/libdragon_symbols.tcl` computes by compiling a call to
+each symbol against the real libdragon and Tiny3D headers:
+
+* `yes` — declared by libdragon
+* `tiny3d` — needs `tiny3d = true` in `pak.toml`
+* `no` — Pak names it and nothing implements it; the generated C
+  will not compile. These are standalone-only where the standalone
+  column says yes.
+
+A function lowered to an inline expression rather than a bare call
+reads `yes*`: `tcl/tools/libdragon_api_test.tcl` checks those by
+compiling the examples that use them.
+
 | Module | Function | C symbol | libdragon | standalone |
 |--------|----------|----------|-----------|------------|
-| `arena` | `alloc` | `arena_alloc` | yes | no |
-| `arena` | `reset` | `arena_reset` | yes | no |
+| `arena` | `alloc` | `arena_alloc` | yes* | no |
+| `arena` | `reset` | `arena_reset` | yes* | no |
 | `audio` | `can_write` | `audio_can_write` | yes | yes |
 | `audio` | `close` | `audio_close` | yes | yes |
-| `audio` | `get_buffer` | `audio_get_buffer` | yes | yes |
+| `audio` | `get_buffer` | `audio_get_buffer` | yes* | yes |
 | `audio` | `get_frequency` | `audio_get_frequency` | yes | yes |
 | `audio` | `init` | `audio_init` | yes | yes |
-| `audio` | `set_buffer_num` | `audio_set_buffer_num` | yes | yes |
+| `audio` | `set_buffer_num` | `audio_set_buffer_num` | no | yes |
 | `audio` | `write` | `audio_write` | yes | yes |
 | `audio` | `write_silence` | `audio_write_silence` | yes | yes |
-| `backup` | `read` | `backup_read` | yes | no |
-| `backup` | `size` | `backup_size` | yes | no |
-| `backup` | `type` | `backup_type` | yes | no |
-| `backup` | `write` | `backup_write` | yes | no |
+| `backup` | `read` | `backup_read` | no | no |
+| `backup` | `size` | `backup_size` | no | no |
+| `backup` | `type` | `backup_type` | no | no |
+| `backup` | `write` | `backup_write` | no | no |
 | `cache` | `invalidate` | `data_cache_hit_invalidate` | yes | yes |
 | `cache` | `writeback` | `data_cache_hit_writeback` | yes | yes |
 | `cache` | `writeback_inv` | `data_cache_hit_writeback_invalidate` | yes | yes |
 | `controller` | `init` | `joypad_init` | yes | yes |
 | `controller` | `poll` | `joypad_poll` | yes | yes |
-| `controller` | `read` | `joypad_get_status` | yes | yes |
-| `cpak` | `format` | `cpak_format` | yes | no |
-| `cpak` | `get_free_space` | `cpak_get_free_space` | yes | no |
-| `cpak` | `init` | `cpak_init` | yes | no |
-| `cpak` | `is_formatted` | `cpak_is_formatted` | yes | no |
-| `cpak` | `is_plugged` | `cpak_is_plugged` | yes | no |
-| `cpak` | `read_sector` | `cpak_read_sector` | yes | no |
-| `cpak` | `write_sector` | `cpak_write_sector` | yes | no |
+| `controller` | `read` | `joypad_get_status` | yes* | yes |
+| `cpak` | `format` | `cpak_format` | no | no |
+| `cpak` | `get_free_space` | `cpak_get_free_space` | no | no |
+| `cpak` | `init` | `cpak_init` | no | no |
+| `cpak` | `is_formatted` | `cpak_is_formatted` | no | no |
+| `cpak` | `is_plugged` | `cpak_is_plugged` | no | no |
+| `cpak` | `read_sector` | `cpak_read_sector` | no | no |
+| `cpak` | `write_sector` | `cpak_write_sector` | no | no |
 | `debug` | `assert` | `assert` | yes | yes |
-| `debug` | `flush` | `flush` | yes | no |
-| `debug` | `init` | `debug_init_isviewer` | yes | no |
-| `debug` | `init_isviewer` | `debug_init_isviewer` | yes | no |
-| `debug` | `init_usbfs` | `debug_init_usbfs` | yes | no |
+| `debug` | `flush` | `flush` | no | no |
+| `debug` | `init` | `debug_init_isviewer` | yes | yes |
+| `debug` | `init_isviewer` | `debug_init_isviewer` | yes | yes |
+| `debug` | `init_usbfs` | `debug_init_usbfs` | no | no |
 | `debug` | `log` | `debugf` | yes | yes |
-| `debug` | `log_value` | `debugf` | yes | yes |
+| `debug` | `log_value` | `debugf` | yes* | yes |
 | `debug` | `print` | `debugf` | yes | yes |
-| `disk` | `close` | `disk_close` | yes | no |
-| `disk` | `get_disk_type` | `disk_get_disk_type` | yes | no |
-| `disk` | `init` | `disk_init` | yes | no |
-| `disk` | `is_present` | `disk_is_present` | yes | no |
-| `disk` | `read_sector` | `disk_read_sector` | yes | no |
-| `disk` | `write_sector` | `disk_write_sector` | yes | no |
+| `disk` | `close` | `disk_close` | no | no |
+| `disk` | `get_disk_type` | `disk_get_disk_type` | no | no |
+| `disk` | `init` | `disk_init` | no | no |
+| `disk` | `is_present` | `disk_is_present` | no | no |
+| `disk` | `read_sector` | `disk_read_sector` | no | no |
+| `disk` | `write_sector` | `disk_write_sector` | no | no |
 | `display` | `close` | `display_close` | yes | yes |
 | `display` | `get` | `display_get` | yes | yes |
-| `display` | `init` | `display_init` | yes | yes |
+| `display` | `init` | `display_init` | yes* | yes |
 | `display` | `show` | `display_show` | yes | yes |
 | `dma` | `read` | `dma_read` | yes | yes |
 | `dma` | `wait` | `dma_wait` | yes | yes |
 | `dma` | `write` | `dma_write` | yes | yes |
-| `eeprom` | `init` | `eeprom_init` | yes | yes |
+| `eeprom` | `init` | `eeprom_init` | yes* | yes |
 | `eeprom` | `present` | `eeprom_present` | yes | yes |
 | `eeprom` | `read` | `eeprom_read` | yes | yes |
-| `eeprom` | `type_detect` | `eeprom_type_detect` | yes | yes |
+| `eeprom` | `type_detect` | `eeprom_type_detect` | yes* | yes |
 | `eeprom` | `write` | `eeprom_write` | yes | yes |
-| `exception` | `get_handler` | `exception_get_handler` | yes | yes |
-| `exception` | `set_handler` | `exception_set_handler` | yes | yes |
-| `flashram` | `erase_sector` | `flashram_erase_sector` | yes | no |
-| `flashram` | `read` | `flashram_read` | yes | no |
-| `flashram` | `write` | `flashram_write` | yes | no |
+| `exception` | `get_handler` | `exception_get_handler` | no | yes |
+| `exception` | `set_handler` | `exception_set_handler` | no | yes |
+| `flashram` | `erase_sector` | `flashram_erase_sector` | no | no |
+| `flashram` | `read` | `flashram_read` | no | no |
+| `flashram` | `write` | `flashram_write` | no | no |
+| `interrupt` | `disable` | `interrupt_disable` | no | yes |
+| `interrupt` | `enabled` | `interrupt_enabled` | no | yes |
+| `interrupt` | `init` | `interrupt_init` | no | yes |
+| `interrupt` | `pending` | `interrupt_pending` | no | yes |
+| `interrupt` | `restore` | `interrupt_restore` | no | yes |
+| `interrupt` | `vi_count` | `interrupt_vi_count` | no | yes |
 | `joypad` | `get_accessory_type` | `joypad_get_accessory_type` | yes | no |
 | `joypad` | `get_axis_held` | `joypad_get_axis_held` | yes | no |
 | `joypad` | `get_axis_pressed` | `joypad_get_axis_pressed` | yes | no |
 | `joypad` | `get_buttons` | `joypad_get_buttons` | yes | no |
 | `joypad` | `get_buttons_pressed` | `joypad_get_buttons_pressed` | yes | no |
 | `joypad` | `get_buttons_released` | `joypad_get_buttons_released` | yes | no |
-| `joypad` | `get_status` | `joypad_get_status` | yes | yes |
+| `joypad` | `get_status` | `joypad_get_status` | no | yes |
 | `joypad` | `init` | `joypad_init` | yes | yes |
-| `joypad` | `is_connected` | `joypad_is_connected` | yes | no |
+| `joypad` | `is_connected` | `joypad_is_connected` | yes* | no |
 | `joypad` | `poll` | `joypad_poll` | yes | yes |
-| `math` | `abs_f` | `math_abs_f` | yes | no |
-| `math` | `abs_i32` | `math_abs_i32` | yes | no |
-| `math` | `atan2_f` | `math_atan2_f` | yes | no |
-| `math` | `ceil_f` | `math_ceil_f` | yes | no |
-| `math` | `clamp_f` | `math_clamp_f` | yes | no |
-| `math` | `clamp_i32` | `math_clamp_i32` | yes | no |
-| `math` | `cos_f` | `math_cos_f` | yes | no |
-| `math` | `f_to_fix` | `math_f_to_fix` | yes | no |
-| `math` | `fix_cos` | `math_fix_cos` | yes | no |
-| `math` | `fix_sin` | `math_fix_sin` | yes | no |
-| `math` | `fix_sqrt` | `math_fix_sqrt` | yes | no |
-| `math` | `fix_to_f` | `math_fix_to_f` | yes | no |
-| `math` | `floor_f` | `math_floor_f` | yes | no |
-| `math` | `lerp_f` | `math_lerp_f` | yes | no |
-| `math` | `max_f` | `math_max_f` | yes | no |
-| `math` | `max_i32` | `math_max_i32` | yes | no |
-| `math` | `min_f` | `math_min_f` | yes | no |
-| `math` | `min_i32` | `math_min_i32` | yes | no |
-| `math` | `pow_f` | `math_pow_f` | yes | no |
-| `math` | `rand` | `math_rand` | yes | no |
-| `math` | `rand_f` | `math_rand_f` | yes | no |
-| `math` | `rand_range` | `math_rand_range` | yes | no |
-| `math` | `rand_seed` | `math_rand_seed` | yes | no |
-| `math` | `sin_f` | `math_sin_f` | yes | no |
-| `math` | `sqrt_f` | `math_sqrt_f` | yes | no |
-| `math` | `tan_f` | `math_tan_f` | yes | no |
-| `mem` | `alloc` | `mem_alloc` | yes | no |
-| `mem` | `alloc_aligned` | `mem_alloc_aligned` | yes | no |
-| `mem` | `copy` | `mem_copy` | yes | no |
-| `mem` | `free` | `mem_free` | yes | no |
-| `mem` | `move` | `mem_move` | yes | no |
-| `mem` | `realloc` | `mem_realloc` | yes | no |
-| `mem` | `zero` | `mem_zero` | yes | no |
+| `math` | `abs_f` | `math_abs_f` | yes* | yes |
+| `math` | `abs_i32` | `math_abs_i32` | yes* | yes |
+| `math` | `atan2_f` | `math_atan2_f` | yes* | yes |
+| `math` | `ceil_f` | `math_ceil_f` | yes* | yes |
+| `math` | `clamp_f` | `math_clamp_f` | yes* | yes |
+| `math` | `clamp_i32` | `math_clamp_i32` | yes* | yes |
+| `math` | `cos_f` | `math_cos_f` | yes* | yes |
+| `math` | `f_to_fix` | `math_f_to_fix` | yes* | yes |
+| `math` | `fix_cos` | `math_fix_cos` | yes* | yes |
+| `math` | `fix_sin` | `math_fix_sin` | yes* | yes |
+| `math` | `fix_sqrt` | `math_fix_sqrt` | yes* | yes |
+| `math` | `fix_to_f` | `math_fix_to_f` | yes* | yes |
+| `math` | `floor_f` | `math_floor_f` | yes* | yes |
+| `math` | `lerp_f` | `math_lerp_f` | yes* | yes |
+| `math` | `max_f` | `math_max_f` | yes* | yes |
+| `math` | `max_i32` | `math_max_i32` | yes* | yes |
+| `math` | `min_f` | `math_min_f` | yes* | yes |
+| `math` | `min_i32` | `math_min_i32` | yes* | yes |
+| `math` | `pow_f` | `math_pow_f` | yes* | yes |
+| `math` | `rand` | `math_rand` | yes* | yes |
+| `math` | `rand_f` | `math_rand_f` | yes* | yes |
+| `math` | `rand_range` | `math_rand_range` | yes* | yes |
+| `math` | `rand_seed` | `math_rand_seed` | yes* | yes |
+| `math` | `sin_f` | `math_sin_f` | yes* | yes |
+| `math` | `sqrt_f` | `math_sqrt_f` | yes* | yes |
+| `math` | `tan_f` | `math_tan_f` | yes* | yes |
+| `mem` | `alloc` | `mem_alloc` | yes* | no |
+| `mem` | `alloc_aligned` | `mem_alloc_aligned` | yes* | no |
+| `mem` | `copy` | `mem_copy` | yes* | no |
+| `mem` | `free` | `mem_free` | yes* | no |
+| `mem` | `move` | `mem_move` | yes* | no |
+| `mem` | `realloc` | `mem_realloc` | yes* | no |
+| `mem` | `zero` | `mem_zero` | yes* | no |
 | `mixer` | `ch_play` | `mixer_ch_play` | yes | no |
 | `mixer` | `ch_playing` | `mixer_ch_playing` | yes | no |
 | `mixer` | `ch_set_freq` | `mixer_ch_set_freq` | yes | no |
@@ -366,20 +386,20 @@ rejects a no.
 | `mixer` | `ch_stop` | `mixer_ch_stop` | yes | no |
 | `mixer` | `close` | `mixer_close` | yes | no |
 | `mixer` | `init` | `mixer_init` | yes | no |
-| `mixer` | `poll` | `audio_poll` | yes | no |
-| `mouse` | `get_buttons` | `mouse_get_buttons` | yes | no |
-| `mouse` | `get_delta_x` | `mouse_get_delta_x` | yes | no |
-| `mouse` | `get_delta_y` | `mouse_get_delta_y` | yes | no |
+| `mixer` | `poll` | `mixer_poll` | yes* | no |
+| `mouse` | `get_buttons` | `mouse_get_buttons` | yes* | no |
+| `mouse` | `get_delta_x` | `mouse_get_delta_x` | yes* | no |
+| `mouse` | `get_delta_y` | `mouse_get_delta_y` | yes* | no |
 | `mouse` | `init` | `joypad_init` | yes | yes |
 | `mouse` | `poll` | `joypad_poll` | yes | yes |
 | `rdpq` | `attach` | `rdpq_attach` | yes | yes |
-| `rdpq` | `attach_clear` | `rdpq_attach_clear` | yes | yes |
-| `rdpq` | `block_begin` | `rdpq_block_begin` | yes | no |
-| `rdpq` | `block_end` | `rdpq_block_end` | yes | no |
-| `rdpq` | `block_free` | `rdpq_block_free` | yes | no |
-| `rdpq` | `block_run` | `rdpq_block_run` | yes | no |
-| `rdpq` | `call` | `rdpq_call` | yes | no |
-| `rdpq` | `clear_z` | `rdpq_clear_z` | yes | yes |
+| `rdpq` | `attach_clear` | `rdpq_attach_clear` | yes* | yes |
+| `rdpq` | `block_begin` | `rdpq_block_begin` | no | no |
+| `rdpq` | `block_end` | `rdpq_block_end` | no | no |
+| `rdpq` | `block_free` | `rdpq_block_free` | no | no |
+| `rdpq` | `block_run` | `rdpq_block_run` | no | no |
+| `rdpq` | `call` | `rdpq_call` | no | no |
+| `rdpq` | `clear_z` | `rdpq_clear_z` | yes* | yes |
 | `rdpq` | `close` | `rdpq_close` | yes | yes |
 | `rdpq` | `detach` | `rdpq_detach` | yes | yes |
 | `rdpq` | `detach_show` | `rdpq_detach_show` | yes | yes |
@@ -388,62 +408,64 @@ rejects a no.
 | `rdpq` | `init` | `rdpq_init` | yes | yes |
 | `rdpq` | `load_block` | `rdpq_load_block` | yes | yes |
 | `rdpq` | `load_tile` | `rdpq_load_tile` | yes | yes |
-| `rdpq` | `load_tlut` | `rdpq_load_tlut` | yes | yes |
+| `rdpq` | `load_tlut` | `rdpq_load_tlut_raw` | yes | yes |
 | `rdpq` | `set_blend_color` | `rdpq_set_blend_color` | yes | yes |
 | `rdpq` | `set_color_image` | `rdpq_set_color_image` | yes | yes |
 | `rdpq` | `set_combiner_raw` | `rdpq_set_combiner_raw` | yes | yes |
-| `rdpq` | `set_convert` | `rdpq_set_convert` | yes | yes |
+| `rdpq` | `set_convert` | `rdpq_set_yuv_parms` | yes | yes |
 | `rdpq` | `set_env_color` | `rdpq_set_env_color` | yes | yes |
-| `rdpq` | `set_fill_color` | `rdpq_set_fill_color` | yes | yes |
+| `rdpq` | `set_fill_color` | `rdpq_set_fill_color` | yes* | yes |
 | `rdpq` | `set_fog_color` | `rdpq_set_fog_color` | yes | yes |
-| `rdpq` | `set_key_gb` | `rdpq_set_key_gb` | yes | yes |
-| `rdpq` | `set_key_r` | `rdpq_set_key_r` | yes | yes |
-| `rdpq` | `set_mode_copy` | `rdpq_set_mode_copy` | yes | yes |
-| `rdpq` | `set_mode_fill` | `rdpq_set_mode_fill` | yes | yes |
+| `rdpq` | `set_key_gb` | `rdpq_set_key_gb` | no | yes |
+| `rdpq` | `set_key_r` | `rdpq_set_key_r` | no | yes |
+| `rdpq` | `set_mode_copy` | `rdpq_set_mode_copy` | yes* | yes |
+| `rdpq` | `set_mode_fill` | `rdpq_set_mode_fill` | yes* | yes |
 | `rdpq` | `set_mode_standard` | `rdpq_set_mode_standard` | yes | yes |
-| `rdpq` | `set_mode_standard_z` | `rdpq_set_mode_standard_z` | yes | yes |
+| `rdpq` | `set_mode_standard_z` | `rdpq_set_mode_standard_z` | yes* | yes |
 | `rdpq` | `set_other_modes_raw` | `rdpq_set_other_modes_raw` | yes | yes |
 | `rdpq` | `set_prim_color` | `rdpq_set_prim_color` | yes | yes |
-| `rdpq` | `set_prim_depth` | `rdpq_set_prim_depth` | yes | yes |
+| `rdpq` | `set_prim_depth` | `rdpq_set_prim_depth_raw` | yes | yes |
 | `rdpq` | `set_scissor` | `rdpq_set_scissor` | yes | yes |
-| `rdpq` | `set_texture_image` | `rdpq_set_texture_image` | yes | yes |
+| `rdpq` | `set_texture_image` | `rdpq_set_texture_image` | yes* | yes |
 | `rdpq` | `set_tile` | `rdpq_set_tile` | yes | yes |
-| `rdpq` | `set_tile_mask` | `rdpq_set_tile_mask` | yes | yes |
+| `rdpq` | `set_tile_mask` | `rdpq_set_tile_mask` | yes* | yes |
 | `rdpq` | `set_tile_size` | `rdpq_set_tile_size` | yes | yes |
-| `rdpq` | `set_tri_z` | `rdpq_set_tri_z` | yes | yes |
+| `rdpq` | `set_tri_z` | `rdpq_set_tri_z` | yes* | yes |
 | `rdpq` | `set_z_image` | `rdpq_set_z_image` | yes | yes |
 | `rdpq` | `sync_full` | `rdpq_sync_full` | yes | yes |
 | `rdpq` | `sync_load` | `rdpq_sync_load` | yes | yes |
 | `rdpq` | `sync_pipe` | `rdpq_sync_pipe` | yes | yes |
 | `rdpq` | `sync_tile` | `rdpq_sync_tile` | yes | yes |
 | `rdpq` | `texture_rectangle` | `rdpq_texture_rectangle` | yes | yes |
-| `rdpq` | `texture_rectangle_flip` | `rdpq_texture_rectangle_flip` | yes | yes |
+| `rdpq` | `texture_rectangle_flip` | `rdpq_texture_rectangle_flip` | no | yes |
 | `rdpq` | `texture_rectangle_scaled` | `rdpq_texture_rectangle_scaled` | yes | yes |
 | `rdpq` | `triangle` | `rdpq_triangle` | yes | yes |
-| `rdpq` | `triangle_shade` | `rdpq_triangle_shade` | yes | yes |
-| `rdpq` | `triangle_shade_tex` | `rdpq_triangle_shade_tex` | yes | yes |
-| `rdpq` | `triangle_shade_tex_z` | `rdpq_triangle_shade_tex_z` | yes | yes |
-| `rdpq` | `triangle_shade_z` | `rdpq_triangle_shade_z` | yes | yes |
-| `rdpq` | `triangle_tex` | `rdpq_triangle_tex` | yes | yes |
-| `rdpq` | `triangle_tex_z` | `rdpq_triangle_tex_z` | yes | yes |
-| `rdpq` | `triangle_z` | `rdpq_triangle_z` | yes | yes |
+| `rdpq` | `triangle_shade` | `rdpq_triangle_shade` | no | yes |
+| `rdpq` | `triangle_shade_tex` | `rdpq_triangle_shade_tex` | no | yes |
+| `rdpq` | `triangle_shade_tex_z` | `rdpq_triangle_shade_tex_z` | no | yes |
+| `rdpq` | `triangle_shade_z` | `rdpq_triangle_shade_z` | no | yes |
+| `rdpq` | `triangle_tex` | `rdpq_triangle_tex` | no | yes |
+| `rdpq` | `triangle_tex_z` | `rdpq_triangle_tex_z` | yes* | yes |
+| `rdpq` | `triangle_z` | `rdpq_triangle_z` | no | yes |
 | `rdpq_font` | `draw_text` | `rdpq_text_print` | yes | no |
 | `rdpq_font` | `free` | `rdpq_font_free` | yes | no |
 | `rdpq_font` | `load` | `rdpq_font_load` | yes | no |
-| `rdpq_font` | `measure` | `rdpq_text_measure` | yes | no |
-| `rdpq_font` | `register` | `rdpq_font_register` | yes | no |
-| `rdpq_mode` | `antialias` | `rdpq_mode_antialias` | yes | no |
-| `rdpq_mode` | `blending` | `rdpq_mode_blending` | yes | no |
+| `rdpq_font` | `measure` | `rdpq_text_measure` | no | no |
+| `rdpq_font` | `printf` | `rdpq_font_printf` | yes* | no |
+| `rdpq_font` | `register` | `rdpq_font_register` | no | no |
+| `rdpq_font` | `register_builtin_mono` | `rdpq_font_register_builtin_mono` | yes* | no |
+| `rdpq_mode` | `antialias` | `rdpq_mode_antialias` | yes* | no |
+| `rdpq_mode` | `blending` | `rdpq_mode_blending` | yes* | no |
 | `rdpq_mode` | `combiner` | `rdpq_mode_combiner` | yes | no |
 | `rdpq_mode` | `copy` | `rdpq_set_mode_copy` | yes | yes |
-| `rdpq_mode` | `dithering` | `rdpq_mode_dithering` | yes | no |
-| `rdpq_mode` | `filter` | `rdpq_mode_filter` | yes | no |
-| `rdpq_mode` | `persp_norm` | `rdpq_mode_persp_norm` | yes | no |
+| `rdpq_mode` | `dithering` | `rdpq_mode_dithering` | yes* | no |
+| `rdpq_mode` | `filter` | `rdpq_mode_filter` | yes* | no |
+| `rdpq_mode` | `persp_norm` | `rdpq_mode_persp_norm` | yes* | no |
 | `rdpq_mode` | `pop` | `rdpq_mode_pop` | yes | no |
 | `rdpq_mode` | `push` | `rdpq_mode_push` | yes | no |
 | `rdpq_mode` | `standard` | `rdpq_set_mode_standard` | yes | yes |
-| `rdpq_mode` | `tlut` | `rdpq_mode_tlut` | yes | no |
-| `rdpq_mode` | `zbuf` | `rdpq_mode_zbuf` | yes | no |
+| `rdpq_mode` | `tlut` | `rdpq_mode_tlut` | yes* | no |
+| `rdpq_mode` | `zbuf` | `rdpq_mode_zbuf` | yes* | no |
 | `rdpq_tex` | `multi_begin` | `rdpq_tex_multi_begin` | yes | no |
 | `rdpq_tex` | `multi_end` | `rdpq_tex_multi_end` | yes | no |
 | `rdpq_tex` | `upload` | `rdpq_tex_upload` | yes | no |
@@ -459,126 +481,138 @@ rejects a no.
 | `rsp` | `wait` | `rspq_wait` | yes | no |
 | `rtc` | `get` | `rtc_get` | yes | no |
 | `rtc` | `init` | `rtc_init` | yes | no |
-| `rtc` | `is_running` | `rtc_is_running` | yes | no |
-| `rtc` | `is_stopped` | `rtc_is_stopped` | yes | no |
+| `rtc` | `is_running` | `rtc_is_running` | yes* | no |
+| `rtc` | `is_stopped` | `rtc_is_stopped` | no | no |
 | `rtc` | `set` | `rtc_set` | yes | no |
-| `rumble` | `init` | `rumble_init` | yes | no |
-| `rumble` | `is_plugged` | `rumble_is_plugged` | yes | no |
-| `rumble` | `start` | `rumble_start` | yes | no |
-| `rumble` | `stop` | `rumble_stop` | yes | no |
-| `sprite` | `blit` | `rdpq_sprite_blit` | yes | no |
-| `sprite` | `load` | `sprite_load` | yes | no |
-| `sram` | `read` | `sram_read` | yes | no |
-| `sram` | `write` | `sram_write` | yes | no |
-| `str` | `concat` | `str_concat` | yes | no |
-| `str` | `data` | `str_data` | yes | no |
-| `str` | `eq` | `str_eq` | yes | no |
-| `str` | `from_cstr` | `pak_str_from_cstr` | yes | no |
-| `str` | `len` | `str_len` | yes | no |
-| `str` | `print` | `str_print` | yes | no |
+| `rumble` | `init` | `rumble_init` | yes* | yes |
+| `rumble` | `is_plugged` | `rumble_is_plugged` | yes* | yes |
+| `rumble` | `start` | `rumble_start` | yes* | yes |
+| `rumble` | `stop` | `rumble_stop` | yes* | yes |
+| `sp` | `done` | `pak_sp_done` | no | yes |
+| `sp` | `init` | `pak_sp_init` | no | yes |
+| `sp` | `load_data` | `pak_sp_load_data` | no | yes |
+| `sp` | `load_ucode` | `pak_sp_load_ucode` | no | yes |
+| `sp` | `read_data` | `pak_sp_read_data` | no | yes |
+| `sp` | `run` | `pak_sp_run` | no | yes |
+| `sp` | `status` | `pak_sp_status` | no | yes |
+| `sp` | `wait` | `pak_sp_wait` | no | yes |
+| `sprite` | `blit` | `rdpq_sprite_blit` | yes* | yes |
+| `sprite` | `load` | `sprite_load` | yes | yes |
+| `sram` | `read` | `sram_read` | no | no |
+| `sram` | `write` | `sram_write` | no | no |
+| `str` | `concat` | `str_concat` | yes* | no |
+| `str` | `data` | `str_data` | yes* | no |
+| `str` | `eq` | `str_eq` | yes* | no |
+| `str` | `from_cstr` | `pak_str_from_cstr` | yes* | yes |
+| `str` | `len` | `str_len` | yes* | no |
+| `str` | `print` | `str_print` | yes* | no |
 | `surface` | `alloc` | `surface_alloc` | yes | no |
 | `surface` | `free` | `surface_free` | yes | no |
 | `surface` | `make_sub` | `surface_make_sub` | yes | no |
-| `system` | `has_expansion` | `system_has_expansion` | yes | no |
+| `system` | `has_expansion` | `system_has_expansion` | yes* | no |
 | `system` | `memory_size` | `get_memory_size` | yes | no |
-| `system` | `reset` | `system_reset` | yes | no |
-| `system` | `ticks` | `system_ticks` | yes | no |
-| `system` | `ticks_to_ms` | `system_ticks_to_ms` | yes | no |
-| `system` | `tv_type` | `system_tv_type` | yes | no |
-| `t3d` | `anim_attach` | `t3d_anim_attach` | yes | no |
-| `t3d` | `anim_create` | `t3d_anim_create` | yes | no |
-| `t3d` | `anim_destroy` | `t3d_anim_destroy` | yes | no |
-| `t3d` | `anim_set_looping` | `t3d_anim_set_looping` | yes | no |
-| `t3d` | `anim_set_playing` | `t3d_anim_set_playing` | yes | no |
-| `t3d` | `anim_set_speed` | `t3d_anim_set_speed` | yes | no |
-| `t3d` | `anim_update` | `t3d_anim_update` | yes | no |
-| `t3d` | `destroy` | `t3d_destroy` | yes | no |
-| `t3d` | `draw_indexed` | `t3d_draw_indexed` | yes | no |
-| `t3d` | `draw_object` | `t3d_draw_object` | yes | no |
-| `t3d` | `fog_set_color` | `t3d_fog_set_color` | yes | no |
-| `t3d` | `fog_set_enabled` | `t3d_fog_set_enabled` | yes | no |
-| `t3d` | `fog_set_range` | `t3d_fog_set_range` | yes | no |
-| `t3d` | `frame_end` | `rspq_block_run` | yes | no |
-| `t3d` | `frame_start` | `t3d_frame_start` | yes | no |
-| `t3d` | `init` | `t3d_init` | yes | no |
-| `t3d` | `light_set_ambient` | `t3d_light_set_ambient` | yes | no |
-| `t3d` | `light_set_count` | `t3d_light_set_count` | yes | no |
-| `t3d` | `light_set_directional` | `t3d_light_set_directional` | yes | no |
-| `t3d` | `light_set_point` | `t3d_light_set_point` | yes | no |
-| `t3d` | `light_set_point_params` | `t3d_light_set_point_params` | yes | no |
-| `t3d` | `light_set_spot` | `t3d_light_set_spot` | yes | no |
-| `t3d` | `look_at` | `t3d_look_at` | yes | no |
-| `t3d` | `mat4_from_srt` | `t3d_mat4_from_srt` | yes | no |
-| `t3d` | `mat4_from_srt_euler` | `t3d_mat4_from_srt_euler` | yes | no |
-| `t3d` | `mat4_identity` | `t3d_mat4_identity` | yes | no |
-| `t3d` | `mat4_invert` | `t3d_mat4_invert` | yes | no |
-| `t3d` | `mat4_mul` | `t3d_mat4_mul` | yes | no |
-| `t3d` | `mat4_rotate_x` | `t3d_mat4_rotate` | yes | no |
-| `t3d` | `mat4_rotate_y` | `t3d_mat4_rotate` | yes | no |
-| `t3d` | `mat4_rotate_z` | `t3d_mat4_rotate` | yes | no |
-| `t3d` | `mat4_scale` | `t3d_mat4_scale` | yes | no |
-| `t3d` | `mat4_translate` | `t3d_mat4_translate` | yes | no |
-| `t3d` | `mat4_transpose` | `t3d_mat4_transpose` | yes | no |
-| `t3d` | `model_bake_pos` | `t3d_model_bake_pos` | yes | no |
-| `t3d` | `model_draw` | `t3d_model_draw` | yes | no |
-| `t3d` | `model_free` | `t3d_model_free` | yes | no |
-| `t3d` | `model_get_material` | `t3d_model_get_material` | yes | no |
-| `t3d` | `model_get_object_by_index` | `t3d_model_get_object_by_index` | yes | no |
-| `t3d` | `model_get_object_by_name` | `t3d_model_get_object_by_name` | yes | no |
-| `t3d` | `model_get_vertex_count` | `t3d_model_get_vertex_count` | yes | no |
-| `t3d` | `model_load` | `t3d_model_load` | yes | no |
-| `t3d` | `pop_draw_flags` | `t3d_pop_draw_flags` | yes | no |
-| `t3d` | `push_draw_flags` | `t3d_push_draw_flags` | yes | no |
-| `t3d` | `quat_from_axis_angle` | `t3d_quat_from_axis_angle` | yes | no |
-| `t3d` | `quat_identity` | `t3d_quat_identity` | yes | no |
-| `t3d` | `quat_mul` | `t3d_quat_mul` | yes | no |
-| `t3d` | `quat_nlerp` | `t3d_quat_nlerp` | yes | no |
-| `t3d` | `quat_slerp` | `t3d_quat_slerp` | yes | no |
-| `t3d` | `rdpq_draw_object` | `t3d_rdpq_draw_object` | yes | no |
-| `t3d` | `screen_projection` | `t3d_screen_projection` | yes | no |
-| `t3d` | `segment_set` | `t3d_segment_set` | yes | no |
-| `t3d` | `set_camera` | `t3d_set_camera` | yes | no |
-| `t3d` | `skeleton_create` | `t3d_skeleton_create` | yes | no |
-| `t3d` | `skeleton_destroy` | `t3d_skeleton_destroy` | yes | no |
-| `t3d` | `skeleton_draw` | `t3d_skeleton_draw` | yes | no |
-| `t3d` | `skeleton_update` | `t3d_skeleton_update` | yes | no |
-| `t3d` | `state_set_drawflags` | `t3d_state_set_drawflags` | yes | no |
-| `t3d` | `state_set_vertex_fx` | `t3d_state_set_vertex_fx` | yes | no |
-| `t3d` | `tri_draw` | `t3d_tri_draw` | yes | no |
-| `t3d` | `tri_sync` | `t3d_tri_sync` | yes | no |
-| `t3d` | `vec3_cross` | `t3d_vec3_cross` | yes | no |
-| `t3d` | `vec3_dot` | `t3d_vec3_dot` | yes | no |
-| `t3d` | `vec3_lerp` | `t3d_vec3_lerp` | yes | no |
-| `t3d` | `vec3_norm` | `t3d_vec3_norm` | yes | no |
-| `t3d` | `vert_load` | `t3d_vert_load` | yes | no |
-| `t3d` | `vert_load_srt` | `t3d_vert_load_srt` | yes | no |
-| `t3d` | `viewport_attach` | `t3d_viewport_attach` | yes | no |
-| `t3d` | `viewport_create` | `t3d_viewport_create` | yes | no |
-| `t3d` | `viewport_set_fov` | `t3d_viewport_set_fov` | yes | no |
-| `t3d` | `viewport_set_projection` | `t3d_viewport_set_projection` | yes | no |
-| `timer` | `delta` | `_pak_delta_time` | yes | yes |
+| `system` | `reset` | `system_reset` | yes* | no |
+| `system` | `ticks` | `system_ticks` | yes* | no |
+| `system` | `ticks_to_ms` | `system_ticks_to_ms` | yes* | no |
+| `system` | `tv_type` | `system_tv_type` | yes* | no |
+| `t3d` | `anim_attach` | `t3d_anim_attach` | tiny3d | no |
+| `t3d` | `anim_create` | `t3d_anim_create` | tiny3d | no |
+| `t3d` | `anim_destroy` | `t3d_anim_destroy` | tiny3d | no |
+| `t3d` | `anim_set_looping` | `t3d_anim_set_looping` | tiny3d | no |
+| `t3d` | `anim_set_playing` | `t3d_anim_set_playing` | tiny3d | no |
+| `t3d` | `anim_set_speed` | `t3d_anim_set_speed` | tiny3d | no |
+| `t3d` | `anim_update` | `t3d_anim_update` | tiny3d | no |
+| `t3d` | `destroy` | `t3d_destroy` | tiny3d | yes |
+| `t3d` | `draw_indexed` | `t3d_draw_indexed` | no | no |
+| `t3d` | `draw_object` | `t3d_draw_object` | no | no |
+| `t3d` | `fog_set_color` | `t3d_fog_set_color` | yes* | no |
+| `t3d` | `fog_set_enabled` | `t3d_fog_set_enabled` | yes* | yes |
+| `t3d` | `fog_set_range` | `t3d_fog_set_range` | tiny3d | yes |
+| `t3d` | `frame_end` | `t3d_frame_end` | yes* | yes |
+| `t3d` | `frame_start` | `t3d_frame_start` | tiny3d | yes |
+| `t3d` | `init` | `t3d_init` | yes* | yes |
+| `t3d` | `light_set_ambient` | `t3d_light_set_ambient` | yes* | yes |
+| `t3d` | `light_set_count` | `t3d_light_set_count` | tiny3d | yes |
+| `t3d` | `light_set_directional` | `t3d_light_set_directional` | yes* | yes |
+| `t3d` | `light_set_point` | `t3d_light_set_point` | tiny3d | no |
+| `t3d` | `light_set_point_params` | `t3d_light_set_point_params` | no | no |
+| `t3d` | `light_set_spot` | `t3d_light_set_spot` | no | no |
+| `t3d` | `look_at` | `t3d_look_at` | yes* | no |
+| `t3d` | `mat4_from_srt` | `t3d_mat4_from_srt` | yes* | no |
+| `t3d` | `mat4_from_srt_euler` | `t3d_mat4_from_srt_euler` | yes* | no |
+| `t3d` | `mat4_identity` | `t3d_mat4_identity` | yes* | no |
+| `t3d` | `mat4_invert` | `t3d_mat4_invert` | yes* | no |
+| `t3d` | `mat4_mul` | `t3d_mat4_mul` | yes* | no |
+| `t3d` | `mat4_rotate_x` | `t3d_mat4_rotate` | yes* | no |
+| `t3d` | `mat4_rotate_y` | `t3d_mat4_rotate` | yes* | no |
+| `t3d` | `mat4_rotate_z` | `t3d_mat4_rotate` | yes* | no |
+| `t3d` | `mat4_scale` | `t3d_mat4_scale` | yes* | no |
+| `t3d` | `mat4_translate` | `t3d_mat4_translate` | yes* | no |
+| `t3d` | `mat4_transpose` | `t3d_mat4_transpose` | yes* | no |
+| `t3d` | `mat4fp_from_srt_euler` | `t3d_mat4fp_from_srt_euler` | yes* | no |
+| `t3d` | `matrix_pop` | `t3d_matrix_pop` | tiny3d | no |
+| `t3d` | `matrix_push` | `t3d_matrix_push` | tiny3d | no |
+| `t3d` | `model_bake_pos` | `t3d_model_bake_pos` | no | no |
+| `t3d` | `model_draw` | `t3d_model_draw` | tiny3d | no |
+| `t3d` | `model_free` | `t3d_model_free` | tiny3d | no |
+| `t3d` | `model_get_material` | `t3d_model_get_material` | tiny3d | no |
+| `t3d` | `model_get_object_by_index` | `t3d_model_get_object_by_index` | tiny3d | no |
+| `t3d` | `model_get_object_by_name` | `t3d_model_get_object_by_name` | no | no |
+| `t3d` | `model_get_vertex_count` | `t3d_model_get_vertex_count` | no | no |
+| `t3d` | `model_load` | `t3d_model_load` | tiny3d | no |
+| `t3d` | `pop_draw_flags` | `t3d_pop_draw_flags` | no | no |
+| `t3d` | `push_draw_flags` | `t3d_push_draw_flags` | no | no |
+| `t3d` | `quat_from_axis_angle` | `t3d_quat_from_axis_angle` | yes* | no |
+| `t3d` | `quat_identity` | `t3d_quat_identity` | yes* | no |
+| `t3d` | `quat_mul` | `t3d_quat_mul` | yes* | no |
+| `t3d` | `quat_nlerp` | `t3d_quat_nlerp` | yes* | no |
+| `t3d` | `quat_slerp` | `t3d_quat_slerp` | yes* | no |
+| `t3d` | `rdpq_draw_object` | `t3d_rdpq_draw_object` | no | no |
+| `t3d` | `screen_projection` | `t3d_screen_projection` | no | no |
+| `t3d` | `segment_set` | `t3d_segment_set` | tiny3d | no |
+| `t3d` | `set_camera` | `t3d_set_camera` | no | no |
+| `t3d` | `skeleton_create` | `t3d_skeleton_create` | tiny3d | no |
+| `t3d` | `skeleton_destroy` | `t3d_skeleton_destroy` | tiny3d | no |
+| `t3d` | `skeleton_draw` | `t3d_skeleton_draw` | yes* | no |
+| `t3d` | `skeleton_update` | `t3d_skeleton_update` | tiny3d | no |
+| `t3d` | `state_set_drawflags` | `t3d_state_set_drawflags` | tiny3d | no |
+| `t3d` | `state_set_vertex_fx` | `t3d_state_set_vertex_fx` | tiny3d | no |
+| `t3d` | `tri_draw` | `t3d_tri_draw` | tiny3d | no |
+| `t3d` | `tri_sync` | `t3d_tri_sync` | tiny3d | no |
+| `t3d` | `vec3_cross` | `t3d_vec3_cross` | yes* | no |
+| `t3d` | `vec3_dot` | `t3d_vec3_dot` | yes* | no |
+| `t3d` | `vec3_lerp` | `t3d_vec3_lerp` | yes* | no |
+| `t3d` | `vec3_norm` | `t3d_vec3_norm` | yes* | no |
+| `t3d` | `vert_load` | `t3d_vert_load` | tiny3d | no |
+| `t3d` | `vert_load_srt` | `t3d_vert_load_srt` | no | no |
+| `t3d` | `viewport_attach` | `t3d_viewport_attach` | tiny3d | yes |
+| `t3d` | `viewport_create` | `t3d_viewport_create` | tiny3d | yes |
+| `t3d` | `viewport_set_area` | `t3d_viewport_set_area` | tiny3d | yes |
+| `t3d` | `viewport_set_fov` | `t3d_viewport_set_fov` | no | no |
+| `t3d` | `viewport_set_projection` | `t3d_viewport_set_projection` | tiny3d | yes |
+| `timer` | `delta` | `_pak_delta_time` | yes* | yes |
 | `timer` | `get_ticks` | `get_ticks` | yes | yes |
 | `timer` | `init` | `timer_init` | yes | yes |
 | `timer` | `ticks` | `get_ticks` | yes | yes |
 | `tpak` | `get_status` | `tpak_get_status` | yes | no |
-| `tpak` | `get_value` | `tpak_get_value` | yes | no |
+| `tpak` | `get_value` | `tpak_get_value` | no | no |
 | `tpak` | `init` | `tpak_init` | yes | no |
 | `tpak` | `read` | `tpak_read` | yes | no |
 | `tpak` | `set_power` | `tpak_set_power` | yes | no |
 | `tpak` | `set_value` | `tpak_set_value` | yes | no |
 | `tpak` | `write` | `tpak_write` | yes | no |
-| `vi` | `get_height` | `vi_get_height` | yes | no |
-| `vi` | `get_width` | `vi_get_width` | yes | no |
-| `vi` | `set_aa_mode` | `vi_set_aa_mode` | yes | no |
-| `vi` | `set_dedither` | `vi_set_dedither` | yes | no |
-| `vi` | `set_divot` | `vi_set_divot` | yes | no |
-| `vi` | `set_gamma` | `vi_set_gamma` | yes | no |
-| `vi` | `wait_vblank` | `vi_wait_vblank` | yes | no |
-| `vru` | `close` | `vru_close` | yes | no |
-| `vru` | `init` | `vru_init` | yes | no |
-| `vru` | `is_ready` | `vru_is_ready` | yes | no |
-| `vru` | `read_word` | `vru_read_word` | yes | no |
-| `vru` | `write_word_list` | `vru_write_word_list` | yes | no |
+| `vi` | `get_height` | `vi_get_height` | yes* | no |
+| `vi` | `get_width` | `vi_get_width` | yes* | no |
+| `vi` | `set_aa_mode` | `vi_set_aa_mode` | no | no |
+| `vi` | `set_dedither` | `vi_set_dedither` | no | no |
+| `vi` | `set_divot` | `vi_set_divot` | no | no |
+| `vi` | `set_gamma` | `vi_set_gamma` | no | no |
+| `vi` | `wait_vblank` | `vi_wait_vblank` | yes* | no |
+| `vru` | `close` | `vru_close` | no | no |
+| `vru` | `init` | `vru_init` | no | no |
+| `vru` | `is_ready` | `vru_is_ready` | no | no |
+| `vru` | `read_word` | `vru_read_word` | no | no |
+| `vru` | `write_word_list` | `vru_write_word_list` | no | no |
 | `wav64` | `close` | `wav64_close` | yes | no |
 | `wav64` | `open` | `wav64_open` | yes | no |
 | `wav64` | `play` | `wav64_play` | yes | no |
@@ -589,7 +623,18 @@ rejects a no.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**330 functions** across the module surface; **92** exist on the standalone HAL.
+**350 functions** across the module surface; **154** exist on the standalone HAL.
+
+Of the 235 lowered as a direct call: **120** are libdragon's own, **32** need Tiny3D, and **83** are **standalone-only**.
+
+Standalone-only is mostly by design rather than debt. libdragon owns the
+subsystem and exposes a different shape for it: interrupts are callbacks
+(`register_VI_handler`) rather than mask/restore, exceptions are
+`register_exception_handler`, the RSP is an `rsp_ucode_t` rather than raw
+SP registers, and `rdpq.triangle_*` takes screen-space integers where
+libdragon's `rdpq_triangle` takes a format struct and float vertex arrays.
+A program using one of these builds with `--backend mips`; `pak check`
+warns W005 rather than letting the C fail to compile.
 
 <!-- END GENERATED MODULE API -->
 
@@ -682,7 +727,7 @@ use n64.rdpq             -- #include <rdpq.h> + <rdpq_gfx.h>
 | `rdpq.init` | `()` | Initialize RDP queue |
 | `rdpq.close` | `()` | Shut down RDP queue |
 | `rdpq.attach` | `(surface: *surface_t)` | Attach RDP output to surface |
-| `rdpq.attach_clear` | `(surface: *surface_t)` | Attach and clear surface |
+| `rdpq.attach_clear` | `(surface, color: u32 = 0x000000FF)` | Attach the surface and clear it to `color` (packed `0xRRGGBBAA`) |
 | `rdpq.detach` | `()` | Detach current surface |
 | `rdpq.detach_show` | `()` | Detach and show surface (flip) |
 | `rdpq.set_mode_standard` | `()` | Standard rendering mode |
@@ -825,7 +870,32 @@ use n64.sprite           -- #include <rdpq_sprite.h>
 **Behavioral rules:**
 - Call `rdpq.set_mode_copy()` before `sprite.blit` — blit requires copy mode.
 - `flags` is usually `0`. `x`, `y` are top-left pixel coordinates.
-- Asset sprites (`asset name: Sprite from "path"`) are loaded automatically.
+- Asset sprites (`asset name: Sprite from "path"`) are loaded automatically:
+  reading the name the first time loads the file, and every read after that
+  reuses the handle.
+
+**How an asset reaches the ROM:**
+- libdragon: `pak build` writes a Makefile that converts each asset and packs
+  the results into a DragonFS image (`filesystem/<project>.dfs`), which
+  n64.mk attaches to the ROM. `main` calls `dfs_init` before anything can read
+  one. A `.dfs` is the only kind of attached file n64.mk's `%.z64` rule passes
+  on, which is why the image is one.
+- Standalone: `pak link --fs <archive>` appends a PakFS archive to the ROM
+  past the payload; the runtime walks its index and DMAs a file in on demand.
+  A ROM linked without `--fs` has no assets and every load returns `none`.
+- Either way the path is `rom:/<converted name>`.
+- The name is the CONVERTED file's, so `from "sprites/bg.png"` looks up
+  `sprites/bg.sprite` — what `pak build` ran through `mksprite`. Asset paths
+  are relative to the project's `assets/` directory.
+- On the standalone backend only `--compress 0` sprites are readable: a
+  compressed one starts with libdragon's "DCA3" container and nothing in the
+  standalone runtime decompresses it. libdragon's own `sprite_load` handles
+  both, so the Makefile leaves mksprite's default compression on.
+- CI4 and CI8 sprites are skipped rather than drawn, because their palette is
+  not loaded into TMEM; so are the 4-bit formats. RGBA16 is what `pak build`
+  converts to.
+- Sprites larger than TMEM (4 KiB) are drawn as horizontal strips, one
+  LOAD_TILE and one TEXTURE_RECTANGLE each.
 
 ---
 
@@ -1054,7 +1124,7 @@ use n64.mixer            -- #include <audio.h> + <mixer.h>
 | `mixer.ch_stop` | `mixer_ch_stop` | Stop a channel |
 | `mixer.ch_set_vol` | `mixer_ch_set_vol` | Set channel volume (L, R) |
 | `mixer.ch_set_freq` | `mixer_ch_set_freq` | Set channel frequency |
-| `mixer.poll` | `audio_poll` | Pump the mixer (call each frame) |
+| `mixer.poll` | `mixer_poll` | Pump the mixer once per frame. Takes the buffer `audio.get_buffer()` returned — the pointer, not a dereference of it |
 
 ---
 
@@ -1101,9 +1171,9 @@ use n64.eeprom           -- #include <eeprom.h>
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `eeprom.init` | `()` | Probe the cartridge EEPROM (`eeprom_init`) |
+| `eeprom.init` | `()` | Probe the cartridge EEPROM. Standalone only; a no-op on libdragon |
 | `eeprom.present` | `() -> i32` | 1 if 4K or 16K EEPROM is on the cart |
-| `eeprom.type_detect` | `() -> i32` | 0 = none, 1 = 4K (64 blocks), 2 = 16K (256 blocks) |
+| `eeprom.type_detect` | `() -> i32` | 0 = none, 1 = 4K (64 blocks), 2 = 16K (256 blocks). `eeprom_present()` on libdragon, whose return IS the type |
 | `eeprom.read` | `(block: i32, dst: *u8)` | Read an 8-byte block |
 | `eeprom.write` | `(block: i32, src: *u8)` | Write an 8-byte block |
 
@@ -1113,6 +1183,10 @@ use n64.eeprom           -- #include <eeprom.h>
 - Writes are slow (~15 ms/block) — only write when save data changes.
 - Always call `eeprom.present()` before read/write. On the standalone HAL this
   is a real SI/PIF Joybus identify (channel 4); there is no libdragon fallback.
+- `eeprom.init` exists because the standalone HAL drives the PIF itself and has
+  to probe. libdragon reaches the EEPROM over joybus, which `joypad_init`
+  already brings up, so there is nothing to do and the call lowers to nothing.
+  Calling it is portable; skipping it is not.
 - See `N64_HARDWARE.md` → EEPROM for the save/load pattern.
 
 ---
@@ -1164,15 +1238,28 @@ use n64.backup           -- #include <backup.h>
 ### `n64.rumble` — Rumble Pak
 
 ```pak
-use n64.rumble           -- #include <joypad.h> + <rumble.h>
+use n64.rumble           -- #include <joypad.h>
 ```
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `rumble.init` | `()` | Initialize rumble |
-| `rumble.start` | `(port: i32)` | Start rumble on port |
-| `rumble.stop` | `(port: i32)` | Stop rumble on port |
+| `rumble.init` | `()` | No-op: the Rumble Pak is reached through the joypad subsystem, which `controller.init` already brings up |
+| `rumble.start` | `(port: i32)` | `joypad_set_rumble_active(port, true)` |
+| `rumble.stop` | `(port: i32)` | `joypad_set_rumble_active(port, false)` |
 | `rumble.is_plugged` | `(port: i32) -> bool` | True if a Rumble Pak is in the port |
+
+**Behavioral rules:**
+- The Rumble Pak is an *accessory behind a controller*, not a device of its
+  own, so every call takes the controller's port and talks on that port's
+  Joybus channel.
+- `rumble.start` and `rumble.stop` probe first and do nothing when no Rumble
+  Pak answers, so a game that always rumbles costs nothing on a controller
+  without one.
+- The probe result is cached per port. Call `rumble.init()` to re-probe after
+  the player may have swapped paks.
+- On the standalone HAL these are real Joybus accessory transactions: write
+  0x01/0x00 to address 0xC000, with the 5-bit address checksum the pak
+  requires. A pak silently ignores a write whose checksum is wrong.
 
 ---
 
@@ -1292,7 +1379,17 @@ use n64.debug            -- #include <debug.h>
 | `debug.init_usbfs` | `debug_init_usbfs` | Initialize USB filesystem debug channel |
 | `debug.flush` | `flush` | Flush debug output |
 
-Output goes to the libdragon debug channel — visible only on dev hardware/emu.
+**Behavioral rules:**
+- Call `debug.init()` (or `debug.init_isviewer()`, the same thing) once before
+  any `debug.log`. Nothing prints until you do.
+- ISViewer is a console in the cartridge address space: the magic `IS64` at
+  `0x13FF0000`, the text at `0x13FF0020`, the byte count at `0x13FF0014`.
+  Everdrive, 64drive and every emulator worth debugging on implement it.
+- The standalone HAL probes for that magic and, when nothing answers, makes
+  every later `debug.log` a no-op — a store into cartridge space with no
+  device behind it faults on real hardware.
+- `debug.init_usbfs` and `debug.flush` are libdragon-only; `pak check` warns
+  W005 on the standalone backend.
 
 ---
 
@@ -1312,6 +1409,111 @@ On the standalone MIPS HAL the crt0 installs the four VR4300 vectors
 with RGBA5551 `0xF801` (solid red) and points the Video Interface at FB0, so
 a CPU exception or `assert` is a red screen rather than a black hang. A
 non-zero handler installed via `set_handler` is `jalr`'d instead.
+
+---
+
+### `n64.interrupt` — RCP Interrupts (standalone only)
+
+```pak
+use n64.interrupt
+```
+
+**Standalone backend only.** libdragon has its own interrupt layer
+(`enable_interrupts`, `register_VI_handler`) with a different shape, so
+`pak check --backend c` reports W005 on every entry here.
+
+| Function | Maps to | Description |
+|----------|---------|-------------|
+| `interrupt.init()` | `interrupt_init` | Arm the VI source and enable IP2 |
+| `interrupt.vi_count()` | `interrupt_vi_count` | Frames the handler has serviced |
+| `interrupt.pending()` | `interrupt_pending` | MI sources seen since `init` |
+| `interrupt.enabled()` | `interrupt_enabled` | Non-zero once `init` has run |
+| `interrupt.disable()` | `interrupt_disable` | Clear `Status.IE`, return the old Status |
+| `interrupt.restore(s)` | `interrupt_restore` | Put a saved Status back |
+
+Before `interrupt.init()`, `display.show()` spins on `VI_V_CURRENT`. After it,
+the same call waits on the counter the handler bumps and leaves the CPU alone
+between frames — nothing else in a program has to change.
+
+```pak
+display.init(0, 2, 3, 0, 1)
+interrupt.init()
+
+loop {
+    let fb: u32 = display.get()
+    -- draw
+    display.show(fb)      -- now an interrupt-driven wait
+}
+```
+
+`interrupt.disable()` returns the previous Status rather than a flag, so a
+critical section restores what was actually there:
+
+```pak
+let saved: u32 = interrupt.disable()
+-- ... touch state the handler also touches ...
+interrupt.restore(saved)
+```
+
+See N64_HARDWARE.md for the three things that must line up for a source to be
+delivered, and the per-device acknowledge each one needs.
+
+---
+
+### `n64.sp` — the RSP's registers (standalone only)
+
+```pak
+use n64.sp
+```
+
+**Standalone backend only**, and not the same thing as `n64.rsp`: that module
+is libdragon's rspq command queue, a whole scheduler. This is the SP register
+block — load a microcode image, start it, wait for it, move data in and out.
+libdragon's `rsp_*` functions have the same shape of name and different
+signatures, so these are `pak_sp_*` underneath and `pak check --backend c`
+reports W005 on all of them.
+
+| Function | Maps to | Description |
+|----------|---------|-------------|
+| `sp.init()` | `pak_sp_init` | Halt the RSP and clear its break/step/interrupt state |
+| `sp.load_ucode(src, len)` | `pak_sp_load_ucode` | RDRAM → IMEM |
+| `sp.load_data(src, off, len)` | `pak_sp_load_data` | RDRAM → DMEM at `off` |
+| `sp.read_data(dst, off, len)` | `pak_sp_read_data` | DMEM at `off` → RDRAM |
+| `sp.run(pc)` | `pak_sp_run` | Point the RSP at an IMEM offset and release it |
+| `sp.wait()` | `pak_sp_wait` | Block until it halts or breaks |
+| `sp.done()` | `pak_sp_done` | Non-zero once it has halted or broken |
+| `sp.status()` | `pak_sp_status` | Raw SP_STATUS |
+
+**Pak does not compile to the RSP.** It is a different instruction set with a
+vector unit; a task's words come from somewhere else. But the RSP's *scalar*
+half is a MIPS I subset, so `pak asmobj` can assemble one — which is how
+`tcl/tests/ares/rsp_add.S` is built.
+
+Every address and length in an SP DMA must be a multiple of 8; the HAL panics
+rather than let the hardware silently truncate a misaligned transfer. `src` and
+`dst` are cached RDRAM addresses and the HAL does the writeback and invalidate
+around them.
+
+```pak
+use n64.sp
+
+@aligned(16)
+static ucode: [8]u32 = [ ... ]     -- assembled elsewhere
+@aligned(16)
+static args: [2]u32 = [a, b]
+@aligned(16)
+static result: [2]u32 = [0, 0]
+
+sp.init()
+sp.load_ucode(&ucode[0] as u32, 32)
+sp.load_data(&args[0] as u32, 0, 8)
+sp.run(0)
+sp.wait()
+sp.read_data(&result[0] as u32, 8, 8)
+```
+
+A task ends with `break`. Without one the RSP runs off the end of IMEM, never
+halts, and `sp.wait()` never returns.
 
 ---
 
@@ -1372,6 +1574,20 @@ Headers pulled in by submodule:
 For T3D math functions, **the output is the first argument** (a pointer); codegen
 inserts `&` automatically if you pass a value.
 
+**Standalone support is state-only.** Tiny3D's geometry pipeline is RSP
+microcode, and the standalone HAL has no RSP path for it, so nothing that
+draws -- `model_load`, `model_draw`, the skeleton and animation calls,
+`look_at` (it needs `*Vec3` field access, which this backend does not have
+at all) -- works there; `pak check --backend mips` reports E010 on each.
+What does work standalone is the STATE half: `init`/`destroy`, a viewport's
+creation, area, and projection, `viewport_attach`, the ambient/directional
+lights, `light_set_count`, fog, and the frame boundary calls. That is enough
+for a program that sets up a 3D context and lighting and draws everything
+through `rdpq` instead of through Tiny3D -- see `ai/dataset/games/fps_arena.pk64`
+and `platformer_3d.pk64`. A program that loads and draws a `.t3dm` model is a
+libdragon-backend program; check STDLIB's `standalone` column per function, or
+just build with `--backend mips` and read the E010s.
+
 ### Core / Frame
 
 | Function | Description |
@@ -1379,7 +1595,7 @@ inserts `&` automatically if you pass a value.
 | `t3d.init()` | Initialize T3D |
 | `t3d.destroy()` | Shut down T3D |
 | `t3d.frame_start()` | Begin a 3D frame |
-| `t3d.frame_end()` | End/submit a frame (`rspq_block_run`) |
+| `t3d.frame_end()` | End a frame. A frame boundary; the actual submit is `rdpq.detach_show()` |
 | `t3d.screen_projection(...)` | Set screen-space projection |
 | `t3d.segment_set(...)` | Bind a memory segment for the RSP |
 
@@ -1389,10 +1605,11 @@ inserts `&` automatically if you pass a value.
 |----------|-------------|
 | `t3d.viewport_create() -> T3DViewport` | Create a viewport |
 | `t3d.viewport_attach(vp: *T3DViewport)` | Make a viewport active |
+| `t3d.viewport_set_area(vp, x, y, w, h)` | Set the screen rectangle a viewport renders into |
 | `t3d.viewport_set_projection(vp, fov, near, far)` | Set perspective projection |
 | `t3d.viewport_set_fov(vp, fov)` | Set FOV only |
 | `t3d.set_camera(vp, eye, target)` | Set camera (`t3d_set_camera`) |
-| `t3d.look_at(vp, eye, target, up)` | Look-at camera (`t3d_look_at`) |
+| `t3d.look_at(vp, eye, target, up)` | Look-at camera. **libdragon only** -- takes `*Vec3`, and Vec3 field access has no support on the standalone backend |
 
 ### Model
 

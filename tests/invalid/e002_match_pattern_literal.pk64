@@ -1,0 +1,19 @@
+-- EXPECT: E002
+-- A variant pattern binds names, not literals. `.ok(1)` is a parse error.
+--
+-- Found by tcl/tools/fuzz_test.tcl. The arm-argument loop consumed nothing
+-- when the token was neither a name nor `_`, so this input did not fail --
+-- it hung the parser forever, and `pak check` never returned.
+
+variant Answer {
+    ok(i32)
+    err(i32)
+}
+
+entry {
+    let a: Answer = Answer.ok(1)
+    match a {
+        .ok(1) => {}
+        .err(e) => {}
+    }
+}

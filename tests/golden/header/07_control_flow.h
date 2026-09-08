@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-int32_t abs(int32_t x);
+int32_t abs_i32(int32_t x);
 int32_t sign(int32_t x);
 
 #endif /* PAKMOD_DEMO_07_CONTROL_FLOW_H */

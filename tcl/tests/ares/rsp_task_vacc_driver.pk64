@@ -1,0 +1,91 @@
+-- Runs the rsp.vacc task COMPILED FROM PAK SOURCE
+-- (tcl/tests/ares/rsp_task_vacc.pk64) and checks the answer it gives back.
+--
+-- rsp_task_vecadd.pk64/_driver proved vec8x16 elementwise ops compiled for
+-- the RSP. This proves step 3: `use rsp.vacc` and `vacc.mul`/`vacc.mac`/
+-- `vacc.mid()`, compiled by tcl/rsp_codegen.tcl to VMULF/VMACF/VSAR against
+-- the real 48-bit accumulator. tcl/tools/ares_test.tcl recompiles
+-- rsp_task_vacc.pk64 fresh and refuses to run if these words have drifted
+-- from it.
+--
+-- rsp_task_vacc.pk64's DMEM layout (a bump allocator, in declaration
+-- order): m0=DMEM[0..15], m1=DMEM[16..31], v=DMEM[32..47],
+-- result=DMEM[48..63], each a vec8x16.
+--
+-- Every lane of m0, m1, v is 0.5 in Q1.15 (0x4000 = 16384). The task does
+-- vacc.mul(m0, v.broadcast(0)) -- 0.5*0.5 = 0.25 fresh into the
+-- accumulator -- then vacc.mac(m1, v.broadcast(1)) -- another 0.5*0.5 =
+-- 0.25 accumulated on top -- so every lane should read back 0.5 (0x4000)
+-- via vacc.mid() (ACCM, the middle 16 bits of the 48-bit accumulator).
+--
+-- Green means a Pak program's rsp.vacc.mul/mac/mid ran on the RSP as real
+-- VMULF/VMACF/VSAR and the accumulator chained correctly. If it never
+-- starts, sp.wait() never returns and the screen stays black.
+
+use n64.sp
+
+const FB_PIXELS: i32 = 76800
+const GREEN: u16 = 0x07C1
+const RED: u16 = 0xF801
+
+@aligned(16)
+static ucode: [10]u32 = [
+    0xC8002000, 0xC8022002, 0x4B020040, 0xC8012001, 0xC8022002,
+    0x4B220808, 0x4B20001D, 0xE8002003, 0x0000000D, 0x00000000
+]
+
+-- m0 = m1 = v = 0.5 in every lane, Q1.15 (0x4000).
+@aligned(16)
+static m0_vec: [8]u16 = [0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000]
+
+@aligned(16)
+static m1_vec: [8]u16 = [0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000]
+
+@aligned(16)
+static v_vec: [8]u16 = [0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000]
+
+@aligned(16)
+static want: [8]u16 = [0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000, 0x4000]
+
+@aligned(16)
+static got: [8]u16 = [0, 0, 0, 0, 0, 0, 0, 0]
+
+fn fill(fb: u32, px: u16) {
+    let mut i: i32 = 0
+    while i < FB_PIXELS {
+        let p: *volatile u16 = (fb + (i * 2) as u32) as *volatile u16
+        *p = px
+        i = i + 1
+    }
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+
+    sp.init()
+    sp.load_ucode(&ucode[0] as u32, 40)
+    sp.load_data(&m0_vec[0] as u32, 0, 16)
+    sp.load_data(&m1_vec[0] as u32, 16, 16)
+    sp.load_data(&v_vec[0] as u32, 32, 16)
+    sp.run(0)
+    sp.wait()
+    sp.read_data(&got[0] as u32, 48, 16)
+
+    let fb: u32 = display.get()
+    let mut all_ok: bool = true
+    let mut i: i32 = 0
+    while i < 8 {
+        if got[i] != want[i] {
+            all_ok = false
+        }
+        i = i + 1
+    }
+    if all_ok {
+        fill(fb, GREEN)
+    } else {
+        fill(fb, RED)
+    }
+    loop {
+        display.show(fb)
+    }
+}

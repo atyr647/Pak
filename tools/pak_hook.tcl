@@ -54,9 +54,22 @@ if {![file executable $PAK]} {
     exit 0
 }
 
+# `pak check`/`pak explain` default to --backend c, which is the wrong
+# question for an RSP microcode: `use rsp.vacc` is a checker error on every
+# OTHER backend (checker.tcl's check_use -- a microcode is not a valid
+# c/mips program, and hal_contract_test.tcl is what caught the two fixture
+# files that used to slip through this exact gap). Sniff for it the same
+# way a human would glance at the file: a top-level `use rsp.` -- and check
+# against the backend the file is actually meant for instead.
+set backend_flag {}
+if {![catch {set fh [open $path r]; set src [read $fh]; close $fh}] \
+    && [regexp -line {^\s*use\s+rsp\.} $src]} {
+    set backend_flag {--backend rsp}
+}
+
 # A non-zero exit makes `exec` append "child process exited abnormally" to the
 # captured output; the diagnostics themselves are what matters here.
-set rc [catch {exec $PAK check $path 2>@1} out]
+set rc [catch {exec $PAK check {*}$backend_flag $path 2>@1} out]
 if {$rc} {
     set out [string map {"child process exited abnormally" ""} $out]
     puts [string repeat = 60]
@@ -74,7 +87,7 @@ if {[info exists ::env(PAK_HOOK_NO_EXPLAIN)] && $::env(PAK_HOOK_NO_EXPLAIN) eq "
     exit 0
 }
 
-if {[catch {exec $PAK explain $path} c]} { exit 0 }
+if {[catch {exec $PAK explain {*}$backend_flag $path} c]} { exit 0 }
 set body [string trim [user_code $c]]
 if {$body ne ""} {
     puts [string repeat = 60]

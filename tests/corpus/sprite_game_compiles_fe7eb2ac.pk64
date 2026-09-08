@@ -48,7 +48,7 @@ entry {
 
     loop {
         let disp = display.get()
-        rdpq.attach_clear(disp, none)
+        rdpq.attach_clear(disp)
 
         let state_str = player_state_name(player.state)
 

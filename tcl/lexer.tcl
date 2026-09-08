@@ -194,6 +194,13 @@ oo::class create pak::Lexer {
                 }
                 append num [my advance]
             }
+        } else {
+            # A leading-dot float: .5, .125. is_float is already 1, so the loop
+            # above is skipped -- and it used to take the fractional digits
+            # with it, emitting FLOAT "." followed by a separate INT. Nothing
+            # rejected that: `pak check` passed and codegen died converting
+            # "." to bits. (Found by tcl/tools/fuzz_test.tcl.)
+            while {$pos < $n && [my isdigit [my peek]]} { append num [my advance] }
         }
         if {[my peek] eq "f"} { my advance; set is_float 1 }
         if {$is_float} {

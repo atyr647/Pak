@@ -1,0 +1,27 @@
+-- tcl/tests/ares/rsp_task_loop.pk64 -- an RSP microcode written in Pak,
+-- exercising control flow: `while`, a comparison, and a variable array
+-- index, none of which rsp_task_add.pk64 (straight-line, three statics)
+-- touches. Sums the first `n` of 8 words: DMEM[4 + 4*i] for i in [0, n).
+--
+-- Compiled by tcl/rsp_codegen.tcl (pak::rsp_generate_records). Layout is
+-- the same bump allocator, in declaration order: n=0, values=4..35 (8 u32),
+-- total=36. The driver must agree, and does -- see rsp_task_loop_driver.pk64.
+--
+-- Every branch this compiles to needs its delay slot filled correctly (an
+-- explicit `nop`, since this codegen does not attempt delay-slot filling
+-- yet) -- this is the test that would have caught getting that wrong, where
+-- rsp_task_add.pk64's straight-line code could not.
+
+static n: u32
+static values: [8]u32
+static total: u32
+
+entry {
+    let mut i: u32 = 0
+    let mut acc: u32 = 0
+    while i < n {
+        acc = acc + values[i]
+        i = i + 1
+    }
+    total = acc
+}

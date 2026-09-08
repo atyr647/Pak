@@ -59,6 +59,8 @@
 	.extern rdpq_triangle_shade_tex_z
 	.extern rdpq_set_tri_z
 	.extern sprite_load
+	.extern pakfs_read
+	.extern pakfs_size
 	.extern rdpq_sprite_blit
 	.extern timer_init
 	.extern _pak_delta_time
@@ -72,6 +74,7 @@
 	.extern audio_write_silence
 	.extern audio_set_buffer_num
 	.extern debugf
+	.extern debug_init_isviewer
 	.extern assert
 	.extern dma_read
 	.extern dma_write
@@ -331,6 +334,7 @@ render:
     move $t9, $v0
     sw $t9, 140($sp)
     lw $a0, 140($sp)
+    move $a1, $zero
     sw $t9, 96($sp)
     jal rdpq_attach_clear
     nop

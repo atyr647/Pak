@@ -1,0 +1,80 @@
+-- Runs a vec8x16 task COMPILED FROM PAK SOURCE
+-- (tcl/tests/ares/rsp_task_vecadd.pk64) and checks the answer it gives back.
+--
+-- rsp_task_add.pk64/rsp_task_loop.pk64 proved scalar Pak programs compiled
+-- for the RSP. This proves step 2's vec8x16: real Pak source using the
+-- `+` operator on vec8x16 values, compiled by tcl/rsp_codegen.tcl to VADD
+-- instead of scalar addu. tcl/tools/ares_test.tcl recompiles
+-- rsp_task_vecadd.pk64 fresh and refuses to run if these words have
+-- drifted from it.
+--
+-- rsp_task_vecadd.pk64's DMEM layout (a bump allocator, in declaration
+-- order): a=DMEM[0..15], b=DMEM[16..31], c=DMEM[32..47], each a vec8x16.
+--
+-- Green means a Pak program's `+` on vec8x16 ran on the RSP as real vector
+-- arithmetic and all 8 lanes came back right. If it never starts,
+-- sp.wait() never returns and the screen stays black.
+
+use n64.sp
+
+const FB_PIXELS: i32 = 76800
+const GREEN: u16 = 0x07C1
+const RED: u16 = 0xF801
+
+@aligned(16)
+static ucode: [6]u32 = [
+    0xC8002000, 0xC8012001, 0x4A010010, 0xE8002002, 0x0000000D, 0x00000000
+]
+
+-- a = {1,2,3,4,5,6,7,8}.
+@aligned(16)
+static a_vec: [8]u16 = [1, 2, 3, 4, 5, 6, 7, 8]
+
+-- b = {10,20,30,40,50,60,70,80}.
+@aligned(16)
+static b_vec: [8]u16 = [10, 20, 30, 40, 50, 60, 70, 80]
+
+@aligned(16)
+static want: [8]u16 = [11, 22, 33, 44, 55, 66, 77, 88]
+
+@aligned(16)
+static got: [8]u16 = [0, 0, 0, 0, 0, 0, 0, 0]
+
+fn fill(fb: u32, px: u16) {
+    let mut i: i32 = 0
+    while i < FB_PIXELS {
+        let p: *volatile u16 = (fb + (i * 2) as u32) as *volatile u16
+        *p = px
+        i = i + 1
+    }
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+
+    sp.init()
+    sp.load_ucode(&ucode[0] as u32, 24)
+    sp.load_data(&a_vec[0] as u32, 0, 16)
+    sp.load_data(&b_vec[0] as u32, 16, 16)
+    sp.run(0)
+    sp.wait()
+    sp.read_data(&got[0] as u32, 32, 16)
+
+    let fb: u32 = display.get()
+    let mut all_ok: bool = true
+    let mut i: i32 = 0
+    while i < 8 {
+        if got[i] != want[i] {
+            all_ok = false
+        }
+        i = i + 1
+    }
+    if all_ok {
+        fill(fb, GREEN)
+    } else {
+        fill(fb, RED)
+    }
+    loop {
+        display.show(fb)
+    }
+}

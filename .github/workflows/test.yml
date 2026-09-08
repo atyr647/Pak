@@ -97,6 +97,142 @@ jobs:
       - name: MIPS assembly snapshots (canonical examples)
         run: bash tcl/tools/mips_parity.sh
 
+      # The step above stubs libdragon, declaring every symbol as `long sym();`
+      # -- an unprototyped declaration that accepts any argument count and any
+      # types. A missing header, a renamed function, the wrong arity and the
+      # wrong argument types all compile clean there and fail at a user's
+      # `make`; all four were live in this repo. This compiles the same
+      # generated C against libdragon's real headers, pinned.
+      - name: Generated C matches libdragon's real API
+        run: |
+          bash tools/fetch_libdragon.sh
+          bash tools/fetch_tiny3d.sh
+          tclsh tcl/tools/libdragon_api_test.tcl
+
+      # STDLIB.md's libdragon column used to be the hardcoded string "yes" for
+      # all 330 entries. It was not true for 82 of them. This recomputes the
+      # classification by compiling a call to every directly-lowered symbol
+      # against libdragon and Tiny3D, and fails if the checked-in list drifts.
+      - name: MODULE_API entries resolve where STDLIB says they do
+        run: |
+          bash tools/fetch_libdragon.sh
+          bash tools/fetch_tiny3d.sh
+          tclsh tcl/tools/libdragon_symbols.tcl
+
+      # Everything above runs the HOST compiler, so it cannot see anything the
+      # TARGET decides -- a 32-bit long where the host's is 64, struct layout,
+      # alignment -- and it never links. This builds the real mips64-elf
+      # toolchain and libdragon, then cross-compiles every example with
+      # libdragon's own -Werror flags and takes a scaffolded project all the
+      # way to a bootable .z64.
+      #
+      # The toolchain is ~40 minutes and 9 GB, so it is cached; the gate skips
+      # cleanly when the cache is cold rather than failing.
+      - name: Cache mips64-elf toolchain + libdragon
+        id: n64-toolchain
+        uses: actions/cache@v4
+        with:
+          path: /opt/pak-n64
+          key: n64-toolchain-binutils2.45-gcc16.2.0-newlib4.4.0-libdragon-c4a7e119e
+
+      - name: Build mips64-elf toolchain (cold cache only)
+        if: steps.n64-toolchain.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get install -y libgmp-dev libmpfr-dev libmpc-dev texinfo bison flex
+          bash tools/build_n64_toolchain.sh /opt/pak-n64
+          N64_INST=/opt/pak-n64 bash tools/build_libdragon.sh
+
+      - name: Cross-compile and link a real ROM
+        run: N64_INST=/opt/pak-n64 tclsh tcl/tools/libdragon_link_test.tcl
+
+      # tcl/n64enc.tcl is a from-scratch MIPS assembler, and the only thing
+      # that checked it was a table of encodings a human worked out by hand --
+      # so a misreading of the manual was baked into both sides. This assembles
+      # the same text with binutils and compares the bytes. It found four
+      # encoding divergences and one silent miscompile: pseudo-instructions
+      # that expand to two words were being scheduled into branch delay slots,
+      # where the second word is skipped whenever the branch is taken.
+      - name: MIPS encoder matches GNU as, byte for byte
+        run: PATH=/opt/pak-n64/bin:$PATH tclsh tcl/tools/n64enc_gas_test.tcl
+
+      # Same argument one stage down. tcl/n64link.tcl places sections and
+      # applies R_MIPS_26/HI16/LO16/32 itself, and n64link_test.tcl checks that
+      # against expectations written by the same hand. This links the same
+      # objects with mips64-elf-ld and compares the whole image plus every
+      # symbol address, so a relocation packed into the wrong field shows up.
+      - name: Flat linker matches GNU ld, byte for byte
+        run: PATH=/opt/pak-n64/bin:$PATH tclsh tcl/tools/n64link_gas_test.tcl
+
+      # Every other simulator test runs the codegen's RECORDS from `main`, so
+      # runtime/standalone/boot.S had never executed -- not the stack pointer,
+      # not the .bss zero-fill, not the exception-vector install, not the
+      # handoff to main -- and neither had the encoded bytes. This links the
+      # image, disassembles it with objdump (the bytes Pak produced, at the
+      # addresses Pak assigned), and runs it from _start.
+      - name: The linked image runs from _start
+        run: PATH=/opt/pak-n64/bin:$PATH tclsh tcl/tools/rom_exec_test.tcl
+
+      # Everything above checks Pak against Pak, or against binutils -- which
+      # covers the bytes, not what a console does with them. This boots the
+      # finished .z64 on ares and looks at the pixels. It is also the only
+      # thing that implements the PIF's boot timeout, which is what caught
+      # runtime/standalone/boot.S never sending the boot-termination command:
+      # the picture draws correctly for five seconds either way.
+      #
+      # ares is ~30 minutes to build (plus SDL3, which Ubuntu does not
+      # package), so it is cached; the gate skips cleanly when the cache is
+      # cold rather than failing.
+      - name: Cache ares
+        id: ares
+        uses: actions/cache@v4
+        with:
+          path: /opt/pak-ares
+          key: ares-af4cbb04-sdl3.2.24-v1
+
+      - name: Build ares (cold cache only)
+        if: steps.ares.outputs.cache-hit != 'true'
+        run: bash tools/build_ares.sh /opt/pak-ares
+
+      # The CPU writing a framebuffer, the RDP drawing, the VI interrupt
+      # firing, and the RSP running scalar and vector tasks -- six of them
+      # (rsp_task_add/rsp_task_loop/rsp_task_vecadd/rsp_task_vacc/
+      # rsp_task_vtx/rsp_task_asset) compiled from real Pak source
+      # (including vec8x16's `+`, rsp.vacc's VMULF/VMACF/VSAR accumulator
+      # chain, a `struct` with array-of-vec8x16 fields indexed by a loop
+      # variable -- the design note's own vertex-transform worked example
+      # -- and rsp_task_asset loading its microcode as an `asset ... :
+      # Ucode` instead of an embedded byte array) by tcl/rsp_codegen.tcl,
+      # not hand-written .S. Each is the only check on its subsystem there
+      # is -- the
+      # simulator has no interrupts, no RSP and no cache model, so a wrong
+      # VR4300 cache opcode, an unacknowledged MI source, or an RSP codegen
+      # bug the text simulator's own label-by-name jump resolution can't see
+      # (an unresolved J-type relocation, once) is invisible everywhere else.
+      - name: Standalone ROMs boot, draw, interrupt and run RSP tasks on ares
+        run: |
+          sudo apt-get install -y xvfb imagemagick mesa-vulkan-drivers libgl1-mesa-dri
+          PATH=/opt/pak-ares/bin:/opt/pak-n64/bin:$PATH tclsh tcl/tools/ares_test.tcl
+
+      # Every diagnostic the corpus exercises is a mistake someone thought to
+      # write down. This finds the ones nobody did: mutated sources that must
+      # still come back as an error message with a line number rather than as
+      # a Tcl stack trace. Deterministic — the seed reproduces any failure.
+      - name: Front-end fuzz (mutated sources never crash the compiler)
+        run: |
+          # The fuzzer stops itself at DEADLINE seconds, but it can only check
+          # that between mutants -- an input that wedges the compiler outright
+          # (the parser used to spin forever on `.ok(1)`) would hang the job.
+          # The outer timeout catches that, and current.pk64 is the input that
+          # was under the compiler when the clock ran out.
+          if ! timeout 300 tclsh tcl/tools/fuzz_test.tcl; then
+            rc=$?
+            if [ -f /tmp/pak-fuzz/current.pk64 ]; then
+              echo "=== input under the compiler when it stopped ==="
+              cat /tmp/pak-fuzz/current.pk64
+            fi
+            exit $rc
+          fi
+
       - name: Verify validate_pak.sh is executable
         run: test -x tools/validate_pak.sh || chmod +x tools/validate_pak.sh
 
@@ -123,8 +259,61 @@ jobs:
       - name: MIPS binary encoder (golden encodings)
         run: tclsh tcl/tools/n64enc_test.tcl
 
+      # n64.math is <math.h> on the libdragon backend; on standalone the HAL
+      # is the implementation, so every function is executed and compared
+      # against the value it should produce. The first half of the file is the
+      # float arithmetic underneath -- this backend has two FP registers and
+      # nothing used to keep a float alive across the evaluation of another.
+      - name: Math HAL and float expressions (executed)
+        run: tclsh tcl/tools/math_test.tcl
+
       - name: Encoded exec goldens (optimizer on records, calls + MMIO)
         run: tclsh tcl/tools/enc_exec_test.tcl
+
+      # tcl/n64enc.tcl's RSP vector opcodes (COP2 compute + vector load/
+      # store) were cross-checked bit-for-bit against armips, the assembler
+      # real N64 homebrew microcode is written with; this checks the other
+      # half, tcl/mips_sim.tcl's execution of them, against semantics
+      # transcribed from ares' silicon-accurate RSP interpreter.
+      - name: RSP vector unit execution (accumulator, carry, broadcast, loads)
+        run: tclsh tcl/tools/rsp_vector_test.tcl
+
+      # tcl/rsp_codegen.tcl compiles ordinary Pak source (static/entry/while/
+      # if, vec8x16's elementwise operators + .broadcast, rsp.vacc's
+      # mul/mac/high/mid/low, and struct/array-of-vec8x16 field access) for
+      # the RSP instead of the CPU -- steps 1, 2 and 3 of docs/rsp-
+      # microcode-in-pak.md, plus the struct/array machinery its step 4
+      # worked example needs. Checks real encoded bytes, not just the text
+      # simulator: that distinction is what catches an unresolved J-type
+      # relocation the simulator's own label-by-name jump resolution can't
+      # see (see the file's own header comment). Hardware confirmation is
+      # tcl/tools/ares_test.tcl's "rsp_task_add"/"rsp_task_loop"/
+      # "rsp_task_vecadd"/"rsp_task_vacc"/"rsp_task_vtx" cases.
+      - name: RSP codegen (Pak source, scalar/vec8x16/vacc/structs, compiled for the RSP)
+        run: tclsh tcl/tools/rsp_codegen_test.tcl
+
+      # task #45's remaining half: RSPUNPORTED (rsp_codegen.tcl's error
+      # convention) now carries a real file:line:col instead of a bare
+      # message, and cli.tcl's pak::rsp_diag turns that into a proper E701
+      # diagnostic printed by pak::diag_str exactly like every other Pak
+      # error. rsp_codegen_test.tcl's own "diagnostics" section covers the
+      # codegen side (a refusal's node position is captured correctly);
+      # this covers the CLI-side formatting (rsp_diag's parsing of the
+      # tagged string, including its two edge cases: a message containing
+      # a literal tab, and an unrecognized error string).
+      - name: RSP diagnostics (RSPUNPORTED -> E701 with real file:line:col)
+        run: tclsh tcl/tools/rsp_diag_test.tcl
+
+      # task #51: cli.tcl's pak::rsp_resolve_program lets an RSP microcode
+      # `use` a struct declared in a separate project module file (the
+      # design note's `use shared.vtxjob`), instead of rsp_codegen.tcl's
+      # own struct registration -- still single-file only -- ever seeing
+      # more than one file. Verified by splitting the ALREADY hardware-
+      # verified rsp_task_vtx.pk64 (task #49) across two files and checking
+      # the recombined output is byte-identical, which is hardware
+      # verification by construction rather than a second ares run.
+      - name: RSP cross-file struct module sharing
+        run: tclsh tcl/tools/rsp_shared_module_test.tcl
 
       - name: Array address-of and u8 index (sb, not scale-4 sw)
         run: tclsh tcl/tools/array_addr_test.tcl
@@ -134,6 +323,12 @@ jobs:
 
       - name: EEPROM SI/PIF + PI DMA goldens
         run: tclsh tcl/tools/eeprom_test.tcl
+
+      # The Rumble Pak sits behind a controller, so a wrong channel offset or
+      # a wrong address checksum is a rumble that silently does nothing. This
+      # executes the generated MIPS and reads the Joybus frame back out.
+      - name: Rumble Pak Joybus frames and the ISViewer channel
+        run: tclsh tcl/tools/accessory_test.tcl
 
       - name: Audio PCM (AI DACRATE/LEN/kick)
         run: tclsh tcl/tools/audio_test.tcl
@@ -188,6 +383,38 @@ jobs:
       # right thing. Covers the constructs that used to fail at link.
       - name: Standalone execution (consts, defer, monomorphs, FixedList)
         run: tclsh tcl/tools/standalone_exec_test.tcl
+
+      - name: Assets are read out of the ROM (PakFS + sprite_load)
+        run: tclsh tcl/tools/asset_test.tcl
+
+      # The promise `pak check --backend mips` makes, over the WHOLE corpus:
+      # if it accepts a program, the MIPS backend has to be able to lower it.
+      # link_test enforces the same thing, but only over the 32 canonical
+      # examples -- five of the other 570 had been breaking it.
+      - name: HAL contract (checker accepts => codegen lowers)
+        run: tclsh tcl/tools/hal_contract_test.tcl
+
+      # The CHROMA nave end to end: it fits under FB0, it streams 2 KB pages
+      # over the PI instead of embedding sheets, and the DP is handed
+      # SET_TILE/LOAD_TILE/TRI_TEX_Z. This is the FZ "Path A" (see examples/chroma/README.md).
+      - name: CHROMA nave (stream pages, draw textured tris)
+        run: tclsh tcl/tools/church_test.tcl
+
+      # `pak dlist` runs a scene against the HAL and disassembles the display
+      # list it hands the DP. That is only useful if the disassembler is the
+      # exact inverse of the encoders, which is what this checks: every opcode
+      # the runtime can emit, decoded back to the values the driver passed.
+      - name: RDP display-list disassembler (pak dlist)
+        run: tclsh tcl/tools/dlist_test.tcl
+
+      # Command words cannot tell you the RDP draws the right pixels: the lft
+      # bit was inverted on all seven triangle commands for as long as the
+      # goldens existed, and they matched perfectly. This renders the display
+      # list on angrylion and compares against the source geometry.
+      - name: Pixels (reference RDP)
+        run: |
+          bash tools/build_rdp_harness.sh
+          tclsh tcl/tools/pixel_test.tcl
 
       - name: Runtime builds toolchain-free (boot.S + runtime.pk64)
         run: |

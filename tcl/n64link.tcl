@@ -8,6 +8,8 @@
 # Object file format (line oriented text)
 #     # pak object v1            -- comments and blank lines ignored
 #     section .text              -- start/continue a section
+#     align 16                   -- strongest alignment anything in this
+#                                   object's part of the section needs
 #     sym main 0                 -- symbol NAME at BYTEOFFSET within this
 #                                   object's contribution to the section
 #     reloc 16 R_MIPS_26 printf  -- fixup at BYTEOFFSET, KIND, target SYMBOL
@@ -16,7 +18,9 @@
 #
 # Sections concatenate in a fixed order: .text, .rodata, .data, .bss. Within a
 # section, objects concatenate in argument order (the boot object first, so
-# _start lands at the base address).
+# _start lands at the base address), each contribution starting on the
+# boundary its `align` line asks for; the section base is aligned to the
+# strongest such demand across all objects.
 #
 # Public API:
 #   pak::link_objects paths ?entry?  -> dict {image symbols base
@@ -94,7 +98,7 @@ proc pak::parse_object_text {text {path <string>}} {
                 pak::link_error "$path:$lineno: unknown section '$name'"
             }
             if {![dict exists $sections $name]} {
-                dict set sections $name [dict create data "" symbols {} relocs {}]
+                dict set sections $name [dict create data "" symbols {} relocs {} align 4]
             }
             set cur $name
             continue
@@ -105,6 +109,18 @@ proc pak::parse_object_text {text {path <string>}} {
         }
 
         switch -- $kw {
+            align {
+                if {[llength $parts] != 2} {
+                    pak::link_error "$path:$lineno: 'align' needs a byte count"
+                }
+                set a [lindex $parts 1]
+                if {![string is integer -strict $a] || $a < 1 || ($a & ($a - 1)) != 0} {
+                    pak::link_error "$path:$lineno: bad align '$a' (want a power of two)"
+                }
+                if {$a > [dict get $sections $cur align]} {
+                    dict set sections $cur align [expr {$a}]
+                }
+            }
             sym {
                 if {[llength $parts] != 3} {
                     pak::link_error "$path:$lineno: 'sym' needs NAME OFFSET"
@@ -228,10 +244,29 @@ proc pak::link_parsed_objects {objects {entry _start}} {
         dict set section_bytes $sec ""
         dict set contributions $sec {}
     }
+    # Each object states the strongest alignment anything inside it asked for
+    # (@aligned(16) on a DMA landing pad, say). Two things follow from it: the
+    # object's contribution starts on that boundary within the section, and the
+    # section base is aligned to the strongest demand across all objects. Doing
+    # only the in-section padding leaves the buffer misaligned by whatever the
+    # section base was, which is how a 16-byte-aligned page_buf reached the PI
+    # at ...c108.
+    set section_align [dict create]
+    foreach sec $::pak::LINK_SECTION_ORDER {
+        dict set section_align $sec [dict get $::pak::LINK_SECTION_ALIGN $sec]
+    }
     foreach obj $objects {
         foreach sec $::pak::LINK_SECTION_ORDER {
             if {![dict exists $obj sections $sec]} continue
-            set start [string length [dict get $section_bytes $sec]]
+            set a 4
+            if {[dict exists $obj sections $sec align]} { set a [dict get $obj sections $sec align] }
+            if {$a > [dict get $section_align $sec]} { dict set section_align $sec $a }
+            set start [pak::link_align_up [string length [dict get $section_bytes $sec]] $a]
+            set pad [expr {$start - [string length [dict get $section_bytes $sec]]}]
+            if {$pad > 0} {
+                dict set section_bytes $sec [string cat [dict get $section_bytes $sec] \
+                    [string repeat "\x00" $pad]]
+            }
             dict lappend contributions $sec [list $obj $start]
             dict set section_bytes $sec [string cat [dict get $section_bytes $sec] \
                 [dict get $obj sections $sec data]]
@@ -245,7 +280,7 @@ proc pak::link_parsed_objects {objects {entry _start}} {
     foreach sec $::pak::LINK_SECTION_ORDER {
         set size [string length [dict get $section_bytes $sec]]
         dict set section_sizes $sec $size
-        set cursor [pak::link_align_up $cursor [dict get $::pak::LINK_SECTION_ALIGN $sec]]
+        set cursor [pak::link_align_up $cursor [dict get $section_align $sec]]
         dict set section_bases $sec $cursor
         incr cursor $size
     }

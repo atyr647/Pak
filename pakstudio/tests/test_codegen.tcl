@@ -307,7 +307,7 @@ check_doc_passes "shmup one-enemy-sprite" [shmup_with "S4" {enemy_sine} {}]
 set pakf [dict get [codegen::generate [shmup_with "S5" {ship background} {shoot music}]] "src/main.pk64"]
 assert "shmup assets: use n64.sprite"   {[string match "*use n64.sprite*" $pakf]}
 assert "shmup assets: use n64.mixer"    {[string match "*use n64.mixer*" $pakf]}
-assert "shmup assets: ship sprite decl" {[string match "*static spr_ship: *sprite_t*" $pakf]}
+assert "shmup assets: ship sprite decl" {[string match "*asset spr_ship: Sprite from \"sprites/ship.png\"*" $pakf]}
 assert "shmup assets: ship blit"        {[string match "*sprite.blit(spr_ship*" $pakf]}
 assert "shmup assets: bg blit"          {[string match "*sprite.blit(spr_background*" $pakf]}
 assert "shmup assets: wav64 open shoot" {[string match "*wav64_open(&snd_shoot*" $pakf]}
@@ -370,7 +370,7 @@ set adoc [with_assets "Probe" {
 set apak [dict get [codegen::generate $adoc] "src/main.pk64"]
 assert "emits use n64.sprite"        {[string match "*use n64.sprite*" $apak]}
 assert "emits use n64.mixer"         {[string match "*use n64.mixer*" $apak]}
-assert "emits player sprite asset"   {[string match "*static spr_player: *sprite_t*" $apak]}
+assert "emits player sprite asset"   {[string match "*asset spr_player: Sprite from \"sprites/player.png\"*" $apak]}
 assert "emits jump Sound asset"      {[string match "*asset snd_jump_data: Sound*" $apak]}
 assert "emits player blit"           {[string match "*sprite.blit(spr_player*" $apak]}
 assert "emits wav64_open jump"       {[string match "*wav64_open(&snd_jump*" $apak]}

@@ -12,6 +12,13 @@ present, and is compiled by `mips64-elf-gcc` through the generated Makefile.
 * `pak_containers.h` — FixedMap and Pool helpers (FixedList and RingBuffer are
   inlined directly into the generated code)
 * `pak_rand.h` — seedable xorshift32 PRNG
+* `pak_libdragon.h` — Pak's calling convention on top of libdragon's real API,
+  for the three places libdragon's own signature cannot express it: `display_init`
+  (its `resolution_t` is a struct, not an integer), the joypad (Pak's one
+  held/pressed/released struct is four libdragon calls, and libdragon spells the
+  d-pad `d_up`/`d_left`), and rdpq colours (`color_t` vs a packed `0xRRGGBBAA`).
+  Kept as ordinary C rather than code-generator special cases, so a variable
+  argument behaves exactly like a literal one.
 * `pakfs.c` / `pakfs.h` — PakFS archive reader
 * `pak_mips_rt.s` — assembly helpers (panic, fixed-point divide, arena) for
   projects built with `--backend mips` against a real MIPS toolchain
@@ -22,7 +29,8 @@ The HAL for the path that needs no external tools at all: no GCC, no `as`, no
 `ld`, no libdragon. See `docs/toolchain-free-rom.md`.
 
 * `runtime.pk64` — the HAL written in Pak itself: display and framebuffer
-  setup, the software `rdpq` fill, `memset`/`memcpy`, SI controller polling.
+  setup, the `rdpq` display-list builder (the RDP rasterizes; the CPU only
+  writes command words), `memset`/`memcpy`, SI controller polling.
   Compiled with `pak objgen`.
 * `boot.S` — the crt0. It needs CP0 access (`mfc0`/`mtc0`), which Pak cannot
   express, so it stays hand-written and is assembled by `pak asmobj`.
@@ -37,9 +45,9 @@ The HAL for the path that needs no external tools at all: no GCC, no `as`, no
 
 | Area | Status |
 |------|--------|
-| Video Interface | 320x240 16bpp, triple buffered, vblank wait, flip |
+| Video Interface | 320x240 16bpp only; 1-3 buffers, gamma and filter modes from `display.init`; vblank wait, flip. Another resolution or bit depth panics rather than rendering into the wrong-sized buffer |
 | RDP | fills, copies, texturing, flat/Gouraud/tex/shade-tex triangles, Z on every opcode 0x08–0x0F, syncs — see `docs/toolchain-free-rom.md` |
-| Controller | SI/PIF polling for port 0, held/pressed/released + stick |
+| Controller | SI/PIF polling for ports 0-3, held/pressed/released + signed stick axes; an empty port reads as all buttons up |
 | PI DMA | cartridge to and from RDRAM, with the busy wait |
 | Timer | COP0 Count, `get_ticks`, frame delta in seconds |
 | Memory | bump allocator, `memset`, `memcpy`, `memcmp` |

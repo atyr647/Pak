@@ -130,6 +130,20 @@ framebuffers and the display list).
 Cart images are padded to 4/8/16/32/64 MiB
 (`pak link --size 4`, default 4); a 2.9 MB `.z64` crashes on flashcarts.
 
+## Assets
+
+`pak link --fs <archive>` appends a PakFS archive (`pak pack`) to the ROM after
+the payload, on a 16-byte boundary, and patches its cart address and length
+into the runtime's `g_pakfs_rom` / `g_pakfs_len`. It has to go outside the
+payload: the compat IPL3 copies exactly `payload` bytes into RDRAM at boot, so
+an archive counted in that size would be copied along with the program. The
+runtime reads the index once and then DMAs each file in on demand.
+
+```
+pak pack --output assets.pakfs --base build/assets build/assets/hero.sprite
+pak link boot.pakobj runtime.pakobj game.pakobj -o game.z64 --fs assets.pakfs
+```
+
 The linker exports `__fb0`, `__fb1`, `__fb2`, `__zb`, `__dl_base`, `__ab`,
 `__heap_start`, `__heap_end`, `__stack_top` so a program can read the map instead of
 hard-coding it. `.bss` still reserves address space but is not stored in the
@@ -160,6 +174,48 @@ What the runtime drives:
 A full-screen clear is one `FILL_RECTANGLE` instead of 76 800 uncached
 halfword stores.
 
+## Reading the display list: `pak dlist`
+
+`pak explain --backend mips` shows the instructions, which is not the same
+thing as showing the frame: the display list only exists once those
+instructions have run. `pak dlist` runs them.
+
+```bash
+pak dlist src/main.pk64              # the first DP submission
+pak dlist src/main.pk64 --frames 0   # all of them
+pak dlist scene.pk64 --cart rom.bin  # feed a cart image to PI DMA reads
+```
+
+It compiles the scene together with `runtime/standalone/runtime.pk64`,
+executes the result in `tcl/mips_sim.tcl`, and disassembles every DP kick with
+`tcl/rdpdis.tcl`:
+
+```
+== DP kick 1 of 1 — 30 words ==
++0000  3F10013F 00225800  SET_COLOR_IMAGE   RGBA 16bpp width=320 addr=0x225800
++0020  2F300000 00000000  SET_OTHER_MODES   cycle=FILL blender=00000000
++0030  364FC3BC 00000000  FILL_RECTANGLE    (0.00,0.00)-(319.00,239.00) inclusive
++0040  2F000C00 00506040  SET_OTHER_MODES   cycle=1CYCLE bi_lerp0 bi_lerp1 ...
++0050  088002D0 00A00050  TRIANGLE          left YL=180.00 YM=40.00 YH=20.00
++0058  00C80000 FFFF0000                    XL / DxLDy   X=200.000  dX/dY=-1.000
+```
+
+Fixed-point fields are shown as the numbers they encode — screen coordinates
+in 10.2, texture coordinates in s10.5, steps in s5.10, edges in s15.16 — because
+that is where the mistakes are. `SET_COMBINE` is printed raw: its sixteen mux
+selects mean different things per cycle, and a wrong name would be worse than
+no name.
+
+Each kick is one submission (`rdpq.detach` / `detach_show`, or an automatic
+flush when the 8 KB list fills), not necessarily one frame. A scene with an
+endless game loop is fine — the simulator stops at `--budget` instructions and
+you get the frames that fit.
+
+`tcl/tools/dlist_test.tcl` keeps the disassembler honest: it runs the same
+driver as `rdp_test.tcl`, which exercises every opcode the runtime can emit,
+and checks that walking the stream by the disassembler's length table consumes
+every word and that each decoded field is the value the driver passed.
+
 ## How the hardware path is verified
 
 There is no N64 and no emulator in CI, so `tcl/tools/rdp_test.tcl` proves the
@@ -178,7 +234,10 @@ The simulator models the two registers the runtime spins on (`DPC_STATUS` and
 `VI_V_CURRENT`) via a preset that can return a sequence of values, so hardware
 wait loops terminate instead of hanging.
 
-## Current limitations
+## What the standalone path lowers, and where its goldens are
+
+None of the below is a gap: each bullet says how the construct is lowered and
+names the gate that pins it.
 
 * **Optimization.** The peephole/scheduler/delay-slot passes in
   `tcl/optimize.tcl` operate on instruction records. `pak objgen` and

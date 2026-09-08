@@ -11,6 +11,12 @@
 # This runs the whole path — codegen, register allocation, the optimizer — so a
 # miscompile shows up as a wrong command word, not as a plausible-looking
 # instruction stream.
+#
+# It cannot tell you the command words are RIGHT. Every triangle word below
+# once had bit 23 (lft) clear, which matched the encoder exactly and drew about
+# one pixel on hardware. tcl/tools/pixel_test.tcl settles that question: it
+# renders the list on angrylion and compares pixels against the source
+# geometry. Do not "correct" a triangle word here without checking there.
 
 set HERE [file dirname [file normalize [info script]]]
 set REPO [file normalize [file join $HERE .. ..]]
@@ -100,7 +106,7 @@ set EXPECTED {
     2428C144 001900C8
     00000000 02000400
     27000000 00000000
-    2F000000 00506040
+    2F000C00 00506040
     3C887F10 88FCF279
     3A000000 112233FF
     39000000 445566FF
@@ -110,18 +116,18 @@ set EXPECTED {
     2B000000 00108004
     2A010010 80048004
     2C15FD5D 3B78E42A
-    08000168 00500028
+    08800168 00500028
     00640000 FFFF2493
     000A0000 00006000
     000A0000 00090000
-    09000168 00500028
+    09800168 00500028
     00640000 FFFF2493
     000A0000 00006000
     000A0000 00090000
     00000000 00000000
     00640064 00000000
     35101000 00094250
-    0A0000C0 00400040
+    0A8000C0 00400040
     00300000 FFFF0000
     00100000 00000000
     00100000 00000000
@@ -140,9 +146,9 @@ set EXPECTED {
     364FC3BC 00000000
     3F10013F 00200000
     27000000 00000000
-    2F000000 00506070
+    2F000C00 00506070
     3C887F10 88FCF279
-    0C000168 00500028
+    0C800168 00500028
     00640000 FFFF2493
     000A0000 00006000
     000A0000 00090000
@@ -154,7 +160,7 @@ set EXPECTED {
     C859E42C 537A0000
     00000001 00000000
     0B228591 6F4D0000
-    0D000168 00500028
+    0D800168 00500028
     00640000 FFFF2493
     000A0000 00006000
     000A0000 00090000
@@ -168,7 +174,7 @@ set EXPECTED {
     00000000 00000000
     00000000 00000000
     00640064 00000000
-    0E0000C0 00400040
+    0E8000C0 00400040
     00300000 FFFF0000
     00100000 00000000
     00100000 00000000
@@ -188,7 +194,7 @@ set EXPECTED {
     00000020 00000000
     00000000 00000000
     00000000 00000000
-    0F0000C0 00400040
+    0F8000C0 00400040
     00300000 FFFF0000
     00100000 00000000
     00100000 00000000
@@ -210,7 +216,7 @@ set EXPECTED {
     00000000 00000000
     0000001F 00004000
     00FA00FA 00000000
-    0B0000C0 00400040
+    0B8000C0 00400040
     00300000 FFFF0000
     00100000 00000000
     00100000 00000000
@@ -255,7 +261,7 @@ set NOTES {
     "TEXTURE_RECTANGLE 0x24 scaled (100,50)-(164,82)"
     "                  s/t = 0, dsdx = 0.5 texel/pixel, dtdy = 1"
     "SYNC_PIPE         before the mode change"
-    "SET_OTHER_MODES   cycle_type = 1CYCLE, alpha blending"
+    "SET_OTHER_MODES   1CYCLE + bi_lerp0|1, alpha blending"
     "SET_COMBINE       texel passthrough"
     "SET_PRIM_COLOR    0x112233FF"
     "SET_BLEND_COLOR   0x445566FF"
@@ -295,7 +301,7 @@ set NOTES {
     "FILL_RECTANGLE    full screen into Z"
     "SET_COLOR_IMAGE   restore colour target 0x00200000"
     "SYNC_PIPE         before 1-cycle + Z"
-    "SET_OTHER_MODES   1CYCLE + z_compare_en + z_update_en (0x30)"
+    "SET_OTHER_MODES   1CYCLE + bi_lerp0|1 + z_compare_en + z_update_en (0x30)"
     "SET_COMBINE       texel passthrough"
     "TRI_SHADE         0x0C Gouraud, same edges as TRIANGLE"
     "                  XL / DxLDy"

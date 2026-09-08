@@ -59,6 +59,8 @@
 	.extern rdpq_triangle_shade_tex_z
 	.extern rdpq_set_tri_z
 	.extern sprite_load
+	.extern pakfs_read
+	.extern pakfs_size
 	.extern rdpq_sprite_blit
 	.extern timer_init
 	.extern _pak_delta_time
@@ -72,6 +74,7 @@
 	.extern audio_write_silence
 	.extern audio_set_buffer_num
 	.extern debugf
+	.extern debug_init_isviewer
 	.extern assert
 	.extern dma_read
 	.extern dma_write
@@ -249,7 +252,7 @@ main:
 	.size main, . - main
 
 	.section .bss
-	.align 0
+	.align 4
 	.globl rx_buffer
 rx_buffer:
 	.space 4096

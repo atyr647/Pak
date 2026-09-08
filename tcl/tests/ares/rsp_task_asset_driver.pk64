@@ -1,0 +1,75 @@
+-- Runs an RSP task loaded as a `Ucode` ASSET, not embedded as a literal
+-- byte array -- the last piece of docs/rsp-microcode-in-pak.md's suggested
+-- order: "asset ... : Ucode. The build path that turns step 1's output
+-- into something the CPU program carries and loads."
+--
+-- Every other rsp_task_*_driver.pk64 here hardcodes the microcode's
+-- compiled words as a `static ucode: [N]u32 = [...]` literal, hand-copied
+-- from a fresh compile and checked by ares_test.tcl. This driver instead
+-- declares `asset add_ucode: Ucode from "rsp_task_add.pk64"` and reads
+-- `add_ucode`/`add_ucode_len` -- the address+length pair
+-- tcl/mips_codegen.tcl's emit_asset/emit_asset_len_getter produce for a
+-- Ucode asset (see the design note's own "a wrinkle worth deciding
+-- deliberately" paragraph: this is the sibling-constant answer it leans
+-- toward, made a runtime lookup rather than a compile-time constant
+-- because the .pk64 -> .ucode conversion happens in a separate, later
+-- `pak build --backend rsp` -- see cli.tcl's cmd_build_rsp -- not before
+-- this file's own codegen runs).
+--
+-- The task itself is deliberately the SIMPLEST one already proven
+-- (rsp_task_add.pk64, task 46) -- this test is about the ASSET PIPELINE
+-- (pakfs lookup, address, length), not re-proving RSP codegen already
+-- covered by rsp_task_add's own driver.
+--
+-- Green means `sp.load_ucode(add_ucode, add_ucode_len)` pulled the right
+-- bytes out of the ROM's pakfs archive by name, at the right length, and
+-- the task ran and computed the right sum. If it never starts,
+-- sp.wait() never returns and the screen stays black.
+
+use n64.sp
+
+asset add_ucode: Ucode from "rsp_task_add.pk64"
+
+const FB_PIXELS: i32 = 76800
+const GREEN: u16 = 0x07C1
+const RED: u16 = 0xF801
+
+const LHS: u32 = 0x12340000
+const RHS: u32 = 0x0000ABCD
+const SUM: u32 = 0x1234ABCD
+
+@aligned(16)
+static sp_in: [2]u32 = [LHS, RHS]
+
+@aligned(16)
+static sp_out: [2]u32 = [0, 0]
+
+fn fill(fb: u32, px: u16) {
+    let mut i: i32 = 0
+    while i < FB_PIXELS {
+        let p: *volatile u16 = (fb + (i * 2) as u32) as *volatile u16
+        *p = px
+        i = i + 1
+    }
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+
+    sp.init()
+    sp.load_ucode(add_ucode, add_ucode_len)
+    sp.load_data(&sp_in[0] as u32, 0, 8)
+    sp.run(0)
+    sp.wait()
+    sp.read_data(&sp_out[0] as u32, 8, 8)
+
+    let fb: u32 = display.get()
+    if sp_out[0] == SUM {
+        fill(fb, GREEN)
+    } else {
+        fill(fb, RED)
+    }
+    loop {
+        display.show(fb)
+    }
+}

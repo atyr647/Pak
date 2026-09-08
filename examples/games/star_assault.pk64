@@ -10,10 +10,6 @@ use n64.math
 use n64.eeprom
 use n64.sprite
 
-extern "C" {
-    fn sprite_load(path: *c_char) -> *sprite_t
-}
-
 const SCREEN_W: i32 = 320
 const SCREEN_H: i32 = 240
 const ORIENT: i32 = 0
@@ -54,24 +50,15 @@ const SAVE_MAGIC_HI: u8 = 0x53
 const SAVE_MAGIC_LO: u8 = 0x48
 
 -- ── Asset bindings ───────────────────────────────────────────────────────────
-asset spr_ship_asset: Sprite from "sprites/ship.png"
-static spr_ship: *sprite_t = none
-asset spr_enemy_straight_asset: Sprite from "sprites/enemy_straight.png"
-static spr_enemy_straight: *sprite_t = none
-asset spr_enemy_sine_asset: Sprite from "sprites/enemy_sine.png"
-static spr_enemy_sine: *sprite_t = none
-asset spr_enemy_turret_asset: Sprite from "sprites/enemy_turret.png"
-static spr_enemy_turret: *sprite_t = none
-asset spr_boss_asset: Sprite from "sprites/boss.png"
-static spr_boss: *sprite_t = none
-asset spr_bullet_asset: Sprite from "sprites/bullet.png"
-static spr_bullet: *sprite_t = none
-asset spr_ebullet_asset: Sprite from "sprites/ebullet.png"
-static spr_ebullet: *sprite_t = none
-asset spr_powerup_asset: Sprite from "sprites/powerup.png"
-static spr_powerup: *sprite_t = none
-asset spr_background_asset: Sprite from "sprites/background.png"
-static spr_background: *sprite_t = none
+asset spr_ship: Sprite from "sprites/ship.png"
+asset spr_enemy_straight: Sprite from "sprites/enemy_straight.png"
+asset spr_enemy_sine: Sprite from "sprites/enemy_sine.png"
+asset spr_enemy_turret: Sprite from "sprites/enemy_turret.png"
+asset spr_boss: Sprite from "sprites/boss.png"
+asset spr_bullet: Sprite from "sprites/bullet.png"
+asset spr_ebullet: Sprite from "sprites/ebullet.png"
+asset spr_powerup: Sprite from "sprites/powerup.png"
+asset spr_background: Sprite from "sprites/background.png"
 
 -- ── Bitmap font (3x5 glyphs, asset-free) ─────────────────────────────────────
 const NUM_GLYPHS: i32 = 41
@@ -306,15 +293,6 @@ fn fill_audio() {
 fn snd_init() {
     audio.init(44100, 4)
     init_music_table()
-    spr_ship = sprite_load("pak:/sprites/ship.png")
-    spr_enemy_straight = sprite_load("pak:/sprites/enemy_straight.png")
-    spr_enemy_sine = sprite_load("pak:/sprites/enemy_sine.png")
-    spr_enemy_turret = sprite_load("pak:/sprites/enemy_turret.png")
-    spr_boss = sprite_load("pak:/sprites/boss.png")
-    spr_bullet = sprite_load("pak:/sprites/bullet.png")
-    spr_ebullet = sprite_load("pak:/sprites/ebullet.png")
-    spr_powerup = sprite_load("pak:/sprites/powerup.png")
-    spr_background = sprite_load("pak:/sprites/background.png")
 }
 
 fn music_start() { music_on = true }

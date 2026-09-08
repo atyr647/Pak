@@ -7,10 +7,14 @@
 #include <math.h>
 #include "pak_math.h"
 #include "pak_containers.h"
+#include "pak_libdragon.h"
 #include <display.h>
 #include <joypad.h>
 #include <rdpq.h>
-#include <rdpq_gfx.h>
+#include <rdpq_attach.h>
+#include <rdpq_mode.h>
+#include <rdpq_rect.h>
+#include <rdpq_tri.h>
 #include <n64sys.h>
 #include <n64sys.h>
 #include <math.h>
@@ -68,6 +72,18 @@ struct GameState {
     int32_t score;
 };
 
+
+/* -- Function prototypes -- */
+uint8_t map_get(int32_t mx, int32_t my);
+void Camera_rotate(Camera * self, float angle);
+void Camera_try_move(Camera * self, float dx, float dy);
+uint32_t wall_color(uint8_t wtype, int32_t side);
+void render_minimap(GameState * gs);
+__attribute__((hot))
+void render_3d(GameState * gs);
+void update_playing(GameState * gs, pak_joypad_status_t pad);
+void render_screen(GameState * gs);
+void init_game(GameState * gs);
 enum { SCREEN_W = 320 };
 
 enum { SCREEN_H = 240 };
@@ -195,7 +211,7 @@ void render_minimap(GameState * gs) {
             else if (cell == 3) {
                 col = COLOR_MINI_MOSS;
             }
-            rdpq_set_fill_color(col);
+            pak_rdpq_set_fill_color(col);
             rdpq_fill_rectangle(sx, sy, (sx + MINI_CELL), (sy + MINI_CELL));
             mx += 1;
         }
@@ -203,16 +219,16 @@ void render_minimap(GameState * gs) {
     }
     int32_t px = (MINI_X + ((int32_t)gs->cam.pos_x * MINI_CELL));
     int32_t py = (MINI_Y + ((int32_t)gs->cam.pos_y * MINI_CELL));
-    rdpq_set_fill_color(COLOR_MINI_PLR);
+    pak_rdpq_set_fill_color(COLOR_MINI_PLR);
     rdpq_fill_rectangle(px, py, (px + MINI_CELL), (py + MINI_CELL));
 }
 
 __attribute__((hot))
 void render_3d(GameState * gs) {
     Camera * cam = &gs->cam;
-    rdpq_set_mode_fill(COLOR_SKY);
+    pak_rdpq_set_mode_fill(COLOR_SKY);
     rdpq_fill_rectangle(0, 0, SCREEN_W, HALF_H);
-    rdpq_set_fill_color(COLOR_FLOOR);
+    pak_rdpq_set_fill_color(COLOR_FLOOR);
     rdpq_fill_rectangle(0, HALF_H, SCREEN_W, SCREEN_H);
     int32_t col = 0;
     while (col < SCREEN_W) {
@@ -285,13 +301,13 @@ void render_3d(GameState * gs) {
             draw_bot = SCREEN_H;
         }
         uint32_t wc = wall_color(wtype, side);
-        rdpq_set_fill_color(wc);
+        pak_rdpq_set_fill_color(wc);
         rdpq_fill_rectangle(col, draw_top, (col + COL_STEP), draw_bot);
         col += COL_STEP;
     }
 }
 
-void update_playing(GameState * gs, joypad_status_t pad) {
+void update_playing(GameState * gs, pak_joypad_status_t pad) {
     int32_t sx = (int32_t)pad.stick_x;
     int32_t sy = (int32_t)pad.stick_y;
     if ((sx > DEAD_ZONE) || (sx < -DEAD_ZONE)) {
@@ -330,11 +346,11 @@ void update_playing(GameState * gs, joypad_status_t pad) {
 
 void render_screen(GameState * gs) {
     __auto_type fb = display_get();
-    rdpq_attach_clear(fb);
+    pak_rdpq_attach_clear(fb, 0x000000FF);
     switch (gs->phase) {
         case GamePhase_title:
         {
-            rdpq_set_mode_fill(0x000011FF);
+            pak_rdpq_set_mode_fill(0x000011FF);
             rdpq_fill_rectangle(0, 0, SCREEN_W, SCREEN_H);
             break;
         }
@@ -348,16 +364,17 @@ void render_screen(GameState * gs) {
         {
             render_3d(gs);
             render_minimap(gs);
-            rdpq_set_fill_color(0x333355FF);
+            pak_rdpq_set_fill_color(0x333355FF);
             rdpq_fill_rectangle(100, 100, 220, 140);
             break;
         }
         case GamePhase_gameover:
         {
-            rdpq_set_mode_fill(0x110000FF);
+            pak_rdpq_set_mode_fill(0x110000FF);
             rdpq_fill_rectangle(0, 0, SCREEN_W, SCREEN_H);
             break;
         }
+        default: __builtin_unreachable();
     }
     rdpq_detach_show();
 }
@@ -376,7 +393,7 @@ void init_game(GameState * gs) {
 }
 
 int main(void) {
-    display_init(0, 2, 3, 0, 1);
+    pak_display_init(0, 2, 3, 0, 1);
     rdpq_init();
     joypad_init();
     timer_init();
@@ -384,7 +401,7 @@ int main(void) {
     init_game(&gs);
     while (true) {
         joypad_poll();
-        __auto_type pad = joypad_get_status(0);
+        __auto_type pad = pak_joypad_get_status(0);
         switch (gs.phase) {
             case GamePhase_title:
             {
@@ -415,6 +432,7 @@ int main(void) {
                 }
                 break;
             }
+            default: __builtin_unreachable();
         }
         render_screen(&gs);
         gs.frame += 1;

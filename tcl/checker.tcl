@@ -23,7 +23,7 @@ if {[info exists ::pak::_checker_loaded]} { return }
 set ::pak::_checker_loaded 1
 
 oo::class create pak::Checker {
-    variable filename diags top_names used_modules backend
+    variable filename diags top_names used_modules backend pathonly_assets
 
     constructor {{fname ""} {be "c"}} {
         set filename $fname
@@ -31,6 +31,7 @@ oo::class create pak::Checker {
         set diags {}
         set top_names [dict create]
         set used_modules [dict create]
+        set pathonly_assets [dict create]
     }
 
     method diags {} { return $diags }
@@ -50,6 +51,28 @@ oo::class create pak::Checker {
             message $msg hint $hint line $line col $col filename $filename]
     }
 
+    # A Pak `fn` lowers to a C function of the same name, so a name libdragon
+    # already defines collides -- and the compiler reports it against
+    # libdragon's header rather than the user's line. Warn in Pak terms, with
+    # the replacement libdragon itself points at.
+    method check_libdragon_collision {decl} {
+        if {$backend ne "c"} return
+        set name [pak::fval $decl name]
+        if {[dict exists $::pak::LIBDRAGON_RESERVED $name]} {
+            my warn W004 "'$name' is already defined by libdragon" \
+                "libdragon's headers declare '$name' (a deprecated shim), so the\
+                 generated C will not compile. Rename the function." $decl
+            return
+        }
+        if {[dict exists $::pak::LIBC_RESERVED $name]} {
+            my warn W004 "'$name' is already defined by the C standard library" \
+                "newlib declares '$name', and libdragon.h pulls it in. It may\
+                 appear to work on a host compiler and conflict when\
+                 cross-compiled, because i32 is `long` on mips64-elf and `int`\
+                 on a 64-bit host. Rename the function." $decl
+        }
+    }
+
     # ── top-level program walk ────────────────────────────────────────────────
     method check_program {decls} {
         foreach decl $decls {
@@ -63,6 +86,7 @@ oo::class create pak::Checker {
                 }
                 FnDecl {
                     my register_name [pak::fval $decl name] $decl
+                    my check_libdragon_collision $decl
                     my check_fn_signature_types $decl
                     if {![pak::isnil [pak::nfield $decl body]]} { my check_fn_body $decl }
                 }
@@ -79,6 +103,22 @@ oo::class create pak::Checker {
                 ConstDecl {
                     my register_name [pak::fval $decl name] $decl
                     my check_const $decl
+                }
+                AssetDecl {
+                    # Only `: Sprite` has a loader on the standalone backend.
+                    # The codegen refuses the rest at the use site, which is
+                    # too late: `pak check --backend mips` had already said
+                    # the program was a valid standalone program.
+                    if {$backend eq "mips"} { my check_asset $decl }
+                    # An asset with no loader is a path and nothing else --
+                    # nothing gives the name a handle (LANGUAGE.md 14:
+                    # `asset level_data from "levels/level1.bin"` is the blob
+                    # you DMA yourself). Reading the bare name lowered to an
+                    # identifier the generated C never declares. Remember the
+                    # name so the use site can say so.
+                    if {![my asset_has_loader $decl]} {
+                        dict set pathonly_assets [pak::fval $decl name] $decl
+                    }
                 }
                 ExternConst {
                     # An extern symbol resolves on the standalone backend only
@@ -120,10 +160,51 @@ oo::class create pak::Checker {
         }
     }
 
+    # ── assets ────────────────────────────────────────────────────────────────
+    # Does this asset declaration produce a loaded handle, or only a path?
+    # Unions both backends' loader tables -- CG_ASSET_LOADERS (libdragon) and
+    # MIPS_ASSET_LOADERS (standalone) do not list the same types (Ucode is
+    # standalone-only, no libdragon Ucode loader exists yet), so a type
+    # loadable on EITHER backend must not be flagged path-only here; which
+    # backend actually accepts it is check_asset's job below.
+    method asset_has_loader {decl} {
+        set t [pak::nfield $decl asset_type]
+        if {[pak::isnil $t]} { return 0 }
+        set tname [expr {[pak::kindof $t] eq "TypeName"
+                         ? [pak::fval $t name] : [pak::sval $t]}]
+        return [expr {[dict exists $::pak::CG_ASSET_LOADERS $tname] \
+                      || [dict exists $::pak::MIPS_ASSET_LOADERS $tname]}]
+    }
+
+    method check_asset {decl} {
+        set t [pak::nfield $decl asset_type]
+        set tname ""
+        if {![pak::isnil $t]} {
+            set tname [expr {[pak::kindof $t] eq "TypeName"
+                             ? [pak::fval $t name] : [pak::sval $t]}]
+        }
+        if {[dict exists $::pak::MIPS_ASSET_LOADERS $tname]} return
+        set what [expr {$tname eq "" ? "no type" : "type '$tname'"}]
+        set known [join [lsort [dict keys $::pak::MIPS_ASSET_LOADERS]] { and }]
+        my err E010 "asset '[pak::fval $decl name]' has $what, and only $known\
+                     assets can be loaded on the standalone backend" \
+            "runtime/standalone/runtime.pk64 reads .sprite files (Sprite) and\
+             raw pakfs blobs by name (Ucode) out of the ROM and nothing else.\
+             Declare it one of those, or use the libdragon backend." \
+            $decl
+    }
+
     # ── use declarations ──────────────────────────────────────────────────────
     method check_use {decl} {
         set parts [split [pak::fval $decl path] .]
-        if {[llength $parts] < 2} return
+        # `use t3d` is the spelling the Tiny3D demos actually use, and it has
+        # one part, so it fell out here before registering anything -- which
+        # silently disabled every check on `t3d.*` calls, E010 included. A
+        # gate a user can bypass by how they spell an import is not a gate.
+        if {[llength $parts] == 1} {
+            if {[lindex $parts 0] eq "t3d"} { dict set used_modules t3d t3d }
+            return
+        }
         set prefix [lindex $parts 0]
         if {$prefix eq "n64"} {
             set mod [lindex $parts 1]
@@ -145,6 +226,44 @@ oo::class create pak::Checker {
             }
         } elseif {$prefix eq "t3d"} {
             dict set used_modules t3d t3d
+        } elseif {$prefix eq "rsp"} {
+            # `use rsp.vacc`: the RSP target's accumulator module (see
+            # docs/rsp-microcode-in-pak.md). Deliberately NOT added to
+            # used_modules -- that dict feeds check_module_call's E010
+            # MODULE_API lookup, and MODULE_API (a libdragon/standalone
+            # HAL table) has no entry for rsp.* and never will; vacc has no
+            # HAL, it lowers directly in tcl/rsp_codegen.tcl. This exists
+            # only so `use rsp.vacc` itself doesn't read as an unknown
+            # project module (E105) -- the call-order checks the design
+            # note describes (vacc.mac needs a prior vacc.mul, etc.) live in
+            # the RSP codegen, which is the only backend that ever sees this
+            # module for real.
+            set mod [lindex $parts 1]
+            if {$mod ne "vacc"} {
+                my err E104 "Unknown module '[pak::fval $decl path]'" \
+                    "Known rsp modules: vacc" $decl
+                return
+            }
+            # A microcode source is not a valid `mips`/`c` program: the
+            # RSP's vec8x16/vacc surface (VMULF/VMACF/VSAR, .broadcast, the
+            # scalar half's own restrictions) has no CPU-backend lowering
+            # at all -- rsp_codegen.tcl is the only codegen that ever
+            # understands `vacc.mul(...)`. Before this check existed,
+            # `pak check --backend mips` accepted files like
+            # tcl/tests/ares/rsp_task_vacc.pk64 (nothing in the checker
+            # knew `vacc` wasn't an ordinary module-less identifier), and
+            # tcl/tools/hal_contract_test.tcl's contract --
+            # "the checker accepted it, so the backend has to lower it" --
+            # caught the gap: `pak::mips_generate` crashed on
+            # `vacc.mul(...)` with "cannot determine the receiver type of
+            # .mul() -- no symbol to call" instead of a clean diagnostic.
+            if {$backend ne "rsp"} {
+                my err E010 "'use rsp.vacc' is only valid when compiling for the RSP target" \
+                    "This file is an RSP microcode, not a $backend program. Check it with\
+                     \`pak check --backend rsp\`, matching how it will actually be built\
+                     (\`pak build --backend rsp\`)." \
+                    $decl
+            }
         }
     }
 
@@ -195,29 +314,13 @@ oo::class create pak::Checker {
         return $terminated
     }
 
-    # FixedMap and Pool lower to calls into pak_map_* / pak_pool_* helpers that
-    # runtime/standalone/runtime.pk64 does not define -- there is no helper
-    # library on the standalone path, only boot.S and the HAL. The codegen
-    # emitted those calls anyway and the failure surfaced as an undefined
-    # symbol at link. Report it here, against the declaration, instead.
+    # Nothing left to refuse. This walked every declared type looking for
+    # constructs the MIPS backend could not lower -- FixedMap, Pool, and
+    # `dyn Trait`. All three now lower, so the hook stays as the place to
+    # report the next one against its declaration rather than at link time.
     method check_backend_type {t} {
         if {$backend ne "mips"} return
         if {[pak::isnil $t] || [llength $t] < 2 || [lindex $t 0] ne "node"} return
-        if {[pak::kindof $t] eq "TypeDynTrait"} {
-            my err E010 "dyn trait objects are not implemented on the standalone backend" \
-                "Vtable dispatch is not lowered by the MIPS backend. Use a concrete type, or the libdragon backend." \
-                $t
-            return
-        }
-        if {[pak::kindof $t] eq "TypeGeneric"} {
-            set n [pak::fval $t name]
-            if {$n in {FixedMap Pool}} {
-                my err E010 "container '$n' is not implemented on the standalone backend" \
-                    "It lowers to pak_map_* / pak_pool_* helpers that runtime/standalone/runtime.pk64 does not define. Use FixedList or RingBuffer, or the libdragon backend." \
-                    $t
-                return
-            }
-        }
         dict for {k v} [lindex $t 2] {
             switch -- [lindex $v 0] {
                 node { my check_backend_type $v }
@@ -319,6 +422,21 @@ oo::class create pak::Checker {
             Cast      { my check_expr_calls [pak::nfield $expr expr] }
             AddrOf    { my check_expr_calls [pak::nfield $expr expr] }
             Deref     { my check_expr_calls [pak::nfield $expr expr] }
+            Ident {
+                set nm [pak::fval $expr name]
+                if {[dict exists $pathonly_assets $nm]} {
+                    set loadable {}
+                    foreach t [concat [dict keys $::pak::CG_ASSET_LOADERS] [dict keys $::pak::MIPS_ASSET_LOADERS]] {
+                        if {$t ni $loadable} { lappend loadable $t }
+                    }
+                    my err E010 "asset '$nm' has no loader, so it has no handle to read" \
+                        "Only [join [lsort $loadable] { and }]\
+                         assets are loaded for you. Give it one of those types\
+                         (`asset $nm: Sprite from ...`), or read `${nm}_path`\
+                         and load it yourself." \
+                        $expr
+                }
+            }
             CatchExpr { my check_expr_calls [pak::nfield $expr expr] }
             OkExpr    { my check_expr_calls [pak::nfield $expr value] }
             ErrExpr   { my check_expr_calls [pak::nfield $expr value] }
@@ -347,6 +465,17 @@ oo::class create pak::Checker {
             if {[dict exists $used_modules $name]} {
                 return [list [dict get $used_modules $name] $fn]
             }
+            # A module called without a `use`. The C backend lowers it anyway
+            # -- its dispatch does not consult the imports -- so requiring the
+            # `use` here meant such a call escaped the HAL check entirely:
+            # `arena.alloc(a, 4)` with no `use n64.arena` passed
+            # `pak check --backend mips` and then had no symbol to call.
+            # Both halves are required, so a local variable that merely shares
+            # a module's name is not mistaken for one.
+            if {[dict exists $::pak::KNOWN_MODULES $name]
+                && [pak::module_api_has $name $fn]} {
+                return [list $name $fn]
+            }
         }
         return {}
     }
@@ -367,6 +496,21 @@ oo::class create pak::Checker {
                 "Not defined in runtime/standalone/runtime.pk64. Use the libdragon backend, or implement it in the HAL." \
                 $call
             return
+        }
+        if {$backend eq "c"} {
+            switch -- [pak::libdragon_class $mod $fn] {
+                missing {
+                    my warn W005 "'$mod.$fn' is not implemented on the libdragon backend" \
+                        "Pak names it but neither libdragon nor Tiny3D defines it, so the\
+                         generated C will not compile. It exists on the standalone HAL:\
+                         build with --backend mips. See STDLIB.md." $call
+                }
+                tiny3d {
+                    my warn W006 "'$mod.$fn' needs Tiny3D" \
+                        "Set `tiny3d = true` under \[dependencies\] in pak.toml and point\
+                         TINY3D_INST at your Tiny3D installation." $call
+                }
+            }
         }
         my check_rdp_cached_addr $call $mod $fn
         # Arity (E105) stays on the fully-qualified `n64.mod.fn(...)` form the

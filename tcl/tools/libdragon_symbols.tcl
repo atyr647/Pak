@@ -1,0 +1,208 @@
+#!/usr/bin/env tclsh
+# tcl/tools/libdragon_symbols.tcl — which MODULE_API entries the C backend can
+# actually lower, classified against the real libraries.
+#
+#   tclsh tcl/tools/libdragon_symbols.tcl          # gate: the list is accurate
+#   tclsh tcl/tools/libdragon_symbols.tcl --regen  # rewrite the list
+#
+# STDLIB.md used to print "yes" in the libdragon column for all 315 entries,
+# unconditionally, because gen_stdlib.tcl hardcoded the string. It was not
+# true: a third of the directly-lowered symbols are not declared by libdragon
+# at all, so a program calling one does not build. The standalone column was
+# always honest -- it is computed from the HAL -- and this makes the libdragon
+# column honest the same way.
+#
+# Three outcomes per symbol:
+#
+#   libdragon  declared by libdragon's own headers
+#   tiny3d     declared only once Tiny3D's headers are added, so it needs
+#              `tiny3d = true` in pak.toml
+#   missing    declared by neither: Pak advertises it, nothing implements it
+#
+# Entries lowered through CG_API_LAMBDA are not listed. Those become an
+# expression rather than a bare call -- often into runtime/pak_libdragon.h --
+# and tcl/tools/libdragon_api_test.tcl is what checks them, by compiling the
+# examples that use them.
+#
+# The classification is done by compiling, not by grepping headers: a call to
+# an undeclared function is an implicit declaration, and that is precisely the
+# question being asked. Macros, multi-line declarations and typedef'd
+# signatures all answer correctly.
+
+set HERE [file dirname [file normalize [info script]]]
+set REPO [file normalize [file join $HERE .. ..]]
+cd $REPO
+source [file join $REPO tcl module_api.tcl]
+
+set LIST  [file join $REPO tests libdragon_symbols.txt]
+set CC    [expr {[info exists ::env(CC)] ? $::env(CC) : "cc"}]
+set CACHE [expr {[info exists ::env(TMPDIR)] ? $::env(TMPDIR) : "/tmp"}]
+set LDINC [file join $CACHE pak-libdragon libdragon include]
+set T3SRC [file join $CACHE pak-tiny3d tiny3d src]
+
+set REGEN [expr {[lsearch -exact $argv --regen] >= 0}]
+
+if {[catch {exec sh -c "command -v $CC"}]} { puts "libdragon symbols: SKIP (no $CC)"; exit 0 }
+if {![file isdirectory $LDINC]} {
+    catch {exec bash [file join $REPO tools fetch_libdragon.sh] [file join $CACHE pak-libdragon]} o; puts $o
+}
+if {![file isdirectory $LDINC]} { puts "libdragon symbols: SKIP (no libdragon headers)"; exit 0 }
+if {![file isdirectory $T3SRC]} {
+    catch {exec bash [file join $REPO tools fetch_tiny3d.sh] [file join $CACHE pak-tiny3d]} o; puts $o
+}
+set have_t3d [file isdirectory $T3SRC]
+
+# ── the symbols to classify ──────────────────────────────────────────────────
+
+set syms {}
+foreach key [pak::module_api_keys] {
+    lassign $key mod fn
+    if {[dict exists $::pak::CG_API_LAMBDA $key]} continue
+    if {![dict exists $::pak::CG_API $key]} continue
+    lappend syms [list $mod $fn [dict get $::pak::CG_API $key]]
+}
+set syms [lsort -index 0 $syms]
+
+# One translation unit, one probe function per symbol. The diagnostics name
+# every symbol that was not declared.
+proc undeclared {syms includes t3d} {
+    global CC CACHE
+    set w [file join $CACHE pak-symprobe]; file mkdir $w
+    set f [open [file join $w probe.c] w]
+    puts $f "#include <libdragon.h>"
+    if {$t3d} {
+        foreach h {t3d.h t3danim.h t3dmodel.h t3dskeleton.h t3dmath.h t3ddebug.h} {
+            puts $f "#include <t3d/$h>"
+        }
+    }
+    set i 0
+    foreach s $syms {
+        puts $f "void pak_probe_${i}_x(void) { [lindex $s 2](); }"
+        incr i
+    }
+    close $f
+    # Redirect stderr to a real file rather than merging it into the exec
+    # pipe (2>@1): 235 probes against libdragon's real headers produce a huge
+    # volume of unrelated warnings (format strings, pointer/int casts), and a
+    # pipe that large has been observed to come back truncated or empty in
+    # some CI environments -- silently turning every "missing"/"tiny3d" entry
+    # into a false "libdragon" instead of failing loudly. A file has no such
+    # size-dependent behavior.
+    set errfile [file join $w err.log]
+    # Force the C locale on the compiler itself: GCC quotes identifiers in
+    # its diagnostics with Unicode curly quotes (U+2018/U+2019) rather than
+    # ASCII "'" whenever the environment's locale charset is UTF-8, which is
+    # exactly the case on GitHub Actions' runners but not in every dev
+    # environment. Without this, the regex below silently matches nothing on
+    # a UTF-8 locale even though the compiler is genuinely erroring on every
+    # undeclared symbol -- every entry then defaults to "declared".
+    set cmd [list env LC_ALL=C LANG=C $CC -fsyntax-only \
+        -Werror=implicit-function-declaration {*}$includes [file join $w probe.c]]
+    set rc [catch {exec {*}$cmd 2> $errfile}]
+    set ef [open $errfile r]; set out [read $ef]; close $ef
+    set bad [dict create]
+    foreach line [split $out "\n"] {
+        # Match both ASCII and GCC's locale-dependent Unicode quoting, as a
+        # second line of defense on top of forcing LC_ALL=C above.
+        if {[regexp {implicit declaration of function ['‘]([^'’]+)['’]} $line -> s]} {
+            dict set bad $s 1
+        }
+    }
+    # 235 real MODULE_API symbols with zero "bad" (undeclared) hits is not a
+    # plausible outcome -- some of these are obscure/legacy peripherals no
+    # mainline libdragon build implements. Rather than silently trust a
+    # result that almost certainly means the probe compile itself didn't run
+    # as expected, fail loudly with enough to diagnose it: the exact command,
+    # its exit status, and what it actually wrote to stderr.
+    if {[dict size $bad] == 0} {
+        puts stderr "libdragon symbols: SUSPICIOUS -- 0 undeclared out of [llength $syms] probes"
+        puts stderr "  cmd: $cmd"
+        puts stderr "  exit status from catch: $rc"
+        puts stderr "  stderr bytes: [string length $out]"
+        puts stderr "  stderr (first 2000 chars):"
+        puts stderr [string range $out 0 2000]
+    }
+    return $bad
+}
+
+set base [list -I$LDINC -I[file join $REPO runtime]]
+set bad_ld [undeclared $syms $base 0]
+if {$have_t3d} {
+    set bad_all [undeclared $syms [concat $base [list -I$T3SRC -DPAK_HAS_TINY3D=1]] 1]
+} else {
+    set bad_all $bad_ld
+}
+
+set computed [dict create]
+foreach s $syms {
+    lassign $s mod fn sym
+    if {![dict exists $bad_ld $sym]}  { dict set computed "$mod.$fn" libdragon; continue }
+    if {![dict exists $bad_all $sym]} { dict set computed "$mod.$fn" tiny3d;    continue }
+    dict set computed "$mod.$fn" missing
+}
+
+# ── regen / gate ─────────────────────────────────────────────────────────────
+
+if {$REGEN} {
+    if {!$have_t3d} {
+        puts "libdragon symbols: refusing to regen without Tiny3D headers --"
+        puts "  every t3d.* entry would be misfiled as 'missing'."
+        exit 1
+    }
+    set f [open $LIST w]
+    puts $f "# Which MODULE_API entries the C (libdragon) backend can lower, and to what."
+    puts $f "# Generated by tcl/tools/libdragon_symbols.tcl --regen; do not hand-edit."
+    puts $f "#"
+    puts $f "#   libdragon  declared by libdragon itself"
+    puts $f "#   tiny3d     needs `tiny3d = true` in pak.toml"
+    puts $f "#   missing    Pak advertises it and nothing implements it"
+    puts $f "#"
+    puts $f "# Entries lowered through CG_API_LAMBDA are absent on purpose: they become"
+    puts $f "# an expression, not a bare call, and libdragon_api_test.tcl checks those."
+    puts $f ""
+    foreach k [lsort [dict keys $computed]] { puts $f "[dict get $computed $k] $k" }
+    close $f
+    set n [dict create libdragon 0 tiny3d 0 missing 0]
+    dict for {k v} $computed { dict incr n $v }
+    puts "libdragon symbols: wrote [dict size $computed] entries\
+ ([dict get $n libdragon] libdragon, [dict get $n tiny3d] tiny3d, [dict get $n missing] missing)"
+    exit 0
+}
+
+if {![file exists $LIST]} { puts "libdragon symbols: MISSING $LIST (run --regen)"; exit 1 }
+set stored [dict create]
+set fh [open $LIST r]; set txt [read $fh]; close $fh
+foreach line [split $txt "\n"] {
+    set line [string trim $line]
+    if {$line eq "" || [string index $line 0] eq "#"} continue
+    lappend parts {*}[split $line " "]
+    dict set stored [lindex [split $line " "] 1] [lindex [split $line " "] 0]
+}
+
+set drift {}
+dict for {k v} $computed {
+    if {!$have_t3d && $v eq "missing" && [dict exists $stored $k] && [dict get $stored $k] eq "tiny3d"} {
+        continue   ;# cannot tell tiny3d from missing without those headers
+    }
+    if {![dict exists $stored $k]}  { lappend drift [list $k "(absent)" $v]; continue }
+    if {[dict get $stored $k] ne $v} { lappend drift [list $k [dict get $stored $k] $v] }
+}
+foreach k [dict keys $stored] {
+    if {![dict exists $computed $k]} { lappend drift [list $k [dict get $stored $k] "(no longer a direct call)"] }
+}
+
+set n [dict create libdragon 0 tiny3d 0 missing 0]
+dict for {k v} $computed { dict incr n $v }
+puts "libdragon symbols: [dict size $computed] directly-lowered entries\
+ -- [dict get $n libdragon] libdragon, [dict get $n tiny3d] tiny3d, [dict get $n missing] missing"
+if {!$have_t3d} { puts "                   (Tiny3D headers absent; tiny3d/missing not distinguished)" }
+
+if {[llength $drift] > 0} {
+    puts ""
+    puts "DRIFT -- tests/libdragon_symbols.txt disagrees with the headers:"
+    foreach d $drift { puts [format "  %-32s was %-12s now %s" [lindex $d 0] [lindex $d 1] [lindex $d 2]] }
+    puts ""
+    puts "Run: tclsh tcl/tools/libdragon_symbols.tcl --regen"
+    exit 1
+}
+puts "no drift."

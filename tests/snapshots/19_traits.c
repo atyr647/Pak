@@ -7,6 +7,7 @@
 #include <math.h>
 #include "pak_math.h"
 #include "pak_containers.h"
+#include "pak_libdragon.h"
 
 
 /* -- Pak runtime types -- */
@@ -27,19 +28,6 @@ typedef struct Sprite Sprite;
 typedef struct Enemy Enemy;
 
 /* -- User types -- */
-struct Sprite {
-    int32_t x;
-    int32_t y;
-    int32_t w;
-    int32_t h;
-};
-
-struct Enemy {
-    float x;
-    float y;
-    float speed;
-};
-
 /* trait Drawable */
 typedef struct {
     void (*draw)(void *, int32_t, int32_t);
@@ -61,6 +49,19 @@ typedef struct {
     void *self;
     const Updatable_vtable *vtable;
 } Updatable;
+
+struct Sprite {
+    int32_t x;
+    int32_t y;
+    int32_t w;
+    int32_t h;
+};
+
+struct Enemy {
+    float x;
+    float y;
+    float speed;
+};
 
 /* impl Sprite for Drawable */
 void Sprite_draw(Sprite * self, int32_t x, int32_t y) {

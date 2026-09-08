@@ -206,6 +206,12 @@ Pool(T, N)          -- object pool, capacity N
 
 N must be a compile-time integer literal. See `examples/canonical/23_containers.pk64`.
 
+On the standalone backend the fixed-capacity containers are inlined, and
+`FixedMap`, `Pool` and `Vec` call small helpers in
+`runtime/standalone/runtime.pk64` for the operations that need to compare or
+copy an element of an unknown width. `Vec` grows on the bump allocator there,
+which never reuses a freed block: reserve once rather than growing every frame.
+
 ### Trait Objects [IMPLEMENTED]
 
 ```pak
@@ -215,6 +221,12 @@ dyn TraitName        -- dynamic dispatch trait object
 
 Lowers to a vtable-based struct pair. Construct with `TraitName_from_TypeName(&obj)`.
 See `examples/canonical/27_dyn_trait.pk64`.
+
+Both backends lower this the same way: the value is `{self, vtable}` (8 bytes,
+so it is passed and returned by address), and each `impl T for Trait` gets a
+vtable holding the concrete methods **in trait declaration order**. On the
+standalone backend that vtable is a `.word` table naming the method symbols,
+and a call loads the slot and dispatches through `jalr`.
 
 ---
 
@@ -334,12 +346,32 @@ body** is *required* — an `impl` that omits it raises `E602`.
 impl TypeName {
     fn method(self: *TypeName) { ... }
     fn method_mut(self: *mut TypeName, arg: i32) -> bool { ... }
+
+    -- associated function: no `self`, so it is called on the TYPE
+    fn new(x: i32) -> TypeName { ... }
 }
 
 -- generic impl
 impl TypeName<T> {
     fn get(self: *TypeName<T>) -> T { ... }
 }
+```
+
+A method whose first parameter is `self` is called on a value —
+`p.method()` — and receives it as the receiver. A method with no `self` is an
+*associated function*: it belongs to the type rather than to any value, and is
+called on the type itself.
+
+```pak
+struct Player { hp: i32 }
+
+impl Player {
+    fn new() -> Player { return Player { hp: 100 } }
+    fn is_alive(self: *Player) -> bool { return self.hp > 0 }
+}
+
+let p = Player.new()      -- associated function, called on the type
+let alive = p.is_alive()  -- method, called on the value
 ```
 
 ### Impl Trait [IMPLEMENTED]
@@ -360,7 +392,7 @@ extern "C" {
     fn c_function_name(arg: i32) -> i32
     fn another(ptr: *u8, len: u32)
     -- trailing `...` declares a C-style variadic function (e.g. printf-family)
-    fn rdpq_text_printf(x: i32, y: i32, font: i32, fmt: *c_char, ...) -> i32
+    fn my_c_printf(level: i32, fmt: CStr, ...) -> i32
     static some_global: i32
 }
 
@@ -371,6 +403,12 @@ extern const SCREEN_WIDTH: i32
 The `...` marker is only meaningful for `extern` declarations — it tells the
 compiler the C function accepts extra trailing arguments. Pak itself has no
 `va_arg` mechanism, so you cannot write a variadic Pak function body.
+
+Use `CStr` for a C `const char *` and `*c_char` for a writable `char *`. Pak
+has no `const`, so these are the only two spellings, and picking the wrong one
+is a compile error at the C stage rather than at `pak check`: most C libraries
+take `const char *` for a string they only read, so `CStr` is almost always the
+one you want.
 
 ---
 
@@ -1030,6 +1068,29 @@ asset player_sprite: Sprite from "sprites/player.png"
 asset level_data from "levels/level1.bin"
 asset bgm: Sound from "audio/theme.wav"
 ```
+
+The path is relative to the project's `assets/` directory, and names the file
+you authored. `pak build` converts it (`.png` → `.sprite` via `mksprite`,
+`.wav` → `.wav64`, `.gltf` → `.t3dm`) and packs the result into the ROM, so
+what a program looks up at runtime is the converted name — the compiler
+applies the same mapping, and neither backend asks for the `.png`. The lookup
+is `rom:/<converted name>` on both: a DragonFS image on libdragon, a PakFS
+archive appended by `pak link --fs` on the standalone backend.
+
+An asset name is a handle, not a path string: reading it the first time loads
+the file, and every read after that reuses what was loaded. Loading is lazy
+because the archive is read from the cartridge, which cannot happen before the
+entry block runs.
+
+Only a type the compiler has a loader for gets a handle: `Sprite` on both
+backends, `Model` on libdragon. Every asset also declares `<name>_path`, the
+string the file is looked up by, and for an asset with no loader -- `asset
+level_data from "levels/level1.bin"` above -- that path is all there is: it is
+the blob you DMA yourself. Reading the bare name of such an asset is `E010`.
+
+The standalone backend loads `Sprite` assets; see the `n64.sprite` section of
+`STDLIB.md` for how the archive reaches the ROM and which sprite formats it
+reads.
 
 ---
 

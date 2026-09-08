@@ -10,10 +10,6 @@ use n64.math
 use n64.eeprom
 use n64.sprite
 
-extern "C" {
-    fn sprite_load(path: *c_char) -> *sprite_t
-}
-
 const SCREEN_W: i32 = 320
 const SCREEN_H: i32 = 240
 const TILE_SZ:  i32 = 16
@@ -47,30 +43,18 @@ const SAVE_MAGIC_HI: u8 = 0x60
 const SAVE_MAGIC_LO: u8 = 0x1D
 
 -- ── Asset bindings ───────────────────────────────────────────────────────────
-asset spr_player_asset: Sprite from "sprites/player.png"
-static spr_player: *sprite_t = none
-asset spr_enemy_patrol_asset: Sprite from "sprites/enemy_patrol.png"
-static spr_enemy_patrol: *sprite_t = none
-asset spr_enemy_jumper_asset: Sprite from "sprites/enemy_jumper.png"
-static spr_enemy_jumper: *sprite_t = none
-asset spr_coin_asset: Sprite from "sprites/coin.png"
-static spr_coin: *sprite_t = none
-asset spr_spring_asset: Sprite from "sprites/spring.png"
-static spr_spring: *sprite_t = none
-asset spr_checkpoint_asset: Sprite from "sprites/checkpoint.png"
-static spr_checkpoint: *sprite_t = none
-asset spr_goal_asset: Sprite from "sprites/goal.png"
-static spr_goal: *sprite_t = none
-asset spr_tile_solid_asset: Sprite from "sprites/tile_solid.png"
-static spr_tile_solid: *sprite_t = none
-asset spr_tile_oneway_asset: Sprite from "sprites/tile_oneway.png"
-static spr_tile_oneway: *sprite_t = none
-asset spr_tile_hazard_asset: Sprite from "sprites/tile_hazard.png"
-static spr_tile_hazard: *sprite_t = none
-asset spr_tile_ladder_asset: Sprite from "sprites/tile_ladder.png"
-static spr_tile_ladder: *sprite_t = none
-asset spr_background_asset: Sprite from "sprites/background.png"
-static spr_background: *sprite_t = none
+asset spr_player: Sprite from "sprites/player.png"
+asset spr_enemy_patrol: Sprite from "sprites/enemy_patrol.png"
+asset spr_enemy_jumper: Sprite from "sprites/enemy_jumper.png"
+asset spr_coin: Sprite from "sprites/coin.png"
+asset spr_spring: Sprite from "sprites/spring.png"
+asset spr_checkpoint: Sprite from "sprites/checkpoint.png"
+asset spr_goal: Sprite from "sprites/goal.png"
+asset spr_tile_solid: Sprite from "sprites/tile_solid.png"
+asset spr_tile_oneway: Sprite from "sprites/tile_oneway.png"
+asset spr_tile_hazard: Sprite from "sprites/tile_hazard.png"
+asset spr_tile_ladder: Sprite from "sprites/tile_ladder.png"
+asset spr_background: Sprite from "sprites/background.png"
 
 -- ── Bitmap font (3x5 glyphs, asset-free) ─────────────────────────────────────
 const NUM_GLYPHS: i32 = 41
@@ -308,18 +292,6 @@ fn fill_audio() {
 fn snd_init() {
     audio.init(44100, 4)
     init_music_table()
-    spr_player = sprite_load("pak:/sprites/player.png")
-    spr_enemy_patrol = sprite_load("pak:/sprites/enemy_patrol.png")
-    spr_enemy_jumper = sprite_load("pak:/sprites/enemy_jumper.png")
-    spr_coin = sprite_load("pak:/sprites/coin.png")
-    spr_spring = sprite_load("pak:/sprites/spring.png")
-    spr_checkpoint = sprite_load("pak:/sprites/checkpoint.png")
-    spr_goal = sprite_load("pak:/sprites/goal.png")
-    spr_tile_solid = sprite_load("pak:/sprites/tile_solid.png")
-    spr_tile_oneway = sprite_load("pak:/sprites/tile_oneway.png")
-    spr_tile_hazard = sprite_load("pak:/sprites/tile_hazard.png")
-    spr_tile_ladder = sprite_load("pak:/sprites/tile_ladder.png")
-    spr_background = sprite_load("pak:/sprites/background.png")
 }
 
 fn music_start() { music_on = true }

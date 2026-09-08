@@ -293,6 +293,18 @@ let b = my_tuple.1
 
 ## Standard Library / API Rules
 
+### A Module Call Needs Its `use`, and the Backend Decides
+`display.init(...)` is checked against the standalone HAL whether or not the
+file has `use n64.display` — the checker recognises a bare `mod.fn` when `mod`
+is a real module and MODULE_API has the function. So a call that would not
+lower is an error at check time on either backend, not a surprise later.
+An alias works the same way on both backends:
+```
+-- WORKS on both:
+use n64.display as disp
+entry { disp.init(0, 2, 3, 0, 1) }
+```
+
 ### Do Not Invent Module Names
 There are **37** valid module namespaces, all listed in `STDLIB.md`. The valid
 N64 modules (after `use n64.X`) are:
@@ -379,15 +391,27 @@ match result {
 }
 ```
 
-### Keyword Names Cannot Be Used as Variant Cases
-Do not name variant cases after keywords: `none`, `ok`, `err`, `true`,
-`false`, `undefined`, etc. They will fail in match patterns.
+### Named-Field Variant Arms — WORK
+`.rect { w: ww, h: hh }` binds the named payload fields, and each binding
+carries that field's type. The checker used to declare only POSITIONAL
+bindings, so every use of `ww` was E010 even though both backends lower the
+form correctly.
 ```
--- WRONG:
-variant Foo { none, ok, err }
+-- WORKS:
+match shape {
+    .circle(r)             => { sink = r }
+    .rect { w: ww, h: hh } => { sink = ww * hh }
+}
+```
 
--- CORRECT:
-variant Foo { empty, success, failure }
+### Keyword Names as Variant Cases — WORK
+`variant Foo { none, ok, err }` matches fine, with or without payloads: the
+pattern parser accepts keyword names after `.`, and an arm's payload type
+comes from the type being matched, so `.ok(v)` on a `Foo` and `.ok(v)` on a
+`Result` in the same file each resolve to their own payload.
+```
+-- WORKS:
+variant Foo { none(i32), ok(i32), err(i32) }
 ```
 
 ### Writing Through `alloc`'d Pointer Then `free` — FIXED

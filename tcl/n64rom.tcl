@@ -107,7 +107,62 @@ proc pak::n64rom_ipl3_from_z64 {path} {
 
 # ── ROM assembly ─────────────────────────────────────────────────────────────
 
-proc pak::n64rom {prog_bytes title {ipl3 ""} {rom_size ""}} {
+# The bootcode shipped with Pak: libdragon's IPL3, compat build, public domain.
+# See runtime/standalone/ipl3_compat.README.md. Returns "" if the file is
+# missing, which leaves the region zeroed -- a ROM that cannot boot, but a
+# `pak link` that still tells you what it produced.
+# Where this file lives, captured at load time -- `info script` inside a proc
+# names whatever is being sourced when the proc runs, not where it was written.
+set ::pak::_n64rom_dir [file dirname [file normalize [info script]]]
+
+proc pak::n64rom_default_ipl3 {} {
+    # Located from this file rather than from $::pak::CLI_ROOT: the packer is
+    # sourced directly by tests and tools that never set that global, and a
+    # missing bootcode is not something to discover as an empty string.
+    set root [file dirname $::pak::_n64rom_dir]
+    if {[info exists ::pak::CLI_ROOT]} { set root $::pak::CLI_ROOT }
+    set f [file join $root runtime standalone ipl3_compat.bin]
+    if {![file exists $f]} { return "" }
+    set fh [open $f rb]; set d [read $fh]; close $fh
+    return $d
+}
+
+# Where a PakFS archive lands in a ROM built with `pak link --fs`: past the
+# payload, past the window n64rom pads out for the CRC, on a 16-byte boundary
+# (PI DMA moves whole 16-byte blocks). Derived from the payload length alone,
+# so the linker can patch the offset into the program BEFORE the CRC is taken
+# over it.
+proc pak::n64rom_fs_offset {payload_len} {
+    set end [expr {0x1000 + $payload_len}]
+    if {$end % 4} { incr end [expr {4 - ($end % 4)}] }
+    set minlen [expr {0x1000 + $::pak::ROM_CRC_WINDOW}]
+    if {$end < $minlen} { set end $minlen }
+    return [expr {($end + 15) & ~15}]
+}
+
+# Tell the runtime where its assets are: g_pakfs_rom and g_pakfs_len are two
+# statics in runtime/standalone/runtime.pk64, zero in a ROM built without
+# --fs. Returns the patched image. `symbols` and `base` come from the linker.
+proc pak::n64rom_patch_fs {image symbols base fs_len} {
+    set off [pak::n64rom_fs_offset [string length $image]]
+    # 0x10000000 is where the cart appears to the PI; the runtime hands this
+    # value straight to PI_CART_ADDR.
+    foreach {sym val} [list g_pakfs_rom [expr {0x10000000 + $off}] \
+                            g_pakfs_len $fs_len] {
+        if {![dict exists $symbols $sym]} {
+            return -code error "an asset archive needs the standalone runtime\
+                                linked in ($sym is not defined by any object)"
+        }
+        set at [expr {[dict get $symbols $sym] - $base}]
+        if {$at < 0 || $at + 4 > [string length $image]} {
+            return -code error "$sym is outside the linked image"
+        }
+        set image [string replace $image $at [expr {$at + 3}] [binary format I $val]]
+    }
+    return $image
+}
+
+proc pak::n64rom {prog_bytes title {ipl3 ""} {rom_size ""} {fs_bytes ""}} {
     if {[string length $ipl3] > $::pak::ROM_IPL3_SIZE} {
         set ipl3 [string range $ipl3 0 [expr {$::pak::ROM_IPL3_SIZE - 1}]]
     }
@@ -128,6 +183,26 @@ proc pak::n64rom {prog_bytes title {ipl3 ""} {rom_size ""}} {
 
     lassign [pak::n64_crc $rom] crc1 crc2
     set rom [string replace $rom 16 23 [binary format II $crc1 $crc2]]
+
+    # libdragon's compat IPL3 reads the payload size from 0x10, the field a
+    # conventional ROM uses for CRC1. It does not check the header CRC -- the
+    # CIC checks the IPL3, not the header -- and given a zero or out-of-range
+    # value it falls back to copying a flat 1 MiB, which truncates any image
+    # larger than that. So the size goes in, after the CRC is computed over
+    # the real bytes. CRC2 at 0x14 is left alone.
+    set payload [expr {[string length $prog_bytes]}]
+    set rom [string replace $rom 16 19 [binary format I $payload]]
+
+    # The asset archive goes after the payload and OUTSIDE it: the compat IPL3
+    # copies `payload` bytes into RDRAM at boot, so an archive counted in that
+    # size would be copied along with the program. The runtime reads it from
+    # the cart on demand instead.
+    if {$fs_bytes ne ""} {
+        set off [pak::n64rom_fs_offset [string length $prog_bytes]]
+        set len [string length $rom]
+        if {$len < $off} { append rom [string repeat "\x00" [expr {$off - $len}]] }
+        append rom $fs_bytes
+    }
 
     # Cart-size pad. Flashcarts (and FZ) crash on a 2.9 MB image; only
     # 4/8/16/32/64 MiB are valid. CRC is already baked and does not cover this.

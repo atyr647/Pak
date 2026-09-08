@@ -59,6 +59,8 @@
 	.extern rdpq_triangle_shade_tex_z
 	.extern rdpq_set_tri_z
 	.extern sprite_load
+	.extern pakfs_read
+	.extern pakfs_size
 	.extern rdpq_sprite_blit
 	.extern timer_init
 	.extern _pak_delta_time
@@ -72,6 +74,7 @@
 	.extern audio_write_silence
 	.extern audio_set_buffer_num
 	.extern debugf
+	.extern debug_init_isviewer
 	.extern assert
 	.extern dma_read
 	.extern dma_write
@@ -209,12 +212,14 @@ area:
     lwc1 $f12, 4($t9)
     swc1 $f12, 148($sp)
     lwc1 $f12, 148($sp)
-    mov.s $f14, $f12
+    swc1 $f12, 156($sp)
     lwc1 $f12, 148($sp)
+    lwc1 $f14, 156($sp)
     mul.s $f12, $f14, $f12
-    mov.s $f14, $f12
+    swc1 $f12, 152($sp)
     la $t6, .Lf320
     lwc1 $f12, 0($t6)
+    lwc1 $f14, 152($sp)
     mul.s $f12, $f14, $f12
     j .Larea_ret_0
     nop
@@ -226,12 +231,13 @@ area:
     bne $t8, $t7, .Larm_skip_5
     nop
     lwc1 $f12, 4($t9)
-    swc1 $f12, 152($sp)
+    swc1 $f12, 160($sp)
     lwc1 $f12, 8($t9)
-    swc1 $f12, 156($sp)
-    lwc1 $f12, 152($sp)
-    mov.s $f14, $f12
-    lwc1 $f12, 156($sp)
+    swc1 $f12, 164($sp)
+    lwc1 $f12, 160($sp)
+    swc1 $f12, 152($sp)
+    lwc1 $f12, 164($sp)
+    lwc1 $f14, 152($sp)
     mul.s $f12, $f14, $f12
     j .Larea_ret_0
     nop
@@ -516,12 +522,10 @@ main:
 
 	.section .data
 	.align 2
+	.globl sink
+sink:
+	.word 0
+	.align 2
 	.globl sink_i
 sink_i:
 	.word 0
-
-	.section .bss
-	.align 2
-	.globl sink
-sink:
-	.space 4

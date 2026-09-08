@@ -7,6 +7,7 @@
 #include <math.h>
 #include "pak_math.h"
 #include "pak_containers.h"
+#include "pak_libdragon.h"
 
 
 /* -- Pak runtime types -- */
@@ -44,6 +45,9 @@ typedef enum {
     ButtonMask_z = 0x20,
 } ButtonMask;
 
+
+/* -- Function prototypes -- */
+Direction opposite(Direction dir);
 Direction opposite(Direction dir) {
     switch (dir) {
         case Direction_north:
@@ -66,6 +70,7 @@ Direction opposite(Direction dir) {
             return Direction_east;
             break;
         }
+        default: __builtin_unreachable();
     }
 }
 
@@ -95,6 +100,7 @@ int main(void) {
             sink = 3;
             break;
         }
+        default: __builtin_unreachable();
     }
     switch (dir) {
         case Direction_north:

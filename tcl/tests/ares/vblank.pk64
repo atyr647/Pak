@@ -1,0 +1,46 @@
+-- Interrupt-driven vblank. display.show waits on the counter the VI interrupt
+-- bumps, not on VI_V_CURRENT, so if the ISR never runs this never returns and
+-- the screen stays black -- which is the failure the gate is looking for.
+--
+-- Green means the handler ran at least 30 times and the only source it ever
+-- saw was the VI. Red means it ran but the numbers are wrong.
+
+const FB_PIXELS: i32 = 76800
+const FRAMES: u32 = 30
+const GREEN: u16 = 0x07C1
+const RED: u16 = 0xF801
+
+fn fill(fb: u32, px: u16) {
+    let mut i: i32 = 0
+    while i < FB_PIXELS {
+        let p: *volatile u16 = (fb + (i * 2) as u32) as *volatile u16
+        *p = px
+        i = i + 1
+    }
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    interrupt.init()
+
+    let fb: u32 = display.get()
+    fill(fb, 0x0001 as u16)
+
+    let mut n: u32 = 0
+    while n < FRAMES {
+        display.show(fb)
+        n = n + 1
+    }
+
+    let count: u32 = interrupt.vi_count()
+    let seen: u32 = interrupt.pending()
+    if count >= FRAMES and seen == 8 {
+        fill(fb, GREEN)
+    } else {
+        fill(fb, RED)
+    }
+
+    loop {
+        display.show(fb)
+    }
+}

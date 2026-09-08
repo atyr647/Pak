@@ -65,6 +65,8 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_triangle_shade_tex_z \
     rdpq_set_tri_z \
     sprite_load \
+    pakfs_read \
+    pakfs_size \
     rdpq_sprite_blit \
     timer_init \
     _pak_delta_time \
@@ -78,6 +80,7 @@ set ::pak::MIPS_EXTERNS [list \
     audio_write_silence \
     audio_set_buffer_num \
     debugf \
+    debug_init_isviewer \
     assert \
     dma_read \
     dma_write \
@@ -261,6 +264,8 @@ set ::pak::MIPS_API [dict create \
     {audio write} {audio_write} \
     {audio write_silence} {audio_write_silence} \
     {audio set_buffer_num} {audio_set_buffer_num} \
+    {debug init} {debug_init_isviewer} \
+    {debug init_isviewer} {debug_init_isviewer} \
     {debug log} {debugf} \
     {debug assert} {assert} \
     {debug log_value} {debugf} \
@@ -270,6 +275,46 @@ set ::pak::MIPS_API [dict create \
     {dma wait} {dma_wait} \
     {exception set_handler} {exception_set_handler} \
     {exception get_handler} {exception_get_handler} \
+    {math abs_i32} {math_abs_i32} \
+    {math min_i32} {math_min_i32} \
+    {math max_i32} {math_max_i32} \
+    {math clamp_i32} {math_clamp_i32} \
+    {math abs_f} {math_abs_f} \
+    {math min_f} {math_min_f} \
+    {math max_f} {math_max_f} \
+    {math clamp_f} {math_clamp_f} \
+    {math lerp_f} {math_lerp_f} \
+    {math floor_f} {math_floor_f} \
+    {math ceil_f} {math_ceil_f} \
+    {math fix_to_f} {math_fix_to_f} \
+    {math f_to_fix} {math_f_to_fix} \
+    {math sqrt_f} {math_sqrt_f} \
+    {math sin_f} {math_sin_f} \
+    {math cos_f} {math_cos_f} \
+    {math tan_f} {math_tan_f} \
+    {math atan2_f} {math_atan2_f} \
+    {math pow_f} {math_pow_f} \
+    {math fix_sin} {math_fix_sin} \
+    {math fix_cos} {math_fix_cos} \
+    {math fix_sqrt} {math_fix_sqrt} \
+    {math rand} {math_rand} \
+    {math rand_seed} {math_rand_seed} \
+    {math rand_range} {math_rand_range} \
+    {math rand_f} {math_rand_f} \
+    {sp init} {pak_sp_init} \
+    {sp load_ucode} {pak_sp_load_ucode} \
+    {sp load_data} {pak_sp_load_data} \
+    {sp read_data} {pak_sp_read_data} \
+    {sp run} {pak_sp_run} \
+    {sp wait} {pak_sp_wait} \
+    {sp done} {pak_sp_done} \
+    {sp status} {pak_sp_status} \
+    {interrupt init} {interrupt_init} \
+    {interrupt disable} {interrupt_disable} \
+    {interrupt restore} {interrupt_restore} \
+    {interrupt vi_count} {interrupt_vi_count} \
+    {interrupt pending} {interrupt_pending} \
+    {interrupt enabled} {interrupt_enabled} \
     {cache writeback} {data_cache_hit_writeback} \
     {cache invalidate} {data_cache_hit_invalidate} \
     {cache writeback_inv} {data_cache_hit_writeback_invalidate} \
@@ -279,6 +324,7 @@ set ::pak::MIPS_API [dict create \
     {eeprom read} {eeprom_read} \
     {eeprom write} {eeprom_write} \
     {rumble init} {rumble_init} \
+    {rumble is_plugged} {rumble_is_plugged} \
     {rumble start} {rumble_start} \
     {rumble stop} {rumble_stop} \
     {cpak init} {cpak_init} \
@@ -294,7 +340,11 @@ set ::pak::MIPS_API [dict create \
     {t3d init} {t3d_init} \
     {t3d destroy} {t3d_destroy} \
     {t3d frame_start} {t3d_frame_start} \
-    {t3d frame_end} {rspq_block_run} \
+    {t3d frame_end} {t3d_frame_end} \
+    {t3d viewport_attach} {t3d_viewport_attach} \
+    {t3d viewport_set_area} {t3d_viewport_set_area} \
+    {t3d fog_set_enabled} {t3d_fog_set_enabled} \
+    {t3d fog_set_range} {t3d_fog_set_range} \
     {t3d screen_projection} {t3d_screen_projection} \
     {t3d viewport_create} {t3d_viewport_create} \
     {t3d viewport_set_projection} {t3d_viewport_set_projection} \
@@ -327,12 +377,9 @@ set ::pak::MIPS_API [dict create \
     {t3d light_set_point} {t3d_light_set_point} \
     {t3d light_set_spot} {t3d_light_set_spot} \
     {t3d light_set_point_params} {t3d_light_set_point_params} \
-    {t3d viewport_attach} {t3d_viewport_attach} \
     {t3d viewport_set_fov} {t3d_viewport_set_fov} \
     {t3d set_camera} {t3d_set_camera} \
     {t3d look_at} {t3d_look_at} \
-    {t3d fog_set_enabled} {t3d_fog_set_enabled} \
-    {t3d fog_set_range} {t3d_fog_set_range} \
     {t3d fog_set_color} {t3d_fog_set_color} \
     {t3d anim_create} {t3d_anim_create} \
     {t3d anim_destroy} {t3d_anim_destroy} \
@@ -387,4 +434,17 @@ set ::pak::MIPS_PRIM [dict create \
     {*T} {4 4 0 0} \
     {CStr}  {4 4 0 0} \
     {Str}   {8 4 0 0} \
+]
+
+# Asset types the standalone backend can load, parallel to (but distinct
+# from) cg_tables.tcl's CG_ASSET_LOADERS -- the two backends do not support
+# the same set. Ucode has no libdragon-side implementation yet (see
+# mips_codegen.tcl's emit_asset), so it is standalone-only; checker.tcl's
+# asset_has_loader unions both tables so declaring `: Ucode` isn't flagged
+# path-only on either backend, while checker.tcl's mips-specific check_asset
+# still consults this table alone to say clearly which types standalone
+# actually loads.
+set ::pak::MIPS_ASSET_LOADERS [dict create \
+    Sprite 1 \
+    Ucode  1 \
 ]

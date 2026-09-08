@@ -23,6 +23,38 @@ namespace eval pak {}
 if {[info exists ::pak::_module_api_loaded]} { return }
 set ::pak::_module_api_loaded 1
 
+# ── what the libdragon backend can actually lower ────────────────────────────
+#
+# tests/libdragon_symbols.txt is computed by tcl/tools/libdragon_symbols.tcl,
+# which compiles a call to every directly-lowered symbol against the real
+# libdragon and Tiny3D headers. `missing` means Pak names a function that
+# nothing implements: the generated C does not compile. Loaded here so the
+# checker can say so at `pak check` instead of leaving it to the user's
+# `make`, mirroring what MIPS_HAL_SYMBOLS does for the standalone backend.
+set ::pak::LIBDRAGON_CLASS [dict create]
+set _lc_file [file join $_modapi_here .. tests libdragon_symbols.txt]
+if {[file exists $_lc_file]} {
+    set _lc_fh [open $_lc_file r]; set _lc_txt [read $_lc_fh]; close $_lc_fh
+    foreach _lc_line [split $_lc_txt "\n"] {
+        set _lc_line [string trim $_lc_line]
+        if {$_lc_line eq "" || [string index $_lc_line 0] eq "#"} continue
+        lassign [split $_lc_line " "] _lc_verdict _lc_key
+        dict set ::pak::LIBDRAGON_CLASS $_lc_key $_lc_verdict
+    }
+    unset -nocomplain _lc_fh _lc_txt _lc_line _lc_verdict _lc_key
+}
+unset -nocomplain _lc_file
+
+# "libdragon", "tiny3d", "missing", or "" when the entry is lowered to an
+# inline expression rather than a bare call (those are checked by compiling,
+# in tcl/tools/libdragon_api_test.tcl).
+proc pak::libdragon_class {mod fn} {
+    if {[dict exists $::pak::LIBDRAGON_CLASS "$mod.$fn"]} {
+        return [dict get $::pak::LIBDRAGON_CLASS "$mod.$fn"]
+    }
+    return ""
+}
+
 # ── MODULE_API: {mod fn} -> {symbol backends...} ─────────────────────────────
 
 proc pak::module_api_has {mod fn} {
@@ -127,6 +159,24 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     eeprom_init 1 \
     eeprom_present 1 \
     eeprom_type_detect 1 \
+    debug_init_isviewer 1 \
+    t3d_init 1 \
+    t3d_destroy 1 \
+    t3d_viewport_create 1 \
+    t3d_viewport_set_projection 1 \
+    t3d_viewport_set_area 1 \
+    t3d_viewport_attach 1 \
+    t3d_light_set_ambient 1 \
+    t3d_light_set_count 1 \
+    t3d_light_set_directional 1 \
+    t3d_fog_set_enabled 1 \
+    t3d_fog_set_range 1 \
+    t3d_frame_start 1 \
+    t3d_frame_end 1 \
+    rumble_init 1 \
+    rumble_is_plugged 1 \
+    rumble_start 1 \
+    rumble_stop 1 \
     eeprom_read 1 \
     eeprom_write 1 \
     audio_init 1 \
@@ -153,11 +203,86 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     exception_set_handler 1 \
     exception_get_handler 1 \
     exception_paint 1 \
+    interrupt_init 1 \
+    interrupt_disable 1 \
+    interrupt_restore 1 \
+    interrupt_vi_count 1 \
+    interrupt_pending 1 \
+    interrupt_enabled 1 \
+    pak_sp_init 1 \
+    pak_sp_load_ucode 1 \
+    pak_sp_load_data 1 \
+    pak_sp_read_data 1 \
+    pak_sp_run 1 \
+    pak_sp_wait 1 \
+    pak_sp_done 1 \
+    pak_sp_status 1 \
+    math_abs_i32 1 \
+    math_min_i32 1 \
+    math_max_i32 1 \
+    math_clamp_i32 1 \
+    math_abs_f 1 \
+    math_min_f 1 \
+    math_max_f 1 \
+    math_clamp_f 1 \
+    math_lerp_f 1 \
+    math_floor_f 1 \
+    math_ceil_f 1 \
+    math_fix_to_f 1 \
+    math_f_to_fix 1 \
+    math_sqrt_f 1 \
+    math_sin_f 1 \
+    math_cos_f 1 \
+    math_tan_f 1 \
+    math_atan2_f 1 \
+    math_pow_f 1 \
+    math_fix_sin 1 \
+    math_fix_cos 1 \
+    math_fix_sqrt 1 \
+    math_rand 1 \
+    math_rand_seed 1 \
+    math_rand_range 1 \
+    math_rand_f 1 \
+    sprite_load 1 \
+    rdpq_sprite_blit 1 \
+    TICKS_PER_SECOND 1 \
+    RDPQ_COMBINER_FLAT 1 \
 ]
 
+# Defined in runtime/standalone/boot.S, not in the runtime: Status.IE and
+# Status.IM2 are CP0 registers and Pak has no syntax for mfc0/mtc0. The
+# checker's "is this extern resolvable on the standalone backend?" question
+# is about the whole link, and boot.S is half of it.
+foreach _bs {__pak_irq_enable __pak_irq_disable __pak_irq_restore __pak_irq} {
+    dict set ::pak::MIPS_HAL_SYMBOLS $_bs 1
+}
+unset -nocomplain _bs
+
+# Module functions the MIPS backend lowers INLINE, with no symbol to link.
+# They are not in MIPS_HAL_SYMBOLS because runtime.pk64 does not define them --
+# the codegen emits the code at the call site -- but the standalone backend
+# does support them, so the HAL check has to know. Without this `str.from_cstr`
+# read as absent the moment the checker started recognising a module call made
+# without a `use`.
+set ::pak::MIPS_INLINE [dict create \
+    {str from_cstr} 1 \
+]
+
+# The symbol the MIPS backend calls. Not module_api_symbol: that prefers the
+# C name, and the two legitimately differ where libdragon spells a function
+# differently from the standalone HAL (rdpq.load_tlut is rdpq_load_tlut_raw on
+# libdragon and rdpq_load_tlut here). Asking the C name of the standalone HAL
+# would have made those functions look absent and E010 every use.
+proc pak::mips_api_symbol {mod fn} {
+    set key [list $mod $fn]
+    if {[dict exists $::pak::MIPS_API $key]} { return [dict get $::pak::MIPS_API $key] }
+    if {[dict exists $::pak::CG_API $key]}   { return [dict get $::pak::CG_API $key] }
+    return "${mod}_${fn}"
+}
+
 proc pak::mips_hal_has {mod fn} {
-    set sym [pak::module_api_symbol $mod $fn]
-    return [dict exists $::pak::MIPS_HAL_SYMBOLS $sym]
+    if {[dict exists $::pak::MIPS_INLINE [list $mod $fn]]} { return 1 }
+    return [dict exists $::pak::MIPS_HAL_SYMBOLS [pak::mips_api_symbol $mod $fn]]
 }
 
 proc pak::mips_hal_symbol {sym} {

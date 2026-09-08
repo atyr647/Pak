@@ -19,7 +19,11 @@ entry {
     -- call extern C functions
     memset(&buf[0], 0, 64)
 
-    let src: [8]u8 = undefined
+    -- `undefined` here would be a real read of uninitialized memory, which
+    -- the N64 toolchain rejects under -Werror=uninitialized. Give the source
+    -- bytes a value: the point is the memcpy, not the garbage.
+    let mut src: [8]u8 = undefined
+    memset(&src[0], 0xA5, 8)
     memcpy(&buf[0], &src[0], 8)
 
     let msg: *c_char = "hello"

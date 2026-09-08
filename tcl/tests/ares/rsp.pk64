@@ -1,0 +1,65 @@
+-- Runs a task on the RSP and checks the answer it gives back.
+--
+-- The microcode is tcl/tests/ares/rsp_add.S, assembled by tcl/n64enc.tcl --
+-- the RSP's scalar half is a MIPS I subset, so Pak's own assembler can build
+-- one. It reads two words out of DMEM, adds them, and writes the sum to
+-- DMEM[8]. tcl/tools/ares_test.tcl re-assembles the .S and refuses to run if
+-- these words have drifted from it.
+--
+-- Green means the RSP ran and returned 0x12340000 + 0x0000ABCD. If it never
+-- starts, sp.wait() never returns and the screen stays black.
+
+use n64.sp
+
+const FB_PIXELS: i32 = 76800
+const GREEN: u16 = 0x07C1
+const RED: u16 = 0xF801
+
+const LHS: u32 = 0x12340000
+const RHS: u32 = 0x0000ABCD
+const SUM: u32 = 0x1234ABCD
+
+-- lw $8,0($0) / lw $9,4($0) / nop / addu $10,$8,$9 / sw $10,8($0) / nop /
+-- break / nop
+@aligned(16)
+static ucode: [8]u32 = [
+    0x8C080000, 0x8C090004, 0x00000000, 0x01095021,
+    0xAC0A0008, 0x00000000, 0x0000000D, 0x00000000
+]
+
+@aligned(16)
+static sp_in: [2]u32 = [LHS, RHS]
+
+@aligned(16)
+static sp_out: [2]u32 = [0, 0]
+
+fn fill(fb: u32, px: u16) {
+    let mut i: i32 = 0
+    while i < FB_PIXELS {
+        let p: *volatile u16 = (fb + (i * 2) as u32) as *volatile u16
+        *p = px
+        i = i + 1
+    }
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+
+    sp.init()
+    sp.load_ucode(&ucode[0] as u32, 32)
+    sp.load_data(&sp_in[0] as u32, 0, 8)
+    sp.run(0)
+    sp.wait()
+    -- DMEM[8..15]: the sum, then whatever was already there.
+    sp.read_data(&sp_out[0] as u32, 8, 8)
+
+    let fb: u32 = display.get()
+    if sp_out[0] == SUM {
+        fill(fb, GREEN)
+    } else {
+        fill(fb, RED)
+    }
+    loop {
+        display.show(fb)
+    }
+}

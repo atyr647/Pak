@@ -7,6 +7,7 @@
 #include <math.h>
 #include "pak_math.h"
 #include "pak_containers.h"
+#include "pak_libdragon.h"
 
 
 /* -- Pak runtime types -- */
@@ -31,6 +32,9 @@ struct Node {
     Node * next;
 };
 
+
+/* -- Function prototypes -- */
+void double_value(int32_t * ptr);
 void double_value(int32_t * ptr) {
     *ptr = (*ptr * 2);
 }

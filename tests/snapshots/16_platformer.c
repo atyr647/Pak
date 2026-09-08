@@ -7,10 +7,14 @@
 #include <math.h>
 #include "pak_math.h"
 #include "pak_containers.h"
+#include "pak_libdragon.h"
 #include <display.h>
 #include <joypad.h>
 #include <rdpq.h>
-#include <rdpq_gfx.h>
+#include <rdpq_attach.h>
+#include <rdpq_mode.h>
+#include <rdpq_rect.h>
+#include <rdpq_tri.h>
 #include <n64sys.h>
 #include <debug.h>
 #include <n64sys.h>
@@ -114,6 +118,36 @@ struct GameState {
     int32_t coins_collected;
 };
 
+
+/* -- Function prototypes -- */
+void init_platforms(void);
+void init_pickups(void);
+bool aabb_overlap(int32_t ax, int32_t ay, int32_t aw, int32_t ah, int32_t bx, int32_t by, int32_t bw, int32_t bh);
+int32_t check_platform_landing(int32_t px, int32_t py, int32_t pvy);
+void Player_init(Player * self);
+void Player_physics(Player * self);
+void Player_resolve_collisions(Player * self);
+void Player_handle_input(Player * self, pak_joypad_status_t pad);
+void Player_update_state(Player * self);
+void Player_collect_pickups(Player * self);
+void Camera_init(Camera * self);
+void Camera_follow(Camera * self, int32_t player_x);
+void draw_rect_world(int32_t wx, int32_t wy, int32_t ww, int32_t wh, int32_t cam_x, uint32_t color);
+void draw_platforms(int32_t cam_x);
+void draw_player(Player * p, int32_t cam_x);
+void draw_pickup(Pickup p, int32_t cam_x);
+void draw_pickups(int32_t cam_x);
+void draw_hud(GameState * gs);
+void update_playing(GameState * gs, pak_joypad_status_t pad);
+void update_title(GameState * gs, pak_joypad_status_t pad);
+void update_paused(GameState * gs, pak_joypad_status_t pad);
+void update_gameover(GameState * gs, pak_joypad_status_t pad);
+void update(GameState * gs, pak_joypad_status_t pad);
+void render_world(GameState * gs);
+void render_title(void);
+void render_paused(GameState * gs);
+void render_gameover(void);
+void render(GameState * gs);
 enum { SCREEN_W = 320 };
 
 enum { SCREEN_H = 240 };
@@ -280,7 +314,7 @@ void Player_resolve_collisions(Player * self) {
     }
 }
 
-void Player_handle_input(Player * self, joypad_status_t pad) {
+void Player_handle_input(Player * self, pak_joypad_status_t pad) {
     __auto_type raw_x = (int32_t)pad.stick_x;
     int32_t dead = 10;
     if (raw_x > dead) {
@@ -352,6 +386,7 @@ void Player_collect_pickups(Player * self) {
             {
                 break;
             }
+            default: __builtin_unreachable();
         }
         i += 1;
     }
@@ -389,7 +424,7 @@ void draw_rect_world(int32_t wx, int32_t wy, int32_t ww, int32_t wh, int32_t cam
     if (x1 > SCREEN_W) {
         x1 = SCREEN_W;
     }
-    rdpq_set_fill_color(color);
+    pak_rdpq_set_fill_color(color);
     rdpq_fill_rectangle(x0, wy, x1, (wy + wh));
 }
 
@@ -438,10 +473,11 @@ void draw_player(Player * p, int32_t cam_x) {
             color = 0xFFFFAAFF;
             break;
         }
+        default: __builtin_unreachable();
     }
-    rdpq_set_fill_color(color);
+    pak_rdpq_set_fill_color(color);
     rdpq_fill_rectangle(sx, py, (sx + PLAYER_W), (py + PLAYER_H));
-    rdpq_set_fill_color(0xFFFFFFFF);
+    pak_rdpq_set_fill_color(0xFFFFFFFF);
     if (p->facing_right) {
         rdpq_fill_rectangle((sx + 8), (py + 4), (sx + 10), (py + 6));
     }
@@ -460,7 +496,7 @@ void draw_pickup(Pickup p, int32_t cam_x) {
             if ((sx < -8) || (sx > SCREEN_W)) {
                 return;
             }
-            rdpq_set_fill_color(COLOR_COIN);
+            pak_rdpq_set_fill_color(COLOR_COIN);
             rdpq_fill_rectangle((sx - 4), (cy - 4), (sx + 4), (cy + 4));
             break;
         }
@@ -468,6 +504,7 @@ void draw_pickup(Pickup p, int32_t cam_x) {
         {
             break;
         }
+        default: __builtin_unreachable();
     }
 }
 
@@ -483,7 +520,7 @@ void draw_hud(GameState * gs) {
     int32_t i = 0;
     while (i < gs->player.health) {
         __auto_type hx = (8 + (i * 14));
-        rdpq_set_fill_color(0xFF2222FF);
+        pak_rdpq_set_fill_color(0xFF2222FF);
         rdpq_fill_rectangle(hx, 8, (hx + 10), 16);
         i += 1;
     }
@@ -492,12 +529,12 @@ void draw_hud(GameState * gs) {
         bar_w = 200;
     }
     if (bar_w > 0) {
-        rdpq_set_fill_color(0xFFDD44FF);
+        pak_rdpq_set_fill_color(0xFFDD44FF);
         rdpq_fill_rectangle(8, 20, (8 + bar_w), 26);
     }
 }
 
-void update_playing(GameState * gs, joypad_status_t pad) {
+void update_playing(GameState * gs, pak_joypad_status_t pad) {
     Player_handle_input(&gs->player, pad);
     Player_physics(&gs->player);
     Player_resolve_collisions(&gs->player);
@@ -513,19 +550,19 @@ void update_playing(GameState * gs, joypad_status_t pad) {
     gs->frame += 1;
 }
 
-void update_title(GameState * gs, joypad_status_t pad) {
+void update_title(GameState * gs, pak_joypad_status_t pad) {
     if (pad.pressed.start || pad.pressed.a) {
         gs->phase = GamePhase_playing;
     }
 }
 
-void update_paused(GameState * gs, joypad_status_t pad) {
+void update_paused(GameState * gs, pak_joypad_status_t pad) {
     if (pad.pressed.start) {
         gs->phase = GamePhase_playing;
     }
 }
 
-void update_gameover(GameState * gs, joypad_status_t pad) {
+void update_gameover(GameState * gs, pak_joypad_status_t pad) {
     if (pad.pressed.start || pad.pressed.a) {
         Player_init(&gs->player);
         Camera_init(&gs->camera);
@@ -537,7 +574,7 @@ void update_gameover(GameState * gs, joypad_status_t pad) {
     }
 }
 
-void update(GameState * gs, joypad_status_t pad) {
+void update(GameState * gs, pak_joypad_status_t pad) {
     switch (gs->phase) {
         case GamePhase_title:
         {
@@ -559,12 +596,13 @@ void update(GameState * gs, joypad_status_t pad) {
             update_gameover(gs, pad);
             break;
         }
+        default: __builtin_unreachable();
     }
 }
 
 void render_world(GameState * gs) {
     __auto_type cam_x = gs->camera.offset;
-    rdpq_set_mode_fill(COLOR_SKY);
+    pak_rdpq_set_mode_fill(COLOR_SKY);
     rdpq_fill_rectangle(0, 0, SCREEN_W, SCREEN_H);
     rdpq_sync_pipe();
     draw_platforms(cam_x);
@@ -577,40 +615,40 @@ void render_world(GameState * gs) {
 }
 
 void render_title(void) {
-    rdpq_set_mode_fill(0x1A1A4AFF);
+    pak_rdpq_set_mode_fill(0x1A1A4AFF);
     rdpq_fill_rectangle(0, 0, SCREEN_W, SCREEN_H);
     rdpq_sync_pipe();
-    rdpq_set_mode_fill(0xFF4444FF);
+    pak_rdpq_set_mode_fill(0xFF4444FF);
     rdpq_fill_rectangle(60, 80, 260, 100);
     rdpq_sync_pipe();
-    rdpq_set_mode_fill(0xFFFFFFFF);
+    pak_rdpq_set_mode_fill(0xFFFFFFFF);
     rdpq_fill_rectangle(100, 150, 220, 160);
 }
 
 void render_paused(GameState * gs) {
     render_world(gs);
     rdpq_sync_pipe();
-    rdpq_set_mode_fill(0x00000088);
+    pak_rdpq_set_mode_fill(0x00000088);
     rdpq_fill_rectangle(80, 100, 240, 140);
     rdpq_sync_pipe();
-    rdpq_set_mode_fill(0xFFFFFFFF);
+    pak_rdpq_set_mode_fill(0xFFFFFFFF);
     rdpq_fill_rectangle(100, 112, 220, 120);
 }
 
 void render_gameover(void) {
-    rdpq_set_mode_fill(0x220000FF);
+    pak_rdpq_set_mode_fill(0x220000FF);
     rdpq_fill_rectangle(0, 0, SCREEN_W, SCREEN_H);
     rdpq_sync_pipe();
-    rdpq_set_mode_fill(0xFF2222FF);
+    pak_rdpq_set_mode_fill(0xFF2222FF);
     rdpq_fill_rectangle(60, 100, 260, 130);
     rdpq_sync_pipe();
-    rdpq_set_mode_fill(0xFFFFFFFF);
+    pak_rdpq_set_mode_fill(0xFFFFFFFF);
     rdpq_fill_rectangle(100, 160, 220, 170);
 }
 
 void render(GameState * gs) {
     __auto_type fb = display_get();
-    rdpq_attach_clear(fb);
+    pak_rdpq_attach_clear(fb, 0x000000FF);
     switch (gs->phase) {
         case GamePhase_title:
         {
@@ -632,12 +670,13 @@ void render(GameState * gs) {
             render_gameover();
             break;
         }
+        default: __builtin_unreachable();
     }
     rdpq_detach_show();
 }
 
 int main(void) {
-    display_init(0, 2, 3, 0, 1);
+    pak_display_init(0, 2, 3, 0, 1);
     rdpq_init();
     joypad_init();
     timer_init();
@@ -651,7 +690,7 @@ int main(void) {
     init_pickups();
     while (true) {
         joypad_poll();
-        __auto_type pad = joypad_get_status(0);
+        __auto_type pad = pak_joypad_get_status(0);
         update(&gs, pad);
         render(&gs);
     }

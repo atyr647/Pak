@@ -1,0 +1,21 @@
+-- A ROM whose only job is to put a known colour on screen with the CPU.
+-- No RDP, no RSP, no interrupts: VI setup, a framebuffer fill, and a flip.
+-- 0xF801 is RGBA5551 red (r=31, g=0, b=0, a=1).
+
+const FB_PIXELS: i32 = 76800
+const RED: u16 = 0xF801
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    let fb: u32 = display.get()
+    let mut i: i32 = 0
+    while i < FB_PIXELS {
+        let p: *volatile u16 = (fb + (i * 2) as u32) as *volatile u16
+        *p = RED
+        i = i + 1
+    }
+    display.show(fb)
+    loop {
+        display.show(fb)
+    }
+}

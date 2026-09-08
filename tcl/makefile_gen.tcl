@@ -61,35 +61,57 @@ proc pak::_mf_compile_rules {is_mips} {
 
 proc pak::_mf_asset_rules {use_tiny3d} {
     set rules {}
-    lappend rules "# ── Asset conversion rules ────────────────────────────────────────"
+    lappend rules "# ── Asset conversion rules ────────────────────────────────────────
+#
+# The tool variables are n64.mk's own (N64_MKSPRITE, N64_AUDIOCONV): MKSPRITE
+# and AUDIOCONV64 are defined nowhere, so these rules used to run the bare
+# flags as a command. mksprite's --output takes a DIRECTORY and names the file
+# after the input, so pointing it at \$@ made a directory called hero.sprite
+# with the sprite inside it, and mkdfs then skipped the empty tree."
     lappend rules "\$(BUILD_DIR)/%.sprite: %.png
 \t@mkdir -p \$(dir \$@)
-\t\$(MKSPRITE) --format RGBA16 --output \$@ \$<"
+\t\$(N64_MKSPRITE) --format RGBA16 --output \$(dir \$@) \$<"
     lappend rules "\$(BUILD_DIR)/%.wav64: %.wav
 \t@mkdir -p \$(dir \$@)
-\t\$(AUDIOCONV64) \$< \$@
+\t\$(N64_AUDIOCONV) -o \$(dir \$@) \$<
 
 \$(BUILD_DIR)/%.xm64: %.xm
 \t@mkdir -p \$(dir \$@)
-\t\$(AUDIOCONV64) \$< \$@
+\t\$(N64_AUDIOCONV) -o \$(dir \$@) \$<
 
 \$(BUILD_DIR)/%.ym64: %.ym
 \t@mkdir -p \$(dir \$@)
-\t\$(AUDIOCONV64) \$< \$@"
-    if {$use_tiny3d} {
-        lappend rules "\$(BUILD_DIR)/%.t3dm: %.gltf
+\t\$(N64_AUDIOCONV) -o \$(dir \$@) \$<"
+    # `asset ... : Ucode from "rsp/foo.pk64"` -- the ONE asset conversion
+    # step that is Pak compiling Pak rather than an external SDK tool
+    # (mksprite/audioconv64/gltf_to_t3d). `pak` is already assumed to be on
+    # PATH by this same Makefile (see RUNTIME_DIR above,
+    # `$(shell pak --runtime-dir ...)`), so this is no new requirement.
+    # `pak build --backend rsp` is a single-file compile with no project,
+    # no linker, no Makefile of its own -- see cli.tcl's cmd_build_rsp.
+    lappend rules "\$(BUILD_DIR)/%.ucode: %.pk64
 \t@mkdir -p \$(dir \$@)
-\t\$(T3D_GLTF) \$< \$@
+\tpak build --backend rsp \$< -o \$@"
+    if {$use_tiny3d} {
+        lappend rules "T3D_GLTF_TO_3D ?= \$(TINY3D_INST)/bin/gltf_to_t3d
+
+\$(BUILD_DIR)/%.t3dm: %.gltf
+\t@mkdir -p \$(dir \$@)
+\t\$(T3D_GLTF_TO_3D) \"\$<\" \$@
 
 \$(BUILD_DIR)/%.t3dm: %.glb
 \t@mkdir -p \$(dir \$@)
-\t\$(T3D_GLTF) \$< \$@"
+\t\$(T3D_GLTF_TO_3D) \"\$<\" \$@"
     }
     return [join $rules "\n\n"]
 }
 
 proc pak::_mf_pakfs_rule {project_name} {
-    return "# ── PakFS archive (packed from converted assets in BUILD_DIR) ──────────────
+    return "# ── Asset filesystem (DragonFS, built from the converted assets) ───────────
+#
+# n64.mk's %.z64 rule attaches \$(filter %.dfs, \$^) and nothing else, so the
+# image has to BE a .dfs -- a `filesystem/<name>.pakfs` prerequisite was
+# silently dropped and the ROM shipped with no assets in it at all.
 _RAW_ASSETS      := \$(shell find assets -type f 2>/dev/null)
 _SPRITE_SRCS     := \$(filter %.png,\$(_RAW_ASSETS))
 _WAV_SRCS        := \$(filter %.wav,\$(_RAW_ASSETS))
@@ -104,9 +126,9 @@ _T3DM_OUTS       := \$(patsubst %.gltf,\$(BUILD_DIR)/%.t3dm,\$(filter %.gltf,\$(
                     \$(patsubst %.glb,\$(BUILD_DIR)/%.t3dm,\$(filter %.glb,\$(_T3DM_SRCS)))
 _CONVERTED_ASSETS := \$(_SPRITE_OUTS) \$(_WAV_OUTS) \$(_XM_OUTS) \$(_YM_OUTS) \$(_T3DM_OUTS)
 
-filesystem/${project_name}.pakfs: \$(_CONVERTED_ASSETS)
+filesystem/${project_name}.dfs: \$(_CONVERTED_ASSETS)
 \t@mkdir -p filesystem
-\tpak pack --output \$@ --base \$(BUILD_DIR) \$(_CONVERTED_ASSETS)"
+\t\$(N64_MKDFS) \$@ \$(BUILD_DIR)/assets >/dev/null"
 }
 
 proc pak::generate_makefile {project_name rom_title c_files pakfs_archive \
@@ -114,7 +136,6 @@ proc pak::generate_makefile {project_name rom_title c_files pakfs_archive \
         {optimization debug} {use_tiny3d 0} {project_root .} {backend c}} {
 
     set src_list [join $c_files " \\\n        "]
-    append src_list " \\\n        runtime/pakfs.c"
 
     set is_mips [expr {$backend eq "mips"}]
     set opt_flag [expr {$optimization eq "release" ? "-O2" : "-g -O0"}]
@@ -123,10 +144,14 @@ proc pak::generate_makefile {project_name rom_title c_files pakfs_archive \
     set res_define "RESOLUTION_${res_w}x${res_h}"
     set depth_define "DEPTH_${bit_depth}_BPP"
 
-    set save_map [dict create none EEPROM_4K eeprom4k EEPROM_4K eeprom16k EEPROM_16K \
-        sram256k SRAM_256K sram768k SRAM_768K flashram FLASHRAM]
+    # n64tool's savetype names, which are lowercase and not the EEPROM_4K-style
+    # constants this used to emit. `none` is the ABSENCE of a savetype:
+    # n64.mk passes --savetype only when N64_ROM_SAVETYPE is non-empty, and
+    # n64tool rejects the literal string "none".
+    set save_map [dict create none {} eeprom4k eeprom4k eeprom16k eeprom16k \
+        sram256k sram256k sram768k sram768k sram1m sram1m flashram flashram]
     set st [string tolower $save_type]
-    set save_str [expr {[dict exists $save_map $st] ? [dict get $save_map $st] : "EEPROM_4K"}]
+    set save_str [expr {[dict exists $save_map $st] ? [dict get $save_map $st] : ""}]
 
     set asset_rules [pak::_mf_asset_rules $use_tiny3d]
     set pakfs_rule [expr {$pakfs_archive ne "" ? [pak::_mf_pakfs_rule $project_name] : ""}]
@@ -139,12 +164,14 @@ proc pak::generate_makefile {project_name rom_title c_files pakfs_archive \
 ifndef TINY3D_INST
 \$(error TINY3D_INST is not set. Set it to your Tiny3D installation path.)
 endif
-TINY3D_CFLAGS  := -I\$(TINY3D_INST)/include
+# runtime/pak_math.h is entirely T3DVec/T3DMat wrappers, so it compiles its
+# body only when Tiny3D is actually present.
+TINY3D_CFLAGS  := -I\$(TINY3D_INST)/include -DPAK_HAS_TINY3D=1
 TINY3D_LDFLAGS := -L\$(TINY3D_INST)/lib -lt3d
 "
     }
 
-    set dfs_file [expr {$pakfs_archive ne "" ? "filesystem/${project_name}.pakfs" : ""}]
+    set dfs_file [expr {$pakfs_archive ne "" ? "filesystem/${project_name}.dfs" : ""}]
     set dfs_include [expr {$dfs_file ne "" ? "\nDFS_FILE        = $dfs_file" : ""}]
     set dfs_dep [expr {$dfs_file ne "" ? " \$(DFS_FILE)" : ""}]
     set clean_fs [expr {$dfs_file ne "" ? " filesystem/" : ""}]
@@ -160,17 +187,22 @@ TINY3D_LDFLAGS := -L\$(TINY3D_INST)/lib -lt3d
 #   make run      — build and launch in ares emulator
 #   make clean    — remove build artifacts
 
+# BUILD_DIR has to be set BEFORE n64.mk is included: it defaults to `.` there,
+# and every rule below is written in terms of it.
+BUILD_DIR       = build
+
 include \$(N64_INST)/include/n64.mk
 $tiny3d_check
 PROJECT_NAME    = $project_name
-ROM_TITLE       = $rom_title_repr
-SAVE_TYPE       = $save_str
+
+# n64.mk's own names for these -- its %.z64 rule reads them.
+N64_ROM_TITLE   = $rom_title_repr
+N64_ROM_SAVETYPE = $save_str
 
 RESOLUTION      = $res_define
 BIT_DEPTH       = $depth_define
 FRAMEBUFFERS    = $framebuffers
 
-BUILD_DIR       = build
 RUNTIME_DIR     = \$(shell pak --runtime-dir 2>/dev/null || echo runtime)
 $dfs_include
 
@@ -191,18 +223,14 @@ LDFLAGS += $tiny3d_ldflags
 
 all: \$(PROJECT_NAME).z64
 
-# Link
-\$(PROJECT_NAME).elf: \$(OBJS)
-\t\$(CC) \$(OBJS) \$(LDFLAGS) \$(N64_LDFLAGS) -o \$@
+# n64.mk supplies the %.elf and %.z64 rules; these just declare what they are
+# made of. Reimplementing them here is what made every generated project fail
+# to link: N64_LDFLAGS holds raw linker options (--gc-sections, --wrap
+# __do_global_ctors) which have to reach the linker as -Wl, and the link has
+# to go through the C++ driver with -lc -mabi=o64, which is what n64.mk does.
+\$(BUILD_DIR)/\$(PROJECT_NAME).elf: \$(OBJS)
 
-# ROM
-\$(PROJECT_NAME).z64: \$(PROJECT_NAME).elf$dfs_dep
-\t\$(N64TOOL) \\
-\t    --title \$(ROM_TITLE) \\
-\t    --savetype \$(SAVE_TYPE) \\
-\t    --output \$@ \\
-\t    --header \$(N64_INST)/mips64-elf/lib/header \\
-\t    \$<$dfs_dep
+\$(PROJECT_NAME).z64: \$(BUILD_DIR)/\$(PROJECT_NAME).elf$dfs_dep
 
 $compile_rules
 

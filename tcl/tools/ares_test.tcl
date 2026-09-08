@@ -1,0 +1,722 @@
+#!/usr/bin/env tclsh
+# tcl/tools/ares_test.tcl — Pak standalone ROMs run on a real emulator.
+#
+# Everything else in this repo checks Pak against Pak: the simulator executes
+# what the codegen emitted, and the gates that do have an outside oracle
+# (binutils) only cover the bytes, not what the machine does with them. This
+# runs the finished .z64 on ares and looks at the pixels that come out.
+#
+# ares specifically:
+#   * mupen64plus cannot run libdragon's IPL3 at all -- its RDRAM emulation
+#     leaves the size detection at 64 MB. See ipl3_compat.README.md.
+#   * ares implements the PIF's five-second boot timeout, which is what caught
+#     Pak's crt0 never sending the boot-termination command. An emulator that
+#     skips it would have shown a working screen and hidden a ROM that hangs
+#     on hardware.
+#   * its RDP is paraLLEl-RDP, so the second case checks Pak's command stream
+#     against a bit-accurate implementation rather than against
+#     tcl/tools/rdp_test.tcl's idea of what the words should be.
+#
+# Headless: Xvfb plus Mesa's software rasterisers. Build ares with
+# tools/build_ares.sh. Skips, loudly, when ares or Xvfb is missing.
+
+set HERE [file dirname [file normalize [info script]]]
+set REPO [file normalize [file join $HERE .. ..]]
+cd $REPO
+source [file join $REPO tcl parser.tcl]
+source [file join $REPO tcl mips_codegen.tcl]
+source [file join $REPO tcl rsp_codegen.tcl]
+source [file join $REPO tcl optimize.tcl]
+source [file join $REPO tcl n64enc.tcl]
+source [file join $REPO tcl n64link.tcl]
+source [file join $REPO tcl n64rom.tcl]
+source [file join $REPO tcl pakfs.tcl]
+
+set ::pass 0
+set ::fail 0
+proc ok {name got want} {
+    if {$got eq $want} { incr ::pass; puts "ok    $name = $got" } \
+    else { incr ::fail; puts "FAIL  $name\n        got:  $got\n        want: $want" }
+}
+proc ok_true {name cond {detail ""}} {
+    if {$cond} { incr ::pass; puts "ok    $name$detail" } \
+    else { incr ::fail; puts "FAIL  $name$detail" }
+}
+
+proc find_tool {name {extra {}}} {
+    foreach dir [concat $extra [list /opt/pak-ares/bin] [split $::env(PATH) :]] {
+        set p [file join $dir $name]
+        if {[file executable $p]} { return $p }
+    }
+    return ""
+}
+set ARES    [find_tool ares]
+set XVFB    [find_tool Xvfb]
+set IMPORT  [find_tool import]
+set CONVERT [find_tool convert]
+foreach {n v} [list ares $ARES Xvfb $XVFB import $IMPORT convert $CONVERT] {
+    if {$v eq ""} {
+        puts "SKIP  $n not found (run tools/build_ares.sh)"
+        exit 0
+    }
+}
+
+# Debian and Ubuntu ship ares with the Nintendo 64 core removed, and it is on
+# PATH ahead of anything tools/build_ares.sh installs. It opens a window, loads
+# nothing, and shows a black screen -- which is indistinguishable from a ROM
+# that does not boot. Ask which systems this binary actually has.
+proc ares_has_n64 {ares} {
+    set d ""
+    catch {set d [glob /tmp/.X*-lock]}
+    if {[catch {set out [exec xvfb-run -a $ares --help 2>@1]}]} { return 0 }
+    return [string match "*Nintendo 64*" $out]
+}
+if {![ares_has_n64 $ARES]} {
+    puts "SKIP  $ARES has no Nintendo 64 core (the distro package strips it)."
+    puts "      Build one with tools/build_ares.sh and put it first on PATH."
+    exit 0
+}
+puts "ares: $ARES"
+
+set TMP /tmp/pak-ares-test
+file delete -force $TMP
+file mkdir $TMP
+
+# ── build a ROM the way `pak build --backend mips` does ──────────────────────
+
+proc asm_of_pak {path} {
+    set fh [open $path r]; fconfigure $fh -encoding utf-8
+    set src [read $fh]; close $fh
+    set lx [pak::Lexer new $src]
+    set ast [pak::parse_tokens [$lx tokenize]]
+    return [pak::records_to_asm [pak::optimize_records [pak::mips_generate_records $ast]]]
+}
+
+proc build_rom {tag source title {fs ""}} {
+    global TMP
+    set dir [file join $TMP $tag]
+    file mkdir $dir
+    set fh [open runtime/standalone/boot.S r]; set boot [read $fh]; close $fh
+    set bo [file join $dir boot.pakobj]
+    pak::enc::write_object_from_asm $boot $bo
+    set ro [file join $dir runtime.pakobj]
+    pak::enc::write_object_from_asm [asm_of_pak runtime/standalone/runtime.pk64] $ro
+    set go [file join $dir game.pakobj]
+    pak::enc::write_object_from_asm [asm_of_pak $source] $go
+    set r [pak::link_objects [list $bo $ro $go] _start]
+    set image [dict get $r image]
+    if {$fs ne ""} {
+        # What `pak link --fs` does: patch the runtime's two statics, then
+        # append the archive past the payload.
+        set image [pak::n64rom_patch_fs $image [dict get $r symbols] \
+                       [dict get $r base] [string length $fs]]
+    }
+    set rom [pak::n64rom $image $title [pak::n64rom_default_ipl3] \
+                 [expr {4 * 1024 * 1024}] $fs]
+    set path [file join $dir $tag.z64]
+    set fh [open $path wb]; puts -nonewline $fh $rom; close $fh
+    return $path
+}
+
+# ── a display nothing else is using ──────────────────────────────────────────
+
+proc start_xvfb {} {
+    global XVFB TMP
+    for {set d 90} {$d < 120} {incr d} {
+        if {[file exists /tmp/.X$d-lock]} continue
+        # -ac: no auth file to thread through to the screen grab.
+        set pid [exec $XVFB :$d -screen 0 1280x960x24 -ac -nolisten tcp \
+                     >> [file join $TMP xvfb.log] 2>@1 &]
+        after 2000
+        if {[file exists /tmp/.X$d-lock]} { return [list $d $pid] }
+        catch {exec kill -9 $pid}
+    }
+    error "ares_test: no free X display"
+}
+
+# ── run one ROM and grab the screen ──────────────────────────────────────────
+
+# Returns {shot log}. Polls until the screen stops being black rather than
+# sleeping a fixed time: paraLLEl-RDP compiles its shaders on the first frame
+# under lavapipe, which takes seconds.
+proc run_rom {tag rom display} {
+    global ARES IMPORT CONVERT TMP
+    set log [file join $TMP $tag.log]
+    set shot [file join $TMP $tag.png]
+    set env_disp $display
+    # Audio/Driver and Input/Driver are NOT settable: ares hardcodes both to
+    # "SDL" at load (desktop-ui/settings/settings.cpp) and binds only
+    # Video/Driver. Passing a setting path ares does not know makes it print
+    # "Invalid setting: ..." and return from main without emulating anything,
+    # so every ROM then burns the full deadline below having never started.
+    # Audio/Mute is still a real setting; SDL_AUDIODRIVER=dummy is what keeps
+    # the hardcoded SDL audio driver from needing a sound device that no CI
+    # container has.
+    set pid [exec env DISPLAY=:$display LIBGL_ALWAYS_SOFTWARE=1 \
+                 SDL_AUDIODRIVER=dummy $ARES \
+                 --system "Nintendo 64" --no-file-prompt --fullscreen \
+                 --setting Audio/Mute=true $rom >& $log &]
+    set deadline [expr {[clock seconds] + 240}]
+    set lit 0
+    set stable 0
+    set last {}
+    while {[clock seconds] < $deadline} {
+        after 3000
+        # ares rejecting an argument is not something to wait 240 seconds for,
+        # once per ROM, and then report as "no frame arrived" -- say what
+        # actually happened, immediately.
+        if {![catch {set fh [open $log r]; set txt [read $fh]; close $fh}]} {
+            if {[string match "*Invalid setting*" $txt]} {
+                catch {exec kill -9 $pid}
+                error "ares rejected a command-line setting and never started:\n\
+                       [string trim $txt]\n\
+                       (ares only binds settings listed in\
+                       desktop-ui/settings/settings.cpp)"
+            }
+        }
+        if {[catch {exec env DISPLAY=:$env_disp $IMPORT -window root $shot 2>@1}]} continue
+        if {[catch {set mean [exec env DISPLAY=:$env_disp $CONVERT $shot -format \
+            {%[fx:mean.r*255] %[fx:mean.g*255] %[fx:mean.b*255]} info:]}]} continue
+        lassign $mean mr mg mb
+        # A whole-screen fill puts one channel's mean up near 100-240. ares
+        # also draws a status message over the black window while it loads,
+        # and that is bright enough to clear any small threshold -- hence
+        # asking for a channel MEAN that only a filled frame can reach.
+        set peak [expr {max($mr, max($mg, $mb))}]
+        if {$peak <= 40} { set stable 0; set last {}; continue }
+        # First light is not the finished frame. paraLLEl-RDP compiles its
+        # shaders on the first draw, which under lavapipe can take minutes, and
+        # ares fades a status message over the middle of the screen while it
+        # does. Wait for the picture to stop changing instead of guessing a
+        # sleep: three identical samples in a row, and the last grab is the one
+        # that gets probed.
+        if {$last ne "" && [same_frame $mean $last]} {
+            incr stable
+        } else {
+            set stable 0
+        }
+        set last $mean
+        if {$stable >= 2} { set lit 1; break }
+    }
+    catch {exec kill -9 $pid}
+    after 500
+    if {!$lit} {
+        # Say what ares was doing, rather than only that no frame arrived.
+        catch {
+            set fh [open $log r]; set txt [read $fh]; close $fh
+            foreach line [split [string trim $txt] \n] {
+                if {[string match "ALSA*" $line]} continue
+                puts "        ares: $line"
+            }
+        }
+    }
+    return [list $shot $log $lit]
+}
+
+# Two whole-screen means are the same picture. The tolerance absorbs the VI's
+# dither, which alternates between fields.
+proc same_frame {a b} {
+    foreach x $a y $b {
+        if {abs($x - $y) > 0.5} { return 0 }
+    }
+    return 1
+}
+
+# One pixel, in framebuffer coordinates: the VI scales 320x240 up to the whole
+# window, so the mapping is a straight multiply and the test does not have to
+# know the screen size.
+proc probe {shot display fx fy} {
+    global CONVERT IMPORT
+    set wh [exec env DISPLAY=:$display $CONVERT $shot -format {%w %h} info:]
+    lassign $wh w h
+    set x [expr {int($fx * $w / 320.0)}]
+    set y [expr {int($fy * $h / 240.0)}]
+    set px [exec env DISPLAY=:$display $CONVERT $shot -format \
+        "%\[fx:floor(p{$x,$y}.r*255)\] %\[fx:floor(p{$x,$y}.g*255)\] %\[fx:floor(p{$x,$y}.b*255)\]" info:]
+    return $px
+}
+
+# The VI's anti-alias and dither filters move edge pixels around, so a probe
+# names the channel that should dominate rather than an exact triple. Every
+# probe below sits well inside a flat region.
+proc ok_colour {name got want} {
+    lassign $got r g b
+    lassign $want wr wg wb
+    set good 1
+    foreach c [list $r $g $b] w [list $wr $wg $wb] {
+        if {$w > 128} { if {$c < 200} { set good 0 } } else { if {$c > 48} { set good 0 } }
+    }
+    ok_true $name $good "  rgb($r,$g,$b), want [expr {$wr>128?"R":"-"}][expr {$wg>128?"G":"-"}][expr {$wb>128?"B":"-"}]"
+}
+
+proc no_boot_timeout {tag log} {
+    set fh [open $log r]; set txt [read $fh]; close $fh
+    ok_true "$tag: the PIF did not time the boot out" \
+        [expr {![string match "*boot timeout*" $txt]}]
+    return $txt
+}
+
+# ── the cases ────────────────────────────────────────────────────────────────
+
+lassign [start_xvfb] DISPLAY XVFB_PID
+puts "using display :$DISPLAY"
+
+set failed 0
+if {[catch {
+
+puts ""
+puts "== the CPU writes the framebuffer =="
+# No RDP, no RSP, no interrupts. VI setup, a fill, a flip. If this comes up
+# red then IPL3 handed over, boot.S ran, main ran, and the VI is programmed.
+set rom [build_rom redscreen tcl/tests/ares/redscreen.pk64 "PAKRED"]
+lassign [run_rom redscreen $rom $DISPLAY] shot log lit
+no_boot_timeout redscreen $log
+ok_true "redscreen: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "redscreen: $where is red" [probe $shot $DISPLAY $fx $fy] {255 0 0}
+    }
+}
+
+puts ""
+puts "== the RDP draws =="
+# rdpq.attach_clear to blue, then fill_rectangle(80,60,240,180) in green.
+# ares renders this with paraLLEl-RDP, so the corners landing where they
+# should is a check on the command words, not just on our own encoder.
+set rom [build_rom rdpfill tcl/tests/ares/rdpfill.pk64 "PAKRDP"]
+lassign [run_rom rdpfill $rom $DISPLAY] shot log lit
+no_boot_timeout rdpfill $log
+ok_true "rdpfill: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {40 40 outside-top-left 300 220 outside-bottom-right
+                           20 120 outside-left 160 20 outside-top} {
+        ok_colour "rdpfill: $where is the blue clear" \
+            [probe $shot $DISPLAY $fx $fy] {0 0 255}
+    }
+    foreach {fx fy where} {160 120 centre 90 70 inside-top-left 230 170 inside-bottom-right} {
+        ok_colour "rdpfill: $where is the green rectangle" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
+puts "== the VI interrupt fires =="
+# display.show waits on the counter the ISR bumps rather than polling
+# VI_V_CURRENT, so a handler that never runs hangs the program and leaves the
+# screen black. Green is 30 frames serviced with the VI as the only source the
+# handler ever saw; red is a handler that ran with the wrong numbers.
+#
+# This is the only test of the interrupt path there is: the simulator has no
+# interrupts to model, and neither the encoder nor the linker gate can tell
+# whether Status.IM2, the MI mask and the VI acknowledge actually line up.
+set rom [build_rom vblank tcl/tests/ares/vblank.pk64 "PAKIRQ"]
+lassign [run_rom vblank $rom $DISPLAY] shot log lit
+no_boot_timeout vblank $log
+ok_true "vblank: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "vblank: $where is green (30 frames, VI only)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
+puts "== the RSP runs a task =="
+# tcl/tests/ares/rsp_add.S is assembled by tcl/n64enc.tcl -- the RSP's scalar
+# half is a MIPS I subset -- and its words are checked into rsp.pk64 for the
+# ROM to ship. Re-assemble and compare, so the listing and the words cannot
+# drift apart.
+set fh [open tcl/tests/ares/rsp_add.S r]; set ucode_src [read $fh]; close $fh
+set uctx [pak::enc::encode [pak::enc::parse_asm $ucode_src]]
+set ucode_bytes [dict get $uctx secdata .text bytes]
+set want {}
+for {set i 0} {$i < [llength $ucode_bytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $ucode_bytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend want [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp.pk64 r]; set rsp_src [read $fh]; close $fh
+set got {}
+# Everything up to the first `]`: Tcl's REs mix greedy and non-greedy badly,
+# and there is no `]` inside the literal.
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $rsp_src -> body]} {
+    foreach tok [split [string map {"\n" " "} $body] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend got [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp.pk64 is what rsp_add.S assembles to" \
+    [join $got " "] [join $want " "]
+
+# Green means the RSP loaded that microcode, ran it, and handed back
+# 0x12340000 + 0x0000ABCD. If it never starts, sp.wait() never returns and the
+# screen stays black -- which is how this began.
+set rom [build_rom rsp tcl/tests/ares/rsp.pk64 "PAKRSP"]
+lassign [run_rom rsp $rom $DISPLAY] shot log lit
+no_boot_timeout rsp $log
+ok_true "rsp: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp: $where is green (the task returned the right sum)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
+puts "== a Pak PROGRAM, compiled for the RSP, runs a task =="
+# Step 1 of docs/rsp-microcode-in-pak.md's suggested order: rsp_task_add.pk64
+# is not hand-written .S -- it is ordinary Pak source (static/entry/+),
+# compiled by tcl/rsp_codegen.tcl instead of the CPU backend. Recompile it
+# fresh and compare against the words checked into rsp_task_add_driver.pk64.
+set fh [open tcl/tests/ares/rsp_task_add.pk64 r]; set task_src [read $fh]; close $fh
+set task_ast [pak::parse_tokens [[pak::Lexer new $task_src] tokenize]]
+set task_recs [pak::rsp_generate_records $task_ast]
+set task_ctx [pak::enc::encode $task_recs]
+set task_bytes [dict get $task_ctx secdata .text bytes]
+set taskwant {}
+for {set i 0} {$i < [llength $task_bytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $task_bytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend taskwant [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp_task_add_driver.pk64 r]; set taskdrv [read $fh]; close $fh
+set taskgot {}
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $taskdrv -> taskbody]} {
+    foreach tok [split [string map {"\n" " "} $taskbody] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend taskgot [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp_task_add_driver.pk64 is what rsp_task_add.pk64 compiles to" \
+    [join $taskgot " "] [join $taskwant " "]
+
+set rom [build_rom rsp_task_add tcl/tests/ares/rsp_task_add_driver.pk64 "PAKRTA"]
+lassign [run_rom rsp_task_add $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_task_add $log
+ok_true "rsp_task_add: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_task_add: $where is green (a Pak-compiled RSP task returned the right sum)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
+puts "== a Pak PROGRAM with a while loop runs on the RSP =="
+# rsp_task_add.pk64 above is straight-line -- no branch, so it could not
+# catch a codegen that gets delay-slot filling wrong. rsp_task_loop.pk64
+# has a while loop, a comparison and a variable array index instead.
+set fh [open tcl/tests/ares/rsp_task_loop.pk64 r]; set loop_src [read $fh]; close $fh
+set loop_ast [pak::parse_tokens [[pak::Lexer new $loop_src] tokenize]]
+set loop_recs [pak::rsp_generate_records $loop_ast]
+set loop_ctx [pak::enc::encode $loop_recs]
+set loop_bytes [dict get $loop_ctx secdata .text bytes]
+set loopwant {}
+for {set i 0} {$i < [llength $loop_bytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $loop_bytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend loopwant [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp_task_loop_driver.pk64 r]; set loopdrv [read $fh]; close $fh
+set loopgot {}
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $loopdrv -> loopbody]} {
+    foreach tok [split [string map {"\n" " "} $loopbody] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend loopgot [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp_task_loop_driver.pk64 is what rsp_task_loop.pk64 compiles to" \
+    [join $loopgot " "] [join $loopwant " "]
+
+set rom [build_rom rsp_task_loop tcl/tests/ares/rsp_task_loop_driver.pk64 "PAKRTL"]
+lassign [run_rom rsp_task_loop $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_task_loop $log
+ok_true "rsp_task_loop: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_task_loop: $where is green (the while loop summed the right elements)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
+puts "== a Pak PROGRAM with vec8x16 runs a VECTOR task on the RSP =="
+# Step 2 of docs/rsp-microcode-in-pak.md's suggested order: rsp_task_vecadd
+# uses vec8x16's `+` operator in real Pak source, compiled by
+# tcl/rsp_codegen.tcl to VADD instead of scalar addu.
+set fh [open tcl/tests/ares/rsp_task_vecadd.pk64 r]; set vtask_src [read $fh]; close $fh
+set vtask_ast [pak::parse_tokens [[pak::Lexer new $vtask_src] tokenize]]
+set vtask_recs [pak::rsp_generate_records $vtask_ast]
+set vtask_ctx [pak::enc::encode $vtask_recs]
+set vtask_bytes [dict get $vtask_ctx secdata .text bytes]
+set vtaskwant {}
+for {set i 0} {$i < [llength $vtask_bytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $vtask_bytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend vtaskwant [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp_task_vecadd_driver.pk64 r]; set vtaskdrv [read $fh]; close $fh
+set vtaskgot {}
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $vtaskdrv -> vtaskbody]} {
+    foreach tok [split [string map {"\n" " "} $vtaskbody] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend vtaskgot [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp_task_vecadd_driver.pk64 is what rsp_task_vecadd.pk64 compiles to" \
+    [join $vtaskgot " "] [join $vtaskwant " "]
+
+set rom [build_rom rsp_task_vecadd tcl/tests/ares/rsp_task_vecadd_driver.pk64 "PAKRTV"]
+lassign [run_rom rsp_task_vecadd $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_task_vecadd $log
+ok_true "rsp_task_vecadd: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_task_vecadd: $where is green (Pak's vec8x16 + compiled to real VADD)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
+puts "== a Pak PROGRAM with rsp.vacc runs a MULTIPLY-ACCUMULATE task on the RSP =="
+# Step 3 of docs/rsp-microcode-in-pak.md's suggested order: rsp_task_vacc
+# uses `use rsp.vacc` and vacc.mul/vacc.mac/vacc.mid() in real Pak source,
+# compiled by tcl/rsp_codegen.tcl to VMULF/VMACF/VSAR against the real
+# accumulator.
+set fh [open tcl/tests/ares/rsp_task_vacc.pk64 r]; set ractask_src [read $fh]; close $fh
+set ractask_ast [pak::parse_tokens [[pak::Lexer new $ractask_src] tokenize]]
+set ractask_recs [pak::rsp_generate_records $ractask_ast]
+set ractask_ctx [pak::enc::encode $ractask_recs]
+set ractask_bytes [dict get $ractask_ctx secdata .text bytes]
+set ractaskwant {}
+for {set i 0} {$i < [llength $ractask_bytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $ractask_bytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend ractaskwant [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp_task_vacc_driver.pk64 r]; set ractaskdrv [read $fh]; close $fh
+set ractaskgot {}
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $ractaskdrv -> ractaskbody]} {
+    foreach tok [split [string map {"\n" " "} $ractaskbody] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend ractaskgot [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp_task_vacc_driver.pk64 is what rsp_task_vacc.pk64 compiles to" \
+    [join $ractaskgot " "] [join $ractaskwant " "]
+
+set rom [build_rom rsp_task_vacc tcl/tests/ares/rsp_task_vacc_driver.pk64 "PAKRTC"]
+lassign [run_rom rsp_task_vacc $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_task_vacc $log
+ok_true "rsp_task_vacc: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_task_vacc: $where is green (Pak's rsp.vacc.mul/mac/mid compiled to real VMULF/VMACF/VSAR)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
+puts "== a Pak PROGRAM with a struct and array-of-vec8x16 fields transforms vertices on the RSP =="
+# The last piece step 4 of docs/rsp-microcode-in-pak.md's suggested order
+# needs before the design note's own worked "A whole microcode" example can
+# run for real: a `struct` (VtxJob) with array-of-vec8x16 fields, a
+# struct-typed `static`, and a `while` loop that indexes two different
+# array fields -- one by a loop variable -- compiled by tcl/rsp_codegen.tcl.
+set fh [open tcl/tests/ares/rsp_task_vtx.pk64 r]; set vtxtask_src [read $fh]; close $fh
+set vtxtask_ast [pak::parse_tokens [[pak::Lexer new $vtxtask_src] tokenize]]
+set vtxtask_recs [pak::rsp_generate_records $vtxtask_ast]
+set vtxtask_ctx [pak::enc::encode $vtxtask_recs]
+set vtxtask_bytes [dict get $vtxtask_ctx secdata .text bytes]
+set vtxtaskwant {}
+for {set i 0} {$i < [llength $vtxtask_bytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $vtxtask_bytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend vtxtaskwant [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp_task_vtx_driver.pk64 r]; set vtxtaskdrv [read $fh]; close $fh
+set vtxtaskgot {}
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $vtxtaskdrv -> vtxtaskbody]} {
+    foreach tok [split [string map {"\n" " "} $vtxtaskbody] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend vtxtaskgot [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp_task_vtx_driver.pk64 is what rsp_task_vtx.pk64 compiles to" \
+    [join $vtxtaskgot " "] [join $vtxtaskwant " "]
+
+set rom [build_rom rsp_task_vtx tcl/tests/ares/rsp_task_vtx_driver.pk64 "PAKRTX"]
+lassign [run_rom rsp_task_vtx $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_task_vtx $log
+ok_true "rsp_task_vtx: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_task_vtx: $where is green (Pak's struct + array-of-vec8x16 fields transformed all 4 vertices correctly)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
+puts "== a Pak PROGRAM loads its RSP task as a Ucode ASSET, not an embedded array =="
+# The last piece of docs/rsp-microcode-in-pak.md's suggested order: `asset
+# add_ucode: Ucode from "rsp_task_add.pk64"` instead of a hand-copied
+# `static ucode: [N]u32` literal. Compiles the SAME already-proven task
+# (rsp_task_add.pk64, task 46) so this test is only about the asset
+# pipeline -- pakfs archive lookup, the address getter, and the new
+# `<name>_len` getter (tcl/mips_codegen.tcl's emit_asset/
+# emit_asset_len_getter) -- not about re-proving RSP codegen.
+#
+# No Makefile/mksprite-style external tool runs here: this recompiles
+# rsp_task_add.pk64 with pak::rsp_generate_records exactly like every other
+# Pak-compiled RSP task above, then packs the raw bytes into a synthetic
+# pakfs archive under the name asset_packed_path computes for a `.pk64`
+# source (ast.tcl's ASSET_PACKED_EXT: `.pk64` -> `.ucode`) -- the same
+# shortcut the "sprite" test below takes with a hand-built .sprite instead
+# of running mksprite.
+set fh [open tcl/tests/ares/rsp_task_add.pk64 r]; set uctask_src [read $fh]; close $fh
+set uctask_ast [pak::parse_tokens [[pak::Lexer new $uctask_src] tokenize]]
+set uctask_bytes [dict get [pak::enc::encode [pak::rsp_generate_records $uctask_ast]] secdata .text bytes]
+set uc_arch [pak::pakfs_pack [list [list rsp_task_add.ucode [binary format c* $uctask_bytes]]]]
+
+set rom [build_rom rsp_task_asset tcl/tests/ares/rsp_task_asset_driver.pk64 "PAKRTU" $uc_arch]
+lassign [run_rom rsp_task_asset $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_task_asset $log
+ok_true "rsp_task_asset: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_task_asset: $where is green (sp.load_ucode(add_ucode, add_ucode_len) loaded the right bytes from the ROM's pakfs archive and the task ran)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
+puts "== the RSP runs a VECTOR task =="
+# Same contract as rsp_add.S/rsp.pk64 above, one level up: tcl/tests/ares/
+# rsp_vecadd.S uses the RSP's VECTOR unit (LQV/VADD/SQV), which is the half
+# tcl/n64enc.tcl and tcl/mips_sim.tcl gained this session. Re-assemble and
+# compare against what shipped in rsp_vecadd.pk64, same as the scalar case.
+set fh [open tcl/tests/ares/rsp_vecadd.S r]; set vucode_src [read $fh]; close $fh
+set vuctx [pak::enc::encode [pak::enc::parse_asm $vucode_src]]
+set vucode_bytes [dict get $vuctx secdata .text bytes]
+set vwant {}
+for {set i 0} {$i < [llength $vucode_bytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $vucode_bytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend vwant [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp_vecadd.pk64 r]; set vrsp_src [read $fh]; close $fh
+set vgot {}
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $vrsp_src -> vbody]} {
+    foreach tok [split [string map {"\n" " "} $vbody] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend vgot [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp_vecadd.pk64 is what rsp_vecadd.S assembles to" \
+    [join $vgot " "] [join $vwant " "]
+
+# Green means the RSP ran LQV/VADD/SQV and all 8 lanes of the sum came back
+# right -- ground truth from paraLLEl's RSP core, not from this repo's own
+# simulator (rsp_vector_test.tcl checks the simulator; this checks hardware).
+set rom [build_rom rsp_vecadd tcl/tests/ares/rsp_vecadd.pk64 "PAKRVA"]
+lassign [run_rom rsp_vecadd $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_vecadd $log
+ok_true "rsp_vecadd: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_vecadd: $where is green (all 8 lanes summed correctly)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
+puts "== the RSP runs a MULTIPLY-ACCUMULATE task =="
+# rsp_vecadd.S proved plain vector arithmetic; this proves the other half
+# every real transform/lighting microcode leans on -- VMUDN starting the
+# 48-bit accumulator, VMADH adding into it, VSAR reading a slice back out.
+set fh [open tcl/tests/ares/rsp_vecmac.S r]; set macsrc [read $fh]; close $fh
+set macctx [pak::enc::encode [pak::enc::parse_asm $macsrc]]
+set macbytes [dict get $macctx secdata .text bytes]
+set macwant {}
+for {set i 0} {$i < [llength $macbytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $macbytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend macwant [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp_vecmac.pk64 r]; set macpk [read $fh]; close $fh
+set macgot {}
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $macpk -> macbody]} {
+    foreach tok [split [string map {"\n" " "} $macbody] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend macgot [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp_vecmac.pk64 is what rsp_vecmac.S assembles to" \
+    [join $macgot " "] [join $macwant " "]
+
+set rom [build_rom rsp_vecmac tcl/tests/ares/rsp_vecmac.pk64 "PAKRVM"]
+lassign [run_rom rsp_vecmac $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_vecmac $log
+ok_true "rsp_vecmac: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_vecmac: $where is green (VMUDN/VMADH/VSAR all correct)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
+puts "== an asset is read out of the ROM and drawn =="
+# The whole asset path in one ROM: `pak link --fs` appended the archive and
+# patched where it is, the runtime walked the index and pulled the file over
+# PI, and rdpq.sprite_blit turned it into a LOAD_TILE and a TEXTURE_RECTANGLE.
+# A wrong ROM offset, a byte read big-endian that is little, or a tile line
+# computed wrong all end as blue where the sprite should be.
+proc solid_sprite {w h texel} {
+    set s [binary format SScccc $w $h 0 0x02 1 1]
+    append s [string repeat [binary format S $texel] [expr {$w * $h}]]
+    return $s
+}
+# RGBA5551 green: (0 << 11) | (31 << 6) | (0 << 1) | 1.
+set arch [pak::pakfs_pack [list [list hero.sprite [solid_sprite 32 32 0x07C1]]]]
+set rom [build_rom sprite tcl/tests/ares/sprite.pk64 "PAKSPR" $arch]
+lassign [run_rom sprite $rom $DISPLAY] shot log lit
+no_boot_timeout sprite $log
+ok_true "sprite: a frame reached the screen" $lit
+if {$lit} {
+    ok_colour "sprite: the middle of the sprite is green" \
+        [probe $shot $DISPLAY 160 120] {0 255 0}
+    ok_colour "sprite: just outside it is still the blue clear" \
+        [probe $shot $DISPLAY 100 120] {0 0 255}
+    ok_colour "sprite: the far corner is blue" \
+        [probe $shot $DISPLAY 300 220] {0 0 255}
+}
+
+} err]} {
+    puts "FAIL  ares_test: $err"
+    incr ::fail
+}
+
+catch {exec kill -9 $XVFB_PID}
+catch {file delete /tmp/.X$DISPLAY-lock}
+
+puts ""
+puts "screenshots: $TMP"
+puts "PASS=$::pass  FAIL=$::fail"
+if {$::fail > 0} { exit 1 }

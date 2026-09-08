@@ -147,7 +147,7 @@ proc pak::cg_subst_type {t subst} {
 }
 
 oo::class create pak::Codegen {
-    variable filename uses assets module_name fn_names enum_variants variant_types \
+    variable filename uses assets has_assets module_name fn_names enum_variants variant_types \
              variant_case_fields \
              struct_fields scopes method_registry trait_decls const_values \
              generic_fns generic_structs generic_impls mono_struct_origin \
@@ -163,6 +163,7 @@ oo::class create pak::Codegen {
         set filename $fname
         set uses {}
         set assets {}
+        set has_assets 0
         set module_name ""
         set fn_names {}
         set fn_decls [dict create]
@@ -315,6 +316,18 @@ oo::class create pak::Codegen {
     method defer_push {stmt} {
         set frame [lindex $defer_stack end]; lappend frame $stmt; lset defer_stack end $frame
     }
+    # The scope-end defer flush, skipped when the block already left through a
+    # `return`: that return emitted every pending defer itself, so emitting
+    # them again appends a second, unreachable copy after it. Harmless-looking
+    # until a defer declares something -- `defer { let elapsed = ... }` then
+    # lowered to two declarations of `elapsed` in one C block, and no compiler
+    # accepts that.
+    method emit_defers_after {stmts indent} {
+        set last [lindex $stmts end]
+        if {$last ne "" && [pak::kindof $last] eq "Return"} { return {} }
+        return [my emit_defers_for_scope $indent]
+    }
+
     # Emit the current scope's defers (LIFO) at the given indent. Returns a list
     # of lines (empty when there are no defers, so output is unchanged otherwise).
     method emit_defers_for_scope {indent} {
@@ -442,6 +455,23 @@ oo::class create pak::Codegen {
                 # its element type. Without this a `let ss = xs.slice()` was
                 # __auto_type with no known type, so ss[i] indexed the struct.
                 set fn [pak::nfield $e func]
+                # An associated function called on its type -- `P.init()` --
+                # returns whatever it declares. Without this `let p = P.init()`
+                # was __auto_type with no known type here, so the very next
+                # `p.method()` had no receiver type to look the method up on.
+                if {[pak::kindof $fn] eq "DotAccess"
+                        && [pak::kindof [pak::nfield $fn obj]] eq "Ident"} {
+                    set tn [pak::fval [pak::nfield $fn obj] name]
+                    set mn [pak::fval $fn field]
+                    if {[dict exists $method_registry $tn]
+                            && [dict exists [dict get $method_registry $tn] $mn]} {
+                        set md [dict get [dict get $method_registry $tn] $mn]
+                        set mp [pak::items [pak::nfield $md params]]
+                        if {[llength $mp] == 0 || [pak::fval [lindex $mp 0] name] ne "self"} {
+                            return [pak::nfield $md ret_type]
+                        }
+                    }
+                }
                 if {[pak::kindof $fn] eq "DotAccess" && [pak::fval $fn field] in {slice items}} {
                     set ot [my expr_type [pak::nfield $fn obj]]
                     if {[pak::kindof $ot] eq "TypeGeneric" \
@@ -775,11 +805,20 @@ oo::class create pak::Codegen {
             set vc [my gen_variant_ctor $n $field {}]
             if {$vc ne ""} { return $vc }
             if {$n in [dict values $enum_variants]} { return "${obj_str}_$field" }
-            if {[dict exists $enum_variants $field]} { return "${obj_str}_$field" }
             if {[dict exists $::pak::CG_API [list $n $field]] || [dict exists $::pak::CG_API_LAMBDA [list $n $field]]} {
                 return "${obj_str}.$field"
             }
             if {[my is_pointer $n]} { return "${obj_str}->$field" }
+            # `Type.case` where the enum type name is not itself in scope. This
+            # has to come last, and only for a name that is not a variable: it
+            # keys off the FIELD, so with `enum GameState { ..., inventory }`
+            # anywhere in the program it also fired on `self.inventory`, and
+            # every read and write of that struct field lowered to the
+            # undeclared identifier `self_inventory`. Any name bound in scope
+            # is a value, and `.field` on a value is a field access.
+            if {[my scope_get $n] eq "" && [dict exists $enum_variants $field]} {
+                return "${obj_str}_$field"
+            }
         }
         return "${obj_str}.$field"
     }
@@ -1128,6 +1167,15 @@ oo::class create pak::Codegen {
         set type_args [pak::items [pak::nfield $e type_args]]
         if {[llength $type_args] > 0 && [dict exists $generic_structs $tname]} {
             return [my monomorphize_struct $tname $type_args]
+        }
+        # A struct literal names a type, so the builtin type map applies to it
+        # the same way it does in a declaration: `let v: Vec3` already lowered
+        # to T3DVec3, but `Vec3 { x: 0, y: 25, z: -50 }` came out as
+        # `(Vec3){...}`, naming a type the generated C never declares. Only
+        # for a name the program does not itself define, so a user struct
+        # called Vec3 still wins.
+        if {![dict exists $struct_fields $tname] && [dict exists $::pak::CG_PRIM $tname]} {
+            return [dict get $::pak::CG_PRIM $tname]
         }
         return $tname
     }
@@ -1591,6 +1639,23 @@ oo::class create pak::Codegen {
             # Static type-method calls
             set r [my gen_static_type_method $type_name $method $args]
             if {$r ne ""} { return $r }
+            # An associated function: a method in `impl T` whose first
+            # parameter is not `self`, called on the TYPE rather than on a
+            # value -- `let p = Player.init()`. It lowers to the same
+            # T_method symbol as any other impl method, with no receiver.
+            # Without this the type name was generated as an expression and
+            # the C read `Player.init()`, a member access on an undeclared
+            # variable.
+            if {[dict exists $method_registry $type_name]
+                && [dict exists [dict get $method_registry $type_name] $method]} {
+                set fn_decl [dict get [dict get $method_registry $type_name] $method]
+                set params [pak::items [pak::nfield $fn_decl params]]
+                if {[llength $params] == 0 || [pak::fval [lindex $params 0] name] ne "self"} {
+                    set user_args [my apply_named_args_and_defaults $params \
+                        [pak::items [pak::nfield $e args]]]
+                    return "${type_name}_${method}([join $user_args {, }])"
+                }
+            }
         }
         # Method call: obj.method(args) → TypeName_method(&obj, args)
         # The receiver need not be a bare identifier: gs.cam.rotate(a) is a
@@ -2007,16 +2072,18 @@ oo::class create pak::Codegen {
         set cond [pak::strip_parens [my gen_expr [pak::nfield $s condition]]]
         set lines [list "${pad}if ($cond) {"]
         my scope_push
-        foreach st [pak::items [pak::nfield [pak::nfield $s then] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
-        foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+        set _ss [pak::items [pak::nfield [pak::nfield $s then] stmts]]
+        foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+        foreach d [my emit_defers_after $_ss [expr {$indent+1}]] { lappend lines $d }
         my scope_pop
         lappend lines "${pad}}"
         foreach pair [pak::items [pak::nfield $s elif_branches]] {
             set p [pak::items $pair]
             lappend lines "${pad}else if ([pak::strip_parens [my gen_expr [lindex $p 0]]]) {"
             my scope_push
-            foreach st [pak::items [pak::nfield [lindex $p 1] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
-            foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+            set _ss [pak::items [pak::nfield [lindex $p 1] stmts]]
+            foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+            foreach d [my emit_defers_after $_ss [expr {$indent+1}]] { lappend lines $d }
             my scope_pop
             lappend lines "${pad}}"
         }
@@ -2024,8 +2091,9 @@ oo::class create pak::Codegen {
         if {![pak::isnil $eb]} {
             lappend lines "${pad}else {"
             my scope_push
-            foreach st [pak::items [pak::nfield $eb stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
-            foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+            set _ss [pak::items [pak::nfield $eb stmts]]
+            foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+            foreach d [my emit_defers_after $_ss [expr {$indent+1}]] { lappend lines $d }
             my scope_pop
             lappend lines "${pad}}"
         }
@@ -2041,16 +2109,18 @@ oo::class create pak::Codegen {
         lappend lines "${inner_pad}if ($binding != NULL) \{"
         my scope_push
         my scope_set $binding [pak::N TypePointer inner [pak::N TypeName name auto] nullable 0 mutable 0]
-        foreach st [pak::items [pak::nfield [pak::nfield $s then] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
-        foreach d [my emit_defers_for_scope [expr {$indent+2}]] { lappend lines $d }
+        set _ss [pak::items [pak::nfield [pak::nfield $s then] stmts]]
+        foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
+        foreach d [my emit_defers_after $_ss [expr {$indent+2}]] { lappend lines $d }
         my scope_pop
         lappend lines "${inner_pad}\}"
         set eb [pak::nfield $s else_branch]
         if {![pak::isnil $eb]} {
             lappend lines "${inner_pad}else \{"
             my scope_push
-            foreach st [pak::items [pak::nfield $eb stmts]] { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
-            foreach d [my emit_defers_for_scope [expr {$indent+2}]] { lappend lines $d }
+            set _ss [pak::items [pak::nfield $eb stmts]]
+            foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
+            foreach d [my emit_defers_after $_ss [expr {$indent+2}]] { lappend lines $d }
             my scope_pop
             lappend lines "${inner_pad}\}"
         }
@@ -2061,8 +2131,9 @@ oo::class create pak::Codegen {
     method gen_loop {s pad indent} {
         set lines [list "${pad}while (true) {"]
         my scope_push
-        foreach st [pak::items [pak::nfield [pak::nfield $s body] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
-        foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+        set _ss [pak::items [pak::nfield [pak::nfield $s body] stmts]]
+        foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+        foreach d [my emit_defers_after $_ss [expr {$indent+1}]] { lappend lines $d }
         my scope_pop
         lappend lines "${pad}}"
         return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
@@ -2072,8 +2143,9 @@ oo::class create pak::Codegen {
         set cond [pak::strip_parens [my gen_expr [pak::nfield $s condition]]]
         set lines [list "${pad}while ($cond) {"]
         my scope_push
-        foreach st [pak::items [pak::nfield [pak::nfield $s body] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
-        foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+        set _ss [pak::items [pak::nfield [pak::nfield $s body] stmts]]
+        foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+        foreach d [my emit_defers_after $_ss [expr {$indent+1}]] { lappend lines $d }
         my scope_pop
         lappend lines "${pad}}"
         return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
@@ -2111,11 +2183,31 @@ oo::class create pak::Codegen {
             }
         }
         my scope_push
-        foreach st [pak::items [pak::nfield [pak::nfield $s body] stmts]] { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
-        foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+        set _ss [pak::items [pak::nfield [pak::nfield $s body] stmts]]
+        foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+1}]] }
+        foreach d [my emit_defers_after $_ss [expr {$indent+1}]] { lappend lines $d }
         my scope_pop
         lappend lines "${pad}\}"
         return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
+    }
+
+    # The C expression to switch on. A match over a pointer to a variant is
+    # ordinary Pak -- `fn f(e: *E) { match e { ... } }`, and match_type_name
+    # already resolves through the pointer to find the variant -- but the tag
+    # and payload reads that follow are `.tag` / `.data`, so the pointer itself
+    # produced `e.tag`, which is not a struct. Parenthesised as well: an
+    # explicit `match *e` gave `*e.tag`, and that parses as `*(e.tag)`.
+    method match_scrutinee {expr} {
+        set c [my gen_expr $expr]
+        if {[pak::kindof [my expr_type $expr]] eq "TypePointer"} { return "(*($c))" }
+        # A postfix chain (name, name[i], name.f, name->f, and combinations)
+        # already binds tighter than the `.tag` about to be appended, so leave
+        # it alone: parenthesising it would churn every existing snapshot for
+        # nothing. Anything else gets the parentheses.
+        if {[regexp {^[A-Za-z_][A-Za-z0-9_]*(\[[^\[\]]*\]|\.[A-Za-z_][A-Za-z0-9_]*|->[A-Za-z_][A-Za-z0-9_]*)*$} $c]} {
+            return $c
+        }
+        return "($c)"
     }
 
     method match_type_name {expr} {
@@ -2134,6 +2226,16 @@ oo::class create pak::Codegen {
     # the C is __auto_type), fall back to the arms: every case name resolves to
     # exactly one variant or enum. Without this the switch is on the struct
     # rather than its tag, which no compiler accepts.
+    # Does this match already spell a catch-all (`_`)? Then C has a real
+    # default and must not be given a second one.
+    method match_has_default {arms} {
+        foreach arm $arms {
+            set pat [pak::nfield $arm pattern]
+            if {[pak::kindof $pat] eq "Ident" && [pak::fval $pat name] eq "_"} { return 1 }
+        }
+        return 0
+    }
+
     method match_type_from_arms {arms} {
         foreach arm $arms {
             set pat [pak::nfield $arm pattern]
@@ -2257,7 +2359,9 @@ oo::class create pak::Codegen {
         set match_type [my match_type_name [pak::nfield $s expr]]
         set is_variant [dict exists $variant_types $match_type]
         set lines [list "${pad}\{"]
-        lappend lines "${inner_pad}__auto_type ${expr_var} = [my gen_expr [pak::nfield $s expr]];"
+        set scrut [expr {$is_variant ? [my match_scrutinee [pak::nfield $s expr]]
+                                     : [my gen_expr [pak::nfield $s expr]]}]
+        lappend lines "${inner_pad}__auto_type ${expr_var} = ${scrut};"
         set first 1
         foreach arm [pak::items [pak::nfield $s arms]] {
             set pat [pak::nfield $arm pattern]
@@ -2292,12 +2396,14 @@ oo::class create pak::Codegen {
                 my scope_set $vname [pak::N TypeName name auto]
             }
             set body [pak::nfield $arm body]
+            set _ss {}
             if {[pak::kindof $body] eq "Block"} {
-                foreach st [pak::items [pak::nfield $body stmts]] { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
+                set _ss [pak::items [pak::nfield $body stmts]]
+                foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
             } else {
                 lappend lines "${inner2_pad}[my gen_expr $body];"
             }
-            foreach d [my emit_defers_for_scope [expr {$indent+2}]] { lappend lines $d }
+            foreach d [my emit_defers_after $_ss [expr {$indent+2}]] { lappend lines $d }
             my scope_pop
             lappend lines "${inner_pad}\}"
             set first 0
@@ -2365,14 +2471,16 @@ oo::class create pak::Codegen {
                 my scope_set $bind [pak::N TypeName name auto]
             }
             set body [pak::nfield $arm body]
+            set _ss {}
             if {[pak::kindof $body] eq "Block"} {
-                foreach st [pak::items [pak::nfield $body stmts]] {
+                set _ss [pak::items [pak::nfield $body stmts]]
+                foreach st $_ss {
                     lappend lines [my gen_stmt $st [expr {$indent+1}]]
                 }
             } else {
                 lappend lines "${inner_pad}[my gen_expr $body];"
             }
-            foreach d [my emit_defers_for_scope [expr {$indent+1}]] { lappend lines $d }
+            foreach d [my emit_defers_after $_ss [expr {$indent+1}]] { lappend lines $d }
             my scope_pop
             if {$field eq "value"} { lappend lines "${pad}\} else \{" }
         }
@@ -2394,12 +2502,16 @@ oo::class create pak::Codegen {
             set r [my gen_match_result $s $pad $indent $arms]
             if {$r ne ""} { return $r }
         }
-        set expr [my gen_expr [pak::nfield $s expr]]
-        set inner_pad [string repeat "    " [expr {$indent+1}]]
-        set inner2_pad [string repeat "    " [expr {$indent+2}]]
         set match_type [my match_type_name [pak::nfield $s expr]]
         if {$match_type eq ""} { set match_type [my match_type_from_arms $arms] }
         set is_variant [dict exists $variant_types $match_type]
+        if {$is_variant} {
+            set expr [my match_scrutinee [pak::nfield $s expr]]
+        } else {
+            set expr [my gen_expr [pak::nfield $s expr]]
+        }
+        set inner_pad [string repeat "    " [expr {$indent+1}]]
+        set inner2_pad [string repeat "    " [expr {$indent+2}]]
         set switch_expr [expr {$is_variant ? "${expr}.tag" : $expr}]
         set lines [list "${pad}switch ($switch_expr) {"]
         foreach arm $arms {
@@ -2468,15 +2580,28 @@ oo::class create pak::Codegen {
                 }
             }
             set body [pak::nfield $arm body]
+            set _ss {}
             if {[pak::kindof $body] eq "Block"} {
-                foreach st [pak::items [pak::nfield $body stmts]] { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
+                set _ss [pak::items [pak::nfield $body stmts]]
+                foreach st $_ss { lappend lines [my gen_stmt $st [expr {$indent+2}]] }
             } else {
                 lappend lines "${inner2_pad}[my gen_expr $body];"
             }
-            foreach d [my emit_defers_for_scope [expr {$indent+2}]] { lappend lines $d }
+            foreach d [my emit_defers_after $_ss [expr {$indent+2}]] { lappend lines $d }
             my scope_pop
             lappend lines "${inner2_pad}break;"
             lappend lines "${inner_pad}}"
+        }
+        # Pak's checker proves a match exhaustive (E301); C's switch cannot
+        # know that, because an enum variable may legally hold any value of
+        # its underlying type. Without this GCC reports "control reaches end
+        # of non-void function" for a match whose every arm returns -- and
+        # libdragon builds with -Werror, so that is a hard failure in a real
+        # project. Saying the gap is unreachable is exactly what the checker
+        # already guarantees. A match that already has a `_` arm has a real
+        # default, so it is left alone.
+        if {![my match_has_default $arms]} {
+            lappend lines "${inner_pad}default: __builtin_unreachable();"
         }
         lappend lines "${pad}}"
         return [join [lmap l $lines {expr {$l eq "" ? [continue] : $l}}] \n]
@@ -2750,6 +2875,25 @@ oo::class create pak::Codegen {
         return [join $lines \n]
     }
 
+    # A fixed-point literal, scaled to its integer representation, or "" when
+    # the initializer is not a literal this can fold. Unary minus is folded
+    # here rather than left to gen_expr: `-8.0` parses as UnaryOp over
+    # FloatLit, so matching only FloatLit emitted `enum { X = -8.0f };` --
+    # not an integer constant, and no compiler accepts it. An integer literal
+    # is scaled too: `const X: fix16.16 = 2` means 2.0, not raw 2.
+    method fold_fix_literal {e shift} {
+        if {[pak::kindof $e] eq "UnaryOp" && [pak::fval $e op] eq "-"} {
+            set inner [my fold_fix_literal [pak::nfield $e operand] $shift]
+            if {$inner eq ""} { return "" }
+            return [expr {-$inner}]
+        }
+        switch -- [pak::kindof $e] {
+            FloatLit { return [expr {entier(double([pak::fval $e value]) * (1 << $shift))}] }
+            IntLit   { return [expr {entier([pak::fval $e value]) << $shift}] }
+        }
+        return ""
+    }
+
     method gen_const {c} {
         set val [my gen_expr [pak::nfield $c value]]
         set typ [pak::nfield $c type]
@@ -2760,10 +2904,11 @@ oo::class create pak::Codegen {
             # into `enum { GRAVITY = 0.4f };` -- not an integer constant, and
             # every later >> on it operated on a float.
             set shift [pak::cg_fixshift $typ]
-            if {$shift != 0 && [pak::kindof [pak::nfield $c value]] eq "FloatLit"} {
-                set raw [pak::fval [pak::nfield $c value] value]
-                set scaled [expr {entier(double($raw) * (1 << $shift))}]
-                return "enum { [pak::fval $c name] = $scaled };"
+            if {$shift != 0} {
+                set scaled [my fold_fix_literal [pak::nfield $c value] $shift]
+                if {$scaled ne ""} {
+                    return "enum { [pak::fval $c name] = $scaled };"
+                }
             }
             if {$ct in {int32_t uint32_t int int16_t uint16_t int8_t uint8_t int64_t uint64_t}} {
                 return "enum { [pak::fval $c name] = $val };"
@@ -2785,9 +2930,26 @@ oo::class create pak::Codegen {
                 lappend lines "/* $nm: already declared by the C standard headers */"
                 continue
             }
+            # The parser accepts `static` inside an extern block -- it is how
+            # you name a variable the linked C library owns. Lowering it as a
+            # function asked a StaticDecl for its ret_type and took the whole
+            # compiler down with a Tcl stack trace. (Found by fuzz_test.tcl.)
+            if {[pak::kindof $decl] eq "StaticDecl"} {
+                lappend lines [my gen_extern_static $decl]
+                continue
+            }
             lappend lines [my gen_fn $decl ""]
         }
         return [join $lines \n]
+    }
+
+    # A variable defined in the linked C library: declared, never allocated.
+    method gen_extern_static {s} {
+        set name [pak::fval $s name]
+        set typ  [pak::nfield $s type]
+        if {![pak::isnil $typ]} { set decl [my gen_array_decl $name $typ] } \
+        else { set decl "int $name" }
+        return "extern $decl;"
     }
 
     # extract N from an @aligned(N) annotation string
@@ -2844,7 +3006,7 @@ oo::class create pak::Codegen {
         return "$decl;"
     }
 
-    method gen_fn {fn prefix} {
+    method gen_fn {fn prefix {proto_only 0}} {
         set saved_self $current_self_type
         if {$prefix ne ""} { set current_self_type $prefix }
         set ret [my gen_type [pak::nfield $fn ret_type]]
@@ -2876,14 +3038,20 @@ oo::class create pak::Codegen {
                 if {[regexp {@export\s*\(\s*"([^"]+)"\s*\)} $ann -> en]} { set export_name $en }
             }
         }
-        set name [pak::fval $fn name]
+        # c_ident here as well as at the use site: `fn double(x: i32)` is
+        # legal Pak, and reading `double` as an expression already renamed it
+        # to `double_`, but the definition kept the bare name -- so the call
+        # referred to a function that was never defined, on top of the
+        # definition itself being `int32_t double(int32_t x)`, which is not
+        # even parseable C.
+        set name [my c_ident [pak::fval $fn name]]
         if {$prefix ne ""} { set name "${prefix}_$name" }
         if {$export_name ne ""} { set name $export_name }
         set attr_str [join $attrs " "]
         set head {}
         if {$attr_str ne ""} { lappend head $attr_str }
         set body [pak::nfield $fn body]
-        if {[pak::isnil $body]} {
+        if {$proto_only || [pak::isnil $body]} {
             lappend head "$ret ${name}($param_str);"
             set current_self_type $saved_self
             return [join $head \n]
@@ -2893,11 +3061,12 @@ oo::class create pak::Codegen {
         set current_ret_type [pak::nfield $fn ret_type]
         my scope_push
         foreach p [pak::items [pak::nfield $fn params]] { my scope_set [pak::fval $p name] [pak::nfield $p type] }
-        foreach st [pak::items [pak::nfield $body stmts]] {
+        set _ss [pak::items [pak::nfield $body stmts]]
+        foreach st $_ss {
             set s [my gen_stmt $st 1]
             if {$s ne ""} { lappend lines $s }
         }
-        foreach d [my emit_defers_for_scope 1] { lappend lines $d }
+        foreach d [my emit_defers_after $_ss 1] { lappend lines $d }
         my scope_pop
         set current_ret_type $prev_ret
         set current_self_type $saved_self
@@ -2907,12 +3076,20 @@ oo::class create pak::Codegen {
 
     method gen_entry {entry} {
         set lines [list "int main(void) {"]
+        # An asset is read from the ROM's DragonFS image, and nothing can open
+        # `rom:/...` until that is mounted. Nothing used to mount it at all:
+        # every asset load failed at runtime in a build that compiled and
+        # linked cleanly.
+        if {$has_assets} {
+            lappend lines "    dfs_init(DFS_DEFAULT_LOCATION);"
+        }
         my scope_push
-        foreach st [pak::items [pak::nfield [pak::nfield $entry body] stmts]] {
+        set _ss [pak::items [pak::nfield [pak::nfield $entry body] stmts]]
+        foreach st $_ss {
             set s [my gen_stmt $st 1]
             if {$s ne ""} { lappend lines $s }
         }
-        foreach d [my emit_defers_for_scope 1] { lappend lines $d }
+        foreach d [my emit_defers_after $_ss 1] { lappend lines $d }
         my scope_pop
         lappend lines "    return 0;"
         lappend lines "}"
@@ -3036,6 +3213,7 @@ oo::class create pak::Codegen {
         lappend out "#include <math.h>"
         lappend out "#include \"pak_math.h\""
         lappend out "#include \"pak_containers.h\""
+        lappend out "#include \"pak_libdragon.h\""
 
         set seen [dict create]
         foreach use_path $uses {
@@ -3048,7 +3226,7 @@ oo::class create pak::Codegen {
             }
         }
 
-        if {[llength $assets] > 0} { lappend out "#include <pakfs.h>" }
+        if {[llength $assets] > 0} { set has_assets 1 }
 
         if {"n64.timer" in $uses} {
             lappend out ""
@@ -3071,7 +3249,7 @@ oo::class create pak::Codegen {
         # until the entry block runs, so loading at static-init time is too
         # early. Untyped assets keep the path alone; there is nothing to load
         # them with.
-        set asset_loaders [dict create Sprite [list {sprite_t *} sprite_load]]
+        set asset_loaders $::pak::CG_ASSET_LOADERS
         foreach asset $assets {
             set aname [pak::fval $asset name]
             set apath [pak::fval $asset path]
@@ -3081,7 +3259,7 @@ oo::class create pak::Codegen {
                 set tname [expr {[pak::kindof $atype] eq "TypeName" ? [pak::fval $atype name] : [pak::sval $atype]}]
             }
             lappend out "/* asset: $aname from \"$apath\" */"
-            lappend out "static const char *${aname}_path = \"pak:/${apath}\";"
+            lappend out "static const char *${aname}_path = \"rom:/[pak::asset_packed_path $apath]\";"
             if {[dict exists $asset_loaders $tname]} {
                 lassign [dict get $asset_loaders $tname] ctype loader
                 lappend out "static $ctype _pak_asset_${aname} = 0;"
@@ -3127,7 +3305,11 @@ oo::class create pak::Codegen {
             if {[pak::kindof $decl] in {UseDecl AssetDecl ModuleDecl}} continue
             set r [my gen_decl $decl]
             if {$r eq ""} continue
-            if {[pak::kindof $decl] in {StructDecl EnumDecl VariantDecl UnionDecl}} {
+            # TraitDecl is a type declaration too: it lowers to the vtable
+            # struct and the fat-pointer struct that names it. Leaving it in
+            # $body put it after the prototype block, so a function taking a
+            # `dyn Shape` had a prototype naming a type C had not seen yet.
+            if {[pak::kindof $decl] in {StructDecl EnumDecl VariantDecl UnionDecl TraitDecl}} {
                 if {[my decl_needs_generated_type $decl]} {
                     lappend late_type_decls $r; lappend late_type_decls ""
                 } else {
@@ -3135,6 +3317,37 @@ oo::class create pak::Codegen {
                 }
             } else {
                 lappend body $r; lappend body ""
+            }
+        }
+
+        # Function prototypes, so a call to a function defined further down the
+        # file is a call and not an implicit declaration. Pak has no forward
+        # declarations and no ordering rule -- `fn a() { b() } fn b() {}` is
+        # ordinary Pak -- but C reads top to bottom, so without this block the
+        # generated C is rejected by any compiler that treats an implicit
+        # declaration as an error, which every modern one does.
+        #
+        # Built here, in the same pass as the bodies, so that a type registered
+        # as a side effect of generating a signature (Result, slice, tuple,
+        # Vec) is already in its typedef list by the time `out` is assembled.
+        # `cfg`/`comptime` blocks are skipped: their functions are inside a
+        # `#if`, and an unguarded prototype would name a function that may not
+        # be compiled.
+        set protos {}
+        foreach decl $decls {
+            switch -- [pak::kindof $decl] {
+                FnDecl {
+                    if {[llength [pak::items [pak::nfield $decl type_params]]] > 0} continue
+                    if {[pak::isnil [pak::nfield $decl body]]} continue
+                    lappend protos [my gen_fn $decl "" 1]
+                }
+                ImplBlock {
+                    if {[llength [pak::items [pak::nfield $decl type_params]]] > 0} continue
+                    foreach m [pak::items [pak::nfield $decl methods]] {
+                        if {[pak::isnil [pak::nfield $m body]]} continue
+                        lappend protos [my gen_fn $m [pak::fval $decl type_name] 1]
+                    }
+                }
             }
         }
 
@@ -3292,6 +3505,12 @@ oo::class create pak::Codegen {
             foreach l $late_type_decls { lappend out $l }
         }
 
+        if {[llength $protos] > 0} {
+            lappend out ""
+            lappend out "/* -- Function prototypes -- */"
+            foreach l $protos { lappend out $l }
+        }
+
         # Emit monomorphized generic specializations generated during body codegen.
         # These must precede body so that specialized struct typedefs and function
         # definitions are visible where main/other code uses them.
@@ -3348,9 +3567,69 @@ proc pak::cg_arg_or {arglist i default} {
 
 proc pak::cg_api_lambda {mod fn arglist} {
     switch -- "$mod $fn" {
+        "audio get_buffer" {
+            # libdragon has audio_write_begin(), which assumes the caller
+            # already checked audio_can_write(); the shim is that pair.
+            return "pak_audio_get_buffer()"
+        }
+        "debug log_value" {
+            # debugf is a printf, so a label and a number is one call with a
+            # format string -- there is no libdragon function that takes the
+            # pair. MODULE_API named this and the C backend had no lowering at
+            # all for it, so the call came out as the literal `debug.log_value`
+            # and the C compiler read `debug` as an undeclared variable.
+            set m [pak::cg_arg_or $arglist 0 {""}]
+            set v [pak::cg_arg_or $arglist 1 0]
+            return "debugf(\"%s%ld\\n\", $m, (long)($v))"
+        }
+        "eeprom init" {
+            # libdragon has no eeprom_init: the EEPROM is reached over joybus,
+            # which the joypad subsystem already brings up, so there is nothing
+            # to initialize. The standalone HAL does have one (it drives the PIF
+            # itself), so the call stays in the language and lowers to nothing
+            # here rather than becoming a call to a function libdragon has never
+            # had -- which is what it used to be, and no build of a program
+            # calling eeprom.init on this backend got past the C compiler.
+            return "((void)0)"
+        }
+        "eeprom type_detect" {
+            # libdragon spells this eeprom_present(): it returns eeprom_type_t,
+            # which is 0/1/2 for none/4K/16K -- exactly what type_detect is
+            # documented to return. There is no eeprom_type_detect.
+            return "((int)eeprom_present())"
+        }
         "controller read" {
-            if {[llength $arglist] > 0} { return "joypad_get_status([lindex $arglist 0])" }
-            return "joypad_get_status(0)"
+            # libdragon has no one call returning held/pressed/released; the
+            # shim in runtime/pak_libdragon.h composes its four into the one
+            # struct Pak's surface (and the standalone HAL) promises.
+            if {[llength $arglist] > 0} { return "pak_joypad_get_status([lindex $arglist 0])" }
+            return "pak_joypad_get_status(0)"
+        }
+        "display init" {
+            # resolution_t is a struct in libdragon, so Pak's documented
+            # integer cannot be cast to it. The shim maps them.
+            set a {}
+            foreach i {0 1 2 3 4} { lappend a [pak::cg_arg_or $arglist $i 0] }
+            return "pak_display_init([join $a {, }])"
+        }
+        "rdpq attach_clear" {
+            # Pak's second argument is the CLEAR COLOUR, not libdragon's Z
+            # surface: see pak_rdpq_attach_clear. Omitted means black, which
+            # is what libdragon's own rdpq_attach_clear clears to.
+            set fb [pak::cg_arg_or $arglist 0 "NULL"]
+            set c  [pak::cg_arg_or $arglist 1 "0x000000FF"]
+            return "pak_rdpq_attach_clear($fb, $c)"
+        }
+        "rdpq set_fill_color" {
+            return "pak_rdpq_set_fill_color([pak::cg_arg_or $arglist 0 0])"
+        }
+        "rdpq set_mode_fill" {
+            return "pak_rdpq_set_mode_fill([pak::cg_arg_or $arglist 0 0])"
+        }
+        "rdpq set_mode_copy" {
+            # libdragon takes an explicit transparency flag; Pak's COPY mode
+            # sets alpha_compare_en, which is the `true` case.
+            return "rdpq_set_mode_copy([pak::cg_arg_or $arglist 0 "true"])"
         }
         "sprite blit" {
             if {[llength $arglist] >= 3} {
@@ -3381,8 +3660,8 @@ proc pak::cg_api_lambda {mod fn arglist} {
         "t3d quat_slerp" { return "t3d_quat_slerp([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2], [lindex $arglist 3])" }
         "t3d fog_set_enabled" { return "t3d_fog_set_enabled([expr {[llength $arglist] > 0 ? [lindex $arglist 0] : "true"}])" }
         "math abs_i32"   { return "abs([lindex $arglist 0])" }
-        "math min_i32"   { return "MIN([lindex $arglist 0], [lindex $arglist 1])" }
-        "math max_i32"   { return "MAX([lindex $arglist 0], [lindex $arglist 1])" }
+        "math min_i32"   { return "pak_min_i32([lindex $arglist 0], [lindex $arglist 1])" }
+        "math max_i32"   { return "pak_max_i32([lindex $arglist 0], [lindex $arglist 1])" }
         "math clamp_i32" { return "CLAMP([lindex $arglist 0], [lindex $arglist 1], [lindex $arglist 2])" }
         "math sin_f"     { return "sinf([lindex $arglist 0])" }
         "math cos_f"     { return "cosf([lindex $arglist 0])" }
@@ -3446,6 +3725,109 @@ proc pak::cg_api_lambda {mod fn arglist} {
         "vi get_height"     { return "display_get_height()" }
         "vi wait_vblank"    { return "vi_wait_vblank()" }
         "rtc is_running"    { return "!rtc_is_stopped()" }
+        "mixer poll" {
+            # libdragon's is mixer_poll(buffer, nsamples), not audio_poll.
+            # The sample count is the audio buffer's own length, which is what
+            # audio.get_buffer just handed the caller.
+            return "mixer_poll([pak::cg_arg_or $arglist 0 "NULL"], audio_get_buffer_length())"
+        }
+        "rdpq_font printf" {
+            # libdragon's rdpq_text_printf takes the text parameters first, the
+            # font id second, and float coordinates:
+            #   rdpq_text_printf(parms, font_id, x, y, fmt, ...)
+            # Pak's surface is (x, y, font, fmt, ...), which reads the way the
+            # call site wants it. NULL parms means the font's own defaults.
+            set x [pak::cg_arg_or $arglist 0 0]
+            set y [pak::cg_arg_or $arglist 1 0]
+            set f [pak::cg_arg_or $arglist 2 1]
+            set rest [lrange $arglist 3 end]
+            if {[llength $rest] == 0} { set rest [list {""}] }
+            return "rdpq_text_printf(NULL, (uint8_t)($f), (float)($x), (float)($y),\
+                    [join $rest {, }])"
+        }
+        "rdpq_font register_builtin_mono" {
+            # libdragon ships a monospaced debug font; nothing draws text until
+            # a font is registered under an id, and id 1 is the one the demos
+            # pass. Two calls in libdragon, one here.
+            set id [pak::cg_arg_or $arglist 0 1]
+            return "rdpq_text_register_font($id, rdpq_font_load_builtin(FONT_BUILTIN_DEBUG_MONO))"
+        }
+        "t3d mat4fp_from_srt_euler" {
+            # Tiny3D takes three float[3] arrays. Passing pointers straight
+            # through is what the call sites already do.
+            return "t3d_mat4fp_from_srt_euler([join $arglist {, }])"
+        }
+        "t3d init" {
+            # t3d_init takes a T3DInitParams struct, not nothing. Zeroed means
+            # its documented defaults (an 8-deep matrix stack).
+            return "t3d_init((T3DInitParams){0})"
+        }
+        "t3d frame_end" {
+            # Tiny3D has no frame_end: a frame ends when the RDP attachment is
+            # detached and shown, which Pak spells rdpq.detach_show(). This
+            # used to lower to rspq_block_run, which takes a block and runs it
+            # -- an entirely different operation, called with no argument.
+            return "((void)0)"
+        }
+        "t3d look_at" {
+            # Tiny3D spells this t3d_viewport_look_at. There is no t3d_look_at.
+            return "t3d_viewport_look_at([join $arglist {, }])"
+        }
+        "t3d skeleton_draw" {
+            # Tiny3D draws a skinned model through the MODEL, taking the
+            # skeleton second: t3d_model_draw_skinned(model, skel). Pak's
+            # surface names the skeleton first, matching the other skeleton_*
+            # calls, so the two arguments swap here.
+            set sk [pak::cg_arg_or $arglist 0 "NULL"]
+            set md [pak::cg_arg_or $arglist 1 "NULL"]
+            return "t3d_model_draw_skinned($md, $sk)"
+        }
+        "t3d light_set_ambient" {
+            # t3d_light_set_ambient takes a pointer to four bytes, not three
+            # integers. A compound literal keeps the call an expression.
+            set r [pak::cg_arg_or $arglist 0 0]
+            set g [pak::cg_arg_or $arglist 1 0]
+            set b [pak::cg_arg_or $arglist 2 0]
+            return "t3d_light_set_ambient((uint8_t\[4\])\{$r, $g, $b, 0xFF\})"
+        }
+        "t3d light_set_directional" {
+            # (index, r, g, b, dx, dy, dz) in Pak; (int, const uint8_t *,
+            # const T3DVec3 *) in Tiny3D.
+            set i  [pak::cg_arg_or $arglist 0 0]
+            set r  [pak::cg_arg_or $arglist 1 0]
+            set g  [pak::cg_arg_or $arglist 2 0]
+            set b  [pak::cg_arg_or $arglist 3 0]
+            set dx [pak::cg_arg_or $arglist 4 0]
+            set dy [pak::cg_arg_or $arglist 5 0]
+            set dz [pak::cg_arg_or $arglist 6 0]
+            return "t3d_light_set_directional($i, (uint8_t\[4\])\{$r, $g, $b, 0xFF\},                    &(T3DVec3)\{\{$dx, $dy, $dz\}\})"
+        }
+        "t3d fog_set_color" {
+            # Tiny3D has no fog colour of its own: the fog colour is the RDP's,
+            # set with rdpq_set_fog_color. t3d_fog_set_color does not exist.
+            return "rdpq_set_fog_color(color_from_packed32([pak::cg_arg_or $arglist 0 0]))"
+        }
+        "rdpq clear_z"            { return "pak_rdpq_clear_z()" }
+        "rdpq set_mode_standard_z" { return "pak_rdpq_set_mode_standard_z()" }
+        "rdpq set_texture_image"  { return "pak_rdpq_set_texture_image([join $arglist {, }])" }
+        "rdpq set_tile_mask"      { return "pak_rdpq_set_tile_mask([join $arglist {, }])" }
+        "rdpq set_tri_z"          { return "pak_rdpq_set_tri_z([join $arglist {, }])" }
+        "rdpq triangle_tex_z"     { return "pak_rdpq_triangle_tex_z([join $arglist {, }])" }
+        "rumble init" {
+            # There is no rumble_init in libdragon: the Rumble Pak is reached
+            # through the joypad subsystem, which joypad_init already brings
+            # up. The three calls below used to lower to rumble_start /
+            # rumble_stop out of <rumble.h> -- a header libdragon does not
+            # have, so `use n64.rumble` alone stopped the C compiler at the
+            # include, before it reached a single line of generated code.
+            return "((void)0)"
+        }
+        "rumble start" {
+            return "joypad_set_rumble_active([pak::cg_arg_or $arglist 0 0], true)"
+        }
+        "rumble stop" {
+            return "joypad_set_rumble_active([pak::cg_arg_or $arglist 0 0], false)"
+        }
         "rumble is_plugged" {
             return "(joypad_get_accessory_type([pak::cg_arg_or $arglist 0 0]) ==\
  JOYPAD_ACCESSORY_TYPE_RUMBLE_PAK)"

@@ -7,6 +7,7 @@
 #include <math.h>
 #include "pak_math.h"
 #include "pak_containers.h"
+#include "pak_libdragon.h"
 
 
 /* -- Pak runtime types -- */
@@ -39,6 +40,11 @@ static int32_t _pak_closure_3(int32_t x) {
     return (x + 100);
 }
 
+
+/* -- Function prototypes -- */
+int32_t apply(int32_t (*f)(int32_t), int32_t x);
+int32_t compose(int32_t (*f)(int32_t), int32_t (*g)(int32_t), int32_t x);
+int32_t map_sum(int32_t (*f)(int32_t), int32_t lo, int32_t hi);
 int32_t apply(int32_t (*f)(int32_t), int32_t x) {
     return f(x);
 }

@@ -1,7 +1,12 @@
-# Canonical examples whose generated C does NOT compile.
+# Programs whose generated C does NOT compile against the MODULE_API stubs.
 #
-# Maintained by tcl/tools/c_compile_test.tcl. This is debt, not
-# configuration: fix a backend bug, drop the name, and the gate holds
-# the new floor. Adding a name is how a regression gets waved through,
-# so add one only with the bug it records written down.
-
+# The corpus is tcl/tools/gate_corpus.tcl: examples/canonical plus every
+# single-file demo.
+#
+# Maintained by tcl/tools/c_compile_test.tcl, which rewrites the names below
+# and leaves this comment alone. This is debt, not configuration: fix a
+# backend bug, drop the name, and the gate holds the new floor. Adding a name
+# is how a regression gets waved through, so add one only with the bug it
+# records written down.
+#
+# The list is empty. Every program in the corpus compiles.

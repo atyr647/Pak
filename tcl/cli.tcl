@@ -15,6 +15,9 @@ source [file join $_clihere optimize.tcl]
 source [file join $_clihere n64enc.tcl]
 source [file join $_clihere n64link.tcl]
 source [file join $_clihere n64rom.tcl]
+source [file join $_clihere rdpdis.tcl]
+source [file join $_clihere mips_sim.tcl]
+source [file join $_clihere rsp_codegen.tcl]
 
 namespace eval pak {}
 set ::pak::CLI_ROOT [file normalize [file join $_clihere ..]]
@@ -64,11 +67,19 @@ proc pak::cli_find_project_root {{start ""}} {
 proc pak::cli_runtime_dir {} { return [file join $::pak::CLI_ROOT runtime] }
 
 # Recursive *.pk64 glob, excluding any path with a 'build' component, sorted.
+#
+# runtime/standalone/ is excluded too. `pak init` copies the runtime into the
+# project, so that directory holds runtime.pk64 -- the standalone HAL, which is
+# not project source. Compiling it as such put display_init, joypad_init,
+# audio_init and the rest into a libdragon build, where libdragon defines all
+# of them: a guaranteed duplicate-symbol link failure in every scaffolded
+# project. The MIPS ROM path links it deliberately and separately.
 proc pak::cli_src_files {root} {
     set out {}
     foreach f [pak::_rglob $root *.pk64] {
         set rel [pak::_relto $f $root]
         if {[lsearch -exact [file split $rel] build] >= 0} continue
+        if {[string match "runtime/standalone/*" [string map {\\ /} $rel]]} continue
         lappend out $f
     }
     return [lsort $out]
@@ -150,6 +161,24 @@ proc pak::diag_str {d} {
     return [join $lines "\n"]
 }
 
+# Turns a caught RSPUNPORTED\t<line>\t<col>\t<message> string (see
+# rsp_codegen.tcl's pak::rsp_unported) into a diagnostic dict, so an RSP
+# codegen refusal prints exactly like every other Pak error -- diag_str
+# above, with a real file:line:col rather than a bare message. RSP codegen
+# stops at its first refusal (no collection pass exists yet, unlike
+# checker.tcl's E0xx errors), so this always produces exactly one
+# diagnostic; callers that want more per file don't get them until that
+# pass is built.
+proc pak::rsp_diag {err fn} {
+    set parts [split $err "\t"]
+    if {[llength $parts] < 4} {
+        return [dict create code E701 message $err hint "" line 0 col 0 filename $fn severity error]
+    }
+    lassign $parts _ line col
+    set msg [join [lrange $parts 3 end] "\t"]
+    return [dict create code E701 message $msg hint "" line $line col $col filename $fn severity error]
+}
+
 # ── Type + semantic checking (mirrors typecheck_multi / _run_full_check) ───────
 proc pak::cli_typecheck_multi {programs {no_style 0}} {
     set env [pak::TypeEnv new]
@@ -205,8 +234,10 @@ proc pak::_nodeline {node} { if {[catch {pak::fval $node line} v]} { return 0 };
 proc pak::_nodecol {node}  { if {[catch {pak::fval $node col} v]} { return 0 }; return $v }
 
 # Verify every project-local `use` path resolves to a declared module. Builtin
-# namespaces (n64.*, t3d.*, std) are validated per-file by the semantic checker;
-# this cross-file pass catches `use foo.bar` with no matching `module foo.bar`.
+# namespaces (n64.*, t3d.*, std, rsp.* -- the RSP target's rsp.vacc module,
+# see tcl/checker.tcl's check_use) are validated per-file by the semantic
+# checker; this cross-file pass catches `use foo.bar` with no matching
+# `module foo.bar`.
 proc pak::cli_check_module_imports {parsed} {
     set declared [dict create]
     foreach pr $parsed {
@@ -217,8 +248,14 @@ proc pak::cli_check_module_imports {parsed} {
             }
         }
     }
-    set builtins {n64 t3d std}
+    set builtins {n64 t3d std rsp}
     set diags {}
+    # Cache: project root -> the module paths ITS files declare, so a
+    # project checked one file at a time (the common shape of `pak check
+    # FILE`, which is exactly what the PostToolUse validation hook runs on
+    # every write/edit) doesn't re-glob and re-parse the same project once
+    # per unresolved `use`.
+    set proj_modules_cache [dict create]
     foreach pr $parsed {
         lassign $pr fn prog
         foreach decl [pak::items [pak::nfield $prog decls]] {
@@ -226,18 +263,45 @@ proc pak::cli_check_module_imports {parsed} {
             set path [pak::fval $decl path]
             set prefix [lindex [split $path .] 0]
             if {$prefix in $builtins} { continue }
-            if {![dict exists $declared $path]} {
-                if {[dict size $declared] > 0} {
-                    set hint "Known project modules: [join [lsort [dict keys $declared]] {, }]"
-                } else {
-                    set hint "No project modules are declared. Add `module $path` to the file that defines it."
+            if {[dict exists $declared $path]} { continue }
+            # Not among the files checked together in THIS call -- before
+            # calling it unknown, look for the module the same way
+            # pak::rsp_resolve_program does: walk up from this FILE's own
+            # directory (not `pwd`) for a pak.toml project, and search
+            # its other files. Without this, `pak check FILE` run one
+            # file at a time from outside the project (exactly what the
+            # PostToolUse hook does) could never resolve a real project
+            # module no matter how it's spelled, while a whole-project
+            # `pak build`/`pak check` (which passes every file together,
+            # populating $declared above directly) always could -- an
+            # inconsistency that would otherwise make `pak check --backend
+            # rsp FILE` disagree with what `pak build --backend rsp FILE`
+            # (cli.tcl's cmd_build_rsp) actually does with the same file.
+            set root [pak::cli_find_project_root [file dirname [file normalize $fn]]]
+            set found 0
+            if {$root ne ""} {
+                if {![dict exists $proj_modules_cache $root]} {
+                    set mods [dict create]
+                    foreach f [pak::cli_src_files $root] {
+                        if {[catch {set fprog [pak::parse_tokens [[pak::Lexer new [pak::cli_read $f]] tokenize]]}]} continue
+                        set mp [pak::_module_path $fprog]
+                        if {$mp ne ""} { dict set mods $mp 1 }
+                    }
+                    dict set proj_modules_cache $root $mods
                 }
-                lappend diags [dict create code E105 \
-                    message "Unknown module '$path' — no matching `module $path` declaration found" \
-                    hint $hint \
-                    line [pak::_nodeline $decl] col [pak::_nodecol $decl] \
-                    filename $fn severity error]
+                set found [dict exists [dict get $proj_modules_cache $root] $path]
             }
+            if {$found} { continue }
+            if {[dict size $declared] > 0} {
+                set hint "Known project modules: [join [lsort [dict keys $declared]] {, }]"
+            } else {
+                set hint "No project modules are declared. Add `module $path` to the file that defines it."
+            }
+            lappend diags [dict create code E105 \
+                message "Unknown module '$path' — no matching `module $path` declaration found" \
+                hint $hint \
+                line [pak::_nodeline $decl] col [pak::_nodecol $decl] \
+                filename $fn severity error]
         }
     }
     return $diags
@@ -259,6 +323,27 @@ proc pak::cli_run_full_check {parsed root no_style {backend c}} {
         set all [pak::semantic_check $prog $fn $backend]
         set errs {}; set ws {}
         foreach d $all { if {[dict get $d severity] eq "warning"} { lappend ws $d } else { lappend errs $d } }
+        # `--backend rsp` has no checker pass of its own the way c/mips do
+        # (rsp_codegen.tcl raises RSPUNPORTED -- turned into an E701 by
+        # pak::rsp_diag below -- rather than collecting E0xx diagnostics
+        # the way checker.tcl does) -- attempting the real codegen here is
+        # what actually answers "does the RSP target accept this file",
+        # the same promise `pak check --backend mips` makes for the MIPS
+        # backend (see hal_contract_test.tcl's header comment). Codegen
+        # stops at its first refusal, so this can only ever add ONE more
+        # diagnostic per file, unlike the checker passes above.
+        # pak::rsp_resolve_program re-parses $fn (discarding $prog here) so
+        # a project module this file `use`s -- a shared struct declared
+        # elsewhere -- is visible the same way it would be for the actual
+        # `pak build --backend rsp`/`pak explain --backend rsp` this check
+        # promises will succeed.
+        if {$backend eq "rsp" && [catch {pak::rsp_generate_records [pak::rsp_resolve_program $fn]} err]} {
+            if {[string match "RSPUNPORTED\t*" $err]} {
+                lappend errs [pak::rsp_diag $err $fn]
+            } else {
+                lappend errs [dict create code E701 message $err hint "" line 0 col 0 filename $fn severity error]
+            }
+        }
         dict set sem_diags $fn [list $errs $ws]
         incr hard [llength $errs]
         if {!$no_style} { incr warns [llength $ws] }
@@ -384,14 +469,21 @@ proc pak::cli_build_mips_rom {parsed root out opts config project_name rom_title
         return -code error $result
     }
     set image [dict get $result image]
-    if {[catch {set rom [pak::n64rom $image $name "" $rom_bytes]} err]} {
+    # `pak build --backend mips -o game.z64` gets the same bootcode as
+    # `pak link`; passing "" here left the IPL3 region zeroed and produced a
+    # ROM that could not boot.
+    if {[catch {set rom [pak::n64rom $image $name [pak::n64rom_default_ipl3] $rom_bytes]} err]} {
         puts stderr "rom error: $err"
         exit 1
     }
     set f [open $out wb]; puts -nonewline $f $rom; close $f
-    binary scan [string range $rom 16 23] IuIu crc1 crc2
-    puts [format "ROM: %s  (%d bytes)  CRC1=%08X  CRC2=%08X" \
-        $out [string length $rom] $crc1 $crc2]
+    # 0x10 carries the payload size, not CRC1 -- libdragon's compat IPL3 reads
+    # it there. Printing it as a CRC named the wrong thing.
+    binary scan [string range $rom 16 23] IuIu payload crc2
+    binary scan [string range $rom 64 67] Iu ipl3_head
+    set boot [expr {$ipl3_head == 0 ? "NO IPL3 (will not boot)" : "IPL3 ok"}]
+    puts [format "ROM: %s  (%d bytes)  payload=%d  CRC2=%08X  %s" \
+        $out [string length $rom] $payload $crc2 $boot]
     # The ROM boots at _start (boot.S), not main: printing main's address here
     # named the wrong symbol as the entry point.
     if {[dict exists $result symbols _start]} {
@@ -405,8 +497,103 @@ proc pak::_module_path {prog} {
     return ""
 }
 
+# Parses a microcode file, and -- when it sits inside a pak.toml project --
+# pulls in any project module it `use`s, so a `struct` declared once in a
+# shared module file (the design note's `use shared.vtxjob`) is visible to
+# BOTH the microcode and, via the project's ordinary multi-file compilation,
+# its CPU-side driver. rsp_codegen.tcl's own struct registration is single-
+# file only (see register_struct's comment); this is what makes a SECOND
+# file's structs available to it, by concatenating source text and parsing
+# once -- the same trick cmd_dlist uses to compile a scene together with the
+# standalone HAL as one translation unit, not an AST-splicing approach.
+#
+# A plain standalone microcode (no pak.toml above it, or no `use` of
+# anything but a builtin namespace) parses exactly as before: this only
+# changes behavior when there is a project AND an unresolved `use` to look
+# for.
+proc pak::rsp_resolve_program {pak_file} {
+    set src [pak::cli_read $pak_file]
+    set prog [pak::parse_tokens [[pak::Lexer new $src] tokenize]]
+    set root [pak::cli_find_project_root [file dirname [file normalize $pak_file]]]
+    if {$root eq ""} { return $prog }
+    set builtins {n64 t3d std rsp}
+    set needed {}
+    foreach decl [pak::items [pak::nfield $prog decls]] {
+        if {[pak::kindof $decl] ne "UseDecl"} continue
+        set path [pak::fval $decl path]
+        if {[lindex [split $path .] 0] in $builtins} continue
+        lappend needed $path
+    }
+    if {[llength $needed] == 0} { return $prog }
+    set self [file normalize $pak_file]
+    set extra_src ""
+    foreach f [pak::cli_src_files $root] {
+        if {[file normalize $f] eq $self} continue
+        set fsrc [pak::cli_read $f]
+        if {[catch {set fprog [pak::parse_tokens [[pak::Lexer new $fsrc] tokenize]]}]} continue
+        if {[pak::_module_path $fprog] in $needed} { append extra_src "$fsrc\n" }
+    }
+    if {$extra_src eq ""} { return $prog }
+    return [pak::parse_tokens [[pak::Lexer new "$extra_src\n$src"] tokenize]]
+}
+
+# `pak build --backend rsp <FILE> -o <FILE.ucode>`: compile one microcode
+# source straight to raw encoded bytes -- no C, no object file, no linker,
+# no ROM. This is the conversion step `asset ... : Ucode` needs (see
+# ast.tcl's ASSET_PACKED_EXT and the Ucode loader in mips_codegen.tcl/
+# codegen.tcl), and it is also the first CLI-visible use of
+# pak::rsp_generate_records outside a test harness -- until now the only
+# callers were tcl/tools/ares_test.tcl and rsp_codegen_test.tcl.
+#
+# `--backend rsp` takes its input file from `opts name`, not a dedicated
+# `opts file` key: build's flag parser (_parse_opts, see its own comment)
+# already funnels a bare positional argument into `name` for every other
+# backend (an existing, unrelated quirk -- `name` there means "ROM title
+# override", which no microcode build has a use for), so reusing it here
+# needs no change to the shared parser and cannot affect any other
+# backend's behavior.
+proc pak::cmd_build_rsp {opts} {
+    set pak_file [dict get $opts name]
+    if {$pak_file eq ""} {
+        puts stderr "error: build --backend rsp needs one .pk64 file, e.g. `pak build --backend rsp rsp/transform.pk64 -o rsp/transform.ucode`"
+        exit 1
+    }
+    if {![file exists $pak_file]} { puts stderr "error: file not found: $pak_file"; exit 1 }
+    set out [dict get $opts output]
+    if {$out eq ""} {
+        puts stderr "error: build --backend rsp needs -o FILE.ucode -- a microcode is a standalone binary blob, not a project with a default output path"
+        exit 1
+    }
+    set prog [pak::cli_parse_file $pak_file]
+    if {$prog eq ""} { exit 1 }
+    set prog [pak::rsp_resolve_program $pak_file]
+    if {[catch {
+        set recs [pak::rsp_generate_records $prog]
+        set bytes [dict get [pak::enc::encode $recs] secdata .text bytes]
+    } err]} {
+        if {[string match "RSPUNPORTED\t*" $err]} {
+            puts stderr [pak::diag_str [pak::rsp_diag $err $pak_file]]
+        } else {
+            puts stderr "error: $err"
+        }
+        exit 1
+    }
+    set fh [open $out wb]
+    fconfigure $fh -translation binary
+    puts -nonewline $fh [binary format c* $bytes]
+    close $fh
+    puts "RSP microcode: $out ([llength $bytes] bytes)"
+}
+
 # ── Commands ──────────────────────────────────────────────────────────────────
 proc pak::cmd_build {opts} {
+    # A microcode is a program, not a project: no pak.toml, no other source
+    # files, no Makefile, no linker (see rsp_codegen.tcl's own header
+    # comment). `pak build --backend rsp` is a single-file compile, same
+    # shape as `pak explain`/`pak check FILE`, so it branches out here
+    # before the project-root requirement below, which every other backend
+    # still needs.
+    if {[dict get $opts backend] eq "rsp"} { pak::cmd_build_rsp $opts; return }
     set root [pak::cli_find_project_root]
     if {$root eq ""} {
         puts stderr "error: no pak.toml found. Run `pak init <name>` to create a project."
@@ -467,39 +654,32 @@ proc pak::cmd_build {opts} {
         }
         puts "  Runtime -> runtime/"
     }
-    # Assets / pakfs
+    # Assets. Whether the project HAS any is all that is decided here: the
+    # conversion and the filesystem image are Makefile rules, because they
+    # depend on tools (mksprite, audioconv64, mkdfs) that only exist inside a
+    # libdragon install. This used to look for the CONVERTED files instead --
+    # which only exist after a build -- so the first `pak build` of a project
+    # with assets always concluded it had none and generated a Makefile with
+    # no filesystem in it.
     set has_assets 0
-    set pakfs_name "${project_name}.pakfs"
-    set packable {}
-    set convert {.png .sprite .wav .wav64 .xm .xm64 .ym .ym64 .gltf .t3dm .glb .t3dm}
+    set convert {.png .wav .xm .ym .gltf .glb}
+    set n_assets 0
     if {[dict exists $config assets]} {
         dict for {kind rel_dir} [dict get $config assets] {
             set asset_path [file join $root $rel_dir]
-            if {[file isdirectory $asset_path]} {
-                foreach f [lsort [pak::_rglob $asset_path *]] {
-                    set ext [file extension $f]
-                    set idx [lsearch -exact $convert $ext]
-                    if {$idx >= 0} {
-                        set out_ext [lindex $convert [expr {$idx+1}]]
-                        set rel [pak::_relto $f $asset_path]
-                        set conv [file join $build_dir [file rootname $rel]$out_ext]
-                        if {[file exists $conv]} {
-                            set arch [pak::_relto $conv $build_dir]
-                            lappend packable [list $arch [pak::cli_read_bin $conv]]
-                            set has_assets 1
-                        }
-                    }
+            if {![file isdirectory $asset_path]} continue
+            foreach f [lsort [pak::_rglob $asset_path *]] {
+                if {[file extension $f] in $convert} {
+                    set has_assets 1
+                    incr n_assets
                 }
             }
         }
     }
     if {$has_assets} {
-        set fsdir [file join $root filesystem]
-        file mkdir $fsdir
-        pak::cli_write_bin [file join $fsdir $pakfs_name] [pak::pakfs_pack $packable]
-        puts "  Packed [llength $packable] asset(s) -> filesystem/$pakfs_name"
+        puts "  $n_assets asset(s) -> filesystem/${project_name}.dfs (built by make)"
     }
-    set pakfs_arg [expr {$has_assets ? $pakfs_name : ""}]
+    set pakfs_arg [expr {$has_assets ? "${project_name}.dfs" : ""}]
     set makefile [pak::generate_makefile $project_name $rom_title $out_rel $pakfs_arg \
         $save_type $bit_depth $resolution $framebuffers $optimization $use_tiny3d $root $backend]
     pak::cli_write [file join $root Makefile] $makefile
@@ -570,10 +750,117 @@ proc pak::cmd_explain {opts} {
         set prog [pak::cli_parse_file $pak_file]
         if {$prog eq ""} { exit 1 }
         puts [pak::records_to_asm [pak::optimize_records [pak::mips_generate_records $prog]]]
+    } elseif {$backend eq "rsp"} {
+        set prog [pak::cli_parse_file $pak_file]
+        if {$prog eq ""} { exit 1 }
+        set prog [pak::rsp_resolve_program $pak_file]
+        if {[catch {puts [pak::records_to_asm [pak::rsp_generate_records $prog]]} err]} {
+            if {[string match "RSPUNPORTED\t*" $err]} {
+                puts stderr [pak::diag_str [pak::rsp_diag $err $pak_file]]
+            } else {
+                puts stderr "error: $err"
+            }
+            exit 1
+        }
     } else {
         set prog [pak::cli_parse_file $pak_file]
         if {$prog eq ""} { exit 1 }
         puts [pak::generate $prog $pak_file]
+    }
+}
+
+# ── dlist: the RDP commands a scene actually builds ──────────────────────────
+#
+# `pak explain --backend mips` shows the instructions; it cannot show the
+# display list, because the list only exists once those instructions have run.
+# This runs them: the scene is compiled together with the standalone HAL and
+# executed in tcl/mips_sim.tcl, and every DP kick the run produces is decoded
+# by tcl/rdpdis.tcl.
+#
+# The simulator stops at an instruction budget, so a scene with an endless
+# game loop is fine -- it yields as many frames as fit. Each kick is one
+# submission (rdpq.detach / detach_show, or an automatic flush when the list
+# fills), not necessarily one frame.
+proc pak::cmd_dlist {opts} {
+    set pak_file [dict get $opts file]
+    if {![file exists $pak_file]} { puts stderr "error: file not found: $pak_file"; exit 1 }
+
+    set hal [file join $::pak::CLI_ROOT runtime standalone runtime.pk64]
+    if {![file exists $hal]} {
+        puts stderr "error: standalone HAL not found at $hal"
+        exit 1
+    }
+
+    # The HAL gate first, on the scene alone. Concatenating the HAL would
+    # resolve every name, so a scene calling a libdragon-only API would sail
+    # through and then simply never write DPC_END -- "no display list" instead
+    # of "this API is not in the standalone HAL".
+    set own [pak::cli_parse_file $pak_file]
+    if {$own eq ""} { exit 1 }
+    set hard 0
+    foreach d [pak::semantic_check $own $pak_file mips] {
+        if {[dict get $d severity] ne "warning"} {
+            puts stderr [pak::diag_str $d]
+            incr hard
+        }
+    }
+    if {$hard > 0} {
+        puts stderr "\n$hard error(s): this scene is not a standalone program."
+        exit 1
+    }
+
+    # One translation unit: the HAL's free functions are what the scene's
+    # display.*/rdpq.* calls lower to, so they have to be compiled together.
+    set combined [file join [file dirname $pak_file] ".pak_dlist_[pid].pk64"]
+    set fh [open $combined w]
+    puts -nonewline $fh "[pak::cli_read $hal]
+[pak::cli_read $pak_file]"
+    close $fh
+    set prog [pak::cli_parse_file $combined]
+    if {$prog eq ""} { file delete $combined; exit 1 }
+    if {[catch {
+        set asm [pak::records_to_asm [pak::optimize_records [pak::mips_generate_records $prog]]]
+    } err]} {
+        file delete $combined
+        puts stderr "error: [pak::_errmsg $err]"
+        exit 1
+    }
+    file delete $combined
+
+    set cart ""
+    if {[dict get $opts cart] ne ""} {
+        set cf [dict get $opts cart]
+        if {![file exists $cf]} { puts stderr "error: cart image not found: $cf"; exit 1 }
+        set fh [open $cf rb]; set cart [read $fh]; close $fh
+    }
+
+    # The two registers the HAL spins on: the DP reports idle, and the VI
+    # reports a line past the active region so vi_wait_vblank returns.
+    set preset [dict create 0xA410000C 0 0xA4400010 {0x1E0 0x000}]
+    set budget [dict get $opts budget]
+    set r [pak::mips_sim_run $asm main $budget $preset $cart]
+
+    set kicks [dict get $r dp_kicks]
+    if {[llength $kicks] == 0} {
+        puts "no display list: the scene never wrote DPC_END."
+        puts "  (ran [dict get $r insns] instructions; raise --budget if the"
+        puts "   scene needs longer to reach its first rdpq.detach)"
+        exit 1
+    }
+
+    set want [dict get $opts frames]
+    set n 0
+    foreach kick $kicks {
+        incr n
+        if {$want > 0 && $n > $want} break
+        set nwords [expr {[string length $kick] / 4}]
+        puts ""
+        puts "== DP kick $n of [llength $kicks] — $nwords words =="
+        foreach line [pak::rdpdis::disasm_bytes $kick] { puts $line }
+    }
+    if {$want > 0 && [llength $kicks] > $want} {
+        puts ""
+        puts "([expr {[llength $kicks] - $want}] more kick(s); --frames 0 for all)"
     }
 }
 
@@ -625,6 +912,27 @@ proc pak::cmd_link {opts} {
     }
 
     set image [dict get $result image]
+
+    # --fs: the archive is appended to the ROM and the runtime is told where by
+    # patching two of its statics. That has to happen here, in the image,
+    # because the ROM's CRC is taken over the payload afterwards.
+    set fs_bytes ""
+    set fs_path [dict get $opts fs]
+    if {$fs_path ne ""} {
+        if {![file exists $fs_path]} {
+            puts stderr "error: --fs file not found: $fs_path"; exit 1
+        }
+        set fh [open $fs_path rb]; set fs_bytes [read $fh]; close $fh
+        set fs_off [pak::n64rom_fs_offset [string length $image]]
+        if {[catch {set image [pak::n64rom_patch_fs $image \
+                [dict get $result symbols] [dict get $result base] \
+                [string length $fs_bytes]]} err]} {
+            puts stderr "error: $err"; exit 1
+        }
+        puts [format "FS:  %s  (%d bytes) at ROM %#010x" \
+            $fs_path [string length $fs_bytes] $fs_off]
+    }
+
     if {$emit_bin ne ""} {
         set f [open $emit_bin wb]; puts -nonewline $f $image; close $f
         puts "BIN: $emit_bin  ([string length $image] bytes)\
@@ -632,20 +940,24 @@ proc pak::cmd_link {opts} {
     }
     if {$out ne ""} {
         set ipl3 [pak::n64rom_ipl3_from_z64 [dict get $opts ipl3]]
+        if {$ipl3 eq ""} { set ipl3 [pak::n64rom_default_ipl3] }
         set size_mib [dict get $opts size]
         if {$size_mib eq ""} { set size_mib 4 }
         if {![string is integer -strict $size_mib]} {
             puts stderr "error: --size must be 4, 8, 16, 32 or 64 (MiB)"; exit 1
         }
         set rom_bytes [expr {$size_mib * 1024 * 1024}]
-        if {[catch {set rom [pak::n64rom $image [dict get $opts name] $ipl3 $rom_bytes]} err]} {
+        if {[catch {set rom [pak::n64rom $image [dict get $opts name] $ipl3 \
+                                          $rom_bytes $fs_bytes]} err]} {
             puts stderr "rom error: $err"
             exit 1
         }
         set f [open $out wb]; puts -nonewline $f $rom; close $f
-        binary scan [string range $rom 16 23] IuIu crc1 crc2
-        puts [format "ROM: %s  (%d bytes)  CRC1=%08X  CRC2=%08X" \
-            $out [string length $rom] $crc1 $crc2]
+        binary scan [string range $rom 16 23] IuIu payload crc2
+        binary scan [string range $rom 64 67] Iu ipl3_head
+        set boot [expr {$ipl3_head == 0 ? "NO IPL3 (will not boot)" : "IPL3 ok"}]
+        puts [format "ROM: %s  (%d bytes)  payload=%d  CRC2=%08X  %s" \
+            $out [string length $rom] $payload $crc2 $boot]
     }
     set entry [dict get $opts entry]
     if {[dict exists $result symbols $entry]} {
@@ -680,7 +992,7 @@ proc pak::cmd_pack {opts} {
     } else {
         if {[file isdirectory build]} {
             foreach f [lsort [pak::_rglob build *]] {
-                if {[lsearch -exact {.sprite .wav64 .xm64 .ym64 .t3dm} [file extension $f]] >= 0} {
+                if {[lsearch -exact {.sprite .wav64 .xm64 .ym64 .t3dm .ucode} [file extension $f]] >= 0} {
                     lappend packable [list [pak::_relto $f build] [pak::cli_read_bin $f]]
                 }
             }
@@ -729,13 +1041,19 @@ use n64.rdpq
 entry {
     -- Initialize display: 0=320x240, 2=16bpp, 3=triple-buffer, 0=GAMMA_NONE, 1=FILTERS_RESAMPLE
     display.init(0, 2, 3, 0, 1)
+    controller.init()
+    rdpq.init()
 
     loop {
-        let input = controller.read(0)
+        -- Poll once per frame, BEFORE reading. Without this the buttons never
+        -- change: read() returns whatever the last poll captured.
+        controller.poll()
+        let pad = controller.read(0)
+        if pad.held.start { break }
 
         -- Begin frame
         let disp = display.get()
-        rdpq.attach_clear(disp, none)
+        rdpq.attach_clear(disp)
 
         -- ── Game logic here ─────────────────────────────────────────────
 
@@ -793,10 +1111,11 @@ proc pak::cli_main {argv} {
         build  { pak::cmd_build [pak::_parse_opts $rest {verbose 0 backend c no_style_warnings 0 output "" name "" size 4}] }
         check  { pak::cmd_check [pak::_parse_opts $rest {files {} no_style_warnings 0 backend c}] }
         explain { pak::cmd_explain [pak::_parse_opts $rest {file "" backend c}] }
+        dlist  { pak::cmd_dlist [pak::_parse_opts $rest {file "" frames 1 budget 20000000 cart ""}] }
         objgen { pak::cmd_objgen [pak::_parse_opts $rest {file "" output ""}] }
         asmobj { pak::cmd_asmobj [pak::_parse_opts $rest {file "" output ""}] }
         link   { pak::cmd_link [pak::_parse_opts $rest \
-                     {files {} output "" emit_bin "" name "PAK GAME" ipl3 "" entry _start size 4}] }
+                     {files {} output "" emit_bin "" name "PAK GAME" ipl3 "" entry _start size 4 fs ""}] }
         run    { pak::cmd_run [pak::_parse_opts $rest {verbose 0 backend c no_style_warnings 0}] }
         init   { pak::cmd_init [pak::_parse_opts $rest {name ""}] }
         clean  { pak::cmd_clean {} }
@@ -809,14 +1128,20 @@ proc pak::cli_main {argv} {
 proc pak::cli_help {} {
     puts "usage: pak \[--version\] COMMAND ..."
     puts "commands:"
-    puts "  build   [--backend c|mips] [-o FILE.z64] [--size 4|8|16|32|64]"
-    puts "          libdragon: emit C + Makefile. standalone: if -o is given,"
-    puts "          objgen + link a padded .z64 in one step (boot + HAL + game)."
-    puts "  check   [--backend c|mips] [FILE...]     semantic check (E010 HAL gate)"
-    puts "  explain [--backend c|mips] FILE          dump C or MIPS"
-    puts "  objgen  FILE [-o FILE.pakobj]            MIPS records -> object"
-    puts "  asmobj  FILE.S [-o FILE.pakobj]          assemble crt0 / boot.S"
-    puts "  link    OBJS... -o FILE.z64 [--size MiB] [--name TITLE]"
+    puts {  build   [--backend c|mips] [-o FILE.z64] [--size 4|8|16|32|64]}
+    puts {          libdragon: emit C + Makefile. standalone: if -o is given,}
+    puts {          objgen + link a padded .z64 in one step (boot + HAL + game).}
+    puts {          --backend rsp FILE -o FILE.ucode: one microcode -> raw}
+    puts {          encoded bytes, no project needed (a microcode is a}
+    puts {          program, not a project -- see docs/rsp-microcode-in-pak.md)}
+    puts {  check   [--backend c|mips] [FILE...]     semantic check (E010 HAL gate)}
+    puts {  explain [--backend c|mips|rsp] FILE      dump C, MIPS, or RSP asm}
+    puts {  dlist   FILE [--frames N] [--cart ROM.bin] [--budget N]}
+    puts {          run the scene against the standalone HAL and disassemble}
+    puts {          the RDP display list it hands the DP (--frames 0 = all)}
+    puts {  objgen  FILE [-o FILE.pakobj]            MIPS records -> object}
+    puts {  asmobj  FILE.S [-o FILE.pakobj]          assemble crt0 / boot.S}
+    puts {  link    OBJS... -o FILE.z64 [--size MiB] [--name TITLE]}
     puts "  run / init / clean / pack"
 }
 # Tiny flag parser: positionals fill 'file'/'name'/'files'; flags set keys.
@@ -835,8 +1160,12 @@ proc pak::_parse_opts {argv defaults} {
             --emit-bin { incr i; dict set o emit_bin [lindex $argv $i] }
             --name { incr i; dict set o name [lindex $argv $i] }
             --ipl3 { incr i; dict set o ipl3 [lindex $argv $i] }
+            --fs { incr i; dict set o fs [lindex $argv $i] }
             --entry { incr i; dict set o entry [lindex $argv $i] }
             --size { incr i; dict set o size [lindex $argv $i] }
+            --frames { incr i; dict set o frames [lindex $argv $i] }
+            --budget { incr i; dict set o budget [lindex $argv $i] }
+            --cart { incr i; dict set o cart [lindex $argv $i] }
             -* { }
             default { lappend pos $a }
         }

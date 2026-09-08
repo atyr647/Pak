@@ -7,12 +7,16 @@
 #include <math.h>
 #include "pak_math.h"
 #include "pak_containers.h"
+#include "pak_libdragon.h"
 #include <display.h>
 #include <audio.h>
 #include <xm64.h>
 #include <wav64.h>
 #include <rdpq.h>
-#include <rdpq_gfx.h>
+#include <rdpq_attach.h>
+#include <rdpq_mode.h>
+#include <rdpq_rect.h>
+#include <rdpq_tri.h>
 
 
 /* -- Pak runtime types -- */
@@ -27,6 +31,10 @@ static inline void *pak_arena_alloc(PakArena *a, size_t sz) {
     if (a->ptr + sz > a->base + a->capacity) return NULL;
     void *p = a->ptr; a->ptr += sz; return p; }
 static inline void pak_arena_reset(PakArena *a) { a->ptr = a->base; }
+
+/* -- Function prototypes -- */
+int16_t gen_sample(int32_t t);
+void fill_audio_buffer(void);
 static int32_t frame = 0;
 
 int16_t gen_sample(int32_t t) {
@@ -38,7 +46,7 @@ int16_t gen_sample(int32_t t) {
 }
 
 void fill_audio_buffer(void) {
-    int16_t * buf = audio_get_buffer();
+    int16_t * buf = pak_audio_get_buffer();
     if (buf == NULL) {
         return;
     }
@@ -55,14 +63,14 @@ void fill_audio_buffer(void) {
 }
 
 int main(void) {
-    display_init(0, 2, 3, 0, 1);
+    pak_display_init(0, 2, 3, 0, 1);
     rdpq_init();
     audio_init(44100, 4);
     while (true) {
         fill_audio_buffer();
         __auto_type fb = display_get();
-        rdpq_attach_clear(fb);
-        rdpq_set_mode_fill(0x1A1A2EFF);
+        pak_rdpq_attach_clear(fb, 0x000000FF);
+        pak_rdpq_set_mode_fill(0x1A1A2EFF);
         rdpq_fill_rectangle(0, 0, 320, 240);
         rdpq_detach_show();
         frame = (frame + 1);

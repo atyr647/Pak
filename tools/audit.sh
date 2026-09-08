@@ -180,7 +180,7 @@ fi
 # ── 6. Binary back-end suites ─────────────────────────────────────────────────
 section "Binary Back End"
 
-for suite in n64enc_test n64link_test rdp_test; do
+for suite in n64enc_test n64link_test rdp_test dlist_test fuzz_test; do
   set +e
   out=$(tclsh "tcl/tools/$suite.tcl" 2>&1)
   rc=$?

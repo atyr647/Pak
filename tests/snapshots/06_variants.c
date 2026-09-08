@@ -7,6 +7,7 @@
 #include <math.h>
 #include "pak_math.h"
 #include "pak_containers.h"
+#include "pak_libdragon.h"
 
 
 /* -- Pak runtime types -- */
@@ -106,6 +107,10 @@ typedef struct {
     } data;
 } Packet;
 
+
+/* -- Function prototypes -- */
+float area(Shape s);
+int32_t entity_id(Entity e);
 float area(Shape s) {
     switch (s.tag) {
         case Shape_tag_circle:
@@ -126,6 +131,7 @@ float area(Shape s) {
             return 0.0f;
             break;
         }
+        default: __builtin_unreachable();
     }
 }
 
@@ -151,6 +157,7 @@ int32_t entity_id(Entity e) {
             return 3;
             break;
         }
+        default: __builtin_unreachable();
     }
 }
 
@@ -183,6 +190,7 @@ int main(void) {
             sink_i = -1;
             break;
         }
+        default: __builtin_unreachable();
     }
     __auto_type pkt = (Packet){.tag = Packet_tag_connect, .data.connect = {.id = 42, .port = 80}};
     switch (pkt.tag) {
@@ -201,6 +209,7 @@ int main(void) {
             sink_i = 0;
             break;
         }
+        default: __builtin_unreachable();
     }
     return 0;
 }

@@ -1,0 +1,30 @@
+-- tcl/tests/ares/rsp_task_vacc.pk64 -- the accumulator, written in Pak.
+--
+-- Step 3 of docs/rsp-microcode-in-pak.md's suggested order: "vacc. The
+-- multiply family and the checker rules that keep its call order honest."
+-- This is the design note's own worked shape (`vacc.mul` then `vacc.mac`
+-- then a reader), minus the loop -- just two terms, enough to prove VMULF
+-- (fresh, rounded) and VMACF (accumulate) chain correctly into one
+-- accumulator that `vacc.mid()` reads back with VSAR.
+--
+-- m0 = m1 = v = 0.5 in every lane (Q1.15, 0x4000): mul(m0, v.broadcast(0))
+-- contributes 0.25, mac(m1, v.broadcast(1)) contributes another 0.25, so
+-- every lane of result should read back 0.5 (0x4000) via vacc.mid().
+--
+-- Compiled by tcl/rsp_codegen.tcl (pak::rsp_generate_records). DMEM layout
+-- is the bump allocator, in declaration order: m0=0, m1=16, v=32,
+-- result=48. The driver must agree, and does -- see
+-- rsp_task_vacc_driver.pk64.
+
+use rsp.vacc
+
+static m0: vec8x16
+static m1: vec8x16
+static v: vec8x16
+static result: vec8x16
+
+entry {
+    vacc.mul(m0, v.broadcast(0))
+    vacc.mac(m1, v.broadcast(1))
+    result = vacc.mid()
+}

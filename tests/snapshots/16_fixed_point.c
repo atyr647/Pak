@@ -7,6 +7,7 @@
 #include <math.h>
 #include "pak_math.h"
 #include "pak_containers.h"
+#include "pak_libdragon.h"
 
 
 /* -- Pak runtime types -- */
@@ -31,6 +32,10 @@ struct Vec2fx {
     int32_t y;
 };
 
+
+/* -- Function prototypes -- */
+Vec2fx vec2fx_add(Vec2fx a, Vec2fx b);
+Vec2fx vec2fx_scale(Vec2fx v, int32_t s);
 Vec2fx vec2fx_add(Vec2fx a, Vec2fx b) {
     return (Vec2fx){.x = (a.x + b.x), .y = (a.y + b.y)};
 }

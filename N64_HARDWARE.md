@@ -58,6 +58,15 @@ writing them bare (e.g. `display.init(RESOLUTION_320x240, …)`) fails with
 `512x480` and `256x480` exist in libdragon as further interlaced modes; pass
 the corresponding integer from your libdragon headers if you need them.
 
+**On the standalone backend (`--backend mips`) only `0` (320x240) and a
+`bit_depth` of `2` work.** The toolchain-free HAL carves three fixed
+320x240x16 framebuffers out of RDRAM at fixed addresses, with the Z buffer and
+the display list immediately after them, so another resolution or depth would
+move every one of those. `display.init` panics (red screen, halt) rather than
+letting a scene render into a wrong-sized buffer. `num_buffers` (1-3), `gamma`
+and `filters` are all honoured. The libdragon backend (`--backend c`) supports
+the full table.
+
 **Typical game setup:**
 ```pak
 -- display.init(resolution, bit_depth, num_buffers, gamma, filters)
@@ -344,6 +353,81 @@ fn load_game(data: *SaveData) -> bool {
 
 ---
 
+## Interrupts (standalone backend)
+
+The RCP has six interrupt sources — SP, SI, AI, VI, PI, DP — and they all
+arrive on one CPU line, IP2. Getting one delivered means three things being
+true at once, and a missing any of them looks identical from the outside:
+
+1. **CP0 Status** has `IE` (bit 0) and `IM2` (bit 10) set.
+2. **MI_MASK** (`0xA430000C`) has that source armed. It is write-only and takes
+   a *pair* of bits per source, clear and set, so arming one never disturbs the
+   others: VI is `0x0080` to arm, `0x0040` to disarm.
+3. The **device** is configured to raise it. For the VI that means `VI_V_INTR`
+   (`0xA440000C`) naming a halfline inside the frame; parking it at `0x200` is
+   how you turn VI interrupts off without touching the mask.
+
+```pak
+display.init(0, 2, 3, 0, 1)
+interrupt.init()          -- arms the VI and enables IP2
+```
+
+After `interrupt.init()`, `display.show()` waits on the counter the handler
+bumps rather than spinning on `VI_V_CURRENT`, so the CPU is free between
+frames. `interrupt.vi_count()` is that counter and `interrupt.pending()` is
+every source the handler has seen since it started.
+
+**Every source must be acknowledged, at the device.** The RCP holds its line
+high until the device is told to drop it, so a source the handler leaves alone
+re-enters the handler forever:
+
+| Source | Acknowledge by writing |
+|--------|------------------------|
+| VI | anything to `VI_V_CURRENT` (`0xA4400010`) |
+| PI | `0x02` to `PI_STATUS` (`0xA4600010`) |
+| SI | anything to `SI_STATUS` (`0xA4800018`) |
+| AI | anything to `AI_STATUS` (`0xA450000C`) |
+| SP | `0x08` to `SP_STATUS` (`0xA4040010`) |
+| DP | `0x0800` to `MI_MODE` (`0xA4300000`) |
+
+`MI_INTERRUPT` reports every source that is asserting, **masked or not**, so a
+handler that acts on the raw word will acknowledge — and so discard — a flag
+nobody asked it to touch. Filter by what you armed.
+
+For a critical section, `interrupt.disable()` returns the previous Status and
+`interrupt.restore(s)` puts it back. Do not assume interrupts were on.
+
+Two things the handler itself must respect, because `Status.EXL` is set for the
+whole of it and nothing else can be serviced until it returns: it must not wait
+on hardware, and it must not be long.
+
+---
+
+## Cache maintenance
+
+The CPU's data cache does not see DMA, and DMA does not see the data cache. So
+every transfer needs one of these on the CPU side, and getting the opcode wrong
+is silent — the program keeps working on an emulator with no cache model and
+returns stale data on hardware.
+
+The `cache` instruction's operand is `(op << 2) | cache_select`, where
+`cache_select` is **0 for the instruction cache and 1 for the data cache**:
+
+| Operand | Meaning | Use |
+|---------|---------|-----|
+| `0x19` | Hit_Writeback_D | before a DMA **out** of a buffer you wrote |
+| `0x11` | Hit_Invalidate_D | after a DMA **into** a buffer you will read |
+| `0x15` | Hit_Writeback_Invalidate_D | both, when the buffer goes each way |
+| `0x10` | Hit_Invalidate_I | after writing instructions the CPU will execute |
+
+`0x14` is a plausible-looking typo for `0x11` and means Hit_Writeback_Invalidate
+on the **instruction** cache: it invalidates nothing in the D-cache at all.
+
+`cache.writeback` / `cache.invalidate` / `cache.writeback_inv` do the right
+thing; this table is here for anyone writing the inline assembly by hand.
+
+---
+
 ## Memory Map (Summary)
 
 | Region | Address Range | Size | Notes |
@@ -354,8 +438,14 @@ fn load_game(data: *SaveData) -> bool {
 | ROM header | `0x10000000` | 64 bytes | Boot code, title, CRC |
 | ROM data | `0x10000040` | rest | Your assets and data |
 | RDP regs | `0xA4100000` | — | Reality Display Processor |
+| MI regs | `0xA4300000` | — | MIPS Interface (interrupt mask/status) |
+| VI regs | `0xA4400000` | — | Video Interface |
 | AI regs | `0xA4500000` | — | Audio Interface |
 | PI regs | `0xA4600000` | — | Parallel Interface (DMA) |
+| SI regs | `0xA4800000` | — | Serial Interface (Joybus); STATUS is `+0x18` |
+| RSP DMEM | `0xA4000000` | 4 KB | CPU-addressable directly, or by SP DMA |
+| RSP IMEM | `0xA4001000` | 4 KB | Microcode |
+| SP regs | `0xA4040000` | — | SP DMA and status; SP_PC is at `0xA4080000` |
 
 ---
 

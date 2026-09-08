@@ -59,6 +59,8 @@
 	.extern rdpq_triangle_shade_tex_z
 	.extern rdpq_set_tri_z
 	.extern sprite_load
+	.extern pakfs_read
+	.extern pakfs_size
 	.extern rdpq_sprite_blit
 	.extern timer_init
 	.extern _pak_delta_time
@@ -72,6 +74,7 @@
 	.extern audio_write_silence
 	.extern audio_set_buffer_num
 	.extern debugf
+	.extern debug_init_isviewer
 	.extern assert
 	.extern dma_read
 	.extern dma_write
@@ -242,11 +245,11 @@ sum_scanline:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -784
-    sw $ra, 780($sp)
-    sw $fp, 776($sp)
-    addiu $fp, $sp, 784
-    addiu $a0, $sp, 200
+    addiu $sp, $sp, -800
+    sw $ra, 796($sp)
+    sw $fp, 792($sp)
+    addiu $fp, $sp, 800
+    addiu $a0, $sp, 208
     move $a1, $zero
     li $a2, 64
     sw $t9, 96($sp)
@@ -256,11 +259,11 @@ main:
     lw $t9, 96($sp)
     lw $t8, 100($sp)
     li $t7, 43981
-    sw $t7, 200($sp)
+    sw $t7, 208($sp)
     move $t7, $zero
-    sw $t7, 204($sp)
-    addiu $t9, $sp, 200
-    addiu $t8, $sp, 136
+    sw $t7, 212($sp)
+    addiu $t9, $sp, 208
+    addiu $t8, $sp, 144
     move $a0, $t8
     move $a1, $t9
     li $a2, 64
@@ -270,7 +273,7 @@ main:
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
-    addiu $t6, $sp, 136
+    addiu $t6, $sp, 144
     lw $t7, 0($t6)
     andi $t8, $t7, 255
     la $t7, dma_out
@@ -278,7 +281,7 @@ main:
     addu $t7, $t7, $t6
     sb $t8, 0($t7)
     move $t9, $t8
-    addiu $a0, $sp, 520
+    addiu $a0, $sp, 528
     move $a1, $zero
     li $a2, 256
     sw $t9, 96($sp)
@@ -288,9 +291,9 @@ main:
     lw $t9, 96($sp)
     lw $t8, 100($sp)
     move $t7, $zero
-    sw $t7, 520($sp)
-    addiu $t9, $sp, 520
-    addiu $t8, $sp, 264
+    sw $t7, 528($sp)
+    addiu $t9, $sp, 528
+    addiu $t8, $sp, 272
     move $a0, $t8
     move $a1, $t9
     li $a2, 256
@@ -300,7 +303,7 @@ main:
     nop
     lw $t9, 96($sp)
     lw $t8, 100($sp)
-    addiu $t6, $sp, 264
+    addiu $t6, $sp, 272
     li $t5, 0
     addu $t6, $t6, $t5
     lbu $t7, 0($t6)
@@ -325,9 +328,9 @@ main:
     sw $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_4:
-    lw $fp, 776($sp)
-    lw $ra, 780($sp)
-    addiu $sp, $sp, 784
+    lw $fp, 792($sp)
+    lw $ra, 796($sp)
+    addiu $sp, $sp, 800
     jr $ra
     nop
 	.size main, . - main
@@ -339,7 +342,7 @@ sink:
 	.word 0
 
 	.section .bss
-	.align 0
+	.align 4
 	.globl dma_out
 dma_out:
 	.space 4096

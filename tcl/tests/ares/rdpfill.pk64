@@ -1,0 +1,16 @@
+-- The RDP path, end to end: clear to blue, fill a green rectangle over the
+-- middle, flip. Every pixel here is the RDP's work, not the CPU's, so what
+-- lands on screen is a check on the command words tcl/tools/rdp_test.tcl
+-- asserts in the simulator.
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    loop {
+        let fb: u32 = display.get()
+        rdpq.attach_clear(fb, 0x0000FFFF)
+        rdpq.set_mode_fill(0x00FF00FF)
+        rdpq.fill_rectangle(80, 60, 240, 180)
+        rdpq.detach_show()
+    }
+}

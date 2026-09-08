@@ -1,0 +1,15 @@
+# Programs whose generated C does NOT compile against the real libdragon and
+# Tiny3D headers, pinned by tools/fetch_libdragon.sh and tools/fetch_tiny3d.sh.
+#
+# The corpus is tcl/tools/gate_corpus.tcl: examples/canonical plus every
+# single-file demo. Widening it past canonical is what first compiled the
+# demos at all, and it found eleven compiler bugs and a dead Tiny3D pin.
+#
+# Maintained by tcl/tools/libdragon_api_test.tcl, which rewrites the names
+# below and leaves this comment alone. This is debt, not configuration: fix
+# the binding, drop the name, and the gate holds the new floor. Adding a name
+# is how a regression gets waved through, so add one only with the reason
+# written down.
+#
+# The list is empty. Every program in the corpus compiles against the real
+# headers.

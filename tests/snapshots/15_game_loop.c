@@ -7,10 +7,14 @@
 #include <math.h>
 #include "pak_math.h"
 #include "pak_containers.h"
+#include "pak_libdragon.h"
 #include <display.h>
 #include <joypad.h>
 #include <rdpq.h>
-#include <rdpq_gfx.h>
+#include <rdpq_attach.h>
+#include <rdpq_mode.h>
+#include <rdpq_rect.h>
+#include <rdpq_tri.h>
 #include <n64sys.h>
 #include <debug.h>
 
@@ -46,8 +50,12 @@ struct GameState {
     bool running;
 };
 
+
+/* -- Function prototypes -- */
+void update(GameState * gs);
+void render(GameState * gs);
 void update(GameState * gs) {
-    __auto_type input = joypad_get_status(0);
+    __auto_type input = pak_joypad_get_status(0);
     if (input.held.right) {
         gs->x += 2;
     }
@@ -79,14 +87,14 @@ void update(GameState * gs) {
 
 void render(GameState * gs) {
     __auto_type fb = display_get();
-    rdpq_attach_clear(fb);
-    rdpq_set_mode_fill(0xFF0000FF);
+    pak_rdpq_attach_clear(fb, 0x000000FF);
+    pak_rdpq_set_mode_fill(0xFF0000FF);
     rdpq_fill_rectangle(gs->x, gs->y, (gs->x + 16), (gs->y + 16));
     rdpq_detach_show();
 }
 
 int main(void) {
-    display_init(0, 0, 2, 0, 0);
+    pak_display_init(0, 0, 2, 0, 0);
     joypad_init();
     rdpq_init();
     timer_init();
