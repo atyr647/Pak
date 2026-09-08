@@ -81,8 +81,17 @@ proc undeclared {syms includes t3d} {
         incr i
     }
     close $f
+    # Redirect stderr to a real file rather than merging it into the exec
+    # pipe (2>@1): 235 probes against libdragon's real headers produce a huge
+    # volume of unrelated warnings (format strings, pointer/int casts), and a
+    # pipe that large has been observed to come back truncated or empty in
+    # some CI environments -- silently turning every "missing"/"tiny3d" entry
+    # into a false "libdragon" instead of failing loudly. A file has no such
+    # size-dependent behavior.
+    set errfile [file join $w err.log]
     catch {exec $CC -fsyntax-only -Werror=implicit-function-declaration \
-        {*}$includes [file join $w probe.c] 2>@1} out
+        {*}$includes [file join $w probe.c] 2> $errfile}
+    set ef [open $errfile r]; set out [read $ef]; close $ef
     set bad [dict create]
     foreach line [split $out "\n"] {
         if {[regexp {implicit declaration of function '([^']+)'} $line -> s]} { dict set bad $s 1 }
