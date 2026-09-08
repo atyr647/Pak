@@ -83,6 +83,10 @@ $(BUILD_DIR)/%.ym64: %.ym
 	@mkdir -p $(dir $@)
 	$(N64_AUDIOCONV) -o $(dir $@) $<
 
+$(BUILD_DIR)/%.ucode: %.pk64
+	@mkdir -p $(dir $@)
+	pak build --backend rsp $< -o $@
+
 
 run: $(PROJECT_NAME).z64
 	ares --system Nintendo64 $<
@@ -175,6 +179,10 @@ $(BUILD_DIR)/%.xm64: %.xm
 $(BUILD_DIR)/%.ym64: %.ym
 	@mkdir -p $(dir $@)
 	$(N64_AUDIOCONV) -o $(dir $@) $<
+
+$(BUILD_DIR)/%.ucode: %.pk64
+	@mkdir -p $(dir $@)
+	pak build --backend rsp $< -o $@
 # ── Asset filesystem (DragonFS, built from the converted assets) ───────────
 #
 # n64.mk's %.z64 rule attaches $(filter %.dfs, $^) and nothing else, so the
@@ -307,6 +315,10 @@ $(BUILD_DIR)/%.xm64: %.xm
 $(BUILD_DIR)/%.ym64: %.ym
 	@mkdir -p $(dir $@)
 	$(N64_AUDIOCONV) -o $(dir $@) $<
+
+$(BUILD_DIR)/%.ucode: %.pk64
+	@mkdir -p $(dir $@)
+	pak build --backend rsp $< -o $@
 
 T3D_GLTF_TO_3D ?= $(TINY3D_INST)/bin/gltf_to_t3d
 
@@ -447,6 +459,10 @@ $(BUILD_DIR)/%.xm64: %.xm
 $(BUILD_DIR)/%.ym64: %.ym
 	@mkdir -p $(dir $@)
 	$(N64_AUDIOCONV) -o $(dir $@) $<
+
+$(BUILD_DIR)/%.ucode: %.pk64
+	@mkdir -p $(dir $@)
+	pak build --backend rsp $< -o $@
 
 T3D_GLTF_TO_3D ?= $(TINY3D_INST)/bin/gltf_to_t3d
 
