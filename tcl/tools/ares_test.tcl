@@ -549,6 +549,39 @@ if {$lit} {
 }
 
 puts ""
+puts "== a Pak PROGRAM loads its RSP task as a Ucode ASSET, not an embedded array =="
+# The last piece of docs/rsp-microcode-in-pak.md's suggested order: `asset
+# add_ucode: Ucode from "rsp_task_add.pk64"` instead of a hand-copied
+# `static ucode: [N]u32` literal. Compiles the SAME already-proven task
+# (rsp_task_add.pk64, task 46) so this test is only about the asset
+# pipeline -- pakfs archive lookup, the address getter, and the new
+# `<name>_len` getter (tcl/mips_codegen.tcl's emit_asset/
+# emit_asset_len_getter) -- not about re-proving RSP codegen.
+#
+# No Makefile/mksprite-style external tool runs here: this recompiles
+# rsp_task_add.pk64 with pak::rsp_generate_records exactly like every other
+# Pak-compiled RSP task above, then packs the raw bytes into a synthetic
+# pakfs archive under the name asset_packed_path computes for a `.pk64`
+# source (ast.tcl's ASSET_PACKED_EXT: `.pk64` -> `.ucode`) -- the same
+# shortcut the "sprite" test below takes with a hand-built .sprite instead
+# of running mksprite.
+set fh [open tcl/tests/ares/rsp_task_add.pk64 r]; set uctask_src [read $fh]; close $fh
+set uctask_ast [pak::parse_tokens [[pak::Lexer new $uctask_src] tokenize]]
+set uctask_bytes [dict get [pak::enc::encode [pak::rsp_generate_records $uctask_ast]] secdata .text bytes]
+set uc_arch [pak::pakfs_pack [list [list rsp_task_add.ucode [binary format c* $uctask_bytes]]]]
+
+set rom [build_rom rsp_task_asset tcl/tests/ares/rsp_task_asset_driver.pk64 "PAKRTU" $uc_arch]
+lassign [run_rom rsp_task_asset $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_task_asset $log
+ok_true "rsp_task_asset: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_task_asset: $where is green (sp.load_ucode(add_ucode, add_ucode_len) loaded the right bytes from the ROM's pakfs archive and the task ran)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
 puts "== the RSP runs a VECTOR task =="
 # Same contract as rsp_add.S/rsp.pk64 above, one level up: tcl/tests/ares/
 # rsp_vecadd.S uses the RSP's VECTOR unit (LQV/VADD/SQV), which is the half

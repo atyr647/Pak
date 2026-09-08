@@ -65,6 +65,8 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_triangle_shade_tex_z \
     rdpq_set_tri_z \
     sprite_load \
+    pakfs_read \
+    pakfs_size \
     rdpq_sprite_blit \
     timer_init \
     _pak_delta_time \
@@ -432,4 +434,17 @@ set ::pak::MIPS_PRIM [dict create \
     {*T} {4 4 0 0} \
     {CStr}  {4 4 0 0} \
     {Str}   {8 4 0 0} \
+]
+
+# Asset types the standalone backend can load, parallel to (but distinct
+# from) cg_tables.tcl's CG_ASSET_LOADERS -- the two backends do not support
+# the same set. Ucode has no libdragon-side implementation yet (see
+# mips_codegen.tcl's emit_asset), so it is standalone-only; checker.tcl's
+# asset_has_loader unions both tables so declaring `: Ucode` isn't flagged
+# path-only on either backend, while checker.tcl's mips-specific check_asset
+# still consults this table alone to say clearly which types standalone
+# actually loads.
+set ::pak::MIPS_ASSET_LOADERS [dict create \
+    Sprite 1 \
+    Ucode  1 \
 ]

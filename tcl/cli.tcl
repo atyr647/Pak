@@ -17,6 +17,7 @@ source [file join $_clihere n64link.tcl]
 source [file join $_clihere n64rom.tcl]
 source [file join $_clihere rdpdis.tcl]
 source [file join $_clihere mips_sim.tcl]
+source [file join $_clihere rsp_codegen.tcl]
 
 namespace eval pak {}
 set ::pak::CLI_ROOT [file normalize [file join $_clihere ..]]
@@ -424,8 +425,63 @@ proc pak::_module_path {prog} {
     return ""
 }
 
+# `pak build --backend rsp <FILE> -o <FILE.ucode>`: compile one microcode
+# source straight to raw encoded bytes -- no C, no object file, no linker,
+# no ROM. This is the conversion step `asset ... : Ucode` needs (see
+# ast.tcl's ASSET_PACKED_EXT and the Ucode loader in mips_codegen.tcl/
+# codegen.tcl), and it is also the first CLI-visible use of
+# pak::rsp_generate_records outside a test harness -- until now the only
+# callers were tcl/tools/ares_test.tcl and rsp_codegen_test.tcl.
+#
+# `--backend rsp` takes its input file from `opts name`, not a dedicated
+# `opts file` key: build's flag parser (_parse_opts, see its own comment)
+# already funnels a bare positional argument into `name` for every other
+# backend (an existing, unrelated quirk -- `name` there means "ROM title
+# override", which no microcode build has a use for), so reusing it here
+# needs no change to the shared parser and cannot affect any other
+# backend's behavior.
+proc pak::cmd_build_rsp {opts} {
+    set pak_file [dict get $opts name]
+    if {$pak_file eq ""} {
+        puts stderr "error: build --backend rsp needs one .pk64 file, e.g. `pak build --backend rsp rsp/transform.pk64 -o rsp/transform.ucode`"
+        exit 1
+    }
+    if {![file exists $pak_file]} { puts stderr "error: file not found: $pak_file"; exit 1 }
+    set out [dict get $opts output]
+    if {$out eq ""} {
+        puts stderr "error: build --backend rsp needs -o FILE.ucode -- a microcode is a standalone binary blob, not a project with a default output path"
+        exit 1
+    }
+    set prog [pak::cli_parse_file $pak_file]
+    if {$prog eq ""} { exit 1 }
+    if {[catch {
+        set recs [pak::rsp_generate_records $prog]
+        set bytes [dict get [pak::enc::encode $recs] secdata .text bytes]
+    } err]} {
+        if {[string match "RSPUNPORTED\t*" $err]} {
+            puts stderr "error: [string range $err 12 end]"
+            puts stderr "  --> $pak_file"
+        } else {
+            puts stderr "error: $err"
+        }
+        exit 1
+    }
+    set fh [open $out wb]
+    fconfigure $fh -translation binary
+    puts -nonewline $fh [binary format c* $bytes]
+    close $fh
+    puts "RSP microcode: $out ([llength $bytes] bytes)"
+}
+
 # ── Commands ──────────────────────────────────────────────────────────────────
 proc pak::cmd_build {opts} {
+    # A microcode is a program, not a project: no pak.toml, no other source
+    # files, no Makefile, no linker (see rsp_codegen.tcl's own header
+    # comment). `pak build --backend rsp` is a single-file compile, same
+    # shape as `pak explain`/`pak check FILE`, so it branches out here
+    # before the project-root requirement below, which every other backend
+    # still needs.
+    if {[dict get $opts backend] eq "rsp"} { pak::cmd_build_rsp $opts; return }
     set root [pak::cli_find_project_root]
     if {$root eq ""} {
         puts stderr "error: no pak.toml found. Run `pak init <name>` to create a project."
@@ -582,6 +638,18 @@ proc pak::cmd_explain {opts} {
         set prog [pak::cli_parse_file $pak_file]
         if {$prog eq ""} { exit 1 }
         puts [pak::records_to_asm [pak::optimize_records [pak::mips_generate_records $prog]]]
+    } elseif {$backend eq "rsp"} {
+        set prog [pak::cli_parse_file $pak_file]
+        if {$prog eq ""} { exit 1 }
+        if {[catch {puts [pak::records_to_asm [pak::rsp_generate_records $prog]]} err]} {
+            if {[string match "RSPUNPORTED\t*" $err]} {
+                puts stderr "error: [string range $err 12 end]"
+                puts stderr "  --> $pak_file"
+            } else {
+                puts stderr "error: $err"
+            }
+            exit 1
+        }
     } else {
         set prog [pak::cli_parse_file $pak_file]
         if {$prog eq ""} { exit 1 }
@@ -812,7 +880,7 @@ proc pak::cmd_pack {opts} {
     } else {
         if {[file isdirectory build]} {
             foreach f [lsort [pak::_rglob build *]] {
-                if {[lsearch -exact {.sprite .wav64 .xm64 .ym64 .t3dm} [file extension $f]] >= 0} {
+                if {[lsearch -exact {.sprite .wav64 .xm64 .ym64 .t3dm .ucode} [file extension $f]] >= 0} {
                     lappend packable [list [pak::_relto $f build] [pak::cli_read_bin $f]]
                 }
             }
@@ -951,8 +1019,11 @@ proc pak::cli_help {} {
     puts {  build   [--backend c|mips] [-o FILE.z64] [--size 4|8|16|32|64]}
     puts {          libdragon: emit C + Makefile. standalone: if -o is given,}
     puts {          objgen + link a padded .z64 in one step (boot + HAL + game).}
+    puts {          --backend rsp FILE -o FILE.ucode: one microcode -> raw}
+    puts {          encoded bytes, no project needed (a microcode is a}
+    puts {          program, not a project -- see docs/rsp-microcode-in-pak.md)}
     puts {  check   [--backend c|mips] [FILE...]     semantic check (E010 HAL gate)}
-    puts {  explain [--backend c|mips] FILE          dump C or MIPS}
+    puts {  explain [--backend c|mips|rsp] FILE      dump C, MIPS, or RSP asm}
     puts {  dlist   FILE [--frames N] [--cart ROM.bin] [--budget N]}
     puts {          run the scene against the standalone HAL and disassemble}
     puts {          the RDP display list it hands the DP (--frames 0 = all)}

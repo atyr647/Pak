@@ -115,7 +115,8 @@ set ::pak::ASSET_PACKED_EXT [dict create \
     .xm  .xm64 \
     .ym  .ym64 \
     .gltf .t3dm \
-    .glb  .t3dm]
+    .glb  .t3dm \
+    .pk64 .ucode]
 
 proc pak::asset_packed_path {path} {
     set ext [string tolower [file extension $path]]

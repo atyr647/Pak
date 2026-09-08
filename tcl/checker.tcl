@@ -162,12 +162,18 @@ oo::class create pak::Checker {
 
     # ── assets ────────────────────────────────────────────────────────────────
     # Does this asset declaration produce a loaded handle, or only a path?
+    # Unions both backends' loader tables -- CG_ASSET_LOADERS (libdragon) and
+    # MIPS_ASSET_LOADERS (standalone) do not list the same types (Ucode is
+    # standalone-only, no libdragon Ucode loader exists yet), so a type
+    # loadable on EITHER backend must not be flagged path-only here; which
+    # backend actually accepts it is check_asset's job below.
     method asset_has_loader {decl} {
         set t [pak::nfield $decl asset_type]
         if {[pak::isnil $t]} { return 0 }
         set tname [expr {[pak::kindof $t] eq "TypeName"
                          ? [pak::fval $t name] : [pak::sval $t]}]
-        return [dict exists $::pak::CG_ASSET_LOADERS $tname]
+        return [expr {[dict exists $::pak::CG_ASSET_LOADERS $tname] \
+                      || [dict exists $::pak::MIPS_ASSET_LOADERS $tname]}]
     }
 
     method check_asset {decl} {
@@ -177,13 +183,14 @@ oo::class create pak::Checker {
             set tname [expr {[pak::kindof $t] eq "TypeName"
                              ? [pak::fval $t name] : [pak::sval $t]}]
         }
-        if {$tname eq "Sprite"} return
+        if {[dict exists $::pak::MIPS_ASSET_LOADERS $tname]} return
         set what [expr {$tname eq "" ? "no type" : "type '$tname'"}]
-        my err E010 "asset '[pak::fval $decl name]' has $what, and only Sprite\
+        set known [join [lsort [dict keys $::pak::MIPS_ASSET_LOADERS]] { and }]
+        my err E010 "asset '[pak::fval $decl name]' has $what, and only $known\
                      assets can be loaded on the standalone backend" \
-            "runtime/standalone/runtime.pk64 reads .sprite files out of the ROM\
-             and nothing else. Declare it `: Sprite`, or use the libdragon\
-             backend." \
+            "runtime/standalone/runtime.pk64 reads .sprite files (Sprite) and\
+             raw pakfs blobs by name (Ucode) out of the ROM and nothing else.\
+             Declare it one of those, or use the libdragon backend." \
             $decl
     }
 
@@ -235,6 +242,27 @@ oo::class create pak::Checker {
             if {$mod ne "vacc"} {
                 my err E104 "Unknown module '[pak::fval $decl path]'" \
                     "Known rsp modules: vacc" $decl
+                return
+            }
+            # A microcode source is not a valid `mips`/`c` program: the
+            # RSP's vec8x16/vacc surface (VMULF/VMACF/VSAR, .broadcast, the
+            # scalar half's own restrictions) has no CPU-backend lowering
+            # at all -- rsp_codegen.tcl is the only codegen that ever
+            # understands `vacc.mul(...)`. Before this check existed,
+            # `pak check --backend mips` accepted files like
+            # tcl/tests/ares/rsp_task_vacc.pk64 (nothing in the checker
+            # knew `vacc` wasn't an ordinary module-less identifier), and
+            # tcl/tools/hal_contract_test.tcl's contract --
+            # "the checker accepted it, so the backend has to lower it" --
+            # caught the gap: `pak::mips_generate` crashed on
+            # `vacc.mul(...)` with "cannot determine the receiver type of
+            # .mul() -- no symbol to call" instead of a clean diagnostic.
+            if {$backend ne "rsp"} {
+                my err E010 "'use rsp.vacc' is only valid when compiling for the RSP target" \
+                    "This file is an RSP microcode, not a $backend program. Check it with\
+                     \`pak check --backend rsp\`, matching how it will actually be built\
+                     (\`pak build --backend rsp\`)." \
+                    $decl
             }
         }
     }
@@ -397,8 +425,12 @@ oo::class create pak::Checker {
             Ident {
                 set nm [pak::fval $expr name]
                 if {[dict exists $pathonly_assets $nm]} {
+                    set loadable {}
+                    foreach t [concat [dict keys $::pak::CG_ASSET_LOADERS] [dict keys $::pak::MIPS_ASSET_LOADERS]] {
+                        if {$t ni $loadable} { lappend loadable $t }
+                    }
                     my err E010 "asset '$nm' has no loader, so it has no handle to read" \
-                        "Only [join [lsort [dict keys $::pak::CG_ASSET_LOADERS]] { and }]\
+                        "Only [join [lsort $loadable] { and }]\
                          assets are loaded for you. Give it one of those types\
                          (`asset $nm: Sprite from ...`), or read `${nm}_path`\
                          and load it yourself." \

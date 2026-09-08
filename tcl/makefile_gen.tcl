@@ -82,6 +82,16 @@ proc pak::_mf_asset_rules {use_tiny3d} {
 \$(BUILD_DIR)/%.ym64: %.ym
 \t@mkdir -p \$(dir \$@)
 \t\$(N64_AUDIOCONV) -o \$(dir \$@) \$<"
+    # `asset ... : Ucode from "rsp/foo.pk64"` -- the ONE asset conversion
+    # step that is Pak compiling Pak rather than an external SDK tool
+    # (mksprite/audioconv64/gltf_to_t3d). `pak` is already assumed to be on
+    # PATH by this same Makefile (see RUNTIME_DIR above,
+    # `$(shell pak --runtime-dir ...)`), so this is no new requirement.
+    # `pak build --backend rsp` is a single-file compile with no project,
+    # no linker, no Makefile of its own -- see cli.tcl's cmd_build_rsp.
+    lappend rules "\$(BUILD_DIR)/%.ucode: %.pk64
+\t@mkdir -p \$(dir \$@)
+\tpak build --backend rsp \$< -o \$@"
     if {$use_tiny3d} {
         lappend rules "T3D_GLTF_TO_3D ?= \$(TINY3D_INST)/bin/gltf_to_t3d
 

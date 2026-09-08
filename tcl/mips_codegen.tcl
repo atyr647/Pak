@@ -525,7 +525,7 @@ oo::class create pak::MipsCodegen {
              tenv_layouts tenv_enum_values tenv_variant_decls fn_decls \
              generic_fns generic_structs generic_impls mono_emitted mono_queue type_nodes \
              closure_envs closure_captures last_closure_env heap_inited \
-             trait_decls trait_vtables assets use_aliases
+             trait_decls trait_vtables assets asset_lens use_aliases
 
     constructor {} {
         set em [pak::Emitter new]
@@ -564,6 +564,7 @@ oo::class create pak::MipsCodegen {
         set trait_decls [dict create]
         set trait_vtables [dict create]
         set assets [dict create]
+        set asset_lens [dict create]
         set use_aliases [dict create]
     }
     destructor {
@@ -1565,33 +1566,14 @@ oo::class create pak::MipsCodegen {
     # static-init phase to read it in. This used to emit only `.extern bg` --
     # a reference to a symbol nothing defines, so the link failed.
     #
-    # The path is the CONVERTED file's, because that is what goes into the
-    # archive: `pak build` runs the .png through mksprite and packs the .sprite
-    # it produced. `rom:/` is the scheme both backends emit -- libdragon opens
-    # it through DragonFS, and the standalone runtime strips it before looking
-    # the name up in its own archive.
-    method emit_asset {decl} {
-        set aname [pak::fval $decl name]
-        set apath [pak::asset_packed_path [pak::fval $decl path]]
-        set atype [pak::nfield $decl asset_type]
-        set tname ""
-        if {![pak::isnil $atype]} {
-            set tname [expr {[pak::kindof $atype] eq "TypeName"
-                             ? [pak::fval $atype name] : [pak::sval $atype]}]
-        }
-        # Only Sprite has a loader. An asset of any other type -- or of no
-        # type at all -- is still a valid declaration; it is USING the name
-        # that has nowhere to go, so the error is raised there, where it can
-        # name the use rather than the declaration.
-        if {$tname ne "Sprite"} {
-            dict set assets $aname ""
-            return
-        }
-        set slot "_pak_asset_${aname}"
-        $pool add_static $slot 4 4 0
-        set path_lbl [$pool intern_string "rom:/$apath"]
-        dict set assets $aname $slot
-
+    # The getter calls `loader_fn` (a one-argument, pointer-returning runtime
+    # function taking the `rom:/`-prefixed path) exactly once and caches the
+    # result in `slot`. Factored out of the Sprite-only version so `Ucode`
+    # (see emit_asset below) can reuse it verbatim with `pakfs_read` instead
+    # of `sprite_load` -- both are `*u8 fn(path: *c_char)`, and `sprite_load`
+    # is itself nothing but a thin wrapper over `pakfs_read`
+    # (runtime/standalone/runtime.pk64).
+    method emit_asset_getter {aname slot path_lbl loader_fn} {
         $em blank
         $em section_text
         $em globl "_pak_asset_get_${aname}"
@@ -1616,7 +1598,7 @@ oo::class create pak::MipsCodegen {
         $em sw {$a2} 24 {$sp}
         $em sw {$a3} 28 {$sp}
         $em la {$a0} $path_lbl
-        $em jal sprite_load
+        $em jal $loader_fn
         $em nop
         $em sw {$v0} 0 {$s0}
         $em lw {$a0} 16 {$sp}
@@ -1629,6 +1611,85 @@ oo::class create pak::MipsCodegen {
         $em jr {$ra}
         $em addiu {$sp} {$sp} 40
         $em size_sym "_pak_asset_get_${aname}" ". - _pak_asset_get_${aname}"
+    }
+
+    # `<name>_len`: the design note on writing RSP microcode in Pak
+    # (docs/rsp-microcode-in-pak.md) flags a `Ucode` asset needing to hand
+    # over two values -- an address and a length -- as "a wrinkle worth
+    # deciding deliberately: either the handle is a small struct with .addr
+    # and .len, or the asset declaration emits <name>_len beside it the way
+    # it already emits <name>_path. The second is more consistent with what
+    # assets already do." This takes that route, with one adjustment the
+    # note (written before this pipeline existed) couldn't have known: a
+    # compile-time numeric constant is not available, because the file this
+    # asset compiles from doesn't exist as a converted, sized artifact until
+    # AFTER this codegen runs (`pak build --backend rsp` is a separate,
+    # later `pak build` -- see cli.tcl's cmd_build_rsp). So `<name>_len` is
+    # a second lazy getter exactly like `<name>` itself, calling
+    # `pakfs_size` (the same archive lookup `pakfs_read` already does)
+    # instead of caching a pointer. No caching needed -- `pakfs_size` is
+    # cheap enough (one linear scan of the archive index, no DMA) that
+    # memoizing it would be more code than it saves.
+    method emit_asset_len_getter {aname path_lbl} {
+        $em blank
+        $em section_text
+        $em globl "_pak_asset_len_${aname}"
+        $em type_func "_pak_asset_len_${aname}"
+        $em label "_pak_asset_len_${aname}"
+        # Same argument-register preservation as emit_asset_getter, and for
+        # the same reason: `sp.load_ucode(vtx_ucode, vtx_ucode_len)` reads
+        # this name as the SECOND argument, by which point marshal_args has
+        # already written the first (vtx_ucode's own address) into \$a0.
+        $em addiu {$sp} {$sp} -32
+        $em sw {$ra} 28 {$sp}
+        $em sw {$a0} 16 {$sp}
+        $em sw {$a1} 20 {$sp}
+        $em sw {$a2} 24 {$sp}
+        $em la {$a0} $path_lbl
+        $em jal pakfs_size
+        $em nop
+        $em lw {$a0} 16 {$sp}
+        $em lw {$a1} 20 {$sp}
+        $em lw {$a2} 24 {$sp}
+        $em lw {$ra} 28 {$sp}
+        $em jr {$ra}
+        $em addiu {$sp} {$sp} 32
+        $em size_sym "_pak_asset_len_${aname}" ". - _pak_asset_len_${aname}"
+    }
+
+    # The path is the CONVERTED file's, because that is what goes into the
+    # archive: `pak build` runs the .png through mksprite and packs the .sprite
+    # it produced (or, for Ucode, runs the .pk64 through the RSP backend and
+    # packs the .ucode it produced -- see ast.tcl's ASSET_PACKED_EXT). `rom:/`
+    # is the scheme both backends emit -- libdragon opens it through DragonFS,
+    # and the standalone runtime strips it before looking the name up in its
+    # own archive.
+    method emit_asset {decl} {
+        set aname [pak::fval $decl name]
+        set apath [pak::asset_packed_path [pak::fval $decl path]]
+        set atype [pak::nfield $decl asset_type]
+        set tname ""
+        if {![pak::isnil $atype]} {
+            set tname [expr {[pak::kindof $atype] eq "TypeName"
+                             ? [pak::fval $atype name] : [pak::sval $atype]}]
+        }
+        # An asset of a type with no standalone loader -- or of no type at
+        # all -- is still a valid declaration; it is USING the name that has
+        # nowhere to go, so the error is raised there, where it can name the
+        # use rather than the declaration.
+        if {![dict exists $::pak::MIPS_ASSET_LOADERS $tname]} {
+            dict set assets $aname ""
+            return
+        }
+        set slot "_pak_asset_${aname}"
+        $pool add_static $slot 4 4 0
+        set path_lbl [$pool intern_string "rom:/$apath"]
+        dict set assets $aname $slot
+        my emit_asset_getter $aname $slot $path_lbl [expr {$tname eq "Sprite" ? "sprite_load" : "pakfs_read"}]
+        if {$tname eq "Ucode"} {
+            dict set asset_lens $aname 1
+            my emit_asset_len_getter $aname $path_lbl
+        }
     }
 
     method emit_static {decl} {
@@ -3829,10 +3890,24 @@ oo::class create pak::MipsCodegen {
         if {[dict exists $assets $name]} {
             if {[dict get $assets $name] eq ""} {
                 pak::mips_unported "asset '$name' has no loader on the standalone\
-                                    backend: only `: Sprite` assets can be read\
-                                    from the ROM"
+                                    backend: only these types can be read from\
+                                    the ROM: [join [lsort [dict keys $::pak::MIPS_ASSET_LOADERS]] {, }]"
             }
             my emit_jal "_pak_asset_get_${name}"
+            if {$dst ne {$v0}} { $em move $dst {$v0} }
+            return
+        }
+        # `<name>_len`: a Ucode asset's companion length getter (see
+        # emit_asset_len_getter's comment). `asset_lens` is keyed by the
+        # ASSET's own name ("vtx_ucode"), so a read of "vtx_ucode_len" has
+        # to strip the suffix first -- checked against asset_lens, not
+        # against a literal "_len"-suffixed entry, so an unrelated local or
+        # global genuinely named e.g. "frame_len" is never shadowed: it
+        # only matches here if "frame" is itself a Ucode asset.
+        if {[string length $name] > 4 && [string range $name end-3 end] eq "_len" \
+            && [dict exists $asset_lens [string range $name 0 end-4]]} {
+            set base [string range $name 0 end-4]
+            my emit_jal "_pak_asset_len_${base}"
             if {$dst ne {$v0}} { $em move $dst {$v0} }
             return
         }

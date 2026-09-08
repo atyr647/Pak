@@ -360,7 +360,23 @@ oo::class create pak::TypeChecker {
                 $scope declare [pak::fval $decl name] $t
             }
             ExternConst { $scope declare [pak::fval $decl name] [pak::nfield $decl type] }
-            AssetDecl   { $scope declare [pak::fval $decl name] [pak::N TypeName name auto] }
+            AssetDecl   {
+                $scope declare [pak::fval $decl name] [pak::N TypeName name auto]
+                # `<name>_len`: a Ucode asset's companion length identifier
+                # (see mips_codegen.tcl's emit_asset_len_getter). Declared
+                # here, unconditionally on the asset's type, so
+                # `asset foo: Ucode from "..."` makes `foo_len` a known
+                # name before the standalone backend's own type-specific
+                # check (checker.tcl's check_asset) has even run --
+                # otherwise `foo_len` fails as an unknown identifier on
+                # EVERY backend, libdragon included, before either backend
+                # gets a chance to say whether Ucode itself is refused.
+                set at [pak::nfield $decl asset_type]
+                set atn [expr {[pak::isnil $at] ? "" : ([pak::kindof $at] eq "TypeName" ? [pak::fval $at name] : [pak::sval $at])}]
+                if {$atn eq "Ucode"} {
+                    $scope declare "[pak::fval $decl name]_len" [pak::N TypeName name auto]
+                }
+            }
         }
     }
 
