@@ -89,13 +89,24 @@ proc undeclared {syms includes t3d} {
     # into a false "libdragon" instead of failing loudly. A file has no such
     # size-dependent behavior.
     set errfile [file join $w err.log]
-    set cmd [list $CC -fsyntax-only -Werror=implicit-function-declaration \
-        {*}$includes [file join $w probe.c]]
+    # Force the C locale on the compiler itself: GCC quotes identifiers in
+    # its diagnostics with Unicode curly quotes (U+2018/U+2019) rather than
+    # ASCII "'" whenever the environment's locale charset is UTF-8, which is
+    # exactly the case on GitHub Actions' runners but not in every dev
+    # environment. Without this, the regex below silently matches nothing on
+    # a UTF-8 locale even though the compiler is genuinely erroring on every
+    # undeclared symbol -- every entry then defaults to "declared".
+    set cmd [list env LC_ALL=C LANG=C $CC -fsyntax-only \
+        -Werror=implicit-function-declaration {*}$includes [file join $w probe.c]]
     set rc [catch {exec {*}$cmd 2> $errfile}]
     set ef [open $errfile r]; set out [read $ef]; close $ef
     set bad [dict create]
     foreach line [split $out "\n"] {
-        if {[regexp {implicit declaration of function '([^']+)'} $line -> s]} { dict set bad $s 1 }
+        # Match both ASCII and GCC's locale-dependent Unicode quoting, as a
+        # second line of defense on top of forcing LC_ALL=C above.
+        if {[regexp {implicit declaration of function ['‘]([^'’]+)['’]} $line -> s]} {
+            dict set bad $s 1
+        }
     }
     # 235 real MODULE_API symbols with zero "bad" (undeclared) hits is not a
     # plausible outcome -- some of these are obscure/legacy peripherals no
