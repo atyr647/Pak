@@ -1,0 +1,43 @@
+-- The design note's own worked vertex-transform example, verbatim
+-- (docs/rsp-microcode-in-pak.md's "A whole microcode"), using the shared
+-- struct from ../src/shared/vtxjob.pk64 instead of declaring VtxJob
+-- inline the way tcl/tests/ares/rsp_task_vtx.pk64 (task #49) had to.
+--
+-- `use shared.vtxjob` only resolves because this file lives under a
+-- pak.toml project (../pak.toml): cli.tcl's pak::rsp_resolve_program finds
+-- the project root, finds the OTHER file declaring `module shared.vtxjob`,
+-- and concatenates its source ahead of this one before parsing -- see that
+-- proc's own comment. rsp_codegen.tcl's struct registration itself is
+-- still single-file (see register_struct's comment); what changed is that
+-- the "file" it sees is no longer always JUST this one.
+--
+-- Compiling this (`pak build --backend rsp rsp/transform.pk64 -o
+-- build/transform.ucode`) must produce BYTE-IDENTICAL output to
+-- tcl/tests/ares/rsp_task_vtx.pk64 -- same struct, same statics, same
+-- entry body, just split across two files instead of one. That equality
+-- is the whole test (see tcl/tools/rsp_shared_module_test.tcl): rsp_task_
+-- vtx.pk64's bytes are already hardware-verified on ares (task #49), so a
+-- byte-for-byte match here is hardware verification by construction,
+-- without needing a second ares run to re-prove arithmetic this session
+-- already proved once.
+
+use rsp.vacc
+use shared.vtxjob
+
+@aligned(16)
+static job: VtxJob
+
+entry {
+    let mut i: i32 = 0
+    while i < job.count {
+        let v: vec8x16 = job.vertices[i]
+
+        vacc.mul(job.mvp[0], v.broadcast(0))
+        vacc.mac(job.mvp[1], v.broadcast(1))
+        vacc.mac(job.mvp[2], v.broadcast(2))
+        vacc.mac(job.mvp[3], v.broadcast(3))
+
+        job.vertices[i] = vacc.mid()
+        i = i + 1
+    }
+}

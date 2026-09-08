@@ -292,6 +292,29 @@ jobs:
       - name: RSP codegen (Pak source, scalar/vec8x16/vacc/structs, compiled for the RSP)
         run: tclsh tcl/tools/rsp_codegen_test.tcl
 
+      # task #45's remaining half: RSPUNPORTED (rsp_codegen.tcl's error
+      # convention) now carries a real file:line:col instead of a bare
+      # message, and cli.tcl's pak::rsp_diag turns that into a proper E701
+      # diagnostic printed by pak::diag_str exactly like every other Pak
+      # error. rsp_codegen_test.tcl's own "diagnostics" section covers the
+      # codegen side (a refusal's node position is captured correctly);
+      # this covers the CLI-side formatting (rsp_diag's parsing of the
+      # tagged string, including its two edge cases: a message containing
+      # a literal tab, and an unrecognized error string).
+      - name: RSP diagnostics (RSPUNPORTED -> E701 with real file:line:col)
+        run: tclsh tcl/tools/rsp_diag_test.tcl
+
+      # task #51: cli.tcl's pak::rsp_resolve_program lets an RSP microcode
+      # `use` a struct declared in a separate project module file (the
+      # design note's `use shared.vtxjob`), instead of rsp_codegen.tcl's
+      # own struct registration -- still single-file only -- ever seeing
+      # more than one file. Verified by splitting the ALREADY hardware-
+      # verified rsp_task_vtx.pk64 (task #49) across two files and checking
+      # the recombined output is byte-identical, which is hardware
+      # verification by construction rather than a second ares run.
+      - name: RSP cross-file struct module sharing
+        run: tclsh tcl/tools/rsp_shared_module_test.tcl
+
       - name: Array address-of and u8 index (sb, not scale-4 sw)
         run: tclsh tcl/tools/array_addr_test.tcl
 

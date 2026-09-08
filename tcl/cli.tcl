@@ -161,6 +161,24 @@ proc pak::diag_str {d} {
     return [join $lines "\n"]
 }
 
+# Turns a caught RSPUNPORTED\t<line>\t<col>\t<message> string (see
+# rsp_codegen.tcl's pak::rsp_unported) into a diagnostic dict, so an RSP
+# codegen refusal prints exactly like every other Pak error -- diag_str
+# above, with a real file:line:col rather than a bare message. RSP codegen
+# stops at its first refusal (no collection pass exists yet, unlike
+# checker.tcl's E0xx errors), so this always produces exactly one
+# diagnostic; callers that want more per file don't get them until that
+# pass is built.
+proc pak::rsp_diag {err fn} {
+    set parts [split $err "\t"]
+    if {[llength $parts] < 4} {
+        return [dict create code E701 message $err hint "" line 0 col 0 filename $fn severity error]
+    }
+    lassign $parts _ line col
+    set msg [join [lrange $parts 3 end] "\t"]
+    return [dict create code E701 message $msg hint "" line $line col $col filename $fn severity error]
+}
+
 # ── Type + semantic checking (mirrors typecheck_multi / _run_full_check) ───────
 proc pak::cli_typecheck_multi {programs {no_style 0}} {
     set env [pak::TypeEnv new]
@@ -232,6 +250,12 @@ proc pak::cli_check_module_imports {parsed} {
     }
     set builtins {n64 t3d std rsp}
     set diags {}
+    # Cache: project root -> the module paths ITS files declare, so a
+    # project checked one file at a time (the common shape of `pak check
+    # FILE`, which is exactly what the PostToolUse validation hook runs on
+    # every write/edit) doesn't re-glob and re-parse the same project once
+    # per unresolved `use`.
+    set proj_modules_cache [dict create]
     foreach pr $parsed {
         lassign $pr fn prog
         foreach decl [pak::items [pak::nfield $prog decls]] {
@@ -239,18 +263,45 @@ proc pak::cli_check_module_imports {parsed} {
             set path [pak::fval $decl path]
             set prefix [lindex [split $path .] 0]
             if {$prefix in $builtins} { continue }
-            if {![dict exists $declared $path]} {
-                if {[dict size $declared] > 0} {
-                    set hint "Known project modules: [join [lsort [dict keys $declared]] {, }]"
-                } else {
-                    set hint "No project modules are declared. Add `module $path` to the file that defines it."
+            if {[dict exists $declared $path]} { continue }
+            # Not among the files checked together in THIS call -- before
+            # calling it unknown, look for the module the same way
+            # pak::rsp_resolve_program does: walk up from this FILE's own
+            # directory (not `pwd`) for a pak.toml project, and search
+            # its other files. Without this, `pak check FILE` run one
+            # file at a time from outside the project (exactly what the
+            # PostToolUse hook does) could never resolve a real project
+            # module no matter how it's spelled, while a whole-project
+            # `pak build`/`pak check` (which passes every file together,
+            # populating $declared above directly) always could -- an
+            # inconsistency that would otherwise make `pak check --backend
+            # rsp FILE` disagree with what `pak build --backend rsp FILE`
+            # (cli.tcl's cmd_build_rsp) actually does with the same file.
+            set root [pak::cli_find_project_root [file dirname [file normalize $fn]]]
+            set found 0
+            if {$root ne ""} {
+                if {![dict exists $proj_modules_cache $root]} {
+                    set mods [dict create]
+                    foreach f [pak::cli_src_files $root] {
+                        if {[catch {set fprog [pak::parse_tokens [[pak::Lexer new [pak::cli_read $f]] tokenize]]}]} continue
+                        set mp [pak::_module_path $fprog]
+                        if {$mp ne ""} { dict set mods $mp 1 }
+                    }
+                    dict set proj_modules_cache $root $mods
                 }
-                lappend diags [dict create code E105 \
-                    message "Unknown module '$path' — no matching `module $path` declaration found" \
-                    hint $hint \
-                    line [pak::_nodeline $decl] col [pak::_nodecol $decl] \
-                    filename $fn severity error]
+                set found [dict exists [dict get $proj_modules_cache $root] $path]
             }
+            if {$found} { continue }
+            if {[dict size $declared] > 0} {
+                set hint "Known project modules: [join [lsort [dict keys $declared]] {, }]"
+            } else {
+                set hint "No project modules are declared. Add `module $path` to the file that defines it."
+            }
+            lappend diags [dict create code E105 \
+                message "Unknown module '$path' — no matching `module $path` declaration found" \
+                hint $hint \
+                line [pak::_nodeline $decl] col [pak::_nodecol $decl] \
+                filename $fn severity error]
         }
     }
     return $diags
@@ -272,6 +323,27 @@ proc pak::cli_run_full_check {parsed root no_style {backend c}} {
         set all [pak::semantic_check $prog $fn $backend]
         set errs {}; set ws {}
         foreach d $all { if {[dict get $d severity] eq "warning"} { lappend ws $d } else { lappend errs $d } }
+        # `--backend rsp` has no checker pass of its own the way c/mips do
+        # (rsp_codegen.tcl raises RSPUNPORTED -- turned into an E701 by
+        # pak::rsp_diag below -- rather than collecting E0xx diagnostics
+        # the way checker.tcl does) -- attempting the real codegen here is
+        # what actually answers "does the RSP target accept this file",
+        # the same promise `pak check --backend mips` makes for the MIPS
+        # backend (see hal_contract_test.tcl's header comment). Codegen
+        # stops at its first refusal, so this can only ever add ONE more
+        # diagnostic per file, unlike the checker passes above.
+        # pak::rsp_resolve_program re-parses $fn (discarding $prog here) so
+        # a project module this file `use`s -- a shared struct declared
+        # elsewhere -- is visible the same way it would be for the actual
+        # `pak build --backend rsp`/`pak explain --backend rsp` this check
+        # promises will succeed.
+        if {$backend eq "rsp" && [catch {pak::rsp_generate_records [pak::rsp_resolve_program $fn]} err]} {
+            if {[string match "RSPUNPORTED\t*" $err]} {
+                lappend errs [pak::rsp_diag $err $fn]
+            } else {
+                lappend errs [dict create code E701 message $err hint "" line 0 col 0 filename $fn severity error]
+            }
+        }
         dict set sem_diags $fn [list $errs $ws]
         incr hard [llength $errs]
         if {!$no_style} { incr warns [llength $ws] }
@@ -425,6 +497,46 @@ proc pak::_module_path {prog} {
     return ""
 }
 
+# Parses a microcode file, and -- when it sits inside a pak.toml project --
+# pulls in any project module it `use`s, so a `struct` declared once in a
+# shared module file (the design note's `use shared.vtxjob`) is visible to
+# BOTH the microcode and, via the project's ordinary multi-file compilation,
+# its CPU-side driver. rsp_codegen.tcl's own struct registration is single-
+# file only (see register_struct's comment); this is what makes a SECOND
+# file's structs available to it, by concatenating source text and parsing
+# once -- the same trick cmd_dlist uses to compile a scene together with the
+# standalone HAL as one translation unit, not an AST-splicing approach.
+#
+# A plain standalone microcode (no pak.toml above it, or no `use` of
+# anything but a builtin namespace) parses exactly as before: this only
+# changes behavior when there is a project AND an unresolved `use` to look
+# for.
+proc pak::rsp_resolve_program {pak_file} {
+    set src [pak::cli_read $pak_file]
+    set prog [pak::parse_tokens [[pak::Lexer new $src] tokenize]]
+    set root [pak::cli_find_project_root [file dirname [file normalize $pak_file]]]
+    if {$root eq ""} { return $prog }
+    set builtins {n64 t3d std rsp}
+    set needed {}
+    foreach decl [pak::items [pak::nfield $prog decls]] {
+        if {[pak::kindof $decl] ne "UseDecl"} continue
+        set path [pak::fval $decl path]
+        if {[lindex [split $path .] 0] in $builtins} continue
+        lappend needed $path
+    }
+    if {[llength $needed] == 0} { return $prog }
+    set self [file normalize $pak_file]
+    set extra_src ""
+    foreach f [pak::cli_src_files $root] {
+        if {[file normalize $f] eq $self} continue
+        set fsrc [pak::cli_read $f]
+        if {[catch {set fprog [pak::parse_tokens [[pak::Lexer new $fsrc] tokenize]]}]} continue
+        if {[pak::_module_path $fprog] in $needed} { append extra_src "$fsrc\n" }
+    }
+    if {$extra_src eq ""} { return $prog }
+    return [pak::parse_tokens [[pak::Lexer new "$extra_src\n$src"] tokenize]]
+}
+
 # `pak build --backend rsp <FILE> -o <FILE.ucode>`: compile one microcode
 # source straight to raw encoded bytes -- no C, no object file, no linker,
 # no ROM. This is the conversion step `asset ... : Ucode` needs (see
@@ -454,13 +566,13 @@ proc pak::cmd_build_rsp {opts} {
     }
     set prog [pak::cli_parse_file $pak_file]
     if {$prog eq ""} { exit 1 }
+    set prog [pak::rsp_resolve_program $pak_file]
     if {[catch {
         set recs [pak::rsp_generate_records $prog]
         set bytes [dict get [pak::enc::encode $recs] secdata .text bytes]
     } err]} {
         if {[string match "RSPUNPORTED\t*" $err]} {
-            puts stderr "error: [string range $err 12 end]"
-            puts stderr "  --> $pak_file"
+            puts stderr [pak::diag_str [pak::rsp_diag $err $pak_file]]
         } else {
             puts stderr "error: $err"
         }
@@ -641,10 +753,10 @@ proc pak::cmd_explain {opts} {
     } elseif {$backend eq "rsp"} {
         set prog [pak::cli_parse_file $pak_file]
         if {$prog eq ""} { exit 1 }
+        set prog [pak::rsp_resolve_program $pak_file]
         if {[catch {puts [pak::records_to_asm [pak::rsp_generate_records $prog]]} err]} {
             if {[string match "RSPUNPORTED\t*" $err]} {
-                puts stderr "error: [string range $err 12 end]"
-                puts stderr "  --> $pak_file"
+                puts stderr [pak::diag_str [pak::rsp_diag $err $pak_file]]
             } else {
                 puts stderr "error: $err"
             }

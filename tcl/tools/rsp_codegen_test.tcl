@@ -452,5 +452,33 @@ entry { let r: vec8x16 = vacc.low() }
 }
 
 puts ""
+puts "== diagnostics: RSPUNPORTED carries a real file:line:col, not just a message (task #45) =="
+# pak::rsp_unported {what {node ""}} tags every refusal with the node's own
+# source position (ast.tcl stamps this on every node the parser builds --
+# see pak::nodepos) as RSPUNPORTED\t<line>\t<col>\t<message>, which cli.tcl's
+# pak::rsp_diag turns into a real E701 diagnostic printed exactly like
+# every other Pak error (see cli.tcl's cmd_build_rsp/cmd_explain and
+# cli_run_full_check's rsp branch). Before this, RSPUNPORTED carried only
+# the message -- a raw string with no location at all.
+set loc_src {
+static a: u32
+static b: u32
+static c: u32
+
+entry {
+    c = a * b
+}
+}
+if {[catch {words_of $loc_src} err]} {
+    set parts [split $err "\t"]
+    check_eq "RSPUNPORTED has 4 tab-separated parts (tag/line/col/message)" [llength $parts] 4
+    check_eq "multiply refusal points at line 7 (where `a * b` is)" [lindex $parts 1] 7
+    set col [lindex $parts 2]
+    ok "multiply refusal's column is a real position, not 0" [expr {$col > 0}] "  (got column $col)"
+} else {
+    ok "expected the multiply to refuse" 0 "  (compiled with no error)"
+}
+
+puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

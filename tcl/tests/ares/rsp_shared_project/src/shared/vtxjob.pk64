@@ -1,0 +1,26 @@
+-- The design note's own shared-module shape (docs/rsp-microcode-in-pak.md,
+-- "The ABI is a struct both sides `use`"): a struct in a `module`, meant to
+-- be `use`d by a microcode and (on a real CPU-side driver) the program
+-- that DMAs data in and out of it. This file declares nothing else -- no
+-- `entry`, no functions -- exactly like the note's own `src/shared/
+-- vtxjob.pk64` example.
+--
+-- Deliberately NOT `use`d by a CPU-side driver in this test project: the
+-- vec8x16 fields have no CPU-side representation (vec8x16 is the RSP's
+-- vector register, meaningless to the VR4300 -- see rsp_codegen.tcl's own
+-- comments), so a driver still addresses this struct's DMEM image as raw
+-- bytes at known offsets, the same way every rsp_task_*_driver.pk64 here
+-- already does. What THIS test proves is the other half: that
+-- `../rsp/transform.pk64`'s `use shared.vtxjob` actually resolves this
+-- file's struct via cli.tcl's pak::rsp_resolve_program, instead of
+-- rsp_codegen.tcl's existing single-file-only struct registration failing
+-- to find it.
+
+module shared.vtxjob
+
+@aligned(16)
+struct VtxJob {
+    mvp: [4]vec8x16,
+    count: i32,
+    vertices: [4]vec8x16
+}

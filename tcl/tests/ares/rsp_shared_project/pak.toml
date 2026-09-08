@@ -1,0 +1,12 @@
+[project]
+name = "rsp_shared_project"
+rom_title = "RSP SHARED"
+save_type = "none"
+
+[display]
+resolution = "320x240"
+bit_depth = 16
+framebuffers = 3
+
+[build]
+optimization = "debug"
