@@ -20,9 +20,24 @@ ARES_REV="${ARES_REV:-master}"
 SDL_VER="${SDL_VER:-3.2.24}"
 JOBS="${JOBS:-$(nproc)}"
 
+# Three things here need root: the apt packages, installing SDL3 into
+# /usr/local, and ldconfig. This runs both as root (a container) and as an
+# unprivileged CI user (GitHub Actions' `runner`), so escalate only when we
+# are not already root. $PREFIX itself is written unprivileged on purpose --
+# sudo'ing the mkdir would leave a root-owned tree the build cannot write to.
+SUDO=""
+if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+        SUDO="sudo"
+    else
+        echo "ares: SKIP (not root and no sudo -- cannot install dependencies)"
+        exit 0
+    fi
+fi
+
 echo "==> apt dependencies"
-apt-get update -qq
-apt-get install -y --no-install-recommends \
+$SUDO apt-get update -qq
+$SUDO apt-get install -y --no-install-recommends \
     build-essential cmake ninja-build git curl ca-certificates \
     libgtk-3-dev libgl-dev libglx-dev libasound2-dev libudev-dev \
     libpulse-dev libao-dev libopenal-dev libxrandr-dev libxinerama-dev \
@@ -40,8 +55,8 @@ if ! [ -f /usr/local/include/SDL3/SDL.h ]; then
     cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/usr/local -DSDL_STATIC=OFF
     cmake --build build -j"$JOBS"
-    cmake --install build
-    ldconfig
+    $SUDO cmake --install build
+    $SUDO ldconfig
 fi
 
 echo "==> ares ($ARES_REV)"
