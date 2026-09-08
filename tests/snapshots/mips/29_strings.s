@@ -59,6 +59,8 @@
 	.extern rdpq_triangle_shade_tex_z
 	.extern rdpq_set_tri_z
 	.extern sprite_load
+	.extern pakfs_read
+	.extern pakfs_size
 	.extern rdpq_sprite_blit
 	.extern timer_init
 	.extern _pak_delta_time
