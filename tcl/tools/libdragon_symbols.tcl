@@ -89,12 +89,27 @@ proc undeclared {syms includes t3d} {
     # into a false "libdragon" instead of failing loudly. A file has no such
     # size-dependent behavior.
     set errfile [file join $w err.log]
-    catch {exec $CC -fsyntax-only -Werror=implicit-function-declaration \
-        {*}$includes [file join $w probe.c] 2> $errfile}
+    set cmd [list $CC -fsyntax-only -Werror=implicit-function-declaration \
+        {*}$includes [file join $w probe.c]]
+    set rc [catch {exec {*}$cmd 2> $errfile}]
     set ef [open $errfile r]; set out [read $ef]; close $ef
     set bad [dict create]
     foreach line [split $out "\n"] {
         if {[regexp {implicit declaration of function '([^']+)'} $line -> s]} { dict set bad $s 1 }
+    }
+    # 235 real MODULE_API symbols with zero "bad" (undeclared) hits is not a
+    # plausible outcome -- some of these are obscure/legacy peripherals no
+    # mainline libdragon build implements. Rather than silently trust a
+    # result that almost certainly means the probe compile itself didn't run
+    # as expected, fail loudly with enough to diagnose it: the exact command,
+    # its exit status, and what it actually wrote to stderr.
+    if {[dict size $bad] == 0} {
+        puts stderr "libdragon symbols: SUSPICIOUS -- 0 undeclared out of [llength $syms] probes"
+        puts stderr "  cmd: $cmd"
+        puts stderr "  exit status from catch: $rc"
+        puts stderr "  stderr bytes: [string length $out]"
+        puts stderr "  stderr (first 2000 chars):"
+        puts stderr [string range $out 0 2000]
     }
     return $bad
 }
