@@ -187,7 +187,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /opt/pak-ares
-          key: ares-master-sdl3.2.24-v1
+          key: ares-af4cbb04-sdl3.2.24-v1
 
       - name: Build ares (cold cache only)
         if: steps.ares.outputs.cache-hit != 'true'

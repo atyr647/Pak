@@ -16,7 +16,15 @@
 set -euo pipefail
 
 PREFIX="${1:-/opt/pak-ares}"
-ARES_REV="${ARES_REV:-master}"
+# Pinned, for the same reason fetch_libdragon.sh pins libdragon: a moving
+# reference is not a reference. Tracking master silently broke the gate once
+# already -- upstream stopped binding Audio/Driver and Input/Driver as
+# settings, so ares exited at argument parsing and all 13 ROM cases failed as
+# "no frame reached the screen". Bump deliberately, and re-check the
+# --setting flags in tcl/tools/ares_test.tcl against
+# desktop-ui/settings/settings.cpp when you do.
+# Full 40-character SHA: `git fetch <sha>` will not accept an abbreviation.
+ARES_REV="${ARES_REV:-af4cbb04f067682a8a3cf42695ff78bed634b38d}"
 SDL_VER="${SDL_VER:-3.2.24}"
 JOBS="${JOBS:-$(nproc)}"
 
@@ -62,7 +70,16 @@ fi
 echo "==> ares ($ARES_REV)"
 mkdir -p "$PREFIX/src" && cd "$PREFIX/src"
 if [ ! -d ares/.git ]; then
-    git clone --depth 1 --branch "$ARES_REV" https://github.com/ares-emulator/ares ares
+    # --branch takes a branch or a tag, never a commit SHA, so fetch the
+    # pinned revision explicitly. GitHub serves any reachable SHA, which keeps
+    # this a shallow fetch rather than the full history a clone-then-checkout
+    # would have to download.
+    mkdir -p ares
+    ( cd ares
+      git init -q .
+      git remote add origin https://github.com/ares-emulator/ares
+      git fetch -q --depth 1 origin "$ARES_REV"
+      git checkout -q FETCH_HEAD )
 fi
 cd ares
 # ARES_BUILD_LOCAL=OFF keeps -march=native out of it, so the binary is portable

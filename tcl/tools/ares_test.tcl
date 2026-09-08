@@ -144,16 +144,36 @@ proc run_rom {tag rom display} {
     set log [file join $TMP $tag.log]
     set shot [file join $TMP $tag.png]
     set env_disp $display
-    set pid [exec env DISPLAY=:$display LIBGL_ALWAYS_SOFTWARE=1 $ARES \
+    # Audio/Driver and Input/Driver are NOT settable: ares hardcodes both to
+    # "SDL" at load (desktop-ui/settings/settings.cpp) and binds only
+    # Video/Driver. Passing a setting path ares does not know makes it print
+    # "Invalid setting: ..." and return from main without emulating anything,
+    # so every ROM then burns the full deadline below having never started.
+    # Audio/Mute is still a real setting; SDL_AUDIODRIVER=dummy is what keeps
+    # the hardcoded SDL audio driver from needing a sound device that no CI
+    # container has.
+    set pid [exec env DISPLAY=:$display LIBGL_ALWAYS_SOFTWARE=1 \
+                 SDL_AUDIODRIVER=dummy $ARES \
                  --system "Nintendo 64" --no-file-prompt --fullscreen \
-                 --setting Audio/Driver=None --setting Audio/Mute=true \
-                 --setting Input/Driver=None $rom >& $log &]
+                 --setting Audio/Mute=true $rom >& $log &]
     set deadline [expr {[clock seconds] + 240}]
     set lit 0
     set stable 0
     set last {}
     while {[clock seconds] < $deadline} {
         after 3000
+        # ares rejecting an argument is not something to wait 240 seconds for,
+        # once per ROM, and then report as "no frame arrived" -- say what
+        # actually happened, immediately.
+        if {![catch {set fh [open $log r]; set txt [read $fh]; close $fh}]} {
+            if {[string match "*Invalid setting*" $txt]} {
+                catch {exec kill -9 $pid}
+                error "ares rejected a command-line setting and never started:\n\
+                       [string trim $txt]\n\
+                       (ares only binds settings listed in\
+                       desktop-ui/settings/settings.cpp)"
+            }
+        }
         if {[catch {exec env DISPLAY=:$env_disp $IMPORT -window root $shot 2>@1}]} continue
         if {[catch {set mean [exec env DISPLAY=:$env_disp $CONVERT $shot -format \
             {%[fx:mean.r*255] %[fx:mean.g*255] %[fx:mean.b*255]} info:]}]} continue
