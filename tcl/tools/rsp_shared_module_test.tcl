@@ -31,6 +31,7 @@ set HERE [file dirname [file normalize [info script]]]
 set REPO [file normalize [file join $HERE .. ..]]
 cd $REPO
 source [file join $REPO tcl cli.tcl]
+package require sha256
 
 set ::pass 0
 set ::fail 0
@@ -69,6 +70,29 @@ if {[catch {words_of_program $combined_prog} shared_words]} {
 
     check_eq "byte-identical to rsp_task_vtx.pk64's already hardware-verified bytes (task #49)" \
         $shared_words $ref_words
+
+    # That comparison is two LIVE compiles checked against each other, not
+    # against anything frozen -- a codegen regression that changes struct
+    # layout or the RSP arithmetic would very likely move both sides the same
+    # way (same VtxJob definition, same generator) and the check above would
+    # still pass. This is the frozen half: a checked-in hash of the
+    # cross-file-resolved program's own bytes, so a regression in either
+    # codegen or module resolution that happens to keep both inputs in
+    # agreement still trips something. REGEN=1 rewrites it.
+    set golden [file join $REPO tests golden rsp_shared.sha256]
+    set digest [::sha2::sha256 -hex [join $shared_words ""]]
+    if {[info exists ::env(REGEN)] && $::env(REGEN) eq "1"} {
+        file mkdir [file dirname $golden]
+        set fh [open $golden w]; puts $fh $digest; close $fh
+        puts "ok    rsp_shared.sha256 regenerated"
+        incr ::pass
+    } elseif {![file exists $golden]} {
+        ok "rsp_shared.sha256 exists (run with REGEN=1 to create it)" 0
+    } else {
+        set fh [open $golden r]; set want [string trim [read $fh]]; close $fh
+        check_eq "cross-file program matches its frozen golden (tests/golden/rsp_shared.sha256)" \
+            $digest $want
+    }
 }
 
 puts ""
