@@ -910,6 +910,28 @@ fn rdpq_set_mode_standard() {
 fn rdpq_set_mode_standard_z() {
     rdp_set_mode_1cycle(1)
 }
+-- Same 1-cycle setup as rdpq.set_mode_standard, with persp_tex_en (bit 51 of
+-- SET_OTHER_MODES, bit 19 of the "hi" word passed to rdpq_set_other_modes_raw)
+-- also set. Only rdpq.triangle_tex_persp's W channel means anything to the
+-- RDP's texture unit under this mode -- rdpq.triangle_tex's constant 0x7FFF
+-- W still works here too (it IS the persp-normalized "1.0"), but plain
+-- rdpq.triangle_tex, texture_rectangle and blits do not need this mode and
+-- should keep using rdpq.set_mode_standard.
+fn rdp_set_mode_1cycle_persp(zbuf: i32) {
+    dl_cmd(RDP_SYNC_PIPE << 24, 0)
+    let blend: u32 = (1 << 22) | (1 << 20)
+    let mut lo: u32 = blend | 0x00006040
+    if zbuf != 0 { lo = lo | 0x30 }
+    g_cycle = CYCLE_1CYCLE
+    let filt: u32 = (1 << 11) | (1 << 10)
+    let persp: u32 = 1 << 19
+    rdpq_set_other_modes_raw((CYCLE_1CYCLE << 20) | filt | persp, lo)
+    rdpq_set_combiner_raw(0x00887F10, 0x88FCF279)
+}
+
+fn rdpq_set_mode_standard_persp() {
+    rdp_set_mode_1cycle_persp(0)
+}
 
 -- Fill the reserved Z buffer with 0xFFFC (libdragon's max 16-bit Z) by
 -- briefly pointing SET_COLOR_IMAGE at it.
@@ -1397,6 +1419,149 @@ fn rdpq_triangle_tex(tile: u32,
     rdp_tex_hi(dsdy, dtdy, 0)
     rdp_tex_lo(dsde, dtde, 0)
     rdp_tex_lo(dsdy, dtdy, 0)
+}
+
+-- Perspective-correct TRI_TEX -- still opcode 0x0A, the SAME command as
+-- rdpq.triangle_tex: perspective is SET_OTHER_MODES.persp_tex_en (a mode
+-- bit), not a different opcode. Draw with rdpq.set_mode_standard_persp() so
+-- the RDP actually divides by what this sends; rdpq.set_mode_standard()
+-- leaves that bit clear, in which case even a perfectly-computed W channel
+-- is ignored and the picture comes out exactly as affine as
+-- rdpq.triangle_tex's own -- see CURRENTLY_SUPPORTED.md `affine-st-only`.
+--
+-- w0/w1/w2 are each vertex's 1/w in fix16.16 -- bigger means closer, which is
+-- what a perspective projection naturally produces (1/w grows as w shrinks
+-- toward the near plane). The trick, the same one libdragon's own
+-- rdpq_triangle() uses: normalize so the closest vertex's w is exactly the
+-- affine "1.0" (0x7FFF, libdragon's own scale for that), pre-multiply S and
+-- T by each vertex's own normalized w, then interpolate S*w, T*w and w
+-- linearly across the triangle exactly like any other attribute. The RDP's
+-- texture unit divides by the interpolated w per pixel; that division is
+-- the entire difference from the affine path, and it happens in hardware,
+-- not in this function.
+fn rdpq_triangle_tex_persp(tile: u32,
+                     x0: i32, y0: i32, s0: i32, t0: i32, w0: i32,
+                     x1: i32, y1: i32, s1: i32, t1: i32, w1: i32,
+                     x2: i32, y2: i32, s2: i32, t2: i32, w2: i32) {
+    let mut xa: i32 = x0
+    let mut ya: i32 = y0
+    let mut sa: i32 = s0
+    let mut ta: i32 = t0
+    let mut wa: i32 = w0
+    let mut xb: i32 = x1
+    let mut yb: i32 = y1
+    let mut sb: i32 = s1
+    let mut tb: i32 = t1
+    let mut wb: i32 = w1
+    let mut xc: i32 = x2
+    let mut yc: i32 = y2
+    let mut sc: i32 = s2
+    let mut tc: i32 = t2
+    let mut wc: i32 = w2
+
+    if yb < ya {
+        let tx: i32 = xa; let ty: i32 = ya; let ts: i32 = sa; let tt: i32 = ta; let tw: i32 = wa
+        xa = xb; ya = yb; sa = sb; ta = tb; wa = wb
+        xb = tx; yb = ty; sb = ts; tb = tt; wb = tw
+    }
+    if yc < ya {
+        let tx: i32 = xa; let ty: i32 = ya; let ts: i32 = sa; let tt: i32 = ta; let tw: i32 = wa
+        xa = xc; ya = yc; sa = sc; ta = tc; wa = wc
+        xc = tx; yc = ty; sc = ts; tc = tt; wc = tw
+    }
+    if yc < yb {
+        let tx: i32 = xb; let ty: i32 = yb; let ts: i32 = sb; let tt: i32 = tb; let tw: i32 = wb
+        xb = xc; yb = yc; sb = sc; tb = tc; wb = wc
+        xc = tx; yc = ty; sc = ts; tc = tt; wc = tw
+    }
+    if ya == yc { return }
+
+    let mut lft: u32 = 0
+    if (yc - ya) * (xb - xa) > (xc - xa) * (yb - ya) { lft = 1 }
+
+    let dxhdy: i32 = rdp_edge_slope(xc - xa, yc - ya)
+    let dxmdy: i32 = rdp_edge_slope(xb - xa, yb - ya)
+    let dxldy: i32 = rdp_edge_slope(xc - xb, yc - yb)
+
+    let pw0: u32 = (RDP_TRI_TEX << 24) | (lft << 23) | ((tile & 7) << 16) | to_fx142(yc)
+    let pw1: u32 = (to_fx142(yb) << 16) | to_fx142(ya)
+    dl_cmd(pw0, pw1)
+    dl_cmd((xb * 65536) as u32, dxldy as u32)
+    dl_cmd((xa * 65536) as u32, dxhdy as u32)
+    dl_cmd((xa * 65536) as u32, dxmdy as u32)
+
+    -- Normalize so the closest vertex's w channel lands exactly on the
+    -- affine "1.0". Keeps the W channel in the range the RDP's reciprocal
+    -- table is accurate over, rather than whatever raw magnitude a
+    -- projection matrix produced -- the same reason libdragon normalizes.
+    let mut wmax: i32 = wa
+    if wb > wmax { wmax = wb }
+    if wc > wmax { wmax = wc }
+    if wmax <= 0 { wmax = 1 }
+
+    let wan: i32 = rdp_muldiv(wa, 65536, wmax)
+    let wbn: i32 = rdp_muldiv(wb, 65536, wmax)
+    let wcn: i32 = rdp_muldiv(wc, 65536, wmax)
+
+    -- S/T in s10.5 (texel*32), pre-multiplied by each vertex's OWN
+    -- normalized w -- this is the entire trick. Interpolating S*w and T*w
+    -- linearly, then dividing by the linearly-interpolated w per pixel,
+    -- recovers perspective-correct S/T; interpolating S and T directly (the
+    -- affine path) does not, because screen-space position is not linear in
+    -- world-space position under a perspective projection.
+    let ss0: i32 = rdp_muldiv(sa * 32, wan, 65536)
+    let tt0: i32 = rdp_muldiv(ta * 32, wan, 65536)
+    let ss1: i32 = rdp_muldiv(sb * 32, wbn, 65536)
+    let tt1: i32 = rdp_muldiv(tb * 32, wbn, 65536)
+    let ss2: i32 = rdp_muldiv(sc * 32, wcn, 65536)
+    let tt2: i32 = rdp_muldiv(tc * 32, wcn, 65536)
+
+    -- 0x7FFF is the RDP's own W=1.0 (libdragon scale, the same literal the
+    -- affine path writes as a constant); wan/wbn/wcn are fix16.16 fractions
+    -- of wmax, so this rescales into that same convention.
+    let ww0: i32 = rdp_muldiv(wan, 0x7FFF, 65536)
+    let ww1: i32 = rdp_muldiv(wbn, 0x7FFF, 65536)
+    let ww2: i32 = rdp_muldiv(wcn, 0x7FFF, 65536)
+
+    let hx: i32 = xc - xa
+    let hy: i32 = yc - ya
+    let mx: i32 = xb - xa
+    let my: i32 = yb - ya
+    let nz: i32 = hx * my - hy * mx
+    let ms: i32 = ss1 - ss0
+    let mt: i32 = tt1 - tt0
+    let mw: i32 = ww1 - ww0
+    let hs: i32 = ss2 - ss0
+    let ht: i32 = tt2 - tt0
+    let hw: i32 = ww2 - ww0
+    let nxS: i32 = hy * ms - my * hs
+    let nxT: i32 = hy * mt - my * ht
+    let nxW: i32 = hy * mw - my * hw
+    let nyS: i32 = mx * hs - hx * ms
+    let nyT: i32 = mx * ht - hx * mt
+    let nyW: i32 = mx * hw - hx * mw
+
+    let dsdx: i32 = rdp_muldiv(0 - nxS, 65536, nz)
+    let dtdx: i32 = rdp_muldiv(0 - nxT, 65536, nz)
+    let dwdx: i32 = rdp_muldiv(0 - nxW, 65536, nz)
+    let dsdy: i32 = rdp_muldiv(0 - nyS, 65536, nz)
+    let dtdy: i32 = rdp_muldiv(0 - nyT, 65536, nz)
+    let dwdy: i32 = rdp_muldiv(0 - nyW, 65536, nz)
+    let dsde: i32 = dsdy + rdp_muldiv(dsdx, hx, hy)
+    let dtde: i32 = dtdy + rdp_muldiv(dtdx, hx, hy)
+    let dwde: i32 = dwdy + rdp_muldiv(dwdx, hx, hy)
+
+    let sfix: i32 = ss0 * 65536
+    let tfix: i32 = tt0 * 65536
+    let wfix: i32 = ww0 * 65536
+    rdp_tex_hi(sfix, tfix, wfix)
+    rdp_tex_hi(dsdx, dtdx, dwdx)
+    rdp_tex_lo(sfix, tfix, wfix)
+    rdp_tex_lo(dsdx, dtdx, dwdx)
+    rdp_tex_hi(dsde, dtde, dwde)
+    rdp_tex_hi(dsdy, dtdy, dwdy)
+    rdp_tex_lo(dsde, dtde, dwde)
+    rdp_tex_lo(dsdy, dtdy, dwdy)
 }
 
 -- Pack one RGBA s15.16 quadruplet as the RDP shade block wants it: integer

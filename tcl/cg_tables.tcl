@@ -102,6 +102,7 @@ set ::pak::CG_API [dict create \
     {rdpq set_env_color} {rdpq_set_env_color} \
     {rdpq set_fog_color} {rdpq_set_fog_color} \
     {rdpq set_mode_standard} {rdpq_set_mode_standard} \
+    {rdpq set_mode_standard_persp} {rdpq_set_mode_standard_persp} \
     {rdpq set_other_modes_raw} {rdpq_set_other_modes_raw} \
     {rdpq set_prim_color} {rdpq_set_prim_color} \
     {rdpq set_prim_depth} {rdpq_set_prim_depth_raw} \
@@ -125,6 +126,7 @@ set ::pak::CG_API [dict create \
     {rdpq triangle_shade} {rdpq_triangle_shade} \
     {rdpq triangle_shade_z} {rdpq_triangle_shade_z} \
     {rdpq triangle_tex} {rdpq_triangle_tex} \
+    {rdpq triangle_tex_persp} {rdpq_triangle_tex_persp} \
     {rdpq triangle_shade_tex} {rdpq_triangle_shade_tex} \
     {rdpq triangle_shade_tex_z} {rdpq_triangle_shade_tex_z} \
     {rdpq_font draw_text} {rdpq_text_print} \

@@ -469,6 +469,7 @@ proc check_textured_tri {name pre draw} {
     }
 }
 
+
 check_textured_tri "TRI_TEX" \
     "rdpq.set_mode_standard()" \
     "rdpq.triangle_tex(0, 40, 40, 0, 0, 200, 60, 32, 0, 80, 180, 0, 32)"
@@ -489,6 +490,82 @@ check_textured_tri "TRI_TEX_Z" \
 check_textured_tri "TRI_SHADE_TXTR" \
     "rdpq.set_mode_standard()" \
     "rdpq.triangle_shade_tex(0, 40, 40, 0xFFFF_FFFF, 0, 0, 200, 60, 0xFFFF_FFFF, 32, 0, 80, 180, 0xFFFF_FFFF, 0, 32)"
+
+# Render the same tri_tpl driver and return {n rmean bmean} for the red/blue
+# halves -- coverage plus the mean-x of each colour, the same boundary metric
+# check_textured_tri uses internally but exposed here so two renders of the
+# same geometry can be compared against each other, not just against the
+# vertices.
+proc boundary_x {pre draw} {
+    global tri_tpl
+    lassign [render [string map [list PRE $pre DRAW $draw] $tri_tpl]] st res
+    if {$st eq "err"} { error "render failed: $res" }
+    set drawn [drawn_pixels $res]
+    set red 0 ; set blue 0 ; set redx 0 ; set bluex 0
+    dict for {k v} $drawn {
+        lassign $v r g b
+        lassign [split $k ,] x y
+        if {$r > 200 && $b < 80} { incr red ; incr redx $x } \
+        elseif {$b > 200 && $r < 80} { incr blue ; incr bluex $x }
+    }
+    if {$red == 0 || $blue == 0} { error "one colour missing (red=$red blue=$blue)" }
+    return [list [dict size $drawn] [expr {double($redx)/$red}] [expr {double($bluex)/$blue}]]
+}
+
+puts ""
+puts "== perspective-correct texturing actually divides by W =="
+
+# rdpq.triangle_tex_persp is still RDP opcode 0x0A -- the same TRI_TEX the
+# affine path above uses -- with persp_tex_en set and a real W channel
+# instead of a constant. Two things prove the divide is happening in
+# hardware, not just that the new function draws a triangle:
+#
+#  1. Equal W at every vertex must degenerate to the SAME picture as the
+#     affine TRI_TEX case above (normalizing three equal values and dividing
+#     by a constant is arithmetically the affine path). If this drifted, the
+#     new coefficient math would be suspect even before W varies at all.
+#  2. Sharply different W per vertex must move the red/blue boundary AWAY
+#     from where equal-W (and affine) put it -- ST is no longer linear in
+#     screen space once the vertices are not equidistant, and only a real
+#     per-pixel divide can bend it. A build that silently ignored the W
+#     channel -- e.g. persp_tex_en never actually set, or the mode setter
+#     wired to the wrong bit -- would pass check 1 by accident and fail
+#     check 2 by producing the same boundary as equal-W.
+set persp_pre "rdpq.set_mode_standard_persp()"
+set flat_draw \
+    "rdpq.triangle_tex_persp(0, 40, 40, 0, 0, 0x10000, 200, 60, 32, 0, 0x10000, 80, 180, 0, 32, 0x10000)"
+set skew_draw \
+    "rdpq.triangle_tex_persp(0, 40, 40, 0, 0, 0x10000, 200, 60, 32, 0, 0x10000, 80, 180, 0, 32, 0x02000)"
+
+if {[catch {boundary_x "rdpq.set_mode_standard()" \
+        "rdpq.triangle_tex(0, 40, 40, 0, 0, 200, 60, 32, 0, 80, 180, 0, 32)"} affine]} {
+    incr ::fail
+    puts "FAIL  perspective baseline: could not render the affine reference ($affine)"
+} elseif {[catch {boundary_x $persp_pre $flat_draw} flat]} {
+    incr ::fail
+    puts "FAIL  perspective equal-W: $flat"
+} elseif {[catch {boundary_x $persp_pre $skew_draw} skew]} {
+    incr ::fail
+    puts "FAIL  perspective skewed-W: $skew"
+} else {
+    lassign $affine an ar ab
+    lassign $flat   fn fr fb
+    lassign $skew   sn sr sb
+    ok_true "equal-W TRI_TEX_PERSP covers its geometry" \
+        [expr {$fn > 10000 && $fn < 11500}] " (drawn=$fn, area=10800)"
+    # A few pixels of slop for rounding through two independent reciprocal
+    # paths (the affine constant vs. the normalized-W divide); it must be
+    # far tighter than the shift check 2 requires below.
+    ok_true "equal-W TRI_TEX_PERSP matches the affine boundary" \
+        [expr {abs($fr - $ar) < 3.0 && abs($fb - $ab) < 3.0}] \
+        [format " (affine red %.1f/blue %.1f, persp red %.1f/blue %.1f)" $ar $ab $fr $fb]
+    ok_true "skewed-W TRI_TEX_PERSP covers its geometry" \
+        [expr {$sn > 10000 && $sn < 11500}] " (drawn=$sn, area=10800)"
+    ok_true "skewed-W TRI_TEX_PERSP moves the boundary away from equal-W" \
+        [expr {abs($sr - $fr) > 3.0 || abs($sb - $fb) > 3.0}] \
+        [format " (equal-W red %.1f/blue %.1f, skewed-W red %.1f/blue %.1f)" $fr $fb $sr $sb]
+}
+
 
 # ── 4. the Z block on a textured triangle actually rejects ───────────────────
 

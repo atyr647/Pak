@@ -431,6 +431,7 @@ compiling the examples that use them.
 | `rdpq` | `set_mode_copy` | `rdpq_set_mode_copy` | yes* | yes |
 | `rdpq` | `set_mode_fill` | `rdpq_set_mode_fill` | yes* | yes |
 | `rdpq` | `set_mode_standard` | `rdpq_set_mode_standard` | yes | yes |
+| `rdpq` | `set_mode_standard_persp` | `rdpq_set_mode_standard_persp` | no | yes |
 | `rdpq` | `set_mode_standard_z` | `rdpq_set_mode_standard_z` | yes* | yes |
 | `rdpq` | `set_other_modes_raw` | `rdpq_set_other_modes_raw` | yes | yes |
 | `rdpq` | `set_prim_color` | `rdpq_set_prim_color` | yes | yes |
@@ -455,6 +456,7 @@ compiling the examples that use them.
 | `rdpq` | `triangle_shade_tex_z` | `rdpq_triangle_shade_tex_z` | no | yes |
 | `rdpq` | `triangle_shade_z` | `rdpq_triangle_shade_z` | no | yes |
 | `rdpq` | `triangle_tex` | `rdpq_triangle_tex` | no | yes |
+| `rdpq` | `triangle_tex_persp` | `rdpq_triangle_tex_persp` | no | yes |
 | `rdpq` | `triangle_tex_z` | `rdpq_triangle_tex_z` | yes* | yes |
 | `rdpq` | `triangle_z` | `rdpq_triangle_z` | no | yes |
 | `rdpq_font` | `draw_text` | `rdpq_text_print` | yes | no |
@@ -633,9 +635,9 @@ compiling the examples that use them.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**350 functions** across the module surface; **154** exist on the standalone HAL.
+**352 functions** across the module surface; **156** exist on the standalone HAL.
 
-Of the 235 lowered as a direct call: **120** are libdragon's own, **32** need Tiny3D, and **83** are **standalone-only**.
+Of the 237 lowered as a direct call: **120** are libdragon's own, **32** need Tiny3D, and **85** are **standalone-only**.
 
 Standalone-only is mostly by design rather than debt. libdragon owns the
 subsystem and exposes a different shape for it: interrupts are callbacks
@@ -741,6 +743,7 @@ use n64.rdpq             -- #include <rdpq.h> + <rdpq_gfx.h>
 | `rdpq.detach` | `()` | Detach current surface |
 | `rdpq.detach_show` | `()` | Detach and show surface (flip) |
 | `rdpq.set_mode_standard` | `()` | Standard rendering mode |
+| `rdpq.set_mode_standard_persp` | `()` | Standard rendering mode with `persp_tex_en` set, for `rdpq.triangle_tex_persp` |
 | `rdpq.set_mode_standard_z` | `()` | 1-cycle + z_compare_en + z_update_en |
 | `rdpq.set_mode_copy` | `()` | Fast copy rendering mode |
 | `rdpq.set_mode_fill` | `(color: u32)` | Fill mode with color |
@@ -755,6 +758,10 @@ All four textured triangle commands below are **affine**: they write a constant
 `W`, so ST is interpolated linearly in screen space and never divided by 1/w.
 That is exact for screen-space work and for small triangles, and visibly wrong
 for a large triangle seen at a steep angle. <!-- known-bug: affine-st-only -->
+`rdpq.triangle_tex_persp` (standalone-only, listed with the mode setters above)
+is a separate, perspective-correct command for when that matters — the affine
+ones are unchanged and still the right choice for screen-space UI and small
+triangles, where the extra per-vertex divide buys nothing.
 
 | `rdpq.triangle` | `(x0,y0,x1,y1,x2,y2)` | Flat fill triangle (RDP 0x08) |
 | `rdpq.triangle_z` | `(x0,y0,z0, x1,y1,z1, x2,y2,z2)` | Fill + Z (RDP 0x09); z is 0..32767 |
@@ -765,6 +772,7 @@ for a large triangle seen at a steep angle. <!-- known-bug: affine-st-only -->
 | `rdpq.triangle_shade_tex` | `(tile, x0,y0,c0,s0,t0, x1,y1,c1,s1,t1, x2,y2,c2,s2,t2)` | Gouraud + affine ST (RDP 0x0E) |
 | `rdpq.set_tri_z` | `(z0, z1, z2)` | Vertex Z for the next `triangle_tex_z` / `triangle_shade_tex_z` |
 | `rdpq.triangle_shade_tex_z` | `(tile, x0,y0,c0,s0,t0, x1,..., x2,...)` | Gouraud + ST + Z (RDP 0x0F); call `set_tri_z` first |
+| `rdpq.triangle_tex_persp` | `(tile, x0,y0,s0,t0,w0, x1,y1,s1,t1,w1, x2,y2,s2,t2,w2)` | Perspective-correct textured triangle (still RDP 0x0A TRI_TEX — persp is a mode bit, not a different opcode); needs `rdpq.set_mode_standard_persp()`; `w` is each vertex's 1/w in fix16.16 |
 | `rdpq.texture_rectangle` | `(...)` | Blit textured rect (see libdragon) |
 | `rdpq.texture_rectangle_flip` | `(tile, x0,y0,x1,y1,s,t)` | Y-flipped blit (RDP 0x25 TEXTURE_RECTANGLE_FLIP) |
 | `rdpq.texture_rectangle_scaled` | `(tile, x0,y0,x1,y1,s,t,dsdx,dtdy)` | Scaled blit (RDP 0x24, s5.10 dsdx/dtdy) |

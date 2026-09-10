@@ -106,6 +106,7 @@ libdragon rdpq.set_fog_color
 missing rdpq.set_key_gb
 missing rdpq.set_key_r
 libdragon rdpq.set_mode_standard
+missing rdpq.set_mode_standard_persp
 libdragon rdpq.set_other_modes_raw
 libdragon rdpq.set_prim_color
 libdragon rdpq.set_prim_depth
@@ -126,6 +127,7 @@ missing rdpq.triangle_shade_tex
 missing rdpq.triangle_shade_tex_z
 missing rdpq.triangle_shade_z
 missing rdpq.triangle_tex
+missing rdpq.triangle_tex_persp
 missing rdpq.triangle_z
 libdragon rdpq_font.draw_text
 libdragon rdpq_font.free
