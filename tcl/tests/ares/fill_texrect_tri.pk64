@@ -1,0 +1,68 @@
+-- The Week 4 smoke scene: fill, a texture rectangle and a textured triangle
+-- in ONE ROM, on ares -- paraLLEl-RDP, a second RDP implementation
+-- independent of angrylion, which is what tcl/tools/pixel_test.tcl checks
+-- against. Three draw classes that pixel_test.tcl and rdp_test.tcl have
+-- already verified individually; what is new here is that all three still
+-- draw correctly sharing one attach/detach cycle and one loaded texture,
+-- on real emulated RDP hardware rather than the MIPS simulator.
+--
+-- Clear is black, so every drawn region reads unambiguously against the
+-- background -- no probe here could be confused for "nothing was drawn".
+-- The fill rectangle is sized to cover a real fraction of the 320x240
+-- frame, not just the 50x50 pixel_test.tcl uses: ares_test.tcl's run_rom
+-- decides a frame is "lit" from the mean channel brightness of the whole
+-- screenshot, and a scene whose drawn area is mostly black background
+-- never crosses that threshold even when every pixel is exactly right --
+-- the first version of this scene rendered correctly and still read as
+-- "no frame arrived" for that reason.
+--
+-- Layout (320x240):
+--   FILL            (10,10)-(210,210)   solid green
+--   TEXTURE_RECTANGLE (240,10)-(272,42) the texture page, 1:1, COPY mode
+--   TRIANGLE_TEX    (60,130)(280,130)(60,230)   same page, 1-cycle mode
+--
+-- The texture page is the pixel_test.tcl pattern: 32x32 RGBA5551, left half
+-- red (S<16), right half blue (S>=16), written by the CPU before the RDP
+-- ever touches it -- no PakFS asset needed for this scene.
+
+@aligned(16)
+static page: [2048]u8 = undefined
+
+fn fill_page() {
+    let base: u32 = (&page[0] as u32) | 0xA000_0000
+    let mut i: i32 = 0
+    loop {
+        if i >= 1024 { break }
+        let s: i32 = i % 32
+        let p: *volatile u16 = (base + (i * 2) as u32) as *volatile u16
+        if s < 16 { *p = 0xF801 as u16 } else { *p = 0x003F as u16 }
+        i = i + 1
+    }
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    fill_page()
+    loop {
+        let fb: u32 = display.get()
+        rdpq.attach_clear(fb, 0x0000_00FF)
+
+        rdpq.set_mode_fill(0x00FF00FF)
+        rdpq.fill_rectangle(10, 10, 210, 210)
+
+        rdpq.set_texture_image((&page[0] as u32) | 0xA000_0000, 0, 2, 32)
+        rdpq.set_tile_mask(0, 0, 2, 8, 0, 0, 2, 2, 5, 5)
+        rdpq.load_tile(0, 0, 0, 32, 32)
+        rdpq.set_tile_size(0, 0, 0, 32, 32)
+        rdpq.sync_tile()
+
+        rdpq.set_mode_copy()
+        rdpq.texture_rectangle(0, 240, 10, 272, 42, 0, 0)
+
+        rdpq.set_mode_standard()
+        rdpq.triangle_tex(0, 60, 130, 0, 0, 280, 130, 32, 0, 60, 230, 0, 32)
+
+        rdpq.detach_show()
+    }
+}
