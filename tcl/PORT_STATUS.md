@@ -9,28 +9,29 @@ every push. That reference has been removed; its verified output is frozen in
 
 Run everything with `tclsh tcl/tools/golden_test.tcl`, or one stage at a time
 by naming it. The corpus is every `.pk64` under `examples/`, `ai/`, `tests/`
-and `tcl/tests/` — 588 files, including the 485 source snippets lifted out of
-the old pytest suite into `tests/corpus/`.
+and `tcl/tests/` — 617 files, including the 487 source snippets lifted out of
+the old pytest suite into `tests/corpus/`. (These counts drift as cases are
+added; `tclsh tcl/tools/golden_test.tcl` prints the live one.)
 
 | Stage | Source | Golden | Coverage |
 |-------|--------|--------|----------|
-| Lexer | `lexer.tcl` | `tests/golden/lex.sha256` | 588 |
-| Parser (AST) | `parser.tcl` | `tests/golden/ast.sha256` | 588 |
-| C codegen | `codegen.tcl` | `tests/golden/cg.sha256` | 588 |
-| MIPS codegen | `mips_codegen.tcl` | `tests/golden/mips.sha256` | 588 |
-| Checker | `checker.tcl` | `tests/golden/check/` | 588 |
-| Typechecker | `typechecker.tcl` | `tests/golden/tc/` | 588 |
+| Lexer | `lexer.tcl` | `tests/golden/lex.sha256` | 617 |
+| Parser (AST) | `parser.tcl` | `tests/golden/ast.sha256` | 617 |
+| C codegen | `codegen.tcl` | `tests/golden/cg.sha256` | 617 |
+| MIPS codegen | `mips_codegen.tcl` | `tests/golden/mips.sha256` | 617 |
+| Checker | `checker.tcl` | `tests/golden/check/` | 617 |
+| Typechecker | `typechecker.tcl` | `tests/golden/tc/` | 617 |
 | Header generator | `headergen.tcl` | `tests/golden/header/` | 32 canonical |
 | C→Pak transpiler | `c2pak.tcl` | `tests/golden/c2pak/` | 8 |
 | Makefile generator | `makefile_gen.tcl` | `tests/golden/makefile.txt` | 4 scenarios |
 | PakFS archive | `pakfs.tcl` | `tests/golden/pakfs.txt` | 3 scenarios |
-| MIPS encoder | `n64enc.tcl` | `tcl/tools/n64enc_test.tcl` | 55 encodings |
+| MIPS encoder | `n64enc.tcl` | `tcl/tools/n64enc_test.tcl` | 75 encodings |
 | Record optimizer + encoded exec | `optimize.tcl` | `tcl/tools/enc_exec_test.tcl` | call/MMIO goldens |
 | Array / sret / Result / generic / variant / closure / fmt | `mips_codegen.tcl` | `tcl/tools/array_addr_test.tcl` | capture-mut via env ptr; CStr.slice |
-| RDP stream (key/convert/scaled-texrect) | `runtime.pk64` | `tcl/tools/rdp_test.tcl` | 304 words unopt=opt |
+| RDP stream (key/convert/scaled-texrect) | `runtime.pk64` | `tcl/tools/rdp_test.tcl` | 310 words unopt=opt |
 | Exception paint + crt0 vectors | `boot.S`, `runtime.pk64` | `tcl/tools/exception_test.tcl` | red-screen + 4 MiB ROM |
 | Audio PCM (AI) | `runtime.pk64` | `tcl/tools/audio_test.tcl` | DACRATE/LEN/kick |
-| Linker + ROM packer | `n64link.tcl`, `n64rom.tcl` | `tcl/tools/n64link_test.tcl` | 44 assertions |
+| Linker + ROM packer | `n64link.tcl`, `n64rom.tcl` | `tcl/tools/n64link_test.tcl` | 64 assertions |
 
 Token and AST dumps run to megabytes across the corpus, so those stages are
 gated by hash; diagnostics are stored in full because they are worth reading in
@@ -39,9 +40,9 @@ a diff. Human-readable per-example C and MIPS also live in `tests/snapshots/`.
 The `mips` stage is a self-snapshot: the Python MIPS backend was retired before
 that port finished, so its goldens pin the current output rather than comparing
 against an oracle. Every valid file in the corpus now lowers to assembly; the
-only `UNPORTED` markers left are the 43 deliberately-invalid snippets, which
-fail to parse. A construct the backend cannot lower would show up here as a
-golden change rather than slipping through unnoticed.
+only `UNPORTED` markers left are the 9 deliberately-invalid snippets in
+`tests/invalid/`, which fail to parse. A construct the backend cannot lower
+would show up here as a golden change rather than slipping through unnoticed.
 
 ## Source positions
 

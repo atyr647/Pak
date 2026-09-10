@@ -107,6 +107,7 @@ set ::pak::API_ARITY [dict create \
     {rdpq triangle_shade_z} {12 12} \
     {rdpq triangle_tex} {13 13} \
     {rdpq triangle_tex_z} {13 13} \
+    {rdpq triangle_tex_persp} {16 16} \
     {rdpq triangle_shade_tex} {16 16} \
     {rdpq triangle_shade_tex_z} {16 16} \
     {rdpq set_tri_z} {3 3} \

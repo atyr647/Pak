@@ -433,8 +433,23 @@ jobs:
       # is a claim about a pair. This parses docs/ipl3-emulator-matrix.md and
       # checks the rows that need no emulator, so the table cannot rot into
       # describing a ROM layout Pak no longer produces.
+      # mupen64plus is installed so the matrix's mupen row is RUN, not merely
+      # documented: the gate asserts the IPL3/RDRAM failure still reproduces.
+      # That assertion is what flips when a second bootcode fixes it, so the
+      # row cannot quietly become stale in either direction.
       - name: IPL3 x emulator matrix
-        run: tclsh tcl/tools/ipl3_matrix_test.tcl
+        run: |
+          sudo apt-get install -y -qq mupen64plus-ui-console \
+              mupen64plus-rsp-hle mupen64plus-audio-sdl mupen64plus-input-sdl \
+              >/dev/null 2>&1 || echo "mupen64plus unavailable; its row stays documented"
+          # The shim rows need a patched core; building it is a couple of
+          # minutes and it is what proves the fix still works. Skips cleanly
+          # if the source cannot be fetched.
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' \
+              /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
+          sudo apt-get update -qq >/dev/null 2>&1 || true
+          bash tools/build_mupen_shim.sh || true
+          PATH=/usr/games:$PATH tclsh tcl/tools/ipl3_matrix_test.tcl
 
       # The Known Bugs table is worth what its worst row is worth. This fails
       # if any doc states a blocker the table does not carry, or carries a row

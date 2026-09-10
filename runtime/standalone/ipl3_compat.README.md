@@ -49,9 +49,21 @@ Core Error: reserved opcode: 80000300:1
 
 A ROM whose entire payload is `b .` / `nop` — two instructions that cannot be
 wrong — fails in exactly the same way, so nothing above ROM `0x1000` is
-involved. libdragon's own ROMs sidestep it because the *mainline* build does
-not write the size it detected to `0x80000318`, where mupen64plus reads it;
-the compat build does, so the emulator sees the bad number and stops.
+involved: this is the bootcode and the emulator, not the compiler.
+
+This was root-caused by building mupen64plus 2.5.9 from source and
+instrumenting it, and the headline message turns out to be a red herring:
+mupen64plus reads CPU register `$s4` when IPL3 broadcasts to `RDRAM_MODE_REG`,
+because that is where *Nintendo's* IPL3 keeps the size. libdragon keeps
+something else there. That line is a `DebugMessage` and stops nothing.
+
+What actually happens is that libdragon's chip probe detects **zero** RDRAM on
+this emulator — the two disagree about how the RDRAM `DEVICE_ID` register is
+encoded — so stage 2 is DMA'd to `0x80000000 + 0 - stage2size` and the payload
+is never loaded. `docs/ipl3-emulator-matrix.md` has the trace, both bugs, and the
+hypotheses eliminated first (including the `0x80000318` store this file used
+to blame). It is an emulator bug rather than a bootcode one, and
+`tools/build_mupen_shim.sh` builds a mupen64plus that runs Pak ROMs.
 
 **ares runs it.** `tcl/tools/ares_test.tcl` boots two ROMs on ares headless
 under Xvfb and checks the pixels that come out; `tools/build_ares.sh` builds

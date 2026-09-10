@@ -22,6 +22,7 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_detach \
     rdpq_detach_show \
     rdpq_set_mode_standard \
+    rdpq_set_mode_standard_persp \
     rdpq_set_mode_standard_z \
     rdpq_set_mode_copy \
     rdpq_set_mode_fill \
@@ -61,6 +62,7 @@ set ::pak::MIPS_EXTERNS [list \
     rdpq_triangle_shade_z \
     rdpq_triangle_tex \
     rdpq_triangle_tex_z \
+    rdpq_triangle_tex_persp \
     rdpq_triangle_shade_tex \
     rdpq_triangle_shade_tex_z \
     rdpq_set_tri_z \
@@ -71,6 +73,8 @@ set ::pak::MIPS_EXTERNS [list \
     timer_init \
     _pak_delta_time \
     get_ticks \
+    get_memory_size \
+    system_has_expansion \
     audio_init \
     audio_close \
     audio_get_buffer \
@@ -209,6 +213,7 @@ set ::pak::MIPS_API [dict create \
     {rdpq detach} {rdpq_detach} \
     {rdpq detach_show} {rdpq_detach_show} \
     {rdpq set_mode_standard} {rdpq_set_mode_standard} \
+    {rdpq set_mode_standard_persp} {rdpq_set_mode_standard_persp} \
     {rdpq set_mode_standard_z} {rdpq_set_mode_standard_z} \
     {rdpq set_mode_copy} {rdpq_set_mode_copy} \
     {rdpq set_mode_fill} {rdpq_set_mode_fill} \
@@ -248,6 +253,7 @@ set ::pak::MIPS_API [dict create \
     {rdpq triangle_shade_z} {rdpq_triangle_shade_z} \
     {rdpq triangle_tex} {rdpq_triangle_tex} \
     {rdpq triangle_tex_z} {rdpq_triangle_tex_z} \
+    {rdpq triangle_tex_persp} {rdpq_triangle_tex_persp} \
     {rdpq triangle_shade_tex} {rdpq_triangle_shade_tex} \
     {rdpq triangle_shade_tex_z} {rdpq_triangle_shade_tex_z} \
     {rdpq set_tri_z} {rdpq_set_tri_z} \
@@ -256,6 +262,8 @@ set ::pak::MIPS_API [dict create \
     {timer init} {timer_init} \
     {timer delta} {_pak_delta_time} \
     {timer get_ticks} {get_ticks} \
+    {system memory_size} {get_memory_size} \
+    {system has_expansion} {system_has_expansion} \
     {audio init} {audio_init} \
     {audio close} {audio_close} \
     {audio get_buffer} {audio_get_buffer} \

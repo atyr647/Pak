@@ -4733,12 +4733,26 @@ oo::class create pak::MipsCodegen {
     # actually returns a pointer. 8-byte aligned, free is a no-op.
     # First allocation seeds the cursor at the standalone HAL heap base so
     # we don't need a 64 KiB .bss reservation in the object.
+    #
+    # Bounded against g_boot_memsize (runtime/standalone/runtime.pk64,
+    # written by boot.S at reset from IPL3's own detected RDRAM size):
+    # 0x803C0000 by default -- 256 KiB short of the stack, which never
+    # moves -- widened to 0x807F0000 only when boot.S actually found the
+    # Expansion Pak's extra 4 MB present. Exhausting it returns none (0),
+    # same as any other allocation failure Pak code is expected to check;
+    # before this, the bump never stopped and silently walked into the
+    # stack once the arena ran out.
     method emit_bump_alloc {size_reg dst} {
         my ensure_heap
         set base [$ra alloc_temp]
         set hp [$ra alloc_temp]
         set aln [$ra alloc_temp]
+        set lim [$ra alloc_temp]
+        set msz [$ra alloc_temp]
         set inited [my fresh_label .Lheap_ok]
+        set noexp  [my fresh_label .Lheap_noexp]
+        set fits   [my fresh_label .Lheap_fits]
+        set done   [my fresh_label .Lheap_done]
         $em la $hp __pak_heap_ptr
         $em lw $base 0 $hp
         $em bnez $base $inited
@@ -4748,10 +4762,30 @@ oo::class create pak::MipsCodegen {
         $em addiu $aln $size_reg 7
         $em li $hp 0xFFFFFFF8
         $em and_ $aln $aln $hp
+        $em li $lim 0x803C0000
+        $em la $msz g_boot_memsize
+        $em lw $msz 0 $msz
+        $em li $hp 0x400000
+        $em sgtu $hp $msz $hp
+        $em beqz $hp $noexp
+        $em nop
+        $em li $lim 0x807F0000
+        $em label $noexp
+        $em addu $hp $base $aln
+        $em sgtu $hp $hp $lim
+        $em beqz $hp $fits
+        $em nop
+        $em move $dst {$zero}
+        $em j $done
+        $em nop
+        $em label $fits
         $em move $dst $base
         $em addu $base $base $aln
         $em la $hp __pak_heap_ptr
         $em sw $base 0 $hp
+        $em label $done
+        $ra free_temp $msz
+        $ra free_temp $lim
         $ra free_temp $aln
         $ra free_temp $hp
         $ra free_temp $base

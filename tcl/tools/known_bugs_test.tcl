@@ -34,6 +34,14 @@ proc bad  {msg} { incr ::fail; puts "FAIL  $msg" }
 
 # Phrases that assert something is broken *now*. Deliberately short: a longer
 # list catches more prose and teaches people to write around the gate.
+#
+# The second group was added after examples/chroma/README.md sat for a release
+# saying `triangle_tex` "does not draw correctly yet" and calling it "the
+# blocker for the nave" -- both false since the TRI_TEX pixel gate went green,
+# and neither matched anything in the first group. A scanner that only knows
+# how the last stale claim was phrased will always be one phrasing behind, so
+# these are the ways a doc says "this feature does not produce output", not the
+# ways this one did.
 set BLOCKERS {
     {known bug}
     {cannot run}
@@ -43,6 +51,11 @@ set BLOCKERS {
     {currently broken}
     {wrong on hardware}
     {not supported yet}
+    {does not draw}
+    {does not render}
+    {blocker}
+    {stubbed}
+    {until this is fixed}
 }
 
 proc markers {line} {

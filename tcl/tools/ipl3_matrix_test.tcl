@@ -50,7 +50,11 @@ set rows {}
 set in_matrix 0
 foreach line [split $doc "\n"] {
     if {[regexp {^##\s+The matrix} $line]} { set in_matrix 1; continue }
-    if {$in_matrix && [regexp {^##\s} $line]} { set in_matrix 0 }
+    # Any heading ends the section, not just another `##`. A `###` subheading
+    # used to slip through, so every table further down the page was parsed as
+    # matrix rows -- which is how a bit-layout table ended up being asked
+    # whether it names a bootcode.
+    if {$in_matrix && [regexp {^#+\s} $line]} { set in_matrix 0 }
     if {!$in_matrix} continue
     if {![string match "|*" [string trim $line]]} continue
     if {[regexp {^\|\s*-+} $line]} continue
@@ -91,6 +95,14 @@ ok_true "the shipped bootcode fills the PIF's region exactly" \
 # length does, because that is what goes in the header field.
 set payload [string repeat "\xDE\xAD\xBE\xEF" 64]
 
+# A payload for the emulator rows that is a real program: `b .` plus its
+# delay-slot nop, repeated. Any correctly loaded entry lands on the branch and
+# spins forever, so "still running" means the bootcode did its whole job. The
+# 0xDEADBEEF payload above is fine for header arithmetic and useless here --
+# it decodes to invalid instructions, so a ROM that booted PERFECTLY would
+# still fault, and the fault would look exactly like not booting at all.
+set payload_loop [string repeat [binary format II 0x1000FFFF 0x00000000] 64]
+
 set rom_compat [pak::n64rom $payload "PAK IPL3 MATRIX" $ipl3 [expr {4 * 1024 * 1024}]]
 set rom_none   [pak::n64rom $payload "PAK IPL3 MATRIX" ""    [expr {4 * 1024 * 1024}]]
 
@@ -121,15 +133,33 @@ foreach dir [split $::env(PATH) :] {
     if {[file executable $p]} { set MUPEN $p; break }
 }
 
+# One place to run a ROM on mupen64plus. Dummy plugins throughout: these rows
+# are about what the BOOTCODE does, and a headless runner has no GL context --
+# without them mupen64plus fails on "Could not load EGL library" and closes the
+# ROM before IPL3 ever runs, which would make a row report whatever the video
+# stack did instead of whatever the bootcode did.
+proc mupen_run {mupen path} {
+    set out ""
+    catch {exec $mupen --nosaveoptions --noosd --emumode 0 --testshots 0 \
+               --gfx dummy --audio dummy --input dummy \
+               --rsp mupen64plus-rsp-hle $path 2>@1} out
+    return $out
+}
+
 if {$MUPEN eq ""} {
     puts "note  mupen64plus not on PATH -- its row stays documented, not run"
 } else {
     set tmp /tmp/pak-ipl3-matrix
     file mkdir $tmp
+    set romrun [pak::n64rom $payload_loop "PAK IPL3 MATRIX" $ipl3 [expr {4 * 1024 * 1024}]]
     set path [file join $tmp compat.z64]
-    set f [open $path wb]; puts -nonewline $f $rom_compat; close $f
-    set out ""
-    catch {exec $MUPEN --nogui --testshots 1 --emumode 0 $path 2>@1} out
+    set f [open $path wb]; puts -nonewline $f $romrun; close $f
+    # Dummy plugins throughout: this row is about what the BOOTCODE does, and
+    # a headless runner has no GL context -- without these mupen64plus fails on
+    # "Could not load EGL library" and closes the ROM before IPL3 ever runs,
+    # which would make the row report whatever the video stack did instead of
+    # whatever the bootcode did.
+    set out [mupen_run $MUPEN $path]
     # The documented expectation is a failure with this exact diagnosis. If it
     # ever starts booting, the Known Bugs row and this doc are both stale.
     set detected [string match "*IPL3 detected*RDRAM*" $out]
@@ -140,6 +170,34 @@ if {$MUPEN eq ""} {
         puts [string trim $out]
         puts "      If this ROM now boots, update docs/ipl3-emulator-matrix.md and"
         puts "      drop `mupen64plus-ipl3` from CURRENTLY_SUPPORTED.md."
+    }
+
+    # The shim: a mupen64plus core built with
+    # tools/mupen/rdram-libdragon-compat.patch runs the SAME ROM. Asserting
+    # both halves is the point -- stock must still fail and the shim must
+    # still work, so neither the bug report nor the fix can rot unnoticed.
+    set shim ""
+    set tmpd [expr {[info exists ::env(TMPDIR)] ? $::env(TMPDIR) : "/tmp"}]
+    foreach cand [list \
+            [file join $tmpd pak-mupen-shim build projects unix libmupen64plus.so.2.0.0] \
+            /tmp/pak-mupen-shim/build/projects/unix/libmupen64plus.so.2.0.0] {
+        if {[file exists $cand]} { set shim $cand; break }
+    }
+    if {$shim eq ""} {
+        puts "note  no mupen64plus shim built -- run tools/build_mupen_shim.sh"
+    } else {
+        # A booting ROM never exits, so the run is killed by timeout; what
+        # marks failure is the interpreter reporting a fault, not the exit
+        # code. The driver here loops forever by design.
+        set out2 ""
+        catch {exec timeout 25 $MUPEN --corelib $shim \
+                   --nosaveoptions --noosd --emumode 0 --testshots 0 \
+                   --gfx dummy --audio dummy --input dummy \
+                   --rsp mupen64plus-rsp-hle $path 2>@1} out2
+        ok_true "shim: no reserved-opcode fault on the same ROM" \
+            [expr {![string match "*reserved opcode*" $out2]}] ""
+        ok_true "shim: the CPU is still running when the timeout hits" \
+            [expr {![string match "*R4300 emulator finished*" $out2]}] ""
     }
 }
 

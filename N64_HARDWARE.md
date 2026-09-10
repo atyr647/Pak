@@ -58,13 +58,18 @@ writing them bare (e.g. `display.init(RESOLUTION_320x240, …)`) fails with
 `512x480` and `256x480` exist in libdragon as further interlaced modes; pass
 the corresponding integer from your libdragon headers if you need them.
 
-**On the standalone backend (`--backend mips`) only `0` (320x240) and a
-`bit_depth` of `2` work.** The toolchain-free HAL carves three fixed
-320x240x16 framebuffers out of RDRAM at fixed addresses, with the Z buffer and
-the display list immediately after them, so another resolution or depth would
-move every one of those. `display.init` panics (red screen, halt) rather than
-letting a scene render into a wrong-sized buffer. `num_buffers` (1-3), `gamma`
-and `filters` are all honoured. The libdragon backend (`--backend c`) supports
+**On the standalone backend (`--backend mips`), `0` (320x240) and `2`
+(256x240) work, with a `bit_depth` of `2`.** The toolchain-free HAL carves
+three fixed framebuffer SLOTS out of RDRAM sized for the widest of the two
+(320x240x16), with the Z buffer and the display list immediately after them.
+256x240 just uses less of the same slot — the memory map does not move, only
+the VI_WIDTH/VI_X_SCALE registers and the RDP's per-frame color image/scissor
+width do. `1` and `3` (640x480, 512x240) are still refused: both are
+interlaced, which needs a second VI programming path — separate H/V_VIDEO
+timings and a per-field origin swap — this HAL does not have. `display.init`
+panics (red screen, halt) rather than letting a scene render into a
+wrong-sized or wrongly-interlaced buffer. `num_buffers` (1-3), `gamma` and
+`filters` are all honoured. The libdragon backend (`--backend c`) supports
 the full table.
 
 **Typical game setup:**
@@ -461,6 +466,41 @@ thing; this table is here for anyone writing the inline assembly by hand.
 | Framebuffer size: 320×240×2 bytes = 150 KB | Two framebuffers = 300 KB |
 | Keep draw call count < 200 per frame | RDP has limited command FIFO |
 | Avoid 640×480 unless required | Takes 4× fill bandwidth vs 320×240 |
+
+---
+
+## `f32` vs `fix16.16`
+
+**`fix16.16` is the blessed path for game logic.** It is what the fixed-point
+type table above documents, what the runtime's own math (`rdp_muldiv`, the
+triangle coefficient builders) uses throughout, and what the performance
+table already names: the VR4300's FPU is real hardware, not emulated in
+software, but it is slow relative to the integer pipeline, and every fixed-
+point op is a `mult`/`div` sequence on the same ALU the rest of the program
+already uses.
+
+`f32` is **opt-in**, not forbidden. `CURRENTLY_SUPPORTED.md` marks it Full on
+both backends: real COP1 instructions on MIPS
+(`add.s`/`sub.s`/`mul.s`/`div.s`/`neg.s`, `c.*.s` + `bc1t`/`bc1f`, o32's
+`$f12`/`$f14` argument registers), and the C backend's native `float` on
+libdragon. Two different things follow from that, and they should not be
+conflated:
+
+- **On real hardware and on ares**, `f32` costs FPU cycles, nothing else. Use
+  it where float math is clearer than fixed-point and the cycle budget allows
+  -- it is correct, just slower.
+- **On a dynamic-recompiling emulator**, COP1 support is a place dynarecs
+  have historically had bugs, because it means translating N64 FPU state into
+  the host's own float registers rather than just re-emitting integer ops.
+  Nothing in this repo's own test suite has exercised that path end to end --
+  the encoder and the ares gate cover correctness of the *instructions
+  emitted*, not a survey of which emulators execute them right. Until such a
+  matrix exists, treat standalone (`--backend mips`) `f32` as unverified
+  outside ares and real hardware, and prefer `fix16.16` for anything a wider
+  range of players might run through an emulator. On the **libdragon**
+  backend this caution does not apply the same way: COP1 there is what the
+  official toolchain and every other libdragon game already emits, so its
+  compatibility is whatever libdragon's own is.
 
 ---
 

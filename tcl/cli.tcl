@@ -939,8 +939,27 @@ proc pak::cmd_link {opts} {
               base=[format %#010x [dict get $result base]]"
     }
     if {$out ne ""} {
-        set ipl3 [pak::n64rom_ipl3_from_z64 [dict get $opts ipl3]]
-        if {$ipl3 eq ""} { set ipl3 [pak::n64rom_default_ipl3] }
+        # --ipl3 takes a shipped name ("compat", "8m"), a raw 4032-byte
+        # bootcode, or a .z64 to lift the region out of. An argument that
+        # resolves to nothing is a typo worth stopping for: silently falling
+        # back to the default would hand back a ROM that boots the machines the
+        # user was trying to move away from.
+        set spec [dict get $opts ipl3]
+        if {$spec eq ""} {
+            set ipl3 [pak::n64rom_default_ipl3]
+        } else {
+            set ipl3 [pak::n64rom_ipl3_resolve $spec]
+            if {$ipl3 eq ""} {
+                puts stderr "error: --ipl3 $spec is not a shipped bootcode\
+                    ([join [dict keys $::pak::IPL3_NAMED] {, }]), a 4032-byte\
+                    bootcode, or a .z64 to lift one from"
+                if {[dict exists $::pak::IPL3_NAMED $spec]} {
+                    puts stderr "  (`$spec` is a known name, but its file is not\
+                        built -- run tools/build_ipl3_8m.sh)"
+                }
+                exit 1
+            }
+        }
         set size_mib [dict get $opts size]
         if {$size_mib eq ""} { set size_mib 4 }
         if {![string is integer -strict $size_mib]} {

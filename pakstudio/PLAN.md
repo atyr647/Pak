@@ -1,5 +1,21 @@
 # PakStudio — Implementation Roadmap
 
+**Status: experimental, Phase 0 only.** Nothing past the checklist below is
+built. It generates `.pk64` + `pak.toml` and then shells out to **`pak
+build`** (falling back to a bundled compat script, then to stock `pak
+build` + `make`) -- the one command `pak.toml` projects have always used,
+never `objgen`/`asmobj`/`pak link` directly. That keeps it on the libdragon
+(C) backend exclusively; it has no path to the standalone backend and
+cannot fork the language into a second dialect -- it emits one command,
+`pak build`, and lets that decide everything downstream.
+
+`tests/test_codegen.tcl` passes (159 cases: generated `.pk64` is checked
+with `pak check`, the actual gate that matters for "does this fork the
+language"). `tests/test_project.tcl` currently errors on
+`project::load_from` -- `rpg::migrate` is referenced but not defined,
+which is a Phase 0 bug in PakStudio's own project-loading code, not a Pak
+compiler issue, and not fixed here.
+
 ## Vision
 Tcl/Tk IDE: non-programmer clicks through visual editors → PakStudio generates `.pk64`
 + `pak.toml` → `pak build` → `.z64`. No code ever shown to the user.

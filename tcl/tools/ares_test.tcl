@@ -708,6 +708,26 @@ if {$lit} {
         [probe $shot $DISPLAY 300 220] {0 0 255}
 }
 
+puts "== fill + texture rectangle + textured triangle, one ROM (Week 4 smoke) =="
+# Everything pixel_test.tcl and rdp_test.tcl verify individually -- a fill
+# rectangle, a 1:1 texture blit, an affine textured triangle -- sharing one
+# attach/detach cycle and one loaded texture, checked here on ares'
+# paraLLEl-RDP: an RDP implementation independent of angrylion, the reference
+# pixel_test.tcl checks against. Clear is black, so every probe below is
+# unambiguous -- none of them could read as "nothing was drawn" by accident.
+set rom [build_rom smoke tcl/tests/ares/fill_texrect_tri.pk64 "PAKSMOKE"]
+lassign [run_rom smoke $rom $DISPLAY] shot log lit
+no_boot_timeout smoke $log
+ok_true "smoke: a frame reached the screen" $lit
+if {$lit} {
+    ok_colour "smoke: the fill rectangle is green"        [probe $shot $DISPLAY  50  50] {0 255 0}
+    ok_colour "smoke: the texture rectangle's red half"   [probe $shot $DISPLAY 246  26] {255 0 0}
+    ok_colour "smoke: the texture rectangle's blue half"  [probe $shot $DISPLAY 266  26] {0 0 255}
+    ok_colour "smoke: the textured triangle's red half"   [probe $shot $DISPLAY 100 150] {255 0 0}
+    ok_colour "smoke: the textured triangle's blue half"  [probe $shot $DISPLAY 200 145] {0 0 255}
+    ok_colour "smoke: outside every shape is still black" [probe $shot $DISPLAY 300 220] {0 0 0}
+}
+
 } err]} {
     puts "FAIL  ares_test: $err"
     incr ::fail

@@ -16,6 +16,7 @@
 	.extern rdpq_detach
 	.extern rdpq_detach_show
 	.extern rdpq_set_mode_standard
+	.extern rdpq_set_mode_standard_persp
 	.extern rdpq_set_mode_standard_z
 	.extern rdpq_set_mode_copy
 	.extern rdpq_set_mode_fill
@@ -55,6 +56,7 @@
 	.extern rdpq_triangle_shade_z
 	.extern rdpq_triangle_tex
 	.extern rdpq_triangle_tex_z
+	.extern rdpq_triangle_tex_persp
 	.extern rdpq_triangle_shade_tex
 	.extern rdpq_triangle_shade_tex_z
 	.extern rdpq_set_tri_z
@@ -65,6 +67,8 @@
 	.extern timer_init
 	.extern _pak_delta_time
 	.extern get_ticks
+	.extern get_memory_size
+	.extern system_has_expansion
 	.extern audio_init
 	.extern audio_close
 	.extern audio_get_buffer
@@ -281,10 +285,28 @@ main:
     addiu $t5, $t8, 7
     li $t6, 0xFFFFFFF8
     and $t5, $t5, $t6
+    li $t4, 0x803C0000
+    la $t3, g_boot_memsize
+    lw $t3, 0($t3)
+    li $t6, 0x400000
+    sgtu $t6, $t3, $t6
+    beqz $t6, .Lheap_noexp_5
+    nop
+    li $t4, 0x807F0000
+.Lheap_noexp_5:
+    addu $t6, $t7, $t5
+    sgtu $t6, $t6, $t4
+    beqz $t6, .Lheap_fits_6
+    nop
+    move $t9, $zero
+    j .Lheap_done_7
+    nop
+.Lheap_fits_6:
     move $t9, $t7
     addu $t7, $t7, $t5
     la $t6, __pak_heap_ptr
     sw $t7, 0($t6)
+.Lheap_done_7:
     sw $t9, 152($sp)
     lw $t8, 152($sp)
     move $t9, $zero
