@@ -93,15 +93,25 @@ const VI_CTRL_BLANK: u32 = 0x00000000
 const VI_CTRL_16BPP: u32 = 0x00003202   -- 16bpp RGBA5551, AA off, non-interlaced
 
 -- ── Framebuffers (uncached KSEG1; phys = addr & 0x00FFFFFF) ────────────────
--- 320 x 240 x 2 bytes = 153600 (0x25800) bytes each.
-const SCREEN_W: i32  = 320
+-- FB0/FB1/FB2/ZB stay at these addresses, spaced 153600 (0x25800) bytes
+-- apart, no matter which resolution display.init picked: that is exactly
+-- enough for a 320x240x16 buffer, so a narrower one (RESOLUTION_256x240)
+-- just uses less of the same fixed slot and everything after ZB -- the
+-- display list, the audio buffer, the heap -- never moves. Only the WIDTH
+-- actually in use is runtime state; the memory map itself is not.
 const SCREEN_H: i32  = 240
-const FB_PIXELS: i32 = 76800            -- 320 * 240
 const FB0: u32 = 0xA0200000
 const FB1: u32 = 0xA0225800
 const FB2: u32 = 0xA024B000
 const ZB:  u32 = 0xA0271000        -- 320×240×16-bit Z, after FB2
 const MAX_BUFS: i32 = 3        -- FB0..FB2; the map has room for no more
+
+-- The screen width display.init picked: 320 (RESOLUTION_320x240, the
+-- default) or 256 (RESOLUTION_256x240). Runtime state, not a const, because
+-- rdpq.attach / fb_fill / vi_program all need the width actually in use, and
+-- the standalone HAL supports more than one now.
+static g_screen_w:  i32 = 320
+static g_fb_pixels: i32 = 76800            -- 320 * 240
 
 static g_draw: i32       = 1
 static g_shown: i32      = 0
@@ -161,7 +171,7 @@ fn color32_to_16(c: u32) -> u16 {
 
 fn fb_fill(base: u32, px: u16) {
     let mut i: i32 = 0
-    while i < FB_PIXELS {
+    while i < g_fb_pixels {
         let p: *volatile u16 = (base + (i * 2) as u32) as *volatile u16
         *p = px
         i = i + 1
@@ -172,12 +182,21 @@ fn fb_fill(base: u32, px: u16) {
 const CRASH_RED: u16 = 0xF801
 
 -- ── VI core ────────────────────────────────────────────────────────────────
+-- VI_X_SCALE resamples the framebuffer's actual width to the fixed 640-wide
+-- active video region; libdragon's own VI_X_SCALE_SET macro, over in vi.h,
+-- computes it exactly this way rather than a per-resolution table, which is
+-- also why res=0 (320) still comes out 0x200 -- the value this file wrote as
+-- a literal before it had a second resolution to support.
+fn vi_x_scale(w: i32) -> u32 {
+    return ((1024 * w + 320) / 640) as u32
+}
+
 -- Register program only. Used by vi_init (then black-fill) and by
 -- exception_paint (then red-fill) so a crash before display.init still shows.
 fn vi_program() {
     vi_write(VI_CTRL,    VI_CTRL_BLANK)
     vi_write(VI_ORIGIN,  FB0 & 0x00FFFFFF)
-    vi_write(VI_WIDTH,   SCREEN_W as u32)
+    vi_write(VI_WIDTH,   g_screen_w as u32)
     vi_write(VI_V_INTR,  0x00000200)
     vi_write(VI_V_CURRENT, 0x00000000)
     vi_write(VI_BURST,   0x03E52239)
@@ -187,7 +206,9 @@ fn vi_program() {
     vi_write(VI_H_START, 0x006C02EC)
     vi_write(VI_V_START, 0x002501FF)
     vi_write(VI_V_BURST, 0x000E0204)
-    vi_write(VI_X_SCALE, 0x00000200)
+    vi_write(VI_X_SCALE, vi_x_scale(g_screen_w))
+    -- Y_SCALE stays libdragon's own VI_Y_SCALE_SET(240): every standalone
+    -- resolution so far keeps height at 240, only width changes.
     vi_write(VI_Y_SCALE, 0x00000400)
     vi_write(VI_CTRL,    g_vi_ctrl)
 }
@@ -251,15 +272,22 @@ fn vi_aa_mode(filters: i32) -> u32 {
     return 0                            -- ..._ANTIALIAS_DEDITHER
 }
 
--- The standalone HAL carves three fixed 320x240x16 framebuffers out of RDRAM
--- (FB0..FB2, then the Z buffer and the display list). Another resolution or
--- bit depth would move every one of those addresses, so it is refused rather
--- than silently ignored -- rendering a 640x480 scene into a 320x240 buffer
--- produces garbage that looks like a game bug.
+-- The standalone HAL carves three fixed 320x240x16 framebuffer SLOTS out of
+-- RDRAM (FB0..FB2, then the Z buffer and the display list) sized for the
+-- widest resolution it supports; a narrower one just uses less of the same
+-- slot, so RESOLUTION_320x240 (0) and RESOLUTION_256x240 (2) share the map
+-- and only g_screen_w moves. Anything else -- a different HEIGHT, or the
+-- interlaced 640x480/512x240 modes, which need a whole second VI programming
+-- path this HAL does not have -- is refused rather than silently ignored:
+-- rendering a taller or interlaced scene into this buffer layout produces
+-- garbage that looks like a game bug, not a clear "not supported" panic.
 fn display_init(res: i32, bpp: i32, bufs: i32, gamma: i32, filters: i32) {
-    if res != 0 { __pak_panic() }
+    if res != 0 and res != 2 { __pak_panic() }
     if bpp != 2 { __pak_panic() }
     if bufs < 1 or bufs > MAX_BUFS { __pak_panic() }
+
+    if res == 2 { g_screen_w = 256 } else { g_screen_w = 320 }
+    g_fb_pixels = g_screen_w * SCREEN_H
 
     g_nbufs = bufs
     -- Draw into the buffer the VI is not showing. With one buffer there is no
@@ -844,15 +872,15 @@ fn rdpq_set_combiner_raw(hi: u32, lo: u32) {
 
 fn rdpq_attach(fb: u32) {
     g_current_fb = fb
-    rdpq_set_color_image(fb, 0, 2, SCREEN_W)
+    rdpq_set_color_image(fb, 0, 2, g_screen_w)
     rdpq_set_z_image(ZB)
-    rdpq_set_scissor(0, 0, SCREEN_W, SCREEN_H)
+    rdpq_set_scissor(0, 0, g_screen_w, SCREEN_H)
 }
 
 fn rdpq_attach_clear(fb: u32, color: u32) {
     rdpq_attach(fb)
     rdpq_set_mode_fill(color)
-    rdpq_fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+    rdpq_fill_rectangle(0, 0, g_screen_w, SCREEN_H)
 }
 
 fn rdpq_detach() {
@@ -963,15 +991,15 @@ fn rdpq_clear_z() {
     let cycle: u32 = g_cycle
     let fill: u32 = g_fill_color as u32
 
-    rdpq_set_color_image(ZB, 0, 2, SCREEN_W)
+    rdpq_set_color_image(ZB, 0, 2, g_screen_w)
     dl_cmd(RDP_SYNC_PIPE << 24, 0)
     g_cycle = CYCLE_FILL
     rdpq_set_other_modes_raw(CYCLE_FILL << 20, 0)
     dl_cmd(RDP_SET_FILL_COLOR << 24, 0xFFFCFFFC)
-    rdpq_fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+    rdpq_fill_rectangle(0, 0, g_screen_w, SCREEN_H)
 
     if fb != 0 {
-        rdpq_set_color_image(fb, 0, 2, SCREEN_W)
+        rdpq_set_color_image(fb, 0, 2, g_screen_w)
     }
     -- SYNC_PIPE before the mode goes back: the fill above is still in flight,
     -- and a mode switch mid-primitive is exactly what SYNC_PIPE exists for.
@@ -3708,7 +3736,7 @@ fn t3d_viewport_create() -> T3DViewport {
         eye_x: 0.0, eye_y: 0.0, eye_z: 0.0,
         target_x: 0.0, target_y: 0.0, target_z: -1.0,
         up_x: 0.0, up_y: 1.0, up_z: 0.0,
-        -- Literal, not SCREEN_W/SCREEN_H: this is the only place past the
+        -- Literal, not g_screen_w/SCREEN_H: this is the only place past the
         -- heap section that would reach up to those top-of-file consts, and
         -- every other field in this literal is already a bare number for the
         -- same reason -- a viewport's default has no dependency on where in

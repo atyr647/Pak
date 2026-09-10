@@ -812,6 +812,111 @@ if {$st eq "err"} {
     }
 }
 
+# ── 7. display.init(RESOLUTION_256x240, ...) actually reprograms the VI ─────
+
+puts ""
+puts "== display.init supports RESOLUTION_256x240, not just the default =="
+
+# FB0..FB2 stay at the same fixed addresses regardless of resolution -- a
+# 256-wide buffer just uses less of the 320-wide slot -- so the only things
+# that have to change are the VI_WIDTH/VI_X_SCALE registers and every g_
+# screen_w-driven SET_COLOR_IMAGE/SET_SCISSOR/FILL_RECTANGLE width. A build
+# that left any of those at the old fixed 320 would either misalign every
+# row after the first (wrong stride) or leave a strip of the buffer
+# uncleared/unscissored (wrong width) -- this scene fills the WHOLE 256x240
+# frame and checks the far corner, which only comes back green if both are
+# right, not just "some green showed up".
+set res256_src {
+entry {
+    display.init(2, 2, 1, 0, 1)
+    rdpq.init()
+    let fb: u32 = display.get()
+    rdpq.attach_clear(fb, 0x000000FF)
+    rdpq.set_mode_fill(0x00FF00FF)
+    rdpq.fill_rectangle(0, 0, 256, 240)
+    rdpq.detach_show()
+}}
+
+set fh [open runtime/standalone/runtime.pk64 r]; set rt256 [read $fh]; close $fh
+set combined256 [file join $REPO .res256_combined.pk64]
+set f [open $combined256 w]; puts -nonewline $f "$rt256\n$res256_src"; close $f
+set asm256 [exec [info nameofexecutable] tcl/tools/mips_dump.tcl $combined256]
+file delete $combined256
+if {[string match "UNPORTED*" $asm256] || [string match "ERROR*" $asm256]} {
+    puts "FAIL  RESOLUTION_256x240: $asm256"
+    incr ::fail
+} else {
+    set preset256 [dict create 0xA410000C 0 0xA4400010 {0x1E0 0x000}]
+    set r256 [pak::mips_sim_run $asm256 main 20000000 $preset256 ""]
+    set mw256 [dict get $r256 mem_w]
+    proc _rd256 {mw a} { set a [expr {$a}]; return [expr {[dict exists $mw $a] ? [dict get $mw $a] : 0}] }
+
+    ok_true "VI_WIDTH is 256, not 320" \
+        [expr {[_rd256 $mw256 0xA4400008] == 256}] \
+        [format " (got %d)" [_rd256 $mw256 0xA4400008]]
+    # libdragon's own VI_X_SCALE_SET(256) = (1024*256+320)/640 = 410; this is
+    # the value that scales a 256-wide buffer to fill the same 640-wide
+    # active video region a 320-wide one does with 0x200 (512).
+    ok_true "VI_X_SCALE is libdragon's VI_X_SCALE_SET(256) = 410" \
+        [expr {[_rd256 $mw256 0xA4400030] == 410}] \
+        [format " (got %d)" [_rd256 $mw256 0xA4400030]]
+    ok_true "VI_Y_SCALE is unchanged (height is still 240)" \
+        [expr {[_rd256 $mw256 0xA4400034] == 1024}] \
+        [format " (got %d)" [_rd256 $mw256 0xA4400034]]
+
+    set SIZE256 [expr {0x800000}]
+    set buf256 [binary format x$SIZE256]
+    foreach {kind width} {mem_w 4 mem_h 2 mem_b 1} {
+        dict for {addr val} [dict get $r256 $kind] {
+            set p [expr {$addr & 0x1FFFFFFF}]
+            if {$p < 0 || $p + $width > $SIZE256} continue
+            switch -- $width {
+                4 { set bytes [binary format I [expr {$val & 0xFFFFFFFF}]] }
+                2 { set bytes [binary format S [expr {$val & 0xFFFF}]] }
+                1 { set bytes [binary format c [expr {$val & 0xFF}]] }
+            }
+            set buf256 [string replace $buf256 $p [expr {$p + $width - 1}] $bytes]
+        }
+    }
+    binary scan $buf256 I* words256
+    set img256 [file join $WORK res256.bin]
+    set o [open $img256 wb]; fconfigure $o -translation binary
+    puts -nonewline $o [binary format i* $words256]; close $o
+
+    set dl_start256 [_rd256 $mw256 0xA4100000]
+    set dl_end256   [_rd256 $mw256 0xA4100004]
+    if {$dl_end256 <= $dl_start256} {
+        incr ::fail
+        puts "FAIL  RESOLUTION_256x240: no display list was submitted"
+    } else {
+        set ppm256 [file join $WORK res256.ppm]
+        # w=256, not 320 -- this readback stride has to match what the scene
+        # actually set SET_COLOR_IMAGE to, or every row past y=0 reads from
+        # the wrong offset.
+        if {[catch {exec $RDPRUN $img256 $dl_start256 \
+                [expr {$dl_end256 - $dl_start256}] 0x200000 256 240 $ppm256 2>@1} e]} {
+            incr ::fail
+            puts "FAIL  RESOLUTION_256x240: reference RDP failed: $e"
+        } else {
+            set f [open $ppm256 rb]; fconfigure $f -translation binary
+            set d256 [read $f]; close $f
+            set i256 [expr {[string first "255\n" $d256] + 4}]
+            set px256 [string range $d256 $i256 end]
+            foreach {name x y} {
+                {top-left corner}      2   2
+                {centre}              128 120
+                {bottom-right corner} 253 237
+            } {
+                set o [expr {($y * 256 + $x) * 3}]
+                binary scan [string range $px256 $o [expr {$o+2}]] cucucu r g b
+                ok_true "256x240 fill reaches the $name" \
+                    [expr {$r == 0 && $g == 255 && $b == 0}] \
+                    " (got $r $g $b)"
+            }
+        }
+    }
+}
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 exit [expr {$::fail > 0 ? 1 : 0}]

@@ -58,13 +58,18 @@ writing them bare (e.g. `display.init(RESOLUTION_320x240, …)`) fails with
 `512x480` and `256x480` exist in libdragon as further interlaced modes; pass
 the corresponding integer from your libdragon headers if you need them.
 
-**On the standalone backend (`--backend mips`) only `0` (320x240) and a
-`bit_depth` of `2` work.** The toolchain-free HAL carves three fixed
-320x240x16 framebuffers out of RDRAM at fixed addresses, with the Z buffer and
-the display list immediately after them, so another resolution or depth would
-move every one of those. `display.init` panics (red screen, halt) rather than
-letting a scene render into a wrong-sized buffer. `num_buffers` (1-3), `gamma`
-and `filters` are all honoured. The libdragon backend (`--backend c`) supports
+**On the standalone backend (`--backend mips`), `0` (320x240) and `2`
+(256x240) work, with a `bit_depth` of `2`.** The toolchain-free HAL carves
+three fixed framebuffer SLOTS out of RDRAM sized for the widest of the two
+(320x240x16), with the Z buffer and the display list immediately after them.
+256x240 just uses less of the same slot — the memory map does not move, only
+the VI_WIDTH/VI_X_SCALE registers and the RDP's per-frame color image/scissor
+width do. `1` and `3` (640x480, 512x240) are still refused: both are
+interlaced, which needs a second VI programming path — separate H/V_VIDEO
+timings and a per-field origin swap — this HAL does not have. `display.init`
+panics (red screen, halt) rather than letting a scene render into a
+wrong-sized or wrongly-interlaced buffer. `num_buffers` (1-3), `gamma` and
+`filters` are all honoured. The libdragon backend (`--backend c`) supports
 the full table.
 
 **Typical game setup:**
