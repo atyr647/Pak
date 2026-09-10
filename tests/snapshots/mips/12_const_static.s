@@ -220,7 +220,7 @@ main:
     li $t6, 0
     sne $t8, $t7, $t6
     la $t7, game_running
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     la $t6, .Lf320
     lwc1 $f12, 0($t6)
