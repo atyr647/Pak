@@ -121,7 +121,9 @@ When the compiler reports an error, use this table to understand it:
 | E602 | `impl ... for Trait` omits a required trait method (no default body) |
 | E603 | Method signature mismatch — wrong number of parameters in trait impl |
 | E701 | RSP target refusal (`--backend rsp`) — the construct isn't supported on the RSP microcode target; see LANGUAGE.md/`docs/rsp-microcode-in-pak.md` |
+| E702 | Standalone target refusal (`--backend mips`) — the construct compiles on libdragon but would mean something different here; see CURRENTLY_SUPPORTED.md |
 | W001–W003 | Style warnings (naming conventions) |
+| W205 | `free` reclaims nothing on the standalone backend (bump arena) |
 | W004 | Function name collides with a libdragon symbol (rename it) |
 | W005 | Module function is standalone-only — not implemented on libdragon |
 | W006 | Module function needs Tiny3D (`tiny3d = true` in pak.toml) |

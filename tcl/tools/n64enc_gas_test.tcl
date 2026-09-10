@@ -46,7 +46,21 @@ set AS      [find_tool mips64-elf-as]
 set OBJCOPY [find_tool mips64-elf-objcopy]
 set READELF [find_tool mips64-elf-readelf]
 set OBJDUMP [find_tool mips64-elf-objdump]
+
+# A gate that skips when its oracle is missing is right on a laptop and wrong
+# in CI: an install step that half-failed turns "binutils disagrees with the
+# encoder" into a green tick. PAK_REQUIRE_N64_TOOLCHAIN=1 makes the missing
+# toolchain a failure, and CI sets it.
+proc _toolchain_required {} {
+    return [expr {[info exists ::env(PAK_REQUIRE_N64_TOOLCHAIN)]
+                  && $::env(PAK_REQUIRE_N64_TOOLCHAIN) ni {0 "" no false}}]
+}
+
 if {$AS eq "" || $OBJCOPY eq "" || $READELF eq ""} {
+    if {[_toolchain_required]} {
+        puts "FAIL  PAK_REQUIRE_N64_TOOLCHAIN is set and mips64-elf binutils is not on PATH"
+        exit 1
+    }
     puts "SKIP  no mips64-elf binutils on PATH (run tools/build_n64_toolchain.sh)"
     exit 0
 }

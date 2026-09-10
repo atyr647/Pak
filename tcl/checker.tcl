@@ -400,6 +400,50 @@ oo::class create pak::Checker {
                 $expr
         }
     }
+    # A custom allocator dispatches through a vtable. The standalone backend
+    # has no vtable dispatch for it and would bump-allocate instead -- the same
+    # source, silently different semantics on the two backends. mips_codegen
+    # refuses it, but the codegen is too late: `pak check --backend mips` would
+    # already have called the program valid. Say it here, where it is readable
+    # and where the HAL contract (checker accepts => codegen compiles) holds.
+    method check_allocator {expr what} {
+        if {$backend ne "mips"} return
+        if {[pak::isnil [pak::nfield $expr allocator]]} return
+        my err E702 "$what is not supported on the standalone backend" \
+            "The standalone backend allocates from a fixed bump arena and has\
+             no allocator vtable dispatch, so the allocator you named would be\
+             ignored -- the same source would mean something different here\
+             than on the libdragon backend. Use plain `alloc`/`free` (see\
+             W205), or build with the libdragon backend." \
+            $expr
+    }
+
+    # `free` on the standalone backend does nothing. `alloc` is a bump
+    # allocator over a fixed arena -- there is no free list to return a block
+    # to, and mips_codegen's FreeExpr evaluates the pointer and discards it.
+    #
+    # That is a legitimate allocator for a console with 4 MB and no OS, but a
+    # program written against `alloc`/`free` believes it has a heap, and the
+    # way it finds out otherwise is the arena running out midway through a
+    # level. So say it at every call site, every time: the warning is the only
+    # thing standing between the source reading like C and behaving like C.
+    #
+    # `free(p using A)` is a different statement -- it names an allocator with
+    # a real dealloc -- and check_allocator above already refuses it as E702,
+    # so it never reaches this warning.
+    method check_free {expr} {
+        if {$backend ne "mips"} return
+        if {![pak::isnil [pak::nfield $expr allocator]]} return
+        my warn W205 "'free' does not reclaim anything on the standalone backend" \
+            "`alloc` bump-allocates from a fixed arena; this `free` evaluates\
+             the pointer and discards it. Nothing is reusable afterwards, so a\
+             loop that allocates will exhaust the arena. Size the allocation\
+             once and reuse the buffer, or build with the libdragon backend,\
+             which has a real heap. See CURRENTLY_SUPPORTED.md\
+             `standalone-free-noop`." \
+            $expr
+    }
+
     method check_expr_calls {expr} {
         if {[pak::isnil $expr]} return
         switch -- [pak::kindof $expr] {
@@ -419,6 +463,16 @@ oo::class create pak::Checker {
                 my check_expr_calls [pak::nfield $expr index]
             }
             Assign    { my check_expr_calls [pak::nfield $expr value] }
+            FreeExpr  {
+                my check_allocator $expr "free(p using ALLOCATOR)"
+                my check_free $expr
+                my check_expr_calls [pak::nfield $expr ptr]
+            }
+            AllocExpr {
+                my check_allocator $expr "alloc(T using ALLOCATOR)"
+                set c [pak::nfield $expr count]
+                if {![pak::isnil $c]} { my check_expr_calls $c }
+            }
             Cast      { my check_expr_calls [pak::nfield $expr expr] }
             AddrOf    { my check_expr_calls [pak::nfield $expr expr] }
             Deref     { my check_expr_calls [pak::nfield $expr expr] }

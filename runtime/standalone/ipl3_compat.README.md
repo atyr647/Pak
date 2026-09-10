@@ -2,7 +2,7 @@
 
 The N64's PIF hands control to IPL3, 4032 bytes living at ROM `0x40..0xFFF`.
 It initialises RDRAM, copies the program out of the cartridge and jumps to it.
-Without it a ROM does not boot: `pak link` used to leave the region zeroed, so
+Without it a ROM does not boot: `pak link` used to leave the region zeroed, so <!-- known-bug: n/a — describes the era before a bootcode shipped -->
 every `.z64` it produced looked structurally valid and ran on nothing.
 
 This is **libdragon's IPL3, compat build**, lifted verbatim from
@@ -35,7 +35,10 @@ Override with `pak link --ipl3 other.z64` to use a different bootcode.
 
 ## Emulator compatibility
 
-**mupen64plus 2.5.9 cannot run this IPL3**, and the failure is not Pak's. Its
+The full matrix -- which bootcode, which runner, what should happen -- is
+`docs/ipl3-emulator-matrix.md`. The summary is below.
+
+**mupen64plus 2.5.9 cannot run this IPL3**, and the failure is not Pak's <!-- known-bug: mupen64plus-ipl3 -->. Its
 RDRAM emulation is thin enough that libdragon's memory sizing walks away with
 64 MB, which mupen64plus itself notices and reports:
 
@@ -55,7 +58,7 @@ under Xvfb and checks the pixels that come out; `tools/build_ares.sh` builds
 the emulator. Note that the Debian and Ubuntu `ares` packages have the
 Nintendo 64 core removed, and that package is on PATH ahead of a locally built
 one -- it opens a window, loads nothing, and shows a black screen, which looks
-exactly like a ROM that will not boot. The gate checks which systems the ares
+exactly like a ROM that will not boot. <!-- known-bug: n/a — a stripped distro ares, not a Pak defect --> The gate checks which systems the ares
 it found actually has.
 
 ## What the game has to do: terminate the boot process

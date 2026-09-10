@@ -3126,6 +3126,18 @@ oo::class create pak::MipsCodegen {
                 $em li $dst $val
             }
             AllocExpr {
+                # `alloc(T using A)` names an allocator with its own
+                # alloc_bytes. The standalone backend has no vtable dispatch
+                # for it and would bump-allocate instead -- silently different
+                # semantics from the same source on the libdragon backend.
+                # checker.tcl's check_allocator reports this as E702 first;
+                # this is the backstop for anything that reaches codegen.
+                if {![pak::isnil [pak::nfield $expr allocator]]} {
+                    pak::mips_unported "alloc(T using ALLOCATOR) -- the standalone\
+                        backend has only the bump arena, and silently ignoring the\
+                        allocator would give this program different semantics from\
+                        the same source on the libdragon backend"
+                }
                 set inner [my mips_layout [pak::nfield $expr type_node]]
                 set sz [$ra alloc_temp]
                 $em li $sz [dict get $inner size]
@@ -3140,7 +3152,16 @@ oo::class create pak::MipsCodegen {
                 $ra free_temp $sz
             }
             FreeExpr {
-                # Bump allocator: free is a no-op (matches the standalone HAL).
+                # Bump allocator: free is a no-op (matches the standalone HAL),
+                # and W205 says so at every call site. `free(p using A)` is a
+                # different statement -- it has a dealloc to run -- so it is
+                # refused rather than dropped.
+                if {![pak::isnil [pak::nfield $expr allocator]]} {
+                    pak::mips_unported "free(p using ALLOCATOR) -- the standalone\
+                        backend has no allocator vtable dispatch, and dropping the\
+                        dealloc would give this program different semantics from\
+                        the same source on the libdragon backend"
+                }
                 set ptr [$ra alloc_temp]
                 my emit_expr [pak::nfield $expr ptr] $ptr
                 $ra free_temp $ptr
@@ -4993,16 +5014,24 @@ oo::class create pak::MipsCodegen {
                 } else {
                     set addr_r [$ra alloc_temp]
                     $em la $addr_r [pak::fval $target name]
-                    # Use float store if the global is declared as float
+                    # A global is stored through the same typed store as a
+                    # local, for the same reason the load above is a typed
+                    # load: `sw` into a `u16` static writes four big-endian
+                    # bytes, so the value lands in the two bytes AFTER the
+                    # variable and a later `lhu` reads zero -- while also
+                    # corrupting whatever static was laid out next. The float
+                    # case was special-cased here; the narrow-integer case was
+                    # not, and `static g: u16` had been silently unreadable on
+                    # this backend for as long as it existed.
                     set glay {}
                     if {[dict exists $globals [pak::fval $target name]]} {
                         set glay [lindex [dict get $globals [pak::fval $target name]] 1]
                     }
-                    if {$glay ne {} && [dict get $glay is_float]} {
-                        $em swc1 {$f12} 0 $addr_r
-                    } else {
-                        $em sw $val_reg 0 $addr_r
+                    if {$glay eq {}} {
+                        set glay [dict create size 4 align 4 is_float 0 \
+                                      is_signed 1 is_ptr 0 fields {}]
                     }
+                    my emit_typed_store $val_reg 0 $addr_r $glay
                     $ra free_temp $addr_r
                 }
             }

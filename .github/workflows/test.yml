@@ -152,7 +152,11 @@ jobs:
       # encoding divergences and one silent miscompile: pseudo-instructions
       # that expand to two words were being scheduled into branch delay slots,
       # where the second word is skipped whenever the branch is taken.
+      # PAK_REQUIRE_N64_TOOLCHAIN: this job exists to disagree with binutils.
+      # If the toolchain install half-failed, the gate must say so, not skip.
       - name: MIPS encoder matches GNU as, byte for byte
+        env:
+          PAK_REQUIRE_N64_TOOLCHAIN: 1
         run: PATH=/opt/pak-n64/bin:$PATH tclsh tcl/tools/n64enc_gas_test.tcl
 
       # Same argument one stage down. tcl/n64link.tcl places sections and
@@ -161,6 +165,8 @@ jobs:
       # objects with mips64-elf-ld and compares the whole image plus every
       # symbol address, so a relocation packed into the wrong field shows up.
       - name: Flat linker matches GNU ld, byte for byte
+        env:
+          PAK_REQUIRE_N64_TOOLCHAIN: 1
         run: PATH=/opt/pak-n64/bin:$PATH tclsh tcl/tools/n64link_gas_test.tcl
 
       # Every other simulator test runs the codegen's RECORDS from `main`, so
@@ -352,6 +358,8 @@ jobs:
         run: tclsh tcl/tools/rdp_test.tcl
 
       - name: Assembler front end
+        env:
+          PAK_REQUIRE_N64_TOOLCHAIN: 1
         run: bash tcl/tools/n64asm_parity.sh
 
       # Only examples the HAL contract accepts are standalone programs; the
@@ -407,11 +415,30 @@ jobs:
       - name: RDP display-list disassembler (pak dlist)
         run: tclsh tcl/tools/dlist_test.tcl
 
+      # The bootcode decides which machines a .z64 starts on, and "it boots"
+      # is a claim about a pair. This parses docs/ipl3-emulator-matrix.md and
+      # checks the rows that need no emulator, so the table cannot rot into
+      # describing a ROM layout Pak no longer produces.
+      - name: IPL3 x emulator matrix
+        run: tclsh tcl/tools/ipl3_matrix_test.tcl
+
+      # The Known Bugs table is worth what its worst row is worth. This fails
+      # if any doc states a blocker the table does not carry, or carries a row
+      # no doc points at.
+      - name: Known Bugs table is honest
+        run: tclsh tcl/tools/known_bugs_test.tcl
+
       # Command words cannot tell you the RDP draws the right pixels: the lft
       # bit was inverted on all seven triangle commands for as long as the
       # goldens existed, and they matched perfectly. This renders the display
       # list on angrylion and compares against the source geometry.
+      # PAK_REQUIRE_RDP_HARNESS turns "the harness would not build" from a
+      # clean SKIP into a failure. On a contributor's machine a skip is the
+      # right answer; here it is the whole point of the job, and a job that
+      # goes green without rendering anything is worse than no job.
       - name: Pixels (reference RDP)
+        env:
+          PAK_REQUIRE_RDP_HARNESS: 1
         run: |
           bash tools/build_rdp_harness.sh
           tclsh tcl/tools/pixel_test.tcl
