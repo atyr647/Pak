@@ -896,6 +896,17 @@ use n64.sprite           -- #include <rdpq_sprite.h>
 - Asset sprites (`asset name: Sprite from "path"`) are loaded automatically:
   reading the name the first time loads the file, and every read after that
   reuses the handle.
+- Standalone backend only: a sprite small enough to load in one TMEM
+  transfer (the common case — anything up to about 4 KiB, e.g. a 32x32
+  RGBA5551 icon) is cached by pointer. Calling `sprite.blit` again with the
+  *same* sprite while nothing else has touched TMEM skips the reload DMA
+  entirely and just re-issues the rectangle — so drawing several copies of
+  one sprite in a row (a spritesheet of enemies, particles, tiles) is close
+  to free after the first. Any other texture call (another `sprite.blit`
+  with a different sprite, `rdpq.set_texture_image`, `rdpq.load_tile`, ...)
+  invalidates it, so this is always safe, never a source of stale texels —
+  it just means interleaving unrelated texture draws between repeats of the
+  same sprite gets none of the savings.
 
 **How an asset reaches the ROM:**
 - libdragon: `pak build` writes a Makefile that converts each asset and packs

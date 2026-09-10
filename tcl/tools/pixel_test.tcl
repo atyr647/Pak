@@ -114,6 +114,7 @@ proc render {driver_src {cart ""}} {
     set dl_start [_rd $mw 0xA4100000]
     set dl_end   [_rd $mw 0xA4100004]
     if {$dl_end <= $dl_start} { return [list err "no display list was submitted"] }
+    set ::last_dl_words [expr {($dl_end - $dl_start) / 4}]
 
     set ppm [file join $WORK out.ppm]
     if {[catch {exec $RDPRUN $img $dl_start [expr {$dl_end - $dl_start}] \
@@ -727,6 +728,88 @@ if {$st2 eq "err"} {
     }
     ok_true "with no cart image the same scene draws no texels" \
         [expr {$coloured == 0}] " (coloured=$coloured)"
+}
+
+# ── 6. sprite.blit skips a redundant TMEM reload ─────────────────────────────
+
+puts ""
+puts "== sprite.blit skips a redundant TMEM reload =="
+
+# Two hand-built sprite headers (the same 8-byte layout `pak link --fs`
+# produces: w/h big-endian, a format byte at offset 5, texels from offset 8)
+# in plain static RDRAM, so this does not need the PakFS/PI-DMA path section
+# 5 above already covers. spr_a is drawn, drawn again at a different spot,
+# then spr_b (a different pointer) is drawn between two more spr_a draws --
+# spr_b must force a real reload since tile 0's TMEM now holds its texels,
+# not spr_a's.
+set sprite_cache_src {
+@aligned(16)
+static spr_a: [520]u8 = undefined
+@aligned(16)
+static spr_b: [520]u8 = undefined
+
+fn build_sprite(base: u32, w: i32, h: i32, texel: u16) {
+    let pw: *volatile u16 = base as *volatile u16
+    *pw = w as u16
+    let ph: *volatile u16 = (base + 2) as *volatile u16
+    *ph = h as u16
+    let pf: *volatile u8 = (base + 5) as *volatile u8
+    *pf = 0x02 as u8
+    let mut i: i32 = 0
+    let n: i32 = w * h
+    loop {
+        if i >= n { break }
+        let tp: *volatile u16 = (base + 8 + (i * 2) as u32) as *volatile u16
+        *tp = texel
+        i = i + 1
+    }
+}
+
+entry {
+    rdpq.init()
+    build_sprite(&spr_a[0] as u32, 16, 16, 0x07C1 as u16)
+    build_sprite(&spr_b[0] as u32, 16, 16, 0xF801 as u16)
+    rdpq.attach_clear(0xA0200000, 0x000000FF)
+    rdpq.set_mode_copy()
+
+    sprite.blit((&spr_a[0]) as *sprite_t, 10, 10, 0)
+    sprite.blit((&spr_a[0]) as *sprite_t, 150, 10, 0)
+    sprite.blit((&spr_b[0]) as *sprite_t, 80, 60, 0)
+    sprite.blit((&spr_a[0]) as *sprite_t, 10, 110, 0)
+
+    rdpq.detach_show()
+}}
+
+lassign [render $sprite_cache_src] st res
+if {$st eq "err"} {
+    puts "FAIL  sprite cache: $res"
+    incr ::fail
+} else {
+    # attach_clear(14) + set_mode_copy(4) + full blit(12) + CACHED blit(6) +
+    # full blit(12, different pointer) + full blit(12, invalidated) +
+    # detach_show's SYNC_FULL(2) = 62. A build that always reloads would be
+    # 68 -- the 6-word gap IS the skip, not just "still draws something".
+    ok_true "cached repeat blit actually skips the reload (62 words, not 68)" \
+        [expr {$::last_dl_words == 62}] " (got $::last_dl_words)"
+
+    proc sc_getpix {px x y} {
+        set o [expr {($y * 320 + $x) * 3}]
+        binary scan [string range $px $o [expr {$o+2}]] cucucu r g b
+        return [list $r $g $b]
+    }
+    set f [open $res rb]; fconfigure $f -translation binary
+    set d [read $f]; close $f
+    set i [expr {[string first "255\n" $d] + 4}]
+    set px [string range $d $i end]
+    foreach {name x y want} {
+        {spr_a, first draw}                       18  18 {0 255 0}
+        {spr_a, cached repeat draw}               158  18 {0 255 0}
+        {spr_b, a different pointer}               88  68 {255 0 0}
+        {spr_a again, after spr_b invalidated it}  18 118 {0 255 0}
+    } {
+        set got [sc_getpix $px $x $y]
+        ok_true "$name is right" [expr {$got eq $want}] " (got $got, want $want)"
+    }
 }
 
 puts ""

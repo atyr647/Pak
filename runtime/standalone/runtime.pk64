@@ -719,6 +719,19 @@ static g_tex_addr:  u32 = 0
 static g_tex_size:  u32 = 2
 static g_tex_width: i32 = 1
 
+-- rdpq.sprite_blit's page-residency cache: when a single-strip sprite (the
+-- common case -- the whole thing fits one TMEM load) is drawn again with the
+-- same pointer and nothing else has touched tile 0's TMEM since, the SET_
+-- TEXTURE_IMAGE / SET_TILE / LOAD_TILE sequence -- and the writeback DMA
+-- that goes with it -- is redundant, not just slow: TMEM already holds the
+-- one texel page that call and the previous one both need. Every direct
+-- call to rdpq.set_texture_image / set_tile / set_tile_mask / load_tile /
+-- load_block clears the flag below, whether or not it actually touched tile
+-- 0, so a hit here always means those texels are still the ones in TMEM --
+-- never a guess.
+static g_last_sprite_ptr:    u32 = 0
+static g_sprite_cache_valid: u32 = 0
+
 -- ── display list plumbing ──────────────────────────────────────────────────
 
 fn dl_reset() {
@@ -1065,6 +1078,7 @@ fn rdp_tex_writeback(addr: u32, nbytes: i32) {
 }
 
 fn rdpq_set_texture_image(addr: u32, fmt: u32, size: u32, width: i32) {
+    g_sprite_cache_valid = 0
     g_tex_addr = addr
     g_tex_size = size
     g_tex_width = width
@@ -1087,6 +1101,7 @@ fn rdpq_set_tile(tile: u32, fmt: u32, size: u32, line: u32, tmem_addr: u32, pale
 -- mask_s/mask_t are log2 of the clamp/wrap period (5 = 32 texels).
 fn rdpq_set_tile_mask(tile: u32, fmt: u32, size: u32, line: u32, tmem_addr: u32, palette: u32,
                       cms: u32, cmt: u32, mask_s: u32, mask_t: u32) {
+    g_sprite_cache_valid = 0
     let lt: u32 = ((line & 0x1FF) << 9) | (tmem_addr & 0x1FF)
     let w0: u32 = (RDP_SET_TILE << 24) | (fmt << 21) | (size << 19) | lt
     let cs: u32 = (cms >> 1) & 1
@@ -1106,6 +1121,7 @@ fn rdpq_set_tile_size(tile: u32, s0: i32, t0: i32, s1: i32, t1: i32) {
 }
 
 fn rdpq_load_tile(tile: u32, s0: i32, t0: i32, s1: i32, t1: i32) {
+    g_sprite_cache_valid = 0
     -- Exact rectangle in the source image, now that height is known.
     let mut tw: i32 = s1 - s0
     let mut th: i32 = t1 - t0
@@ -1128,6 +1144,7 @@ fn rdpq_load_tile(tile: u32, s0: i32, t0: i32, s1: i32, t1: i32) {
 }
 
 fn rdpq_load_block(tile: u32, s0: u32, t0: u32, texels: u32, dxt: u32) {
+    g_sprite_cache_valid = 0
     let bpp: i32 = rdp_tex_bpp(g_tex_size)
     let mut nbytes: i32 = texels as i32
     if bpp == 0 {
@@ -3586,6 +3603,20 @@ fn rdpq_sprite_blit(spr: *u8, x: i32, y: i32, flags: u32) {
     if strip <= 0 { return }
     if strip > h { strip = h }
 
+    -- A single-strip sprite (the whole thing fits one TMEM load, which is
+    -- most real sprites -- a 32x32 RGBA5551 icon is 2 KiB) that is exactly
+    -- the same pointer as the last one drawn this way, with nothing having
+    -- touched tile 0's TMEM since, is still resident: the texels this call
+    -- needs are the texels already there. Skip straight to the rectangle.
+    -- set_tile_size is cheap (no DMA, no cache op) and still reissued, so
+    -- nothing else that only moved tile 0's sampling window -- never its
+    -- contents -- can make this stale.
+    if strip >= h and g_sprite_cache_valid == 1 and base == g_last_sprite_ptr {
+        rdpq_set_tile_size(0, 0, 0, w, h)
+        rdpq_texture_rectangle(0, x, y, x + w, y + h, 0, 0)
+        return
+    }
+
     rdpq_set_texture_image(data, fmt, size, w)
     rdpq_set_tile(0, fmt, size, ((row + 7) / 8) as u32, 0, 0)
     let mut t0: i32 = 0
@@ -3596,6 +3627,13 @@ fn rdpq_sprite_blit(spr: *u8, x: i32, y: i32, flags: u32) {
         rdpq_load_tile(0, 0, t0, w, t1)
         rdpq_texture_rectangle(0, x, y + t0, x + w, y + t1, 0, t0)
         t0 = t1
+    }
+    -- Only a single-strip blit leaves the WHOLE sprite resident afterward --
+    -- a multi-strip one ends with just its last strip in TMEM, so it must
+    -- not be cached as if the full sprite were there.
+    if strip >= h {
+        g_last_sprite_ptr = base
+        g_sprite_cache_valid = 1
     }
 }
 
