@@ -115,15 +115,13 @@ proc pak::n64rom_ipl3_from_z64 {path} {
 # names whatever is being sourced when the proc runs, not where it was written.
 set ::pak::_n64rom_dir [file dirname [file normalize [info script]]]
 
-# The bootcodes Pak ships, by name. `compat` is the default and the one that
-# boots hardware and ares; `8m` is the same libdragon source with the RDRAM
-# probe capped at 8 MiB, which is what mupen64plus 2.5.9 needs. Both are built
-# from libdragon's own tree (tools/build_ipl3_8m.sh for the second), so both
-# carry a CIC checksum the console accepts -- a hand-patched blob would not.
-# See docs/ipl3-emulator-matrix.md.
+# The bootcodes Pak ships, by name. Only one so far: `compat` boots hardware
+# and ares, and does not boot mupen64plus 2.5.9. A second bootcode that fixes
+# that is still open -- docs/ipl3-emulator-matrix.md records which causes have
+# been ruled out. The table exists because the resolution below wants a place
+# to look up a name, and a second entry should not require reshaping anything.
 set ::pak::IPL3_NAMED {
     compat ipl3_compat.bin
-    8m     ipl3_compat_8m.bin
 }
 
 # Resolve a --ipl3 argument. Three forms, in the order a user is likely to

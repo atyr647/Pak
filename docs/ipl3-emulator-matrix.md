@@ -22,32 +22,17 @@ machine it is running on, it checks.
 | id | What it is | Where it comes from | Ships in-tree |
 |----|------------|---------------------|---------------|
 | `compat` | libdragon's IPL3, **compat** build | `boot/bin/ipl3_compat.z64` at the revision `tools/fetch_libdragon.sh` pins | yes — `runtime/standalone/ipl3_compat.bin` |
-| `8m` | the same, with the RDRAM probe capped at 8 MiB | built from libdragon source by `tools/build_ipl3_8m.sh` + `tools/ipl3/rdram-cap-8mib.patch` | built on demand — `runtime/standalone/ipl3_compat_8m.bin` |
 | `none` | the region left zeroed | what `pak link` did before it shipped a bootcode | n/a |
-| `custom` | whatever `pak link --ipl3 FILE` lifts out of another ROM | the user | no |
+| `custom` | whatever `pak link --ipl3 FILE` supplies | the user | no |
 
-`pak link --ipl3` takes any of: a name from this table, a raw 4032-byte
-bootcode, or a `.z64` to lift the region out of. A name that does not resolve
-is an error rather than a silent fall back to the default — the whole point of
-asking for a different bootcode is that the default was not what you wanted.
+`pak link --ipl3` takes a name from this table, a raw 4032-byte bootcode, or a
+`.z64` to lift the region out of. A name that does not resolve is an error
+rather than a silent fall back to the default — the whole point of asking for a
+different bootcode is that the default was not what you wanted.
 
-### Why `8m` is built rather than shipped as a binary
-
-It is built from libdragon's own source with one patch, not by editing the
-shipped blob. That distinction is the whole reason it can work: the CIC
-checksums these 4032 bytes, and libdragon's build produces a blob that
-satisfies it. A hand-edited binary would boot neither a console nor an
-emulator that checks. The patch itself is four lines and its justification is
-in libdragon's own comment two statements later — `RI_REFRESH`'s multibank
-bitmask is 4 bits, "which is enough for 4x2MiB = 8MiB total RDRAM", so a probe
-that counts past four chips has already overflowed the field the next line
-writes.
-
-`compat` is the default and the only one Pak ships. It is the right build for
-Pak because Pak's linker emits a flat image rather than an ELF, which is
-exactly the case the compat build exists for; see
-`runtime/standalone/ipl3_compat.README.md` for the loader's two header fields
-and why `0x10` carries the payload size.
+`compat` is the only one Pak ships, and it is the right build for Pak because
+the linker emits a flat image rather than an ELF, which is the case the compat
+build exists for; see `runtime/standalone/ipl3_compat.README.md`.
 
 ## The matrix
 
@@ -86,27 +71,51 @@ and does not boot mupen64plus 2.5.9** <!-- known-bug: mupen64plus-ipl3 -->. It i
 `CURRENTLY_SUPPORTED.md`'s table of live bugs <!-- known-bug: mupen64plus-ipl3 -->,
 and it stays there until Pak ships a bootcode that clears it.
 
-### What would clear it
+### What has been ruled out
 
-Not what this page used to say. "Patch out the `0x80000318` store" was the
-obvious fix and the experiment above disproves it, so the real options are
-bigger:
+Four plausible causes, each tested against a real mupen64plus 2.5.9 and each
+wrong. The reported number is **exactly 64 MB in every case** — it never
+moves — which is the most informative fact here: whatever mupen64plus is
+measuring, it is not something libdragon's probe computes.
 
-1. **Replace the RDRAM initialisation** with a probe mupen64plus agrees with.
-   The honest fix, and real IPL3 engineering.
-2. **Ship an emulator-only bootcode** that skips RDRAM init entirely. Both
-   emulators present working RDRAM, so a loader that only DMAs the payload in
-   and jumps would boot them. It would not boot a console, so it could only be
-   an opt-in second blob, never the default.
+| Hypothesis | How it was tested | Result |
+|---|---|---|
+| The `osMemSize` word at `0x80000318` | patch the only `sw s0, 0x318(v0)` to a `nop` | still 64 MB |
+| ...maybe the word just needs a sane value | patch it to `sw $zero`, so the word is definitely 0 | still 64 MB |
+| The chip-count loop runs away | rebuild from source with the loop capped at 8 MiB (verified in the object: `bne s2, 0x800000`) | still 64 MB |
+| The `INITIAL_ID = 511` broadcast | rebuild with `INITIAL_ID = 16` | still 64 MB |
 
-Both edit the 4032 bytes the CIC checksums, so both need that checksum restored
-or they trade "boots hardware and ares" for "boots emulators" <!-- known-bug: n/a — states what would close the row above -->.
+Shipping `ipl3_prod.z64` instead is not an option either: `boot/ipl3.c`'s only
+`COMPAT` conditional is *where* the detected size is published, while
+`rdram_init()` in `boot/rdram.c` is identical across all three builds.
 
-The gate is ready either way: `tcl/tools/ipl3_matrix_test.tcl` runs the
-mupen64plus row for real when the emulator is installed and asserts the failure
-still reproduces, so when a bootcode fixes it that assertion is what flips.
-Until then `--ipl3` is the escape hatch: any bootcode the user supplies goes in
-verbatim.
+### What is known about the trigger
+
+Disassembling `libmupen64plus.so.2.0.0` around the error string puts the check
+inside the RDRAM **register-write** handler, on the path taken when the write
+is a broadcast to register 3 — `RDRAM_REG_MODE`, which `rdram_init()`
+broadcasts two statements after parking every chip at `INITIAL_ID`. It compares
+mupen64plus's configured size against a field reached through the rdram struct,
+masked to 28 bits.
+
+So the incompatibility is between libdragon's RDRAM initialisation *protocol*
+and mupen64plus's RDRAM register model, not a tunable constant. Clearing it
+needs either mupen64plus's own `rdram.c` (which would say what that field is)
+or a reworked probe — and a reworked probe is exactly the code that cannot be
+validated on an emulator, because it exists to drive real RDRAM chips.
+
+### The build pipeline is ready for whoever tries next
+
+`tools/build_ipl3.sh` rebuilds the compat bootcode from libdragon's source,
+with an optional `--patch`. Build from source rather than editing the shipped
+binary: the CIC checksums these 4032 bytes and libdragon's build produces a
+blob that satisfies it.
+
+Run it once with no patch first. The result is **not** byte-identical to
+`ipl3_compat.bin` — a different GCC lays the code out differently, 1558 bytes'
+worth — but it must fail on mupen64plus in exactly the same way. It does, which
+is what makes a later behavioural difference attributable to a patch rather
+than to the compiler.
 
 ## Boot termination
 

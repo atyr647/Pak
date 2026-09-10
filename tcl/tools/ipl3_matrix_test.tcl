@@ -65,7 +65,7 @@ foreach line [split $doc "\n"] {
 
 ok_true "the matrix has rows" [expr {[llength $rows] >= 4}] " ([llength $rows])"
 
-set KNOWN_IPL3 {compat 8m none custom}
+set KNOWN_IPL3 {compat none custom}
 foreach r $rows {
     lassign $r ipl3 runner expect checker
     regsub -all {`} $ipl3 "" id
@@ -121,9 +121,11 @@ foreach dir [split $::env(PATH) :] {
     if {[file executable $p]} { set MUPEN $p; break }
 }
 
-# The `8m` bootcode, when it has been built. It exists to make the row above
-# flip, so the assertion is the opposite one: this ROM must BOOT mupen64plus,
-# which means not producing the RDRAM complaint the compat blob does.
+# One place to run a ROM on mupen64plus. Dummy plugins throughout: these rows
+# are about what the BOOTCODE does, and a headless runner has no GL context --
+# without them mupen64plus fails on "Could not load EGL library" and closes the
+# ROM before IPL3 ever runs, which would make a row report whatever the video
+# stack did instead of whatever the bootcode did.
 proc mupen_run {mupen path} {
     set out ""
     catch {exec $mupen --nosaveoptions --noosd --emumode 0 --testshots 0 \
@@ -132,21 +134,8 @@ proc mupen_run {mupen path} {
     return $out
 }
 
-set ipl3_8m [pak::n64rom_named_ipl3 8m]
-if {$ipl3_8m eq ""} {
-    puts "note  ipl3_compat_8m.bin not built -- run tools/build_ipl3_8m.sh"
-} else {
-    ok_true "8m: the built bootcode fills the PIF's region exactly" \
-        [expr {[string length $ipl3_8m] == $::pak::ROM_IPL3_SIZE}] \
-        " ([string length $ipl3_8m] bytes)"
-    # It must differ from compat -- if the build silently produced the stock
-    # blob, every assertion below would be testing the wrong thing.
-    ok_true "8m: it is not byte-identical to compat" \
-        [expr {$ipl3_8m ne $ipl3}] ""
-}
-
 if {$MUPEN eq ""} {
-    puts "note  mupen64plus not on PATH -- its rows stay documented, not run"
+    puts "note  mupen64plus not on PATH -- its row stays documented, not run"
 } else {
     set tmp /tmp/pak-ipl3-matrix
     file mkdir $tmp
@@ -170,30 +159,6 @@ if {$MUPEN eq ""} {
         puts "      drop `mupen64plus-ipl3` from CURRENTLY_SUPPORTED.md."
     }
 
-    # The row the second bootcode exists to flip. Same payload, same emulator,
-    # different 4032 bytes: this one must NOT produce the complaint. That is
-    # the whole claim `8m` makes, so it is the one thing worth asserting about
-    # it, and asserting it here means the claim cannot rot into a README line.
-    if {$ipl3_8m ne ""} {
-        set rom8 [pak::n64rom $payload "PAK IPL3 8M" $ipl3_8m [expr {4 * 1024 * 1024}]]
-        set p8 [file join $tmp compat8m.z64]
-        set f [open $p8 wb]; puts -nonewline $f $rom8; close $f
-        set out8 [mupen_run $MUPEN $p8]
-        set still [string match "*IPL3 detected*RDRAM*" $out8]
-        # Reaching the CPU at all is a precondition: a run that died in the
-        # video or capture stack proves nothing about the bootcode, and would
-        # otherwise look like a pass because the complaint is absent.
-        set ran [string match "*Starting R4300*" $out8]
-        ok_true "8m: mupen64plus starts the CPU on this ROM" $ran ""
-        ok_true "8m: and does not reject its RDRAM size" \
-            [expr {$ran && !$still}] ""
-        if {$ran && $still} {
-            puts "      the cap did not change what mupen64plus sees:"
-            foreach l [split $out8 "\n"] {
-                if {[string match "*RDRAM*" $l]} { puts "        [string trim $l]" }
-            }
-        }
-    }
 }
 
 puts ""
