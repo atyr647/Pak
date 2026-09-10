@@ -24,6 +24,16 @@ alloc(T, n)       -- allocate n T's on the heap (array), returns *T
 free(ptr)         -- free a heap-allocated pointer
 ```
 
+On the **standalone** backend there is no heap: `alloc` bump-allocates from a
+fixed arena and `free` reclaims nothing, so a program that allocates in its
+game loop will exhaust the arena. `pak check --backend mips` warns `W205` at
+every `free` call site. `alloc(T using A)` / `free(p using A)` name an
+allocator with a real dealloc; the standalone backend has no vtable dispatch
+for those and rejects them with `E702` rather than silently bump-allocating
+instead. <!-- known-bug: standalone-free-noop -->
+On the **libdragon** backend these are newlib's `malloc`/`free` and behave as
+you would expect.
+
 ### Type Introspection
 
 ```pak
@@ -741,6 +751,11 @@ use n64.rdpq             -- #include <rdpq.h> + <rdpq_gfx.h>
 | `rdpq.sync_pipe` | `()` | Sync RDP pipeline state |
 | `rdpq.sync_tile` | `()` | Sync RDP tile state |
 | `rdpq.sync_load` | `()` | Sync RDP texture load |
+All four textured triangle commands below are **affine**: they write a constant
+`W`, so ST is interpolated linearly in screen space and never divided by 1/w.
+That is exact for screen-space work and for small triangles, and visibly wrong
+for a large triangle seen at a steep angle. <!-- known-bug: affine-st-only -->
+
 | `rdpq.triangle` | `(x0,y0,x1,y1,x2,y2)` | Flat fill triangle (RDP 0x08) |
 | `rdpq.triangle_z` | `(x0,y0,z0, x1,y1,z1, x2,y2,z2)` | Fill + Z (RDP 0x09); z is 0..32767 |
 | `rdpq.triangle_tex` | `(tile, x0,y0,s0,t0, x1,y1,s1,t1, x2,y2,s2,t2)` | Affine textured triangle (RDP 0x0A TRI_TEX, s15.16 edges + ST + 1/w) |

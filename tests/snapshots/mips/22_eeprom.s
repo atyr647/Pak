@@ -383,7 +383,7 @@ load_game:
     addu $t7, $t7, $t6
     lbu $t8, 0($t7)
     la $t7, level
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     li $v0, 1
     j .Lload_game_ret_2
@@ -436,7 +436,7 @@ main:
     move $t9, $t8
     li $t8, 1
     la $t7, level
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
 .Lif_end_7:
     la $t7, score
@@ -451,7 +451,7 @@ main:
     li $t6, 1
     addu $t8, $t7, $t6
     la $t7, level
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     sw $t9, 96($sp)
     jal save_game

@@ -35,7 +35,24 @@ if {![file executable $RDPRUN]} {
     catch {exec bash [file join $REPO tools build_rdp_harness.sh] $HARNESS_DIR} out
     puts $out
 }
+
+# Skipping when the reference cannot be built is fine on a laptop with no
+# network. Skipping on the machine that is supposed to be the gate is how the
+# `lft` bit stayed inverted on every triangle opcode for as long as the
+# encoding goldens existed: the harness quietly failed to build, the suite
+# reported SKIP, and CI went green. So CI sets PAK_REQUIRE_RDP_HARNESS=1 and
+# a missing harness is a failure there, with the build log to say why.
+set REQUIRED [expr {[info exists ::env(PAK_REQUIRE_RDP_HARNESS)]
+                    && $::env(PAK_REQUIRE_RDP_HARNESS) ni {0 "" no false}}]
+
 if {![file executable $RDPRUN]} {
+    if {$REQUIRED} {
+        puts "pixel test: FAIL (PAK_REQUIRE_RDP_HARNESS is set and the reference"
+        puts "                  RDP harness is not at $RDPRUN)"
+        puts "                  tools/build_rdp_harness.sh said:"
+        puts [string trim $out]
+        exit 1
+    }
     puts "pixel test: SKIP (no reference RDP harness; run tools/build_rdp_harness.sh)"
     exit 0
 }
@@ -358,17 +375,27 @@ if {$st eq "err"} {
         " (red=$red blue=$blue)"
 }
 
-# ── 3. a textured triangle samples the texture across its surface ────────────
+# ── 3. the textured triangle opcodes sample the texture across their surface ──
 
 puts ""
 puts "== a textured triangle maps the texture across itself =="
 
-# The same half-red/half-blue page, drawn through TRI_TEX in 1-cycle mode with
-# ST spanning the whole page. This is the case the roadmap called the real
-# gate, and it is the one that stayed broken longest: with bi_lerp clear the
-# RDP sends every texel through the YUV convert path and the triangle comes
-# out untextured, while every command word still looks right.
-set tri_src {
+# The same half-red/half-blue page, drawn through the triangle opcodes that
+# carry a texture coefficient block, in 1-cycle mode with ST spanning the whole
+# page. This is the case the roadmap called the real gate, and it is the one
+# that stayed broken longest: with bi_lerp clear the RDP sends every texel
+# through the YUV convert path and the triangle comes out untextured, while
+# every command word still looks right.
+#
+# All three of TRI_TEX, TRI_TEX_Z and TRI_SHADE_TXTR carry the same eight ST
+# coefficient dwords, and rdp_test.tcl pins all three against the same
+# expectations -- so a wrong packing would agree with itself across the set and
+# the encoding goldens would stay green. Each one is rendered separately here
+# because sharing a coefficient *builder* is not evidence that the three
+# commands the RDP receives are each right: TRI_SHADE_TXTR puts the block after
+# a shade block, and TRI_TEX_Z in front of a Z block, so a block boundary that
+# is off by a doubleword shows up in one and not the others.
+set tri_tpl {
 @aligned(16)
 static page: [2048]u8 = undefined
 
@@ -393,16 +420,19 @@ entry {
     rdpq.load_tile(0, 0, 0, 32, 32)
     rdpq.set_tile_size(0, 0, 0, 32, 32)
     rdpq.sync_tile()
-    rdpq.set_mode_standard()
-    rdpq.triangle_tex(0, 40, 40, 0, 0, 200, 60, 32, 0, 80, 180, 0, 32)
+    PRE
+    DRAW
     rdpq.detach_show()
 }}
 
-lassign [render $tri_src] st res
-if {$st eq "err"} {
-    puts "FAIL  textured triangle: $res"
-    incr ::fail
-} else {
+# Coverage, texturing and the direction of the S axis, for one textured
+# triangle drawn over the vertices (40,40) (200,60) (80,180) with S running
+# 0..32 from the two left vertices to the right one. Every check is against
+# what the Pak source asked for, never against what the encoder produced.
+proc check_textured_tri {name pre draw} {
+    global tri_tpl
+    lassign [render [string map [list PRE $pre DRAW $draw] $tri_tpl]] st res
+    if {$st eq "err"} { puts "FAIL  $name: $res"; incr ::fail; return }
     set drawn [drawn_pixels $res]
     set red 0 ; set blue 0 ; set other 0
     set redx 0 ; set bluex 0
@@ -416,9 +446,9 @@ if {$st eq "err"} {
     set n [dict size $drawn]
     # The filled triangle of the same vertices covers 10800 by area; a textured
     # one must cover essentially the same, not a handful of pixels.
-    ok_true "textured triangle covers its geometry" [expr {$n > 10000 && $n < 11500}] \
+    ok_true "$name covers its geometry" [expr {$n > 10000 && $n < 11500}] \
         " (drawn=$n, area=10800)"
-    ok_true "it is textured, not flat" [expr {$red > 1000 && $blue > 1000}] \
+    ok_true "$name is textured, not flat" [expr {$red > 1000 && $blue > 1000}] \
         " (red=$red blue=$blue other=$other)"
     # S runs 0..32 left-to-right across the triangle, so the red half (S<16)
     # must sit to the left of the blue half. If ST were ignored or constant
@@ -426,11 +456,73 @@ if {$st eq "err"} {
     if {$red > 0 && $blue > 0} {
         set rmean [expr {double($redx) / $red}]
         set bmean [expr {double($bluex) / $blue}]
-        ok_true "the S axis runs the right way" [expr {$rmean < $bmean}] \
+        ok_true "$name runs S the right way" [expr {$rmean < $bmean}] \
             [format " (mean x: red %.1f < blue %.1f)" $rmean $bmean]
     } else {
         incr ::fail
-        puts "FAIL  the S axis runs the right way (one colour missing)"
+        puts "FAIL  $name runs S the right way (one colour missing)"
+    }
+}
+
+check_textured_tri "TRI_TEX" \
+    "rdpq.set_mode_standard()" \
+    "rdpq.triangle_tex(0, 40, 40, 0, 0, 200, 60, 32, 0, 80, 180, 0, 32)"
+
+# TRI_TEX_Z (0x0B) is TRI_TEX with a Z block appended. Drawn here with the
+# depth buffer enabled and all three vertices at the same Z, so the picture
+# must be the one TRI_TEX draws -- a Z block written into the wrong place
+# would be consumed as ST, or the ST as Z.
+check_textured_tri "TRI_TEX_Z" \
+    "rdpq.set_mode_standard_z()\n    rdpq.clear_z()\n    rdpq.set_tri_z(100, 100, 100)" \
+    "rdpq.triangle_tex_z(0, 40, 40, 0, 0, 200, 60, 32, 0, 80, 180, 0, 32)"
+
+# TRI_SHADE_TXTR (0x0E) puts a shade block between the edges and the ST block.
+# The 1-cycle combiner set_mode_standard installs passes TEX0 straight through
+# and ignores shade, so the colours below are the texture's, exactly as for
+# TRI_TEX; what this case is gating is that the ST block still lands where the
+# RDP expects it with 64 bytes of shade in front of it.
+check_textured_tri "TRI_SHADE_TXTR" \
+    "rdpq.set_mode_standard()" \
+    "rdpq.triangle_shade_tex(0, 40, 40, 0xFFFF_FFFF, 0, 0, 200, 60, 0xFFFF_FFFF, 32, 0, 80, 180, 0xFFFF_FFFF, 0, 32)"
+
+# ── 4. the Z block on a textured triangle actually rejects ───────────────────
+
+puts ""
+puts "== a textured triangle's Z block is depth-tested =="
+
+# Two TRI_TEX_Z triangles over the same vertices: a near one with S running
+# left-to-right (red on the left), then a far one with S reversed (blue on the
+# left). With the Z block right the far triangle fails the depth test and the
+# picture stays red-on-the-left. With Z ignored -- or read out of the ST
+# dwords, which is what a block boundary off by one doubleword produces -- the
+# second draw wins and the halves swap. Coverage and texturing alone cannot
+# see this: both draws are correctly-textured triangles.
+set z_pre "rdpq.set_mode_standard_z()\n    rdpq.clear_z()\n    rdpq.set_tri_z(200, 200, 200)"
+set z_draw "rdpq.triangle_tex_z(0, 40, 40, 0, 0, 200, 60, 32, 0, 80, 180, 0, 32)
+    rdpq.set_tri_z(30000, 30000, 30000)
+    rdpq.triangle_tex_z(0, 40, 40, 32, 0, 200, 60, 0, 0, 80, 180, 32, 32)"
+
+lassign [render [string map [list PRE $z_pre DRAW $z_draw] $tri_tpl]] st res
+if {$st eq "err"} {
+    puts "FAIL  depth-tested textured triangle: $res"
+    incr ::fail
+} else {
+    set drawn [drawn_pixels $res]
+    set red 0 ; set blue 0 ; set redx 0 ; set bluex 0
+    dict for {k v} $drawn {
+        lassign $v r g b
+        lassign [split $k ,] x y
+        if {$r > 200 && $b < 80} { incr red ; incr redx $x } \
+        elseif {$b > 200 && $r < 80} { incr blue ; incr bluex $x }
+    }
+    if {$red > 0 && $blue > 0} {
+        set rmean [expr {double($redx) / $red}]
+        set bmean [expr {double($bluex) / $blue}]
+        ok_true "the far triangle is rejected" [expr {$rmean < $bmean}] \
+            [format " (mean x: red %.1f, blue %.1f)" $rmean $bmean]
+    } else {
+        incr ::fail
+        puts "FAIL  the far triangle is rejected (one colour missing: red=$red blue=$blue)"
     }
 }
 

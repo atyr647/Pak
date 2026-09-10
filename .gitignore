@@ -23,6 +23,7 @@ dist/
 .exc_game.pk64
 .pixel_combined.pk64
 .rdp_combined.pk64
+.rumble_combined.pk64
 .boot.pakobj
 .boot2.pakobj
 .game.pakobj

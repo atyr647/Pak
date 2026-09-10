@@ -1034,6 +1034,41 @@ entry {
 }
 } out 0000004D
 
+# A store to a narrow global used to be `sw` regardless of the declared width,
+# while the matching load was already a typed `lhu`/`lbu`. On a big-endian
+# target that puts the value in the two bytes AFTER the variable: the read back
+# is zero, and whatever static was laid out next is destroyed. Nothing caught
+# it because nothing read a narrow static back -- runtime.pk64's own
+# `g_fill_color` was write-only until rdpq.clear_z had to restore it.
+chk "a u16 global survives a round trip" {
+static g16: u16 = 0xFFFF
+static out: i32 = 0
+entry {
+    g16 = 0xF801 as u16
+    out = g16 as i32
+}
+} out 0000F801
+
+chk "a u8 global survives a round trip" {
+static g8: u8 = 0xFF
+static out: i32 = 0
+entry {
+    g8 = 0x5A as u8
+    out = g8 as i32
+}
+} out 0000005A
+
+# The other half of the same bug: a four-byte store into a two-byte slot lands
+# on its neighbour. `out` is declared straight after `g16` so it is the one
+# that gets hit.
+chk "storing a u16 global does not clobber the next static" {
+static g16: u16 = 0
+static out: i32 = 0x1234
+entry {
+    g16 = 0xBEEF as u16
+}
+} out 00001234
+
 puts ""
 puts "PASS=$pass  FAIL=$fail"
 exit [expr {$fail > 0 ? 1 : 0}]

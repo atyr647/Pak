@@ -7,7 +7,7 @@ It is separate from `LANGUAGE.md` (which describes the designed language) and
 **implementation reality**: what is fully working, what is partial, and what
 exists only in plans.
 
-Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
+Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug** <!-- known-bug: n/a — legend, not a claim about any feature -->
 
 ---
 
@@ -252,13 +252,28 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug**
 
 ## Known Bugs (current, not by design)
 
-None outstanding. Everything that used to sit here is in *Recently Fixed
-Bugs* below, with the fix.
+Every row declares an id. `tcl/tools/known_bugs_test.tcl` requires that any
+line anywhere in the repo's Markdown which states a blocker names one of these
+ids (or marks itself `known-bug: n/a` with a reason), and that every row here
+is referenced by the doc it bites. A table that says "None outstanding" while
+prose elsewhere says "X cannot run Y" is the failure this gate exists to stop.
+
+| Bug | Status | id |
+|-----|--------|----|
+| A `pak link` ROM with the shipped compat bootcode **cannot run** on mupen64plus 2.5.9: the loader publishes the RDRAM size it detected to `0x80000318` and that emulator's sizing walks away with 64 MB. Boots ares and hardware. | Open — needs a second bootcode that does not publish the size. See `docs/ipl3-emulator-matrix.md`. | `known-bug: mupen64plus-ipl3` |
+| `free()` is a no-op on the standalone backend: `alloc` bump-allocates out of a fixed arena and nothing is ever reclaimed. A program that allocates in its game loop will exhaust the arena. `W205` warns at every call site. | Open by design of the allocator, tracked because programs are written against it. | `known-bug: standalone-free-noop` |
+| Textured triangles are **affine only**: `triangle_tex*` writes a constant `W`, so ST does not divide by 1/w. Correct for screen-space and small triangles; visibly wrong for a large triangle seen at a steep angle. | Open — perspective ST is P3 on the roadmap. | `known-bug: affine-st-only` |
+
+Everything that used to sit here is in *Recently Fixed Bugs* below, with the
+fix.
 
 ## Recently Fixed Bugs
 
 | Bug | Fix |
 |-----|-----|
+| A store to a narrow global (`static g: u16` / `i16` / `u8` / `i8`) on the standalone backend emitted `sw`, so on this big-endian target the value landed in the bytes *after* the variable: the read back was 0 and the next static was destroyed | Fixed — the global store path goes through `emit_typed_store` (`sb`/`sh`/`sw` by declared width), matching the typed load the read side already used. Regression cases in `tcl/tools/standalone_exec_test.tcl` |
+| `rdpq.clear_z()` left the RDP in FILL cycle, so `set_mode_standard_z(); clear_z(); triangle_tex_z(...)` — the obvious order — drew a flat untextured triangle with no depth test, while every command word still decoded correctly | Fixed — `clear_z` now restores the render mode and fill colour it changed, not just the colour image. Gated by `tcl/tools/pixel_test.tcl`'s TRI_TEX_Z cases against angrylion |
+| `alloc(T using A)` / `free(p using A)` compiled on the standalone backend by silently ignoring the allocator, giving the same source different semantics on the two backends | Fixed — `E702` at check time, with `mips_codegen` refusing as a backstop |
 | `pak check` crashes with `key "filename" not known` on files with `@cfg` annotations | Fixed — Tcl `Checker.err`/`warn` now include `filename` in diagnostic dicts; `diag_str` also hardened against missing key |
 | MIPS `GPR temporary pool exhausted` on deeply-nested binary expressions (e.g. 8+ chained `\|`) | Fixed — `emit_binop` now allocates the RHS temp *after* evaluating the LHS, reducing peak register pressure from O(depth×2) to O(depth+2) |
 | Asset names not in typechecker scope (E010) | Fixed — `AssetDecl` now registered in `_check_top` |

@@ -5,7 +5,15 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AS=$(command -v mips64-elf-as || echo /opt/n64/bin/mips64-elf-as)
 LD=$(command -v mips64-elf-ld || echo /opt/n64/bin/mips64-elf-ld)
 OC=$(command -v mips64-elf-objcopy || echo /opt/n64/bin/mips64-elf-objcopy)
-[ -x "$AS" ] || { echo "n64asm parity: SKIP (no mips64-elf-as)"; exit 0; }
+# Skipping without the oracle is right on a laptop and wrong in CI, where a
+# half-failed toolchain install would turn a real disagreement into a green
+# tick. CI sets PAK_REQUIRE_N64_TOOLCHAIN=1.
+if [ ! -x "$AS" ]; then
+    case "${PAK_REQUIRE_N64_TOOLCHAIN:-}" in
+        ""|0|no|false) echo "n64asm parity: SKIP (no mips64-elf-as)"; exit 0 ;;
+        *) echo "n64asm parity: FAIL (PAK_REQUIRE_N64_TOOLCHAIN set, no mips64-elf-as)"; exit 1 ;;
+    esac
+fi
 T=$(mktemp -d); trap "rm -rf $T" EXIT
 cp "$HERE/n64asm_fixture.s" "$T/t.s"
 "$AS" -march=vr4300 -mabi=32 -o "$T/t.o" "$T/t.s"

@@ -146,6 +146,9 @@ set EXPECTED {
     364FC3BC 00000000
     3F10013F 00200000
     27000000 00000000
+    2F000C00 00506040
+    37000000 F801F801
+    27000000 00000000
     2F000C00 00506070
     3C887F10 88FCF279
     0C800168 00500028
@@ -299,7 +302,10 @@ set NOTES {
     "SET_OTHER_MODES   cycle_type = FILL"
     "SET_FILL_COLOR    0xFFFC (max 16-bit Z), twice"
     "FILL_RECTANGLE    full screen into Z"
-    "SET_COLOR_IMAGE   restore colour target 0x00200000"
+    "SET_COLOR_IMAGE   clear_z: restore colour target 0x00200000"
+    "SYNC_PIPE         clear_z: before restoring the render mode"
+    "SET_OTHER_MODES   clear_z: restore 1CYCLE (the mode before the Z clear)"
+    "SET_FILL_COLOR    clear_z: restore 0xF801 (the caller's fill colour)"
     "SYNC_PIPE         before 1-cycle + Z"
     "SET_OTHER_MODES   1CYCLE + bi_lerp0|1 + z_compare_en + z_update_en (0x30)"
     "SET_COMBINE       texel passthrough"

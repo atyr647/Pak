@@ -702,6 +702,17 @@ static g_cycle: u32 = 3
 static g_current_fb: u32 = 0
 static g_fill_color: u16 = 0xFFFF
 
+-- The last SET_OTHER_MODES written, so a helper that has to change the render
+-- mode behind the caller's back can put it back. rdpq.clear_z is the one that
+-- does: it fills the depth buffer by pointing the colour image at it, which
+-- means FILL cycle and a fill colour of its own. Restoring only the colour
+-- image -- which is all it used to do -- left the RDP in FILL cycle, so the
+-- first Z-buffered triangle after a clear rasterized as a flat white fill:
+-- right shape, no texture, no depth test, and every command word still
+-- correct. tcl/tools/pixel_test.tcl's TRI_TEX_Z case is the gate.
+static g_om_hi: u32 = 0
+static g_om_lo: u32 = 0
+
 -- Last SET_TEXTURE_IMAGE. LOAD_TILE / LOAD_BLOCK writeback this range so the
 -- DP samples RDRAM, not stale dcache. KSEG1 sources skip the cache op.
 static g_tex_addr:  u32 = 0
@@ -809,7 +820,9 @@ fn rdpq_set_scissor(x0: i32, y0: i32, x1: i32, y1: i32) {
 }
 
 fn rdpq_set_other_modes_raw(hi: u32, lo: u32) {
-    dl_cmd((RDP_SET_OTHER_MODES << 24) | (hi & 0x00FFFFFF), lo)
+    g_om_hi = hi & 0x00FFFFFF
+    g_om_lo = lo
+    dl_cmd((RDP_SET_OTHER_MODES << 24) | g_om_hi, lo)
 }
 
 fn rdpq_set_combiner_raw(hi: u32, lo: u32) {
@@ -899,18 +912,38 @@ fn rdpq_set_mode_standard_z() {
 }
 
 -- Fill the reserved Z buffer with 0xFFFC (libdragon's max 16-bit Z) by
--- briefly pointing SET_COLOR_IMAGE at it. Restores the colour target after.
+-- briefly pointing SET_COLOR_IMAGE at it.
+--
+-- Doing that costs three pieces of RDP state: the colour image, the render
+-- mode (FILL cycle) and the fill colour register. All three are put back,
+-- because `clear_z` sits in the middle of a frame and the caller has no reason
+-- to expect a depth clear to change how the next triangle draws. It used to
+-- restore only the colour image, which left the RDP in FILL cycle -- so
+-- `set_mode_standard_z(); clear_z(); triangle_tex_z(...)`, the obvious order,
+-- drew a flat white triangle with no texture and no depth test.
 fn rdpq_clear_z() {
     let fb: u32 = g_current_fb
+    let om_hi: u32 = g_om_hi
+    let om_lo: u32 = g_om_lo
+    let cycle: u32 = g_cycle
+    let fill: u32 = g_fill_color as u32
+
     rdpq_set_color_image(ZB, 0, 2, SCREEN_W)
     dl_cmd(RDP_SYNC_PIPE << 24, 0)
     g_cycle = CYCLE_FILL
     rdpq_set_other_modes_raw(CYCLE_FILL << 20, 0)
     dl_cmd(RDP_SET_FILL_COLOR << 24, 0xFFFCFFFC)
     rdpq_fill_rectangle(0, 0, SCREEN_W, SCREEN_H)
+
     if fb != 0 {
         rdpq_set_color_image(fb, 0, 2, SCREEN_W)
     }
+    -- SYNC_PIPE before the mode goes back: the fill above is still in flight,
+    -- and a mode switch mid-primitive is exactly what SYNC_PIPE exists for.
+    dl_cmd(RDP_SYNC_PIPE << 24, 0)
+    rdpq_set_other_modes_raw(om_hi, om_lo)
+    g_cycle = cycle
+    dl_cmd(RDP_SET_FILL_COLOR << 24, (fill << 16) | fill)
 }
 
 -- ── colour registers ───────────────────────────────────────────────────────

@@ -434,7 +434,7 @@ main:
 .Lss_d_29:
     sltu $t8, $zero, $t5
     la $t7, sink_b
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
     la $t6, .Lstr0
@@ -459,7 +459,7 @@ main:
     li $t8, 0
 .Lsw_d_35:
     la $t7, sink_b
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
     la $t6, .Lstr1
@@ -515,7 +515,7 @@ main:
     li $t8, 0
 .Lew_d_42:
     la $t7, sink_b
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
     la $t6, .Lstr2
@@ -539,7 +539,7 @@ main:
 .Lstreq_d_48:
     seq $t8, $t3, $t2
     la $t7, sink_b
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
     la $t6, .Lstr3
@@ -563,7 +563,7 @@ main:
 .Lstreq_d_51:
     seq $t8, $t3, $t2
     la $t7, sink_b
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
     la $t6, .Lstr1
@@ -695,7 +695,7 @@ main:
     lbu $t8, 0($t7)
     sltiu $t8, $t8, 1
     la $t7, sink_b
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     la $t9, .Lstr5
     sw $t9, 140($sp)
@@ -703,7 +703,7 @@ main:
     lbu $t8, 0($t7)
     sltiu $t8, $t8, 1
     la $t7, sink_b
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
     move $t6, $t7
@@ -729,7 +729,7 @@ main:
     lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_b
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     la $a1, .Lstr2
     lw $a0, 136($sp)
@@ -741,7 +741,7 @@ main:
     lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_b
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     la $a1, .Lstr6
     lw $a0, 136($sp)
@@ -753,7 +753,7 @@ main:
     lw $t8, 100($sp)
     move $t8, $v0
     la $t7, sink_b
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     la $a1, .Lstr1
     lw $a0, 136($sp)
@@ -801,7 +801,7 @@ main:
     lw $t7, 148($sp)
     seq $t8, $t7, $zero
     la $t7, sink_b
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     lw $t7, 136($sp)
     sw $t7, 168($sp)
@@ -883,7 +883,7 @@ main:
 .Lstreq_d_90:
     seq $t8, $t3, $t2
     la $t7, sink_b
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
     lw $t7, 176($sp)
     la $t6, .Lstr1
@@ -908,7 +908,7 @@ main:
     li $t8, 0
 .Lsw_d_94:
     la $t7, sink_b
-    sw $t8, 0($t7)
+    sb $t8, 0($t7)
     move $t9, $t8
 .Lmain_ret_25:
     lw $s7, 308($sp)

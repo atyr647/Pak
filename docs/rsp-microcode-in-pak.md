@@ -1,8 +1,29 @@
 # Writing RSP microcode in Pak
 
-Status: **design note**. Nothing here is implemented. This exists to settle
-*what the language should look like* before any of it is built, because the
-grammar is frozen (`LANGUAGE.md`) and a bad answer here is expensive to undo.
+Status: **partially implemented**. This started as a design note written before
+any of it existed, and the design below is still what the language does -- but
+"nothing here is implemented" stopped being true some time ago, and a design
+note that describes shipped behaviour in the future tense is worse than no note
+at all. What is built:
+
+| Piece | State | Where |
+|-------|-------|-------|
+| `pak build --backend rsp FILE -o FILE.ucode` | works | `pak::cmd_build_rsp`, `tcl/cli.tcl` |
+| `pak check` / `pak explain --backend rsp` | works | `tcl/cli.tcl` |
+| Scalar RSP target (step 1 below) | works | `tcl/rsp_codegen.tcl` |
+| `vec8x16` and the elementwise operators (step 2) | works | `tcl/rsp_codegen.tcl` |
+| `rsp.vacc` (step 3) | works | `tcl/rsp_codegen.tcl` |
+| `asset ... : Ucode` (step 4) | works | `tcl/cli.tcl`, `tcl/mips_codegen.tcl` |
+| Cross-file structs shared between CPU and microcode | works | `tcl/tools/rsp_shared_module_test.tcl` |
+| E701, the refusal for everything outside the subset | works | `tcl/rsp_codegen.tcl` -> `tcl/cli.tcl` |
+| Instruction scheduling beyond "correct and slow" | not done | see *The part that is actually hard* |
+
+`CURRENTLY_SUPPORTED.md` is the authority on any given construct; the gates are
+`tcl/tools/rsp_codegen_test.tcl`, `rsp_vector_test.tcl`, `rsp_diag_test.tcl`
+and `rsp_shared_module_test.tcl`. The rest of this page is the design argument,
+kept because it is why the surface looks the way it does -- one new primitive
+type and one new module, and everything else borrowed from concepts Pak already
+had.
 
 ---
 
@@ -326,7 +347,12 @@ byte-for-byte. Same gate shape, different reference.
 
 ---
 
-## Suggested order
+## The order it was built in
+
+All four steps below are done; they are kept because the reasoning for the
+sequence is still the reasoning for how the pieces fit. Step 1's "ship it when
+a Pak-written task runs on ares and returns the right answer" is
+`tcl/tools/ares_test.tcl`'s `rsp_task_add` / `rsp_task_loop` cases.
 
 1. **Scalar-only RSP target.** No vectors at all. `entry`, `static`s in DMEM,
    `while`, integer math -- compiled to the RSP's scalar half, which is a MIPS I
