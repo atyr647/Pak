@@ -171,7 +171,22 @@ proc disassemble {image base} {
     global OBJDUMP TMP
     set f [file join $TMP img.bin]
     set fh [open $f wb]; puts -nonewline $fh $image; close $fh
-    set out [exec $OBJDUMP -D -b binary -m mips:4300 -EB \
+    # -z / --disassemble-zeroes: without it, objdump collapses a run of
+    # identical (usually zero) instruction words into a single "..." line and
+    # keeps counting addresses across the gap. listing_to_sim only sees the
+    # lines objdump actually printed, so those addresses vanish from the
+    # simulated instruction stream -- harmless for a `jal`/`j` (which targets
+    # a LABEL, unaffected), but any `jalr` through a register computes its
+    # target from the runtime address and reconstructs an instruction index
+    # via to_index()'s "text_base + 4*N, no gaps" arithmetic. An elided run
+    # before the target silently shifts every index after it, so an indirect
+    # call lands on whatever instruction happens to sit N slots off from the
+    # real one -- wrong data, not a crash, and "halted" still reads true
+    # because the run reaches a real `jr $ra` eventually, just the wrong one.
+    # First caught here: dyn Trait dispatch and a capturing closure -- the
+    # first two cases in this file to call through `jalr` on the encoded ROM
+    # path -- both silently computed 0 instead of failing loudly.
+    set out [exec $OBJDUMP -D -z -b binary -m mips:4300 -EB \
                  --adjust-vma=[format 0x%08X $base] $f]
     return [split $out \n]
 }
@@ -335,6 +350,127 @@ ok "VI_ORIGIN is the last buffer shown" [word_hex $mem2 0xA4400004] 0024B000
 ok "VI_WIDTH is 320" [word_hex $mem2 0xA4400008] 00000140
 ok "VI_CTRL is 16bpp, pixel_advance 3, aa_mode 2" \
     [word_hex $mem2 0xA4400000] 00003202
+
+# ── scenario 3: language constructs, on the bytes and relocations Pak emits ──
+
+# Every construct below has a record-level counterpart in
+# standalone_exec_test.tcl, which proves the codegen produces the right
+# RECORDS. It does not prove those records survive encoding, relocation and a
+# real linked layout -- and this repo's whole reason for pixel_test.tcl and
+# this file is that "the records look right" and "the machine does the right
+# thing" have come apart before (the lft bit; the narrow-store width). Each
+# case here links against boot.S + the standalone runtime exactly as
+# `pak build --backend mips` does, disassembles the result with binutils, and
+# runs it from _start.
+
+proc rom_check {tag src sym want} {
+    global TMP
+    puts ""
+    puts "== $tag =="
+    set r [link_program $tag $src]
+    set syms [dict get $r symbols]
+    lassign [execute $r 0] run preset unknown firstaddr
+    if {[dict size $unknown] > 0} {
+        incr ::fail
+        puts "FAIL  the simulator does not implement: [lsort [dict keys $unknown]]"
+        return
+    }
+    ok_true "the run ended rather than hitting the instruction budget"         [dict get $run halted] "  ([dict get $run insns] instructions)"
+    set mem [dict get $run mem_w]
+    if {![dict exists $syms $sym]} {
+        incr ::fail
+        puts "FAIL  no symbol '$sym' in the linked image"
+        return
+    }
+    ok "$sym" [word_hex $mem [dict get $syms $sym]] $want
+}
+
+# Capturing-closure mutation. `bump` closes over `counter` by reference (a
+# pointer into the enclosing frame travels as an implicit extra argument at
+# every direct call site -- see emit_call's closure_envs handling), so three
+# calls must accumulate rather than each starting from a fresh copy. This is
+# the R_MIPS_26 call to the closure's own emitted label plus the frame-pointer
+# arithmetic that finds `counter`, both only real once linked and run.
+rom_check "capturing closure mutates its environment across calls" {
+static out: i32 = 0
+
+entry {
+    let mut counter: i32 = 0
+    let bump: fn(i32) -> i32 = fn(x: i32) -> i32 {
+        counter = counter + x
+        return counter
+    }
+    bump(3)
+    bump(4)
+    bump(5)
+    out = counter
+}
+} out 0000000C
+
+# dyn Trait dispatch. `sa.area()` and `sb.area()` each load a vtable pointer
+# out of the 8-byte {self, vtable} pair and `jalr` through it -- an indirect
+# call the linker never sees a relocation for, so this is the one construct
+# here that a linker bug could not have caught and only execution can.
+rom_check "dyn Trait dispatch picks each receiver's own method" {
+trait Shape {
+    fn area(self: *Self) -> i32
+}
+struct Sq { w: i32 }
+struct Tri { b: i32, h: i32 }
+impl Sq for Shape {
+    fn area(self: *Sq) -> i32 { return self.w * self.w }
+}
+impl Tri for Shape {
+    fn area(self: *Tri) -> i32 { return (self.b * self.h) / 2 }
+}
+static out: i32 = 0
+entry {
+    let mut a = Sq { w: 5 }
+    let mut b = Tri { b: 6, h: 4 }
+    let sa: dyn Shape = Shape_from_Sq(&a)
+    let sb: dyn Shape = Shape_from_Tri(&b)
+    out = sa.area() * 100 + sb.area()
+}
+} out 000009D0
+
+# `match .ok(v)` / `.err(e)` on a Result a real call returns, both arms, both
+# orders of the arms in source (the second case lists `.ok` before `.err`,
+# the reverse of the first, so a wrong assumption about match-arm order in
+# the encoded jump table would show up here and not in the first case alone).
+rom_check "match .ok / .err on a real Result return value" {
+enum LoadError: u8 { file_not_found bad_format }
+fn divide(a: i32, b: i32) -> Result(i32, LoadError) {
+    if b == 0 { return err(LoadError.bad_format) }
+    return ok(a / b)
+}
+static out: i32 = 0
+entry {
+    let d = divide(10, 2)
+    match d {
+        .err(e) => { out = -10 }
+        .ok(v)  => { out = v }
+    }
+    let d2 = divide(9, 0)
+    match d2 {
+        .ok(v)  => { out = v }
+        .err(e) => { out = out + 1000 }
+    }
+}
+} out 000003ED
+
+# Monomorphized `identity<T>`: two call sites with different T must reach two
+# different linked symbols (identity__i32, identity__u32), each doing the
+# right thing for its own type -- not, for instance, both landing on
+# whichever specialization the linker happened to place first.
+rom_check "identity<T> monomorphizes per call-site type" {
+fn identity<T>(x: T) -> T { return x }
+static out: i32 = 0
+entry {
+    let a: i32 = identity(42)
+    let b: u32 = identity(7 as u32)
+    out = a + (b as i32) * 100
+}
+} out 000002E6
 
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
