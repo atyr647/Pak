@@ -129,7 +129,14 @@ if {$MUPEN eq ""} {
     set path [file join $tmp compat.z64]
     set f [open $path wb]; puts -nonewline $f $rom_compat; close $f
     set out ""
-    catch {exec $MUPEN --nogui --testshots 1 --emumode 0 $path 2>@1} out
+    # Dummy plugins throughout: this row is about what the BOOTCODE does, and
+    # a headless runner has no GL context -- without these mupen64plus fails on
+    # "Could not load EGL library" and closes the ROM before IPL3 ever runs,
+    # which would make the row report whatever the video stack did instead of
+    # whatever the bootcode did.
+    catch {exec $MUPEN --nosaveoptions --noosd --emumode 0 --testshots 0 \
+               --gfx dummy --audio dummy --input dummy \
+               --rsp mupen64plus-rsp-hle $path 2>@1} out
     # The documented expectation is a failure with this exact diagnosis. If it
     # ever starts booting, the Known Bugs row and this doc are both stale.
     set detected [string match "*IPL3 detected*RDRAM*" $out]

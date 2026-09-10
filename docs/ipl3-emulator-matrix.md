@@ -43,9 +43,10 @@ and why `0x10` carries the payload size.
 
 ### The mupen64plus row is not Pak's bug, and is still Pak's problem
 
-mupen64plus 2.5.9's RDRAM emulation lets libdragon's memory sizing walk off the
-end and come back with 64 MB. The compat loader writes what it detected to
-`0x80000318`; mupen64plus reads that address, disagrees with it, and stops:
+mupen64plus 2.5.9 models RDRAM as modules and compares its configured total
+against what IPL3's probe configured. libdragon's probe walks off the end of
+this emulator's RDRAM and comes back with 64 MB, so the two disagree and it
+stops:
 
 ```
 Core Error: IPL3 detected 64 MB of RDRAM != 8 MB
@@ -54,8 +55,13 @@ Core Error: reserved opcode: 80000300:1
 
 A ROM whose entire payload is `b .` / `nop` fails identically, so nothing above
 ROM `0x1000` is involved — this is the bootcode and the emulator, not the
-compiler. libdragon's own ROMs sidestep it because the *mainline* build does
-not write that field; the compat build does.
+compiler.
+
+It is **not** the `osMemSize` word at `0x80000318`, which is what this page and
+`ipl3_compat.README.md` used to say. Patching the only `sw s0, 0x318(v0)` in
+the blob to a `nop` leaves mupen64plus reporting exactly 64 MB, which it could
+not do if that word were the source. The number comes from the RDRAM/RI
+initialisation instead.
 
 That means the honest status is: **Pak's default ROM boots ares and hardware,
 and does not boot mupen64plus 2.5.9** <!-- known-bug: mupen64plus-ipl3 -->. It is carried as a live row in
@@ -64,12 +70,25 @@ and it stays there until Pak ships a bootcode that clears it.
 
 ### What would clear it
 
-Shipping a second bootcode and letting `pak link` choose: a mainline-style
-loader that does not publish its RDRAM size, or the compat loader patched not
-to write `0x80000318`. Both are real work with a real gate attached (the row
-above has to flip from "does not boot" to "boots" <!-- known-bug: n/a — states what would close the row above -->, verified against an actual
-mupen64plus 2.5.9), and neither is done. Until one is, `--ipl3` is the escape
-hatch: any bootcode the user can supply goes in verbatim.
+Not what this page used to say. "Patch out the `0x80000318` store" was the
+obvious fix and the experiment above disproves it, so the real options are
+bigger:
+
+1. **Replace the RDRAM initialisation** with a probe mupen64plus agrees with.
+   The honest fix, and real IPL3 engineering.
+2. **Ship an emulator-only bootcode** that skips RDRAM init entirely. Both
+   emulators present working RDRAM, so a loader that only DMAs the payload in
+   and jumps would boot them. It would not boot a console, so it could only be
+   an opt-in second blob, never the default.
+
+Both edit the 4032 bytes the CIC checksums, so both need that checksum restored
+or they trade "boots hardware and ares" for "boots emulators" <!-- known-bug: n/a — states what would close the row above -->.
+
+The gate is ready either way: `tcl/tools/ipl3_matrix_test.tcl` runs the
+mupen64plus row for real when the emulator is installed and asserts the failure
+still reproduces, so when a bootcode fixes it that assertion is what flips.
+Until then `--ipl3` is the escape hatch: any bootcode the user supplies goes in
+verbatim.
 
 ## Boot termination
 

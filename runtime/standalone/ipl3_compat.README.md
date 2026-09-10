@@ -49,9 +49,26 @@ Core Error: reserved opcode: 80000300:1
 
 A ROM whose entire payload is `b .` / `nop` — two instructions that cannot be
 wrong — fails in exactly the same way, so nothing above ROM `0x1000` is
-involved. libdragon's own ROMs sidestep it because the *mainline* build does
-not write the size it detected to `0x80000318`, where mupen64plus reads it;
-the compat build does, so the emulator sees the bad number and stops.
+involved: this is the bootcode and the emulator, not the compiler.
+
+An earlier version of this file blamed the `osMemSize` word at `0x80000318`,
+which the compat loader writes and the mainline loader does not. That is
+**wrong**, and the experiment that disproves it is cheap: patch the single
+`sw s0, 0x318(v0)` in the blob (offset 400, ROM `0x1D0`) to a `nop` and run it.
+mupen64plus still reports *exactly* 64 MB. Had it been reading `0x80000318`,
+removing the only write to that word would have made it report whatever was
+left there instead.
+
+mupen64plus models RDRAM as modules — "Initializing 4 RDRAM modules for a total
+of 8 MB" is its own line, printed before the error — and compares its
+configured total against what IPL3's probe configured. So the size it objects
+to comes from the RDRAM/RI initialisation, not from a word in RDRAM.
+
+Fixing it therefore means replacing libdragon's RDRAM init, not suppressing one
+store — and any edit to these 4032 bytes also breaks the CIC checksum the
+console verifies, so a patched blob would trade "boots hardware and ares" for
+"boots mupen64plus and ares". That is why no second bootcode ships yet; see
+`docs/ipl3-emulator-matrix.md`.
 
 **ares runs it.** `tcl/tools/ares_test.tcl` boots two ROMs on ares headless
 under Xvfb and checks the pixels that come out; `tools/build_ares.sh` builds
