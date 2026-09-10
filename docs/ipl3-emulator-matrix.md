@@ -40,7 +40,8 @@ build exists for; see `runtime/standalone/ipl3_compat.README.md`.
 |------|--------|----------|------------|
 | `compat` | ares (built by `tools/build_ares.sh`) | boots; draws the frame; no PIF boot-timeout in the log | `tcl/tools/ares_test.tcl` |
 | `compat` | real hardware / flashcart | boots (same loader libdragon ships) | not automated — no hardware in CI |
-| `compat` | mupen64plus 2.5.9 | **does not boot** — `IPL3 detected 64 MB of RDRAM != 8 MB` <!-- known-bug: mupen64plus-ipl3 --> | `tcl/tools/ipl3_matrix_test.tcl` (documented, run when mupen64plus is present) |
+| `compat` | mupen64plus 2.5.9, stock | **does not boot** — two bugs in its RDRAM model <!-- known-bug: mupen64plus-ipl3 --> | `tcl/tools/ipl3_matrix_test.tcl` — actually run; asserts the failure still reproduces |
+| `compat` | mupen64plus + `tools/build_mupen_shim.sh` | boots and runs | same gate, asserting the same ROM does *not* fault |
 | `none` | any | does not boot — the PIF jumps into 4032 zero bytes <!-- known-bug: n/a — `none` is the absence of a bootcode, not a defect --> | `tcl/tools/ipl3_matrix_test.tcl` (header check, no emulator needed) |
 | `custom` | whatever that bootcode supports | the user's problem | n/a |
 
@@ -137,14 +138,47 @@ Teaching mupen64plus libdragon's `idfield_value` layout is not sufficient on
 its own — `ri_address_to_id_field()` maps the access address to an id too, and
 would have to agree as well. That was tried and the ROM still fails.
 
-### What that means for Pak
+### What that means for Pak, and the shim
 
-Nothing Pak can do from the ROM side bridges this. It is a disagreement about
-an RDRAM register layout between an emulator and a bootcode that boots real
-hardware and ares. Clearing the row needs either mupen64plus's RDRAM model
-changed, or libdragon writing device IDs in mupen64plus's layout instead --
-and that second option is a change to the code whose entire job is driving
-real RDRAM chips, which is exactly what cannot be validated on an emulator.
+Nothing Pak can do *inside a ROM* bridges this — it is an emulator bug, in the
+code that decides whether RDRAM exists at all. So the fix goes where the bug
+is: `tools/build_mupen_shim.sh` builds a mupen64plus core with
+`tools/mupen/rdram-libdragon-compat.patch` applied, and that core runs Pak
+ROMs.
+
+    tools/build_mupen_shim.sh
+    mupen64plus --corelib <printed path> game.z64
+
+The patch is two changes, both in `src/device/rdram/rdram.c`:
+
+1. **`idfield_value()` reads one field from the wrong byte.** RDRAM registers
+   are stored byte-swapped, and it takes device-id bits 7..14 from the stored
+   word's bits 16..23 instead of 8..15. Bits 0..5, 6 and 15 are already right.
+   The effect is that no device parked at an id above 63 can be matched — and
+   libdragon parks every chip at 511 before probing, so `get_module()` misses
+   and every register read comes back 0.
+
+2. **The Current-Control corruption window closes too early.** mupen64plus
+   deliberately corrupts RDRAM reads during calibration so a bootcode's
+   current sweep sees a difference between current levels; without it the
+   sweep finds every level perfect, sums to zero, and concludes the chip is
+   dead. It opens that window on a broadcast DELAY write and closes it on a
+   broadcast MODE write — which fits Nintendo's IPL3, but libdragon broadcasts
+   MODE early and calibrates afterwards. Keyed instead on whether a MODE write
+   leaves the chip in MANUAL or AUTO current mode, which is what the window
+   actually means, and is per-chip and self-limiting.
+
+Neither change is Pak-specific; both would help any libdragon ROM. **This is
+worth reporting upstream**, and has not been — that needs someone with a
+GitHub account.
+
+The gate asserts both directions: stock mupen64plus must still fail, and the
+shim must still run the same ROM. So neither the bug report nor the fix can go
+stale unnoticed.
+
+The ROM those rows use is a `b .` loop rather than a real program: a payload of
+arbitrary bytes decodes to invalid instructions, so a ROM that booted perfectly
+would still fault, and the fault would be indistinguishable from not booting.
 
 Hypotheses tested and eliminated along the way, each against a real
 mupen64plus 2.5.9:

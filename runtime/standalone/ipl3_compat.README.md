@@ -60,9 +60,10 @@ something else there. That line is a `DebugMessage` and stops nothing.
 What actually happens is that libdragon's chip probe detects **zero** RDRAM on
 this emulator — the two disagree about how the RDRAM `DEVICE_ID` register is
 encoded — so stage 2 is DMA'd to `0x80000000 + 0 - stage2size` and the payload
-is never loaded. `docs/ipl3-emulator-matrix.md` has the trace, the two bit
-layouts side by side, and the four hypotheses that were eliminated first
-(including the `0x80000318` store this file used to blame).
+is never loaded. `docs/ipl3-emulator-matrix.md` has the trace, both bugs, and the
+hypotheses eliminated first (including the `0x80000318` store this file used
+to blame). It is an emulator bug rather than a bootcode one, and
+`tools/build_mupen_shim.sh` builds a mupen64plus that runs Pak ROMs.
 
 **ares runs it.** `tcl/tools/ares_test.tcl` boots two ROMs on ares headless
 under Xvfb and checks the pixels that come out; `tools/build_ares.sh` builds

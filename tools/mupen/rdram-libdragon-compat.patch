@@ -1,0 +1,83 @@
+Make mupen64plus's RDRAM model work with libdragon's IPL3.
+
+A ROM built by `pak link` uses libdragon's IPL3, which does not boot on stock
+mupen64plus 2.5.9. Two independent bugs in its RDRAM emulation, both found by
+instrumenting it against a Pak ROM. Neither is Pak's, and neither can be
+worked around from inside a ROM.
+
+1. idfield_value() takes the wrong byte.
+
+   RDRAM registers are stored byte-swapped ("RDRAM registers are physically
+   little-endian" -- libdragon boot/rdram.c). Decoding DEVICE_ID back to a
+   device id, mupen64plus reads id bits 0..5, 6 and 15 from the right places
+   but takes bits 7..14 from the byte-swapped word's bits 16..23 instead of
+   8..15. It therefore cannot match any device parked at an id above 63,
+   which is exactly what libdragon does before probing (INITIAL_ID = 511), so
+   get_module() misses and every register read returns 0.
+
+2. The Current-Control corruption window closes too early.
+
+   read_rdram_dram_corrupted() exists so a bootcode's current-calibration
+   sweep sees unreliable RDRAM at low current levels -- without it the sweep
+   finds every level equally perfect, computes a weighted sum of zero, and
+   concludes the chip is dead. mupen64plus opens that window on a broadcast
+   write to DELAY and closes it on a broadcast write to MODE. That matches
+   Nintendo's IPL3, which calibrates between the two. libdragon broadcasts
+   MODE early, to enable every chip up front, and calibrates afterwards -- so
+   the window is already shut when the sweep runs.
+
+   Keyed instead on what the write means: calibration is in progress while a
+   MODE write leaves the chip in MANUAL current mode, and over once it is put
+   into AUTO. That is per-chip and self-limiting, so dynarec's fast memory is
+   restored after each chip exactly as before.
+
+Together these are the difference between "IPL3 detected 64 MB of RDRAM" plus
+`reserved opcode: 80000300:1` and a ROM that boots. (The 64 MB message is
+unrelated noise -- mupen64plus peeks at CPU register $s4 on the assumption
+that Nintendo's IPL3 keeps the size there. It is a DebugMessage and stops
+nothing. This patch deliberately leaves it alone.)
+
+Verified against mupen64plus-core 2.5.9+341+gf82b37bf. Before: stage 2 is
+DMA'd to 0x00FFFF08 (memsize == 0) and the payload never loads. After: stage 2
+goes to 0x007FFF08 (8 MB detected) and the payload arrives --
+`PI cart=10001000 -> dram=00000400 len=11BAC`.
+
+--- a/src/device/rdram/rdram.c
++++ b/src/device/rdram/rdram.c
+@@ -59,7 +59,7 @@
+ {
+     return ((((device_id >> 26) & 0x3f) <<  0)
+           | (((device_id >> 23) & 0x01) <<  6)
+-          | (((device_id >> 16) & 0xff) <<  7)
++          | (((device_id >>  8) & 0xff) <<  7)
+           | (((device_id >>  7) & 0x01) << 15));
+ }
+ 
+@@ -195,12 +195,23 @@
+         map_corrupt_rdram(rdram, 1);
+     }
+ 
+-    /* HACK: Detect when current Control calibration is over,
+-     * so we can restore the original rdram_dram handler
+-     * and let dynarec have it's fast_memory enabled.
++    /* Current-Control calibration is in progress whenever a MODE write leaves
++     * the chip in MANUAL current mode, and over once it is put into AUTO. Key
++     * the corrupted-read handler on that rather than on a broadcast MODE
++     * write: a bootcode is free to broadcast MODE before it calibrates (
++     * libdragon's does, to enable every chip up front), and keying off the
++     * broadcast ends the window before the calibration sweep even starts --
++     * so every current level reads back perfect, the sweep finds no
++     * difference between them, and the bootcode concludes the chip is dead.
++     *
++     * AUTO is bit 7 of the logical register; RDRAM registers are stored
++     * byte-swapped, so it is bit 31 of the value written here.
+      */
++    if (reg == RDRAM_MODE_REG) {
++        map_corrupt_rdram(rdram, (value & UINT32_C(0x80000000)) ? 0 : 1);
++    }
++
+     if (address & RDRAM_BCAST_ADDRESS_MASK && reg == RDRAM_MODE_REG) {
+-        map_corrupt_rdram(rdram, 0);
+ 
+         /* HACK: In the IPL3 procedure, at this point,
+          * the amount of detected memory can be found in s4 */

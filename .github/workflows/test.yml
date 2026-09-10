@@ -442,6 +442,13 @@ jobs:
           sudo apt-get install -y -qq mupen64plus-ui-console \
               mupen64plus-rsp-hle mupen64plus-audio-sdl mupen64plus-input-sdl \
               >/dev/null 2>&1 || echo "mupen64plus unavailable; its row stays documented"
+          # The shim rows need a patched core; building it is a couple of
+          # minutes and it is what proves the fix still works. Skips cleanly
+          # if the source cannot be fetched.
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' \
+              /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
+          sudo apt-get update -qq >/dev/null 2>&1 || true
+          bash tools/build_mupen_shim.sh || true
           PATH=/usr/games:$PATH tclsh tcl/tools/ipl3_matrix_test.tcl
 
       # The Known Bugs table is worth what its worst row is worth. This fails
