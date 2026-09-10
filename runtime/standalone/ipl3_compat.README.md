@@ -51,29 +51,18 @@ A ROM whose entire payload is `b .` / `nop` — two instructions that cannot be
 wrong — fails in exactly the same way, so nothing above ROM `0x1000` is
 involved: this is the bootcode and the emulator, not the compiler.
 
-An earlier version of this file blamed the `osMemSize` word at `0x80000318`,
-which the compat loader writes and the mainline loader does not. That is
-**wrong**, and two cheap patches to the single `sw s0, 0x318(v0)` in the blob
-(offset 400, ROM `0x1D0`) disprove it. Replace it with a `nop`: mupen64plus
-still reports *exactly* 64 MB. Replace it with `sw $zero, 0x318(v0)` so the
-word is definitely 0: still *exactly* 64 MB. An emulator reading that word
-would have reported whatever was left there, and 0 MB in the second case.
+This was root-caused by building mupen64plus 2.5.9 from source and
+instrumenting it, and the headline message turns out to be a red herring:
+mupen64plus reads CPU register `$s4` when IPL3 broadcasts to `RDRAM_MODE_REG`,
+because that is where *Nintendo's* IPL3 keeps the size. libdragon keeps
+something else there. That line is a `DebugMessage` and stops nothing.
 
-mupen64plus models RDRAM as modules — "Initializing 4 RDRAM modules for a total
-of 8 MB" is its own line, printed before the error — and compares its
-configured total against what IPL3's probe configured. So the size it objects
-to comes from the RDRAM/RI initialisation, not from a word in RDRAM.
-
-libdragon's source confirms it. `boot/ipl3.c`'s only `COMPAT` conditional is
-*where* the detected size is published -- the mainline build puts it in DMEM's
-`bootinfo`, the compat build in the OS lowmem block -- while `rdram_init()` in
-`boot/rdram.c`, which does the actual initialisation, is identical in all three
-builds. So `ipl3_prod.z64` would not help: it runs the same probe.
-
-Fixing it therefore means changing that probe, not suppressing one store — and any edit to these 4032 bytes also breaks the CIC checksum the
-console verifies, so a patched blob would trade "boots hardware and ares" for
-"boots mupen64plus and ares". That is why no second bootcode ships yet; see
-`docs/ipl3-emulator-matrix.md`.
+What actually happens is that libdragon's chip probe detects **zero** RDRAM on
+this emulator — the two disagree about how the RDRAM `DEVICE_ID` register is
+encoded — so stage 2 is DMA'd to `0x80000000 + 0 - stage2size` and the payload
+is never loaded. `docs/ipl3-emulator-matrix.md` has the trace, the two bit
+layouts side by side, and the four hypotheses that were eliminated first
+(including the `0x80000318` store this file used to blame).
 
 **ares runs it.** `tcl/tools/ares_test.tcl` boots two ROMs on ares headless
 under Xvfb and checks the pixels that come out; `tools/build_ares.sh` builds

@@ -71,38 +71,91 @@ and does not boot mupen64plus 2.5.9** <!-- known-bug: mupen64plus-ipl3 -->. It i
 `CURRENTLY_SUPPORTED.md`'s table of live bugs <!-- known-bug: mupen64plus-ipl3 -->,
 and it stays there until Pak ships a bootcode that clears it.
 
-### What has been ruled out
+### The actual root cause
 
-Four plausible causes, each tested against a real mupen64plus 2.5.9 and each
-wrong. The reported number is **exactly 64 MB in every case** — it never
-moves — which is the most informative fact here: whatever mupen64plus is
-measuring, it is not something libdragon's probe computes.
+Found by building mupen64plus 2.5.9 from source and instrumenting it. The
+short version: **libdragon's IPL3 detects zero bytes of RDRAM on
+mupen64plus**, and the "64 MB" in the error message has nothing to do with it.
 
-| Hypothesis | How it was tested | Result |
+The error everyone reads is a red herring. mupen64plus's `write_rdram_regs`
+does this, and the comment is its own:
+
+```c
+/* HACK: In the IPL3 procedure, at this point,
+ * the amount of detected memory can be found in s4 */
+size_t ipl3_rdram_size = r4300_regs(rdram->r4300)[20] & UINT32_C(0x0fffffff);
+if (ipl3_rdram_size != rdram->dram_size) {
+    DebugMessage(M64MSG_ERROR, "IPL3 detected %u MB of RDRAM != %u MB", ...);
+}
+```
+
+It peeks at CPU register `$s4` when IPL3 broadcasts to `RDRAM_MODE_REG`,
+because that is where *Nintendo's* IPL3 happens to keep the size. libdragon is
+a different program and `$s4` holds something else entirely. The message is a
+`DebugMessage` — it changes no state and stops nothing. It is noise.
+
+The real failure is the line after it, `reserved opcode: 80000300:1`, and the
+trace says why:
+
+```
+PAKTRACE: RI read reg=3 val=00000000      <- RI_SELECT == 0, so the cold-boot
+                                             path runs and rdram_init() is used
+PAKTRACE: PI write cart=10000B08 -> dram=00FFFF08 len=F8 rawdram=7FFFFF08
+PAKTRACE: [80000400] = 00000000           <- the payload never arrived
+reserved opcode: 80000300:1               <- executing osTvType as an opcode
+```
+
+`rawdram=0x7FFFFF08` is the whole story. `boot/loader.h` places stage 2 at
+`LOADER_BASE(memsize, stage2size) = 0x80000000 + memsize - stage2size`, and
+`0x80000000 + 0 - 0xF8` is exactly `0x7FFFFF08`. **`memsize` is zero.**
+libdragon's probe found no chips at all, stage 2 was DMA'd to a nonsense
+address, the payload load that stage 2 would have done never happened, and the
+CPU fell into the boot-config block at `0x80000300` — where `osTvType == 1`,
+which is not a valid instruction.
+
+That also explains why capping the probe at 8 MiB changed nothing: the loop
+was not overcounting, it was exiting on its first iteration.
+
+### Why the probe finds nothing
+
+The chip-detect loop turns a chip on and reads `RDRAM_REG_MODE` back to see
+whether the `DE` bit stuck. On mupen64plus that read is routed through
+`get_module()`, which matches the access against each module's `DEVICE_ID`
+register — and the two sides encode that register differently:
+
+| | id bits 0–5 | id bits 6–14 | id bit 15 |
+|---|---|---|---|
+| libdragon writes (`rdram_reg_w_deviceid`) | value[7:2] | value[23:15] | value[31] |
+| mupen64plus reads (`idfield_value`) | value[31:26] | value[23:16] (8 bits) + value[23] | value[7] |
+
+They agree only for device id 0. libdragon parks every chip at a high id
+first, so from the second register access onward mupen64plus cannot find the
+module, returns 0, the `DE` bit reads back clear, and the loop concludes there
+is no chip there.
+
+Teaching mupen64plus libdragon's `idfield_value` layout is not sufficient on
+its own — `ri_address_to_id_field()` maps the access address to an id too, and
+would have to agree as well. That was tried and the ROM still fails.
+
+### What that means for Pak
+
+Nothing Pak can do from the ROM side bridges this. It is a disagreement about
+an RDRAM register layout between an emulator and a bootcode that boots real
+hardware and ares. Clearing the row needs either mupen64plus's RDRAM model
+changed, or libdragon writing device IDs in mupen64plus's layout instead --
+and that second option is a change to the code whose entire job is driving
+real RDRAM chips, which is exactly what cannot be validated on an emulator.
+
+Hypotheses tested and eliminated along the way, each against a real
+mupen64plus 2.5.9:
+
+| Hypothesis | Test | Result |
 |---|---|---|
-| The `osMemSize` word at `0x80000318` | patch the only `sw s0, 0x318(v0)` to a `nop` | still 64 MB |
-| ...maybe the word just needs a sane value | patch it to `sw $zero`, so the word is definitely 0 | still 64 MB |
-| The chip-count loop runs away | rebuild from source with the loop capped at 8 MiB (verified in the object: `bne s2, 0x800000`) | still 64 MB |
-| The `INITIAL_ID = 511` broadcast | rebuild with `INITIAL_ID = 16` | still 64 MB |
-
-Shipping `ipl3_prod.z64` instead is not an option either: `boot/ipl3.c`'s only
-`COMPAT` conditional is *where* the detected size is published, while
-`rdram_init()` in `boot/rdram.c` is identical across all three builds.
-
-### What is known about the trigger
-
-Disassembling `libmupen64plus.so.2.0.0` around the error string puts the check
-inside the RDRAM **register-write** handler, on the path taken when the write
-is a broadcast to register 3 — `RDRAM_REG_MODE`, which `rdram_init()`
-broadcasts two statements after parking every chip at `INITIAL_ID`. It compares
-mupen64plus's configured size against a field reached through the rdram struct,
-masked to 28 bits.
-
-So the incompatibility is between libdragon's RDRAM initialisation *protocol*
-and mupen64plus's RDRAM register model, not a tunable constant. Clearing it
-needs either mupen64plus's own `rdram.c` (which would say what that field is)
-or a reworked probe — and a reworked probe is exactly the code that cannot be
-validated on an emulator, because it exists to drive real RDRAM chips.
+| The `osMemSize` word at `0x80000318` | patch the only `sw s0, 0x318(v0)` to a `nop` | still fails |
+| ...maybe it just needs a sane value | patch it to `sw $zero` | still fails |
+| The chip-count loop runs away | rebuild with the loop capped at 8 MiB | still fails (it exits at the *first* chip) |
+| The `INITIAL_ID = 511` broadcast | rebuild with `INITIAL_ID = 16` | still fails |
+| Shipping `ipl3_prod.z64` instead | `boot/ipl3.c`'s only `COMPAT` difference is where memsize is published; `rdram_init()` is identical | would not help |
 
 ### The build pipeline is ready for whoever tries next
 
@@ -112,10 +165,10 @@ binary: the CIC checksums these 4032 bytes and libdragon's build produces a
 blob that satisfies it.
 
 Run it once with no patch first. The result is **not** byte-identical to
-`ipl3_compat.bin` — a different GCC lays the code out differently, 1558 bytes'
-worth — but it must fail on mupen64plus in exactly the same way. It does, which
-is what makes a later behavioural difference attributable to a patch rather
-than to the compiler.
+`ipl3_compat.bin` — a different GCC lays the code out differently — but it must
+fail on mupen64plus in exactly the same way. It does, which is what makes a
+later behavioural difference attributable to a patch rather than to the
+compiler.
 
 ## Boot termination
 

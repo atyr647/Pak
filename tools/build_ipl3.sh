@@ -42,7 +42,7 @@ command -v "$PREFIX/bin/mips64-elf-gcc" >/dev/null 2>&1 \
 
 # Build in a copy: the fetched libdragon tree is a cache shared with other
 # gates, and they must keep seeing stock sources.
-WORK="${TMPDIR:-/tmp}/pak-ipl3-8m"
+WORK="${TMPDIR:-/tmp}/pak-ipl3-build"
 rm -rf "$WORK"
 mkdir -p "$WORK" || { echo "ipl3: cannot create $WORK"; exit 0; }
 cp -a "$SRC" "$WORK/libdragon" || { echo "ipl3: cannot copy libdragon"; exit 0; }

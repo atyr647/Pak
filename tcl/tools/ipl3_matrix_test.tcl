@@ -50,7 +50,11 @@ set rows {}
 set in_matrix 0
 foreach line [split $doc "\n"] {
     if {[regexp {^##\s+The matrix} $line]} { set in_matrix 1; continue }
-    if {$in_matrix && [regexp {^##\s} $line]} { set in_matrix 0 }
+    # Any heading ends the section, not just another `##`. A `###` subheading
+    # used to slip through, so every table further down the page was parsed as
+    # matrix rows -- which is how a bit-layout table ended up being asked
+    # whether it names a bootcode.
+    if {$in_matrix && [regexp {^#+\s} $line]} { set in_matrix 0 }
     if {!$in_matrix} continue
     if {![string match "|*" [string trim $line]]} continue
     if {[regexp {^\|\s*-+} $line]} continue

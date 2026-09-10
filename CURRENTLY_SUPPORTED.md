@@ -260,7 +260,7 @@ prose elsewhere says "X cannot run Y" is the failure this gate exists to stop.
 
 | Bug | Status | id |
 |-----|--------|----|
-| A `pak link` ROM with the shipped compat bootcode **cannot run** on mupen64plus 2.5.9: the loader publishes the RDRAM size it detected to `0x80000318` and that emulator's sizing walks away with 64 MB. Boots ares and hardware. | Open — needs a second bootcode that does not publish the size. See `docs/ipl3-emulator-matrix.md`. | `known-bug: mupen64plus-ipl3` |
+| A `pak link` ROM with the shipped compat bootcode **cannot run** on mupen64plus 2.5.9. Root-caused: libdragon's IPL3 and that emulator encode the RDRAM `DEVICE_ID` register differently, so its chip probe finds zero RAM, stage 2 is loaded to a nonsense address and the payload never arrives. The "IPL3 detected 64 MB" message is unrelated noise. Boots ares and hardware. | Open — not fixable from the ROM side; needs mupen64plus's RDRAM model or libdragon's device-ID layout to change. Full trace in `docs/ipl3-emulator-matrix.md`. | `known-bug: mupen64plus-ipl3` |
 | `free()` is a no-op on the standalone backend: `alloc` bump-allocates out of a fixed arena and nothing is ever reclaimed. A program that allocates in its game loop will exhaust the arena. `W205` warns at every call site. | Open by design of the allocator, tracked because programs are written against it. | `known-bug: standalone-free-noop` |
 | Textured triangles are **affine only**: `triangle_tex*` writes a constant `W`, so ST does not divide by 1/w. Correct for screen-space and small triangles; visibly wrong for a large triangle seen at a steep angle. | Open — perspective ST is P3 on the roadmap. | `known-bug: affine-st-only` |
 
