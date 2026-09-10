@@ -44,6 +44,22 @@ _start:
     nop
 .Ldone_bss:
 
+    /* ── Detect RDRAM size ──
+     * IPL3 leaves it as the first word of RSP DMEM (0xA4000000, uncached):
+     * 0x400000 (4 MB) on a stock console, 0x800000 (8 MB) with the
+     * Expansion Pak. libdragon's own entrypoint.S reads the same word at
+     * the same point in boot for the same reason -- nothing between here
+     * and IPL3's handoff touches DMEM, so it is still what IPL3 wrote.
+     * Stashed to a Pak global (g_boot_memsize, zeroed by the .bss loop
+     * just above, so this has to run after it) so alloc() can widen the
+     * heap into the extra 4 MB when it is actually there, and
+     * system.has_expansion() can tell a game the same thing -- never a
+     * guess, and never disturbing the stock 4 MB layout when it is not. */
+    lui     $8, 0xA400
+    lw      $9, 0($8)
+    la      $8, g_boot_memsize
+    sw      $9, 0($8)
+
     /* ── Install exception vectors ──
      * Copy the 8-byte stub (j exception_entry; nop) to the four VR4300
      * vector addresses through KSEG1 so the stores bypass D-cache, then

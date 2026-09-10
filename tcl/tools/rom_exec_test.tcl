@@ -202,7 +202,7 @@ proc disassemble {image base} {
 set MMIO [dict create 0xA410000C 0 0xA4600010 0 0xA4800000 0 \
     0xA4400010 {0x1E0 0x000 0x1E0 0x000 0x1E0 0x000 0x1E0 0x000 0x1E0 0x000 0x1E0 0x000}]
 
-proc execute {r poison_bss} {
+proc execute {r poison_bss {extra_preset {}}} {
     global MMIO OBJDUMP TMP POISON
     set image [dict get $r image]
     set base  $::pak::LINK_BASE_ADDR
@@ -222,6 +222,10 @@ proc execute {r poison_bss} {
         }
     }
     dict for {a v} $MMIO { dict set preset $a $v }
+    # Applied after $MMIO so a caller testing a specific piece of boot-time
+    # MMIO state (RSP DMEM's memsize word, say) can override it without this
+    # proc needing to know about every such case.
+    dict for {a v} $extra_preset { dict set preset $a $v }
     set run [pak::mipsim::run $simtext L_[format %08x $base] 40000000 $preset "" $base]
     return [list $run $preset $unknown $firstaddr]
 }
@@ -363,13 +367,13 @@ ok "VI_CTRL is 16bpp, pixel_advance 3, aa_mode 2" \
 # `pak build --backend mips` does, disassembles the result with binutils, and
 # runs it from _start.
 
-proc rom_check {tag src sym want} {
+proc rom_check {tag src sym want {extra_preset {}}} {
     global TMP
     puts ""
     puts "== $tag =="
     set r [link_program $tag $src]
     set syms [dict get $r symbols]
-    lassign [execute $r 0] run preset unknown firstaddr
+    lassign [execute $r 0 $extra_preset] run preset unknown firstaddr
     if {[dict size $unknown] > 0} {
         incr ::fail
         puts "FAIL  the simulator does not implement: [lsort [dict keys $unknown]]"
@@ -471,6 +475,58 @@ entry {
     out = a + (b as i32) * 100
 }
 } out 000002E6
+
+# ── scenario: RDRAM size reaches Pak code, and the heap actually widens ─────
+#
+# boot.S reads RSP DMEM word 0 -- IPL3's own detected RDRAM size -- before
+# .bss zeroing could matter and stashes it to g_boot_memsize. These run that
+# real boot sequence from _start with DMEM preset to a chosen size (a
+# simulator MMIO override execute() did not have a case for until this
+# feature needed one), the same way the real console leaves it for IPL3.
+#
+# Two independent things have to be true, so each gets its own pair of
+# cases: system.memory_size/has_expansion have to report what boot.S found,
+# not a guess; and __pak_alloc has to actually use the wider limit when it
+# is there, not just report the size while silently keeping the old one.
+rom_check "system.memory_size reports what boot.S found (8 MB)" {
+static out: i32 = 0
+entry {
+    out = system.memory_size() as i32
+}
+} out 00800000 {0xA4000000 0x800000}
+
+rom_check "system.has_expansion is true with 8 MB present" {
+static out: i32 = 0
+entry {
+    out = system.has_expansion()
+}
+} out 00000001 {0xA4000000 0x800000}
+
+rom_check "system.has_expansion is false on a stock 4 MB console" {
+static out: i32 = 0
+entry {
+    out = system.has_expansion()
+}
+} out 00000000 {0xA4000000 0x400000}
+
+# 2 MB is well past HEAP_LIMIT's ~1.1 MB (HEAP_BASE..0x803C0000) but well
+# inside HEAP_LIMIT_EXPANDED's ~5.5 MB (HEAP_BASE..0x807F0000) -- the one
+# size that tells the two limits apart, not just "some allocation worked".
+rom_check "a 2 MB alloc succeeds once the heap actually widens (8 MB)" {
+static out: i32 = 0
+entry {
+    let p: *u8 = alloc(u8, 2000000)
+    if (p as u32) != 0 { out = 1 } else { out = 0 }
+}
+} out 00000001 {0xA4000000 0x800000}
+
+rom_check "the same 2 MB alloc still fails on a stock 4 MB console" {
+static out: i32 = 0
+entry {
+    let p: *u8 = alloc(u8, 2000000)
+    if (p as u32) != 0 { out = 1 } else { out = 0 }
+}
+} out 00000000 {0xA4000000 0x400000}
 
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"

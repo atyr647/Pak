@@ -155,6 +155,8 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     timer_init 1 \
     get_ticks 1 \
     _pak_delta_time 1 \
+    get_memory_size 1 \
+    system_has_expansion 1 \
     dma_wait 1 \
     dma_read 1 \
     dma_write 1 \

@@ -521,8 +521,8 @@ compiling the examples that use them.
 | `surface` | `alloc` | `surface_alloc` | yes | no |
 | `surface` | `free` | `surface_free` | yes | no |
 | `surface` | `make_sub` | `surface_make_sub` | yes | no |
-| `system` | `has_expansion` | `system_has_expansion` | yes* | no |
-| `system` | `memory_size` | `get_memory_size` | yes | no |
+| `system` | `has_expansion` | `system_has_expansion` | yes* | yes |
+| `system` | `memory_size` | `get_memory_size` | yes | yes |
 | `system` | `reset` | `system_reset` | yes* | no |
 | `system` | `ticks` | `system_ticks` | yes* | no |
 | `system` | `ticks_to_ms` | `system_ticks_to_ms` | yes* | no |
@@ -635,7 +635,7 @@ compiling the examples that use them.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**352 functions** across the module surface; **156** exist on the standalone HAL.
+**352 functions** across the module surface; **158** exist on the standalone HAL.
 
 Of the 237 lowered as a direct call: **120** are libdragon's own, **32** need Tiny3D, and **85** are **standalone-only**.
 
@@ -975,6 +975,13 @@ use n64.system           -- #include <n64sys.h>
 | `system.ticks_to_ms` | `TICKS_TO_MS(x)` | Convert ticks to milliseconds |
 | `system.reset` | `n64sys_reset` | Soft-reset the console |
 | `system.tv_type` | `sys_tv_type` | NTSC/PAL/MPAL TV type |
+
+`system.memory_size` and `system.has_expansion` are standalone-supported too:
+`boot.S` reads RSP DMEM word 0 at reset -- IPL3's own detected RDRAM size,
+the same convention libdragon's `entrypoint.S` reads -- into `g_boot_memsize`,
+and `alloc()`'s heap ceiling widens from 0x803C0000 to 0x807F0000 on its own
+when the Expansion Pak is actually there. The rest of `system.*` above is
+libdragon-only.
 
 ---
 

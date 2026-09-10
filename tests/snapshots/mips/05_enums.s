@@ -16,6 +16,7 @@
 	.extern rdpq_detach
 	.extern rdpq_detach_show
 	.extern rdpq_set_mode_standard
+	.extern rdpq_set_mode_standard_persp
 	.extern rdpq_set_mode_standard_z
 	.extern rdpq_set_mode_copy
 	.extern rdpq_set_mode_fill
@@ -55,6 +56,7 @@
 	.extern rdpq_triangle_shade_z
 	.extern rdpq_triangle_tex
 	.extern rdpq_triangle_tex_z
+	.extern rdpq_triangle_tex_persp
 	.extern rdpq_triangle_shade_tex
 	.extern rdpq_triangle_shade_tex_z
 	.extern rdpq_set_tri_z
@@ -65,6 +67,8 @@
 	.extern timer_init
 	.extern _pak_delta_time
 	.extern get_ticks
+	.extern get_memory_size
+	.extern system_has_expansion
 	.extern audio_init
 	.extern audio_close
 	.extern audio_get_buffer

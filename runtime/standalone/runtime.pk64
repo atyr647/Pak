@@ -2543,12 +2543,46 @@ fn audio_set_buffer_num(n: i32) {
 const HEAP_BASE:  u32 = 0x802A0000
 const HEAP_LIMIT: u32 = 0x803C0000
 
-static g_heap_ptr: u32 = 0
+-- g_boot_memsize is written by boot.S at reset, straight from the RDRAM size
+-- IPL3 detected (the first word of RSP DMEM) -- see boot.S for why that is
+-- the real hardware convention, not a probe or a guess. 0x400000 (4 MB) on
+-- a stock console; 0x800000 (8 MB) with the Expansion Pak.
+static g_boot_memsize: u32 = 0
 
+fn get_memory_size() -> u32 {
+    return g_boot_memsize
+}
+
+fn system_has_expansion() -> i32 {
+    if g_boot_memsize > 0x400000 { return 1 }
+    return 0
+}
+
+-- HEAP_LIMIT above is the whole story on a stock 4 MiB console: 256 KiB
+-- short of the stack (0x80400000), which never moves -- this only ever
+-- widens the heap, never touches the stack. With the Expansion Pak, RDRAM
+-- continues on to 0x80800000, and this fixed layout places nothing else
+-- there at all, so the heap can simply continue into it. 0x807F0000 leaves
+-- 64 KiB of headroom below the true top, the same margin libdragon's own
+-- heap keeps.
+const HEAP_LIMIT_EXPANDED: u32 = 0x807F0000
+
+static g_heap_ptr:   u32 = 0
+static g_heap_limit: u32 = 0
+
+-- Not what `alloc()` compiles to: mips_codegen.tcl's emit_bump_alloc
+-- inlines its own bump at every call site (no jal), reading g_boot_memsize
+-- directly, so this bound check is duplicated there rather than shared.
+-- Nothing in the codegen currently emits a call to this function -- kept
+-- for whatever, now or later, does call it by name.
 fn __pak_alloc(size: i32) -> *u8 {
-    if g_heap_ptr == 0 { g_heap_ptr = HEAP_BASE }
+    if g_heap_ptr == 0 {
+        g_heap_ptr = HEAP_BASE
+        g_heap_limit = HEAP_LIMIT
+        if g_boot_memsize > 0x400000 { g_heap_limit = HEAP_LIMIT_EXPANDED }
+    }
     let aligned: u32 = ((size as u32) + 7) & 0xFFFFFFF8
-    if g_heap_ptr + aligned > HEAP_LIMIT { return 0 as *u8 }
+    if g_heap_ptr + aligned > g_heap_limit { return 0 as *u8 }
     let p: u32 = g_heap_ptr
     g_heap_ptr = g_heap_ptr + aligned
     return p as *u8

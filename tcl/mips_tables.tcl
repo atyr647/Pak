@@ -73,6 +73,8 @@ set ::pak::MIPS_EXTERNS [list \
     timer_init \
     _pak_delta_time \
     get_ticks \
+    get_memory_size \
+    system_has_expansion \
     audio_init \
     audio_close \
     audio_get_buffer \
@@ -260,6 +262,8 @@ set ::pak::MIPS_API [dict create \
     {timer init} {timer_init} \
     {timer delta} {_pak_delta_time} \
     {timer get_ticks} {get_ticks} \
+    {system memory_size} {get_memory_size} \
+    {system has_expansion} {system_has_expansion} \
     {audio init} {audio_init} \
     {audio close} {audio_close} \
     {audio get_buffer} {audio_get_buffer} \
