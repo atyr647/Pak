@@ -169,6 +169,16 @@ jobs:
           PAK_REQUIRE_N64_TOOLCHAIN: 1
         run: PATH=/opt/pak-n64/bin:$PATH tclsh tcl/tools/n64link_gas_test.tcl
 
+      # tcl/n64asm.tcl is the assembler front end, and n64asm_parity.sh checks
+      # it against as+ld byte for byte. It also runs in the `binary` job, but
+      # that job has no mips64-elf toolchain, so there it only proves the
+      # front end runs -- the oracle comparison has never actually executed in
+      # CI. Here it does, and cannot skip.
+      - name: Assembler front end vs GNU as
+        env:
+          PAK_REQUIRE_N64_TOOLCHAIN: 1
+        run: PATH=/opt/pak-n64/bin:$PATH bash tcl/tools/n64asm_parity.sh
+
       # Every other simulator test runs the codegen's RECORDS from `main`, so
       # runtime/standalone/boot.S had never executed -- not the stack pointer,
       # not the .bss zero-fill, not the exception-vector install, not the
@@ -357,9 +367,13 @@ jobs:
       - name: RDP command stream (runtime executed in the MIPS simulator)
         run: tclsh tcl/tools/rdp_test.tcl
 
+      # No PAK_REQUIRE_N64_TOOLCHAIN here: this job never installs the
+      # mips64-elf toolchain -- it is built and used in the `compiler` job --
+      # so the gate skips its binutils comparison and only checks that the
+      # assembler front end runs. The real oracle comparison is the
+      # `Assembler front end vs GNU as` step in that job, which does require
+      # the toolchain.
       - name: Assembler front end
-        env:
-          PAK_REQUIRE_N64_TOOLCHAIN: 1
         run: bash tcl/tools/n64asm_parity.sh
 
       # Only examples the HAL contract accepts are standalone programs; the
