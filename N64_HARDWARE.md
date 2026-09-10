@@ -464,6 +464,41 @@ thing; this table is here for anyone writing the inline assembly by hand.
 
 ---
 
+## `f32` vs `fix16.16`
+
+**`fix16.16` is the blessed path for game logic.** It is what the fixed-point
+type table above documents, what the runtime's own math (`rdp_muldiv`, the
+triangle coefficient builders) uses throughout, and what the performance
+table already names: the VR4300's FPU is real hardware, not emulated in
+software, but it is slow relative to the integer pipeline, and every fixed-
+point op is a `mult`/`div` sequence on the same ALU the rest of the program
+already uses.
+
+`f32` is **opt-in**, not forbidden. `CURRENTLY_SUPPORTED.md` marks it Full on
+both backends: real COP1 instructions on MIPS
+(`add.s`/`sub.s`/`mul.s`/`div.s`/`neg.s`, `c.*.s` + `bc1t`/`bc1f`, o32's
+`$f12`/`$f14` argument registers), and the C backend's native `float` on
+libdragon. Two different things follow from that, and they should not be
+conflated:
+
+- **On real hardware and on ares**, `f32` costs FPU cycles, nothing else. Use
+  it where float math is clearer than fixed-point and the cycle budget allows
+  -- it is correct, just slower.
+- **On a dynamic-recompiling emulator**, COP1 support is a place dynarecs
+  have historically had bugs, because it means translating N64 FPU state into
+  the host's own float registers rather than just re-emitting integer ops.
+  Nothing in this repo's own test suite has exercised that path end to end --
+  the encoder and the ares gate cover correctness of the *instructions
+  emitted*, not a survey of which emulators execute them right. Until such a
+  matrix exists, treat standalone (`--backend mips`) `f32` as unverified
+  outside ares and real hardware, and prefer `fix16.16` for anything a wider
+  range of players might run through an emulator. On the **libdragon**
+  backend this caution does not apply the same way: COP1 there is what the
+  official toolchain and every other libdragon game already emits, so its
+  compatibility is whatever libdragon's own is.
+
+---
+
 ## Required Initialization Order
 
 For a typical game, initialize in this order:

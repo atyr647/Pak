@@ -123,6 +123,8 @@ _
 | `fix1.15`   | Q1.15    | `i16`   | 15              |
 
 Fixed-point types are first-class. Arithmetic uses MIPS `mult`/`div` sequences.
+`fix16.16` is the blessed path for game logic math over `f32` -- see
+N64_HARDWARE.md's "`f32` vs `fix16.16`" for why.
 
 ---
 
