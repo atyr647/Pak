@@ -115,6 +115,53 @@ proc pak::n64rom_ipl3_from_z64 {path} {
 # names whatever is being sourced when the proc runs, not where it was written.
 set ::pak::_n64rom_dir [file dirname [file normalize [info script]]]
 
+# The bootcodes Pak ships, by name. `compat` is the default and the one that
+# boots hardware and ares; `8m` is the same libdragon source with the RDRAM
+# probe capped at 8 MiB, which is what mupen64plus 2.5.9 needs. Both are built
+# from libdragon's own tree (tools/build_ipl3_8m.sh for the second), so both
+# carry a CIC checksum the console accepts -- a hand-patched blob would not.
+# See docs/ipl3-emulator-matrix.md.
+set ::pak::IPL3_NAMED {
+    compat ipl3_compat.bin
+    8m     ipl3_compat_8m.bin
+}
+
+# Resolve a --ipl3 argument. Three forms, in the order a user is likely to
+# reach for them:
+#   a shipped name  -- "compat", "8m"
+#   a raw 4032-byte bootcode -- what tools/build_ipl3_8m.sh writes
+#   a .z64          -- lift 0x40..0xFFF out of someone else's ROM
+# Returns "" when nothing resolves, so the caller can say so rather than
+# silently shipping a zeroed boot region.
+proc pak::n64rom_ipl3_resolve {spec} {
+    if {$spec eq ""} { return "" }
+    if {[dict exists $::pak::IPL3_NAMED $spec]} {
+        return [pak::n64rom_named_ipl3 $spec]
+    }
+    if {[file exists $spec]} {
+        set f [open $spec rb]; set blob [read $f]; close $f
+        # A bootcode is exactly the region; a ROM has a header in front of it.
+        if {[string length $blob] == $::pak::ROM_IPL3_SIZE} { return $blob }
+        if {[string length $blob] >= 0x1000} { return [string range $blob 0x40 0xFFF] }
+    }
+    return ""
+}
+
+proc pak::n64rom_ipl3_root {} {
+    set root [file dirname $::pak::_n64rom_dir]
+    if {[info exists ::pak::CLI_ROOT]} { set root $::pak::CLI_ROOT }
+    return $root
+}
+
+proc pak::n64rom_named_ipl3 {name} {
+    if {![dict exists $::pak::IPL3_NAMED $name]} { return "" }
+    set f [file join [pak::n64rom_ipl3_root] runtime standalone \
+               [dict get $::pak::IPL3_NAMED $name]]
+    if {![file exists $f]} { return "" }
+    set fh [open $f rb]; set d [read $fh]; close $fh
+    return $d
+}
+
 proc pak::n64rom_default_ipl3 {} {
     # Located from this file rather than from $::pak::CLI_ROOT: the packer is
     # sourced directly by tests and tools that never set that global, and a

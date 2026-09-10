@@ -1,0 +1,39 @@
+Cap the RDRAM probe at the 8 MiB the console can actually address.
+
+rdram_init() grows total_memory by 2 MiB per chip and stops only when a
+chip fails to come up. On real hardware that terminates on its own: an N64
+has at most four 2 MiB chips (4 MiB stock, 8 MiB with the Expansion Pak).
+
+On an emulator whose RDRAM register model keeps answering for chips that
+are not there, nothing stops it. mupen64plus 2.5.9 is such an emulator: the
+probe walks to its structural maximum and reports 64 MB, mupen compares that
+against the 8 MB it configured, and refuses to run the ROM.
+
+The cap is not a workaround bolted on from outside -- it is the limit the
+very next statement in this function already assumes:
+
+    // This register contains a bitmask that indicates which RDRAM chips are
+    // multibank (aka 2 MiB). The bitmask has only 4 bits, so we can only
+    // configure 4 chips (which is enough for 4x2MiB = 8MiB total RDRAM).
+    int refresh_multibanks = (1 << (chip_id >> 1)) - 1;
+
+Past four chips that shift overflows the 4-bit field, so a probe that counts
+further has already left the contract RI_REFRESH is written against. On
+hardware the loop never reaches the cap and behaviour is byte-identical.
+
+--- a/boot/rdram.c
++++ b/boot/rdram.c
+@@
+         // The chip has been configured and mapped. Now go to the next chip.
+         // 2 MiB chips must be mapped at even addresses (as they cover two
+         // 1-MiB areas), so increase chip-id by 2
+         chip_id += 2;
+         total_memory += 2*1024*1024;
++
++        // The console cannot address more than 8 MiB, and RI_REFRESH's
++        // multibank bitmask below is only 4 bits wide, so four 2 MiB chips is
++        // the most this function can describe. Stop there rather than trusting
++        // a chip-present answer that no real machine can give.
++        if (total_memory >= 8*1024*1024)
++            break;
+     }

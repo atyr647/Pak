@@ -22,8 +22,26 @@ machine it is running on, it checks.
 | id | What it is | Where it comes from | Ships in-tree |
 |----|------------|---------------------|---------------|
 | `compat` | libdragon's IPL3, **compat** build | `boot/bin/ipl3_compat.z64` at the revision `tools/fetch_libdragon.sh` pins | yes — `runtime/standalone/ipl3_compat.bin` |
+| `8m` | the same, with the RDRAM probe capped at 8 MiB | built from libdragon source by `tools/build_ipl3_8m.sh` + `tools/ipl3/rdram-cap-8mib.patch` | built on demand — `runtime/standalone/ipl3_compat_8m.bin` |
 | `none` | the region left zeroed | what `pak link` did before it shipped a bootcode | n/a |
-| `custom` | whatever `pak link --ipl3 FILE.z64` lifts out of another ROM | the user | no |
+| `custom` | whatever `pak link --ipl3 FILE` lifts out of another ROM | the user | no |
+
+`pak link --ipl3` takes any of: a name from this table, a raw 4032-byte
+bootcode, or a `.z64` to lift the region out of. A name that does not resolve
+is an error rather than a silent fall back to the default — the whole point of
+asking for a different bootcode is that the default was not what you wanted.
+
+### Why `8m` is built rather than shipped as a binary
+
+It is built from libdragon's own source with one patch, not by editing the
+shipped blob. That distinction is the whole reason it can work: the CIC
+checksums these 4032 bytes, and libdragon's build produces a blob that
+satisfies it. A hand-edited binary would boot neither a console nor an
+emulator that checks. The patch itself is four lines and its justification is
+in libdragon's own comment two statements later — `RI_REFRESH`'s multibank
+bitmask is 4 bits, "which is enough for 4x2MiB = 8MiB total RDRAM", so a probe
+that counts past four chips has already overflowed the field the next line
+writes.
 
 `compat` is the default and the only one Pak ships. It is the right build for
 Pak because Pak's linker emits a flat image rather than an ELF, which is
