@@ -1069,6 +1069,63 @@ entry {
 }
 } out 00001234
 
+# ── a call nested in an argument ────────────────────────────────────────────
+#
+# Arguments are marshalled high index first, straight into $a0-$a3. An
+# argument that makes a call had that call marshal its OWN arguments into $a0
+# upward, on top of the ones already placed for the outer call, so the outer
+# call ran with the inner call's arguments in $a1-$a3. Only outer arguments
+# beyond the inner call's arity survived, which made it look intermittent:
+# `four(one(1), 2, 3, 4)` was fine and `two(two(1, 2), 9)` was not.
+#
+# Nothing caught it. `pak check` accepts all of these, the encoding goldens
+# pinned the wrong instructions, and the C backend is unaffected because a C
+# compiler does its own argument marshalling -- so only running the MIPS shows
+# it. 38 of the 618 corpus files changed when it was fixed.
+
+set nest_defs {
+fn one(a: i32) -> i32 { return a * 7 }
+fn two(a: i32, b: i32) -> i32 { return a * 100 + b }
+fn three(a: i32, b: i32, c: i32) -> i32 { return a * 100 + b * 10 + c }
+fn four(a: i32, b: i32, c: i32, d: i32) -> i32 { return a * 1000 + b * 100 + c * 10 + d }
+}
+
+chk "a nested call does not eat the argument after it" "$nest_defs
+static out: i32 = 0
+entry {
+    out = two(two(1, 2), 9)
+}" out 000027E1
+
+chk "a nested call does not eat the two arguments after it" "$nest_defs
+static out: i32 = 0
+entry {
+    out = three(three(1, 2, 3), 8, 9)
+}" out 00003065
+
+chk "a nested call in the middle leaves the later arguments alone" "$nest_defs
+static out: i32 = 0
+entry {
+    out = four(1, three(2, 3, 4), 8, 9)
+}" out 00005FA9
+
+chk "a nested call in the last argument still works" "$nest_defs
+static out: i32 = 0
+entry {
+    out = four(1, 2, 3, three(4, 5, 6))
+}" out 00000696
+
+chk "a one-argument nested call leaves \$a1-\$a3 alone" "$nest_defs
+static out: i32 = 0
+entry {
+    out = four(one(1), 2, 3, 4)
+}" out 00001C42
+
+chk "two nested calls in one argument list" "$nest_defs
+static out: i32 = 0
+entry {
+    out = four(two(1, 2), 5, two(3, 4), 7)
+}" out 00019C4B
+
 puts ""
 puts "PASS=$pass  FAIL=$fail"
 exit [expr {$fail > 0 ? 1 : 0}]
