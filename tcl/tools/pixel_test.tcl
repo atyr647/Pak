@@ -917,6 +917,100 @@ if {[string match "UNPORTED*" $asm256] || [string match "ERROR*" $asm256]} {
     }
 }
 
+# ── the t3d math -> viewport -> RDP triangle pipeline (32_t3d_cube.pk64) ─────
+#
+# Not a re-check of rdpq.triangle's own rasterization -- the flat-fill
+# scenarios above already cover that -- but of the path feeding it: a real
+# mat4_from_srt_euler model matrix, a manual world-space apply, and
+# t3d.viewport_calc_viewspace_pos's transform/divide/viewport-scale, run
+# through the reference RDP so a wrong sign or a transposed matrix shows up
+# as a genuinely wrong pixel, not just a genuinely wrong float in a
+# simulator register. Flat `rdpq.triangle` under FILL mode, not
+# `rdpq.triangle_shade`: `set_mode_standard`'s combiner on this backend
+# always outputs TEX0 (see `rdp_set_mode_1cycle` in runtime.pk64), so a
+# Gouraud triangle with no texture bound reads back black -- confirmed by
+# hand with a debug scenario before writing this one, not assumed.
+#
+# An unrotated cube (euler all zero) at distance 6, scale 1.6: expected
+# screen-space corners hand-derived and cross-checked against the same
+# look-at/perspective math worked out independently in Python (see
+# tcl/tools/rom_exec_test.tcl's viewport scenario for that derivation). The
+# front face (verts 4,5,6,7) squarely faces the camera and covers most of
+# the screen -- drawn as two triangles (5,4,7) and (5,7,6) split along the
+# face's own diagonal, so its geometric centre sits exactly ON that shared
+# edge and is the wrong point to sample (confirmed: angrylion returns
+# neither triangle's colour there, an edge-rounding artifact, not a code
+# bug). The centroid of triangle (5,4,7) alone is comfortably inside it.
+set cube_src {
+use n64.t3d
+
+entry {
+    let mut vp: T3DViewport = t3d.viewport_create()
+    t3d.viewport_set_projection(&vp, 1.0472, 1.0, 50.0)
+    let eye: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 6.0 }
+    let target: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d.set_camera(&vp, &eye, &target)
+
+    let scale: Vec3 = Vec3 { x: 1.6, y: 1.6, z: 1.6 }
+    let euler: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    let translate: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    let mut model: Mat4 = Mat4 { m: [
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0,
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0
+    ] }
+    t3d.mat4_from_srt_euler(&model, &scale, &euler, &translate)
+
+    let cube_vx: [8]f32 = [-1.0,  1.0,  1.0, -1.0, -1.0,  1.0,  1.0, -1.0]
+    let cube_vy: [8]f32 = [-1.0, -1.0,  1.0,  1.0, -1.0, -1.0,  1.0,  1.0]
+    let cube_vz: [8]f32 = [-1.0, -1.0, -1.0, -1.0,  1.0,  1.0,  1.0,  1.0]
+    let mut sx: [8]i32 = undefined
+    let mut sy: [8]i32 = undefined
+    let mut vi: i32 = 0
+    loop {
+        if vi >= 8 { break }
+        let local: Vec3 = Vec3 { x: cube_vx[vi], y: cube_vy[vi], z: cube_vz[vi] }
+        let wx: f32 = model.m[0]*local.x + model.m[1]*local.y + model.m[2]*local.z + model.m[3]
+        let wy: f32 = model.m[4]*local.x + model.m[5]*local.y + model.m[6]*local.z + model.m[7]
+        let wz: f32 = model.m[8]*local.x + model.m[9]*local.y + model.m[10]*local.z + model.m[11]
+        let world: Vec3 = Vec3 { x: wx, y: wy, z: wz }
+        let mut screen: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+        t3d.viewport_calc_viewspace_pos(&vp, &world, &screen)
+        sx[vi] = screen.x as i32
+        sy[vi] = screen.y as i32
+        vi += 1
+    }
+
+    rdpq.init()
+    rdpq.attach_clear(0xA0200000, 0x101820FF)
+    rdpq.set_mode_fill(0xCC3300FF)
+    rdpq.triangle(sx[5], sy[5], sx[4], sy[4], sx[7], sy[7])
+    rdpq.triangle(sx[5], sy[5], sx[7], sy[7], sx[6], sy[6])
+    rdpq.detach_show()
+}}
+lassign [render $cube_src] st res
+if {$st eq "err"} {
+    puts "FAIL  32_t3d_cube pipeline: $res"; incr ::fail
+} else {
+    set f [open $res rb]; fconfigure $f -translation binary
+    set d [read $f]; close $f
+    set i [expr {[string first "255\n" $d] + 4}]
+    set px [string range $d $i end]
+    foreach {name x y want} {
+        {inside triangle (5,4,7) of the front face} 134 145 {204 51 0}
+        {corner, past the cube, still clear}  5   5 {16 24 32}
+    } {
+        set o [expr {($y * 320 + $x) * 3}]
+        binary scan [string range $px $o [expr {$o+2}]] cucucu r g b
+        lassign $want wr wg wb
+        # FILL mode dithers, so a color comes back within a couple of
+        # levels per channel, not bit-exact -- same tolerance the blend
+        # comparisons above use.
+        ok_true "t3d cube pipeline: $name" \
+            [expr {abs($r-$wr) <= 3 && abs($g-$wg) <= 3 && abs($b-$wb) <= 3}] \
+            " (got $r $g $b, want $wr $wg $wb)"
+    }
+}
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 exit [expr {$::fail > 0 ? 1 : 0}]
