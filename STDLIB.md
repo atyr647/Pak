@@ -549,7 +549,7 @@ compiling the examples that use them.
 | `t3d` | `light_set_point` | `t3d_light_set_point` | tiny3d | no |
 | `t3d` | `light_set_point_params` | `t3d_light_set_point_params` | no | no |
 | `t3d` | `light_set_spot` | `t3d_light_set_spot` | no | no |
-| `t3d` | `look_at` | `t3d_look_at` | yes* | no |
+| `t3d` | `look_at` | `t3d_look_at` | yes* | yes |
 | `t3d` | `mat4_from_srt` | `t3d_mat4_from_srt` | yes* | yes |
 | `t3d` | `mat4_from_srt_euler` | `t3d_mat4_from_srt_euler` | yes* | yes |
 | `t3d` | `mat4_identity` | `t3d_mat4_identity` | yes* | yes |
@@ -582,7 +582,7 @@ compiling the examples that use them.
 | `t3d` | `rdpq_draw_object` | `t3d_rdpq_draw_object` | no | no |
 | `t3d` | `screen_projection` | `t3d_screen_projection` | no | no |
 | `t3d` | `segment_set` | `t3d_segment_set` | tiny3d | no |
-| `t3d` | `set_camera` | `t3d_set_camera` | no | no |
+| `t3d` | `set_camera` | `t3d_set_camera` | no | yes |
 | `t3d` | `skeleton_create` | `t3d_skeleton_create` | tiny3d | no |
 | `t3d` | `skeleton_destroy` | `t3d_skeleton_destroy` | tiny3d | no |
 | `t3d` | `skeleton_draw` | `t3d_skeleton_draw` | yes* | no |
@@ -602,6 +602,7 @@ compiling the examples that use them.
 | `t3d` | `vert_load` | `t3d_vert_load` | tiny3d | no |
 | `t3d` | `vert_load_srt` | `t3d_vert_load_srt` | no | no |
 | `t3d` | `viewport_attach` | `t3d_viewport_attach` | tiny3d | yes |
+| `t3d` | `viewport_calc_viewspace_pos` | `t3d_viewport_calc_viewspace_pos` | yes* | yes |
 | `t3d` | `viewport_create` | `t3d_viewport_create` | tiny3d | yes |
 | `t3d` | `viewport_set_area` | `t3d_viewport_set_area` | tiny3d | yes |
 | `t3d` | `viewport_set_fov` | `t3d_viewport_set_fov` | no | no |
@@ -639,7 +640,7 @@ compiling the examples that use them.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**356 functions** across the module surface; **181** exist on the standalone HAL.
+**357 functions** across the module surface; **184** exist on the standalone HAL.
 
 Of the 237 lowered as a direct call: **120** are libdragon's own, **32** need Tiny3D, and **85** are **standalone-only**.
 
@@ -1054,6 +1055,19 @@ names/shapes — `t3d_vec3_diff` for `sub`, macros for the others — porting
 them to libdragon is future work, not done here). Nothing here touches the
 RDP or RSP; feeding a transformed point into `rdpq.triangle_*` remains the
 game's own job.
+
+`T3DViewport` builds on this: `t3d.viewport_set_projection` computes and
+stores a real perspective `Mat4`, `t3d.look_at`/`t3d.set_camera` compute and
+store a real view `Mat4` from `*Vec3` eye/target/up, and both recompute a
+combined `camproj` (their product) so per-vertex work doesn't redo that
+multiply. `t3d.viewport_calc_viewspace_pos(vp, world, out)` takes it from
+there: transforms a world-space `Vec3` by `camproj`, perspective-divides,
+and scales into the viewport's pixel rect, writing screen X/Y into
+`out.x`/`out.y` and post-divide NDC depth into `out.z`. This is the one
+piece of "pipeline" glue on the standalone backend — still no RDP/RSP
+interaction, no culling or clipping, no drawing: feeding the result into
+`rdpq.triangle_*` is still the game's own job, the same as
+`vec3_*`/`mat4_*`/`quat_*` above.
 
 ---
 

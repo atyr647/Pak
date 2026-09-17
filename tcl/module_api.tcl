@@ -200,6 +200,9 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     t3d_quat_mul 1 \
     t3d_quat_nlerp 1 \
     t3d_quat_slerp 1 \
+    t3d_set_camera 1 \
+    t3d_look_at 1 \
+    t3d_viewport_calc_viewspace_pos 1 \
     rumble_init 1 \
     rumble_is_plugged 1 \
     rumble_start 1 \

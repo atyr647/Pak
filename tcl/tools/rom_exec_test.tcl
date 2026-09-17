@@ -619,6 +619,53 @@ entry {
 }
 } out 0000000F
 
+# Phase 2: a real T3DViewport built through t3d.viewport_create() (so its
+# size and field offsets are whatever runtime.pk64's real struct says, not
+# the compiler's register_external_types fallback game code actually
+# compiles against -- the two disagreeing, in either direction, is exactly
+# the bug class this scenario exists to catch), then set_projection +
+# set_camera + calc_viewspace_pos end to end. Expected values are hand-
+# derived (eye=(0,0,5) looking at the origin, fov=90deg) and cross-checked
+# against the same look-at/perspective math worked out independently in
+# Python -- see the session notes for the derivation. The default viewport
+# is 320x240 (4:3), not square, which is why the off-axis point's expected
+# x is 184, not the 192 a square viewport would give it.
+rom_check "t3d viewport: look_at + set_projection + calc_viewspace_pos" {
+use n64.t3d
+
+static out: i32 = 0
+
+entry {
+    let mut vp: T3DViewport = t3d.viewport_create()
+    t3d.viewport_set_projection(&vp, 1.5707963, 1.0, 100.0)
+    let eye: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 5.0 }
+    let target: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d.set_camera(&vp, &eye, &target)
+
+    let mut acc: i32 = 0
+
+    let w1: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    let mut s1: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d.viewport_calc_viewspace_pos(&vp, &w1, &s1)
+    if s1.x > 159.9 and s1.x < 160.1 and s1.y > 119.9 and s1.y < 120.1 {
+        acc = acc + 1
+    }
+
+    let w2: Vec3 = Vec3 { x: 1.0, y: 0.0, z: 0.0 }
+    let mut s2: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d.viewport_calc_viewspace_pos(&vp, &w2, &s2)
+    if s2.x > 183.9 and s2.x < 184.1 and s2.y > 119.9 and s2.y < 120.1 {
+        acc = acc + 2
+    }
+
+    if s1.z > 0.615 and s1.z < 0.618 {
+        acc = acc + 4
+    }
+
+    out = acc
+}
+} out 00000007
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

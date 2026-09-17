@@ -154,6 +154,7 @@ set ::pak::MIPS_EXTERNS [list \
     t3d_viewport_set_fov \
     t3d_set_camera \
     t3d_look_at \
+    t3d_viewport_calc_viewspace_pos \
     t3d_fog_set_enabled \
     t3d_fog_set_range \
     t3d_fog_set_color \
@@ -399,6 +400,7 @@ set ::pak::MIPS_API [dict create \
     {t3d viewport_set_fov} {t3d_viewport_set_fov} \
     {t3d set_camera} {t3d_set_camera} \
     {t3d look_at} {t3d_look_at} \
+    {t3d viewport_calc_viewspace_pos} {t3d_viewport_calc_viewspace_pos} \
     {t3d fog_set_color} {t3d_fog_set_color} \
     {t3d anim_create} {t3d_anim_create} \
     {t3d anim_destroy} {t3d_anim_destroy} \

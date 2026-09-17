@@ -148,6 +148,7 @@
 	.extern t3d_viewport_set_fov
 	.extern t3d_set_camera
 	.extern t3d_look_at
+	.extern t3d_viewport_calc_viewspace_pos
 	.extern t3d_fog_set_enabled
 	.extern t3d_fog_set_range
 	.extern t3d_fog_set_color

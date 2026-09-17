@@ -148,6 +148,7 @@
 	.extern t3d_viewport_set_fov
 	.extern t3d_set_camera
 	.extern t3d_look_at
+	.extern t3d_viewport_calc_viewspace_pos
 	.extern t3d_fog_set_enabled
 	.extern t3d_fog_set_range
 	.extern t3d_fog_set_color
@@ -358,7 +359,11 @@ main:
     lwc1 $f12, 0($t5)
     swc1 $f12, 180($sp)
     addiu $t7, $sp, 176
-    sw $t7, 156($sp)
+    addiu $t6, $sp, 156
+    lw $t5, 0($t7)
+    sw $t5, 0($t6)
+    lw $t5, 4($t7)
+    sw $t5, 4($t6)
     li $t7, 100
     sw $t7, 164($sp)
     la $t6, .Lf321
