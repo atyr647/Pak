@@ -121,6 +121,9 @@ set ::pak::MIPS_EXTERNS [list \
     t3d_model_draw \
     t3d_mat4_identity \
     t3d_mat4_rotate \
+    t3d_mat4_rotate_x \
+    t3d_mat4_rotate_y \
+    t3d_mat4_rotate_z \
     t3d_mat4_translate \
     t3d_mat4_scale \
     t3d_mat4_mul \
@@ -128,6 +131,10 @@ set ::pak::MIPS_EXTERNS [list \
     t3d_mat4_from_srt_euler \
     t3d_mat4_invert \
     t3d_mat4_transpose \
+    t3d_vec3_add \
+    t3d_vec3_sub \
+    t3d_vec3_scale \
+    t3d_vec3_len \
     t3d_vec3_norm \
     t3d_vec3_cross \
     t3d_vec3_dot \
@@ -360,9 +367,13 @@ set ::pak::MIPS_API [dict create \
     {t3d model_free} {t3d_model_free} \
     {t3d model_draw} {t3d_model_draw} \
     {t3d mat4_identity} {t3d_mat4_identity} \
-    {t3d mat4_rotate_y} {t3d_mat4_rotate} \
-    {t3d mat4_rotate_x} {t3d_mat4_rotate} \
-    {t3d mat4_rotate_z} {t3d_mat4_rotate} \
+    {t3d mat4_rotate_y} {t3d_mat4_rotate_y} \
+    {t3d mat4_rotate_x} {t3d_mat4_rotate_x} \
+    {t3d mat4_rotate_z} {t3d_mat4_rotate_z} \
+    {t3d vec3_add} {t3d_vec3_add} \
+    {t3d vec3_sub} {t3d_vec3_sub} \
+    {t3d vec3_scale} {t3d_vec3_scale} \
+    {t3d vec3_len} {t3d_vec3_len} \
     {t3d mat4_translate} {t3d_mat4_translate} \
     {t3d mat4_scale} {t3d_mat4_scale} \
     {t3d mat4_mul} {t3d_mat4_mul} \

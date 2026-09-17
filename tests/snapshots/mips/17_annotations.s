@@ -115,6 +115,9 @@
 	.extern t3d_model_draw
 	.extern t3d_mat4_identity
 	.extern t3d_mat4_rotate
+	.extern t3d_mat4_rotate_x
+	.extern t3d_mat4_rotate_y
+	.extern t3d_mat4_rotate_z
 	.extern t3d_mat4_translate
 	.extern t3d_mat4_scale
 	.extern t3d_mat4_mul
@@ -122,6 +125,10 @@
 	.extern t3d_mat4_from_srt_euler
 	.extern t3d_mat4_invert
 	.extern t3d_mat4_transpose
+	.extern t3d_vec3_add
+	.extern t3d_vec3_sub
+	.extern t3d_vec3_scale
+	.extern t3d_vec3_len
 	.extern t3d_vec3_norm
 	.extern t3d_vec3_cross
 	.extern t3d_vec3_dot
@@ -265,7 +272,20 @@ main:
     li $t7, 43981
     sw $t7, 208($sp)
     move $t7, $zero
-    sw $t7, 212($sp)
+    addiu $t6, $sp, 212
+    move $a0, $t6
+    move $a1, $t7
+    li $a2, 60
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
+    sw $t6, 108($sp)
+    jal memcpy
+    nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
+    lw $t6, 108($sp)
     addiu $t9, $sp, 208
     addiu $t8, $sp, 144
     move $a0, $t8
@@ -295,7 +315,20 @@ main:
     lw $t9, 96($sp)
     lw $t8, 100($sp)
     move $t7, $zero
-    sw $t7, 528($sp)
+    addiu $t6, $sp, 528
+    move $a0, $t6
+    move $a1, $t7
+    li $a2, 256
+    sw $t9, 96($sp)
+    sw $t8, 100($sp)
+    sw $t7, 104($sp)
+    sw $t6, 108($sp)
+    jal memcpy
+    nop
+    lw $t9, 96($sp)
+    lw $t8, 100($sp)
+    lw $t7, 104($sp)
+    lw $t6, 108($sp)
     addiu $t9, $sp, 528
     addiu $t8, $sp, 272
     move $a0, $t8

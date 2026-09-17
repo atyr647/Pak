@@ -578,9 +578,6 @@ oo::class create pak::MipsCodegen {
     # structs containing e.g. Vec3 fields resolve.
     method register_external_types {} {
         foreach {name sz al fl} {
-            Vec3        12  4 1
-            Mat4        64  4 1
-            Quat        16  4 1
             Color        4  4 0
             T3DMat4     64  4 1
             T3DMat4FP  128 16 0
@@ -590,6 +587,46 @@ oo::class create pak::MipsCodegen {
                 dict set tenv_layouts $name [dict create size $sz align $al \
                     is_float $fl is_signed 1 is_ptr 0 fields {} frac_bits 0]
             }
+        }
+        # Vec3/Quat/Mat4 are plain, literal-constructible value structs (see
+        # runtime/standalone/runtime.pk64's own declarations), not opaque
+        # handles -- unlike the fieldless entries above, game code that never
+        # sources runtime.pk64 still needs their real field layout to build a
+        # `Vec3 { x: ..., y: ..., z: ... }` literal or read `.x`/`.m[i]`. This
+        # is a fallback only (the `if` guard): when runtime.pk64 itself is the
+        # file being compiled, its own `struct Vec3 { ... }` declaration is
+        # processed by register_struct and wins outright. The two must stay
+        # in sync by construction, which is why this mirrors register_struct's
+        # field layout exactly rather than reusing the old scalar-shaped
+        # `is_float 1, fields {}` entry -- that shape was for a real f32/f64
+        # scalar, and applying it to a 3/4/16-field aggregate is what made a
+        # `Mat4`/`Vec3`/`Quat` literal in a file without the real struct
+        # silently lower as a single garbage 8-byte float store instead of
+        # initializing its fields.
+        set f32 [pak::N TypeName name f32]
+        if {![dict exists $tenv_layouts Vec3]} {
+            set vf [dict create]
+            dict set vf x [dict create name x offset 0 size 4 align 4 type_node $f32]
+            dict set vf y [dict create name y offset 4 size 4 align 4 type_node $f32]
+            dict set vf z [dict create name z offset 8 size 4 align 4 type_node $f32]
+            dict set tenv_layouts Vec3 [dict create size 12 align 4 \
+                is_float 0 is_signed 1 is_ptr 0 fields $vf field_order {x y z} frac_bits 0]
+        }
+        if {![dict exists $tenv_layouts Quat]} {
+            set qf [dict create]
+            dict set qf x [dict create name x offset 0  size 4 align 4 type_node $f32]
+            dict set qf y [dict create name y offset 4  size 4 align 4 type_node $f32]
+            dict set qf z [dict create name z offset 8  size 4 align 4 type_node $f32]
+            dict set qf w [dict create name w offset 12 size 4 align 4 type_node $f32]
+            dict set tenv_layouts Quat [dict create size 16 align 4 \
+                is_float 0 is_signed 1 is_ptr 0 fields $qf field_order {x y z w} frac_bits 0]
+        }
+        if {![dict exists $tenv_layouts Mat4]} {
+            set marr [pak::N TypeArray size [pak::N IntLit value 16 raw "16"] inner $f32]
+            set mf [dict create]
+            dict set mf m [dict create name m offset 0 size 64 align 4 type_node $marr]
+            dict set tenv_layouts Mat4 [dict create size 64 align 4 \
+                is_float 0 is_signed 1 is_ptr 0 fields $mf field_order {m} frac_bits 0]
         }
         # Opaque handles from libdragon and Tiny3D. Pak code only ever holds
         # these behind a pointer, so a pointer-sized slot is the whole layout.
@@ -3002,10 +3039,19 @@ oo::class create pak::MipsCodegen {
                 set arr_off [my declare_local __arr_lit [dict create size [expr {$n*4}] align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]]
                 set i 0
                 foreach elem $elems {
-                    set tmp [$ra alloc_temp]
-                    my emit_expr $elem $tmp
-                    $em sw $tmp [expr {$arr_off + $i*4}] {$sp}
-                    $ra free_temp $tmp
+                    if {[my infer_is_float $elem]} {
+                        # Float convention: the value comes back in $f12, not
+                        # in a GPR -- storing whatever alloc_temp handed back
+                        # here (as the non-float branch does) stores garbage,
+                        # since nothing ever wrote a float result to it.
+                        my emit_expr $elem {$zero}
+                        $em swc1 {$f12} [expr {$arr_off + $i*4}] {$sp}
+                    } else {
+                        set tmp [$ra alloc_temp]
+                        my emit_expr $elem $tmp
+                        $em sw $tmp [expr {$arr_off + $i*4}] {$sp}
+                        $ra free_temp $tmp
+                    }
                     incr i
                 }
                 $em addiu $dst {$sp} $arr_off
@@ -3896,7 +3942,24 @@ oo::class create pak::MipsCodegen {
                     }
                     set tmp [$ra alloc_temp]
                     my emit_expr $fval_node $tmp
-                    my emit_typed_store $tmp [expr {$off + [dict get $fi offset]}] {$sp} $fl
+                    if {[dict exists $fl is_array] && [dict get $fl is_array]} {
+                        # A fixed-size array field is stored by value, inline in
+                        # the struct -- but arrays decay to a pointer wherever
+                        # they are held in a register (emit_ident_load), so
+                        # `$tmp` here is the address of the literal's backing
+                        # buffer, not the array's bytes. Copying that address
+                        # into the field with emit_typed_store (as every other
+                        # field type below does) would store a 4-byte pointer
+                        # over what is really a 12/16/64-byte payload, leaving
+                        # the rest of the field whatever the zero-init above
+                        # left there. Copy the bytes themselves instead.
+                        set fdst [$ra alloc_temp]
+                        $em addiu $fdst {$sp} [expr {$off + [dict get $fi offset]}]
+                        my emit_memcpy $fdst $tmp [dict get $fl size]
+                        $ra free_temp $fdst
+                    } else {
+                        my emit_typed_store $tmp [expr {$off + [dict get $fi offset]}] {$sp} $fl
+                    }
                     $ra free_temp $tmp
                 }
             }

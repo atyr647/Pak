@@ -3699,6 +3699,360 @@ fn rdpq_sprite_blit(spr: *u8, x: i32, y: i32, flags: u32) {
     }
 }
 
+-- ── Vec3 / Mat4 / Quat math ─────────────────────────────────────────────────
+-- Real Tiny3D's transform pipeline runs on the RSP; this backend has none of
+-- that microcode. What it can give a standalone game is the CPU-side math
+-- Tiny3D itself keeps as plain arithmetic in t3dmath.h -- vec3/mat4/quat --
+-- so a game can build its own software transform (see 31_demo3d.pk64 for
+-- one already hand-rolling this) against a real library instead of writing
+-- the arithmetic out longhand. Nothing here touches the RDP or the RSP.
+--
+-- Conventions match Tiny3D's own: row-major Mat4 (m[row*4+col]), FOV/angles
+-- in radians, output-as-first-argument (t3d_mat4_mul(out, a, b), never
+-- t3d_mat4_mul(a, b) -> Mat4), matching real Tiny3D's C API shape exactly so
+-- the same call reads the same way on both backends even though nothing is
+-- shared past the source text.
+struct Vec3 { x: f32, y: f32, z: f32 }
+struct Quat { x: f32, y: f32, z: f32, w: f32 }
+struct Mat4 { m: [16]f32 }
+
+fn t3d_vec3_add(out: *Vec3, a: *Vec3, b: *Vec3) {
+    out.x = a.x + b.x
+    out.y = a.y + b.y
+    out.z = a.z + b.z
+}
+
+fn t3d_vec3_sub(out: *Vec3, a: *Vec3, b: *Vec3) {
+    out.x = a.x - b.x
+    out.y = a.y - b.y
+    out.z = a.z - b.z
+}
+
+fn t3d_vec3_scale(out: *Vec3, a: *Vec3, s: f32) {
+    out.x = a.x * s
+    out.y = a.y * s
+    out.z = a.z * s
+}
+
+-- Temps first: if `out` aliases `a` or `b` (t3d_vec3_cross(&v, &v, &w) is a
+-- normal thing to write), writing out.x before out.z is computed would
+-- read the just-overwritten value instead of the original.
+fn t3d_vec3_cross(out: *Vec3, a: *Vec3, b: *Vec3) {
+    let x: f32 = a.y * b.z - a.z * b.y
+    let y: f32 = a.z * b.x - a.x * b.z
+    let z: f32 = a.x * b.y - a.y * b.x
+    out.x = x
+    out.y = y
+    out.z = z
+}
+
+fn t3d_vec3_dot(a: *Vec3, b: *Vec3) -> f32 {
+    return a.x * b.x + a.y * b.y + a.z * b.z
+}
+
+fn t3d_vec3_len(a: *Vec3) -> f32 {
+    return math_sqrt_f(t3d_vec3_dot(a, a))
+}
+
+fn t3d_vec3_norm(out: *Vec3) {
+    let l: f32 = t3d_vec3_len(out)
+    if l > 0.0 {
+        out.x = out.x / l
+        out.y = out.y / l
+        out.z = out.z / l
+    }
+}
+
+fn t3d_vec3_lerp(out: *Vec3, a: *Vec3, b: *Vec3, t: f32) {
+    out.x = a.x + (b.x - a.x) * t
+    out.y = a.y + (b.y - a.y) * t
+    out.z = a.z + (b.z - a.z) * t
+}
+
+fn t3d_mat4_identity(out: *Mat4) {
+    let mut i: i32 = 0
+    loop {
+        if i >= 16 { break }
+        out.m[i] = 0.0
+        i = i + 1
+    }
+    out.m[0] = 1.0
+    out.m[5] = 1.0
+    out.m[10] = 1.0
+    out.m[15] = 1.0
+}
+
+-- Column-vector convention throughout (v' = M * v): translation lives in
+-- the last COLUMN (m[3]/m[7]/m[11]), not the last row.
+fn t3d_mat4_translate(out: *Mat4, x: f32, y: f32, z: f32) {
+    t3d_mat4_identity(out)
+    out.m[3] = x
+    out.m[7] = y
+    out.m[11] = z
+}
+
+fn t3d_mat4_scale(out: *Mat4, x: f32, y: f32, z: f32) {
+    t3d_mat4_identity(out)
+    out.m[0] = x
+    out.m[5] = y
+    out.m[10] = z
+}
+
+fn t3d_mat4_rotate_x(out: *Mat4, angle: f32) {
+    t3d_mat4_identity(out)
+    let c: f32 = math_cos_f(angle)
+    let s: f32 = math_sin_f(angle)
+    out.m[5] = c
+    out.m[6] = 0.0 - s
+    out.m[9] = s
+    out.m[10] = c
+}
+
+fn t3d_mat4_rotate_y(out: *Mat4, angle: f32) {
+    t3d_mat4_identity(out)
+    let c: f32 = math_cos_f(angle)
+    let s: f32 = math_sin_f(angle)
+    out.m[0] = c
+    out.m[2] = s
+    out.m[8] = 0.0 - s
+    out.m[10] = c
+}
+
+fn t3d_mat4_rotate_z(out: *Mat4, angle: f32) {
+    t3d_mat4_identity(out)
+    let c: f32 = math_cos_f(angle)
+    let s: f32 = math_sin_f(angle)
+    out.m[0] = c
+    out.m[1] = 0.0 - s
+    out.m[4] = s
+    out.m[5] = c
+}
+
+-- Built into a local first, then copied out: `out` is routinely the same
+-- pointer as `a` or `b` (t3d_mat4_mul(&m, &m, &parent) to accumulate a
+-- transform), and every entry of the result depends on multiple entries
+-- of both inputs, so writing straight into `out` would read back values
+-- this same call already overwrote.
+fn t3d_mat4_mul(out: *Mat4, a: *Mat4, b: *Mat4) {
+    let mut r: Mat4 = Mat4 { m: [
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0,
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0
+    ] }
+    let mut row: i32 = 0
+    loop {
+        if row >= 4 { break }
+        let mut col: i32 = 0
+        loop {
+            if col >= 4 { break }
+            let mut sum: f32 = 0.0
+            let mut k: i32 = 0
+            loop {
+                if k >= 4 { break }
+                sum = sum + a.m[row * 4 + k] * b.m[k * 4 + col]
+                k = k + 1
+            }
+            r.m[row * 4 + col] = sum
+            col = col + 1
+        }
+        row = row + 1
+    }
+    let mut i: i32 = 0
+    loop {
+        if i >= 16 { break }
+        out.m[i] = r.m[i]
+        i = i + 1
+    }
+}
+
+fn t3d_mat4_transpose(out: *Mat4, src: *Mat4) {
+    let mut r: Mat4 = Mat4 { m: [
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0,
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0
+    ] }
+    let mut row: i32 = 0
+    loop {
+        if row >= 4 { break }
+        let mut col: i32 = 0
+        loop {
+            if col >= 4 { break }
+            r.m[col * 4 + row] = src.m[row * 4 + col]
+            col = col + 1
+        }
+        row = row + 1
+    }
+    let mut i: i32 = 0
+    loop {
+        if i >= 16 { break }
+        out.m[i] = r.m[i]
+        i = i + 1
+    }
+}
+
+-- Standard unit-quaternion-to-rotation-matrix formula. Not part of the
+-- public t3d API (Tiny3D does not expose it standalone either -- game code
+-- goes through t3d_mat4_from_srt/srt_euler), so this stays a plain `fn`, not
+-- wired into MODULE_API.
+fn t3d_mat4_from_quat(out: *Mat4, q: *Quat) {
+    let x2: f32 = q.x + q.x
+    let y2: f32 = q.y + q.y
+    let z2: f32 = q.z + q.z
+    let xx: f32 = q.x * x2
+    let xy: f32 = q.x * y2
+    let xz: f32 = q.x * z2
+    let yy: f32 = q.y * y2
+    let yz: f32 = q.y * z2
+    let zz: f32 = q.z * z2
+    let wx: f32 = q.w * x2
+    let wy: f32 = q.w * y2
+    let wz: f32 = q.w * z2
+    t3d_mat4_identity(out)
+    out.m[0] = 1.0 - (yy + zz)
+    out.m[1] = xy - wz
+    out.m[2] = xz + wy
+    out.m[4] = xy + wz
+    out.m[5] = 1.0 - (xx + zz)
+    out.m[6] = yz - wx
+    out.m[8] = xz - wy
+    out.m[9] = yz + wx
+    out.m[10] = 1.0 - (xx + yy)
+}
+
+-- M = T * R * S: scale first, then rotate, then translate (v' = M*v).
+fn t3d_mat4_from_srt(out: *Mat4, scale: *Vec3, rot: *Quat, translate: *Vec3) {
+    let mut s: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_scale(&s, scale.x, scale.y, scale.z)
+    let mut r: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_from_quat(&r, rot)
+    -- R*S already has 0 in the translation column (R and S both do), so
+    -- writing translate over it afterward is exact, not an approximation.
+    t3d_mat4_mul(out, &r, &s)
+    out.m[3] = translate.x
+    out.m[7] = translate.y
+    out.m[11] = translate.z
+}
+
+-- Same as t3d_mat4_from_srt, with the rotation built from three Euler angles
+-- (radians) instead of a quaternion. Order is R = Rz * Ry * Rx -- X applied
+-- first, then Y, then Z -- a fixed, documented choice: Euler order is
+-- inherently arbitrary, and callers need one answer, not a family of them.
+fn t3d_mat4_from_srt_euler(out: *Mat4, scale: *Vec3, euler: *Vec3, translate: *Vec3) {
+    let mut rx: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_rotate_x(&rx, euler.x)
+    let mut ry: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_rotate_y(&ry, euler.y)
+    let mut rz: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_rotate_z(&rz, euler.z)
+    let mut ryx: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_mul(&ryx, &ry, &rx)
+    let mut r: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_mul(&r, &rz, &ryx)
+    let mut s: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_scale(&s, scale.x, scale.y, scale.z)
+    t3d_mat4_mul(out, &r, &s)
+    out.m[3] = translate.x
+    out.m[7] = translate.y
+    out.m[11] = translate.z
+}
+
+fn t3d_quat_identity(out: *Quat) {
+    out.x = 0.0
+    out.y = 0.0
+    out.z = 0.0
+    out.w = 1.0
+}
+
+fn t3d_quat_from_axis_angle(out: *Quat, axis: *Vec3, angle: f32) {
+    let mut a: Vec3 = Vec3 { x: axis.x, y: axis.y, z: axis.z }
+    t3d_vec3_norm(&a)
+    let half: f32 = angle * 0.5
+    let s: f32 = math_sin_f(half)
+    out.x = a.x * s
+    out.y = a.y * s
+    out.z = a.z * s
+    out.w = math_cos_f(half)
+}
+
+-- Temps first, same aliasing reason as t3d_vec3_cross: out.w's formula still
+-- needs a.x/a.y/a.z after out.x has been written, if out aliases a.
+fn t3d_quat_mul(out: *Quat, a: *Quat, b: *Quat) {
+    let x: f32 = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y
+    let y: f32 = a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x
+    let z: f32 = a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w
+    let w: f32 = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z
+    out.x = x
+    out.y = y
+    out.z = z
+    out.w = w
+}
+
+fn t3d_quat_nlerp(out: *Quat, a: *Quat, b: *Quat, t: f32) {
+    out.x = a.x + (b.x - a.x) * t
+    out.y = a.y + (b.y - a.y) * t
+    out.z = a.z + (b.z - a.z) * t
+    out.w = a.w + (b.w - a.w) * t
+    let len: f32 = math_sqrt_f(out.x * out.x + out.y * out.y + out.z * out.z + out.w * out.w)
+    if len > 0.0 {
+        out.x = out.x / len
+        out.y = out.y / len
+        out.z = out.z / len
+        out.w = out.w / len
+    }
+}
+
+-- atan2(sin, cos) stands in for acos here: the standalone HAL has no
+-- math.acos_f, and sin(omega) is already on hand from the dot product, so
+-- this needs nothing this HAL does not already have.
+fn t3d_quat_slerp(out: *Quat, a: *Quat, b: *Quat, t: f32) {
+    let mut bx: f32 = b.x
+    let mut by: f32 = b.y
+    let mut bz: f32 = b.z
+    let mut bw: f32 = b.w
+    let mut cosom: f32 = a.x * bx + a.y * by + a.z * bz + a.w * bw
+    if cosom < 0.0 {
+        cosom = 0.0 - cosom
+        bx = 0.0 - bx
+        by = 0.0 - by
+        bz = 0.0 - bz
+        bw = 0.0 - bw
+    }
+    let mut sa: f32 = 1.0 - t
+    let mut sb: f32 = t
+    if cosom < 0.9995 {
+        let sinom: f32 = math_sqrt_f(1.0 - cosom * cosom)
+        let omega: f32 = math_atan2_f(sinom, cosom)
+        sa = math_sin_f((1.0 - t) * omega) / sinom
+        sb = math_sin_f(t * omega) / sinom
+    }
+    out.x = a.x * sa + bx * sb
+    out.y = a.y * sa + by * sb
+    out.z = a.z * sa + bz * sb
+    out.w = a.w * sa + bw * sb
+}
+
 -- ── Tiny3D state surface ────────────────────────────────────────────────────
 -- Tiny3D itself is 4,300 lines of C driving 4,700 lines of RSP microcode, and
 -- none of that runs here: the standalone HAL has no geometry pipeline. What it
