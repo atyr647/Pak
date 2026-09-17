@@ -115,6 +115,9 @@
 	.extern t3d_model_draw
 	.extern t3d_mat4_identity
 	.extern t3d_mat4_rotate
+	.extern t3d_mat4_rotate_x
+	.extern t3d_mat4_rotate_y
+	.extern t3d_mat4_rotate_z
 	.extern t3d_mat4_translate
 	.extern t3d_mat4_scale
 	.extern t3d_mat4_mul
@@ -122,6 +125,10 @@
 	.extern t3d_mat4_from_srt_euler
 	.extern t3d_mat4_invert
 	.extern t3d_mat4_transpose
+	.extern t3d_vec3_add
+	.extern t3d_vec3_sub
+	.extern t3d_vec3_scale
+	.extern t3d_vec3_len
 	.extern t3d_vec3_norm
 	.extern t3d_vec3_cross
 	.extern t3d_vec3_dot
@@ -141,6 +148,7 @@
 	.extern t3d_viewport_set_fov
 	.extern t3d_set_camera
 	.extern t3d_look_at
+	.extern t3d_viewport_calc_viewspace_pos
 	.extern t3d_fog_set_enabled
 	.extern t3d_fog_set_range
 	.extern t3d_fog_set_color
@@ -403,8 +411,10 @@ main:
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    li $a1, 5
+    li $t7, 5
+    sw $t7, 148($sp)
     la $a0, __closure_10
+    lw $a1, 148($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal apply
@@ -429,14 +439,14 @@ main:
     sw $t8, 0($t7)
     move $t9, $t8
     li $t9, 10
-    sw $t9, 148($sp)
-    addiu $t8, $sp, 148
-    sw $t8, 156($sp)
-    la $t9, __closure_11
     sw $t9, 152($sp)
+    addiu $t8, $sp, 152
+    sw $t8, 160($sp)
+    la $t9, __closure_11
+    sw $t9, 156($sp)
     li $a0, 5
-    addiu $a1, $sp, 156
-    lw $t7, 152($sp)
+    addiu $a1, $sp, 160
+    lw $t7, 156($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     sw $t7, 104($sp)
@@ -450,7 +460,7 @@ main:
     sw $t8, 0($t7)
     move $t9, $t8
     li $a1, 3
-    lw $a0, 152($sp)
+    lw $a0, 156($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal apply

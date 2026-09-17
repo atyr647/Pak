@@ -528,6 +528,144 @@ entry {
 }
 } out 00000000 {0xA4000000 0x400000}
 
+# Assigning a >32-byte struct literal to a local lowers to: zero the scratch
+# buffer with a real `jal memset`, store each field, then copy the scratch
+# buffer to the destination with a real `jal memcpy` -- both externs that
+# only exist once linked against the runtime. A record-level run (every
+# other test in this repo) never resolves them, so this is the one place
+# that proves the copy-out's own argument setup ($a0/$a1/$a2) is correct
+# rather than reusing whatever the preceding memset call left behind.
+rom_check "scalar64 struct literal (>32 bytes) local, via jal memcpy" {
+struct Scalar64 {
+    a0: f32, a1: f32, a2: f32, a3: f32,
+    a4: f32, a5: f32, a6: f32, a7: f32,
+    a8: f32, a9: f32, a10: f32, a11: f32,
+    a12: f32, a13: f32, a14: f32, a15: f32
+}
+static out: i32 = 0
+fn set_directly(o: *Scalar64) {
+    o.a0 = 9.0
+    o.a5 = 8.0
+}
+entry {
+    let mut mat: Scalar64 = Scalar64 {
+        a0: 0.0, a1: 0.0, a2: 0.0, a3: 0.0,
+        a4: 0.0, a5: 0.0, a6: 0.0, a7: 0.0,
+        a8: 0.0, a9: 0.0, a10: 0.0, a11: 0.0,
+        a12: 0.0, a13: 0.0, a14: 0.0, a15: 0.0
+    }
+    set_directly(&mat)
+    if mat.a0 == 9.0 and mat.a5 == 8.0 { out = 1 }
+}
+} out 00000001
+
+# Vec3/Mat4/Quat are constructed via struct literals in game code that never
+# sources runtime.pk64 (see register_external_types's fallback layout for
+# them), and Mat4's `m` field is a by-value [16]f32 array -- both a literal
+# with float elements and a struct literal with an array-typed field are
+# otherwise untested at this, the only level that actually assembles and
+# links two separately-compiled files the way a real project does.
+rom_check "t3d vec3/mat4 math library sanity (identity, cross, rotate, mul aliasing)" {
+use n64.t3d
+
+static out: i32 = 0
+
+entry {
+    let mut acc: i32 = 0
+
+    let mut id: Mat4 = Mat4 { m: [
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0,
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0
+    ] }
+    t3d.mat4_identity(&id)
+    if id.m[0] == 1.0 and id.m[5] == 1.0 and id.m[10] == 1.0 and id.m[15] == 1.0 and id.m[1] == 0.0 {
+        acc = acc + 1
+    }
+
+    let mut x: Vec3 = Vec3 { x: 1.0, y: 0.0, z: 0.0 }
+    let mut y: Vec3 = Vec3 { x: 0.0, y: 1.0, z: 0.0 }
+    let mut z: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d.vec3_cross(&z, &x, &y)
+    if z.x == 0.0 and z.y == 0.0 and z.z == 1.0 {
+        acc = acc + 2
+    }
+
+    let mut rz: Mat4 = Mat4 { m: [
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0,
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0
+    ] }
+    t3d.mat4_rotate_z(&rz, 1.5707963)
+    let vx: f32 = rz.m[0] * 1.0 + rz.m[1] * 0.0
+    let vy: f32 = rz.m[4] * 1.0 + rz.m[5] * 0.0
+    if vx > 0.0 - 0.001 and vx < 0.001 and vy > 0.999 and vy < 1.001 {
+        acc = acc + 4
+    }
+
+    -- aliasing: m = m * identity must leave m unchanged
+    let mut m: Mat4 = Mat4 { m: [
+        2.0,0.0,0.0,5.0, 0.0,3.0,0.0,6.0,
+        0.0,0.0,4.0,7.0, 0.0,0.0,0.0,1.0
+    ] }
+    let mut idc: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d.mat4_mul(&m, &m, &idc)
+    if m.m[0] == 2.0 and m.m[3] == 5.0 and m.m[5] == 3.0 and m.m[10] == 4.0 and m.m[11] == 7.0 {
+        acc = acc + 8
+    }
+
+    out = acc
+}
+} out 0000000F
+
+# Phase 2: a real T3DViewport built through t3d.viewport_create() (so its
+# size and field offsets are whatever runtime.pk64's real struct says, not
+# the compiler's register_external_types fallback game code actually
+# compiles against -- the two disagreeing, in either direction, is exactly
+# the bug class this scenario exists to catch), then set_projection +
+# set_camera + calc_viewspace_pos end to end. Expected values are hand-
+# derived (eye=(0,0,5) looking at the origin, fov=90deg) and cross-checked
+# against the same look-at/perspective math worked out independently in
+# Python -- see the session notes for the derivation. The default viewport
+# is 320x240 (4:3), not square, which is why the off-axis point's expected
+# x is 184, not the 192 a square viewport would give it.
+rom_check "t3d viewport: look_at + set_projection + calc_viewspace_pos" {
+use n64.t3d
+
+static out: i32 = 0
+
+entry {
+    let mut vp: T3DViewport = t3d.viewport_create()
+    t3d.viewport_set_projection(&vp, 1.5707963, 1.0, 100.0)
+    let eye: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 5.0 }
+    let target: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d.set_camera(&vp, &eye, &target)
+
+    let mut acc: i32 = 0
+
+    let w1: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    let mut s1: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d.viewport_calc_viewspace_pos(&vp, &w1, &s1)
+    if s1.x > 159.9 and s1.x < 160.1 and s1.y > 119.9 and s1.y < 120.1 {
+        acc = acc + 1
+    }
+
+    let w2: Vec3 = Vec3 { x: 1.0, y: 0.0, z: 0.0 }
+    let mut s2: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d.viewport_calc_viewspace_pos(&vp, &w2, &s2)
+    if s2.x > 183.9 and s2.x < 184.1 and s2.y > 119.9 and s2.y < 120.1 {
+        acc = acc + 2
+    }
+
+    if s1.z > 0.615 and s1.z < 0.618 {
+        acc = acc + 4
+    }
+
+    out = acc
+}
+} out 00000007
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

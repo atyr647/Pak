@@ -115,6 +115,9 @@
 	.extern t3d_model_draw
 	.extern t3d_mat4_identity
 	.extern t3d_mat4_rotate
+	.extern t3d_mat4_rotate_x
+	.extern t3d_mat4_rotate_y
+	.extern t3d_mat4_rotate_z
 	.extern t3d_mat4_translate
 	.extern t3d_mat4_scale
 	.extern t3d_mat4_mul
@@ -122,6 +125,10 @@
 	.extern t3d_mat4_from_srt_euler
 	.extern t3d_mat4_invert
 	.extern t3d_mat4_transpose
+	.extern t3d_vec3_add
+	.extern t3d_vec3_sub
+	.extern t3d_vec3_scale
+	.extern t3d_vec3_len
 	.extern t3d_vec3_norm
 	.extern t3d_vec3_cross
 	.extern t3d_vec3_dot
@@ -141,6 +148,7 @@
 	.extern t3d_viewport_set_fov
 	.extern t3d_set_camera
 	.extern t3d_look_at
+	.extern t3d_viewport_calc_viewspace_pos
 	.extern t3d_fog_set_enabled
 	.extern t3d_fog_set_range
 	.extern t3d_fog_set_color
@@ -200,22 +208,28 @@ main:
     sw $ra, 316($sp)
     sw $fp, 312($sp)
     addiu $fp, $sp, 320
-    li $a1, 4096
+    li $t8, 4096
+    sw $t8, 136($sp)
     la $t8, rx_buffer
     li $t7, 0
     addu $t8, $t8, $t7
     move $a0, $t8
+    lw $a1, 136($sp)
     sw $t9, 96($sp)
     jal data_cache_hit_writeback
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    li $a2, 4096
-    li $a1, 268697600
+    li $t8, 4096
+    sw $t8, 140($sp)
+    li $t8, 268697600
+    sw $t8, 136($sp)
     la $t8, rx_buffer
     li $t7, 0
     addu $t8, $t8, $t7
     move $a0, $t8
+    lw $a1, 136($sp)
+    lw $a2, 140($sp)
     sw $t9, 96($sp)
     jal dma_read
     nop
@@ -226,11 +240,13 @@ main:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    li $a1, 4096
+    li $t8, 4096
+    sw $t8, 136($sp)
     la $t8, rx_buffer
     li $t7, 0
     addu $t8, $t8, $t7
     move $a0, $t8
+    lw $a1, 136($sp)
     sw $t9, 96($sp)
     jal data_cache_hit_invalidate
     nop
@@ -240,8 +256,8 @@ main:
     li $t7, 0
     addu $t8, $t8, $t7
     lbu $t9, 0($t8)
-    sb $t9, 136($sp)
-    lbu $t8, 136($sp)
+    sb $t9, 144($sp)
+    lbu $t8, 144($sp)
     la $t7, rx_buffer
     li $t6, 1
     addu $t7, $t7, $t6

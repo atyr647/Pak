@@ -549,18 +549,18 @@ compiling the examples that use them.
 | `t3d` | `light_set_point` | `t3d_light_set_point` | tiny3d | no |
 | `t3d` | `light_set_point_params` | `t3d_light_set_point_params` | no | no |
 | `t3d` | `light_set_spot` | `t3d_light_set_spot` | no | no |
-| `t3d` | `look_at` | `t3d_look_at` | yes* | no |
-| `t3d` | `mat4_from_srt` | `t3d_mat4_from_srt` | yes* | no |
-| `t3d` | `mat4_from_srt_euler` | `t3d_mat4_from_srt_euler` | yes* | no |
-| `t3d` | `mat4_identity` | `t3d_mat4_identity` | yes* | no |
+| `t3d` | `look_at` | `t3d_look_at` | yes* | yes |
+| `t3d` | `mat4_from_srt` | `t3d_mat4_from_srt` | yes* | yes |
+| `t3d` | `mat4_from_srt_euler` | `t3d_mat4_from_srt_euler` | yes* | yes |
+| `t3d` | `mat4_identity` | `t3d_mat4_identity` | yes* | yes |
 | `t3d` | `mat4_invert` | `t3d_mat4_invert` | yes* | no |
-| `t3d` | `mat4_mul` | `t3d_mat4_mul` | yes* | no |
-| `t3d` | `mat4_rotate_x` | `t3d_mat4_rotate` | yes* | no |
-| `t3d` | `mat4_rotate_y` | `t3d_mat4_rotate` | yes* | no |
-| `t3d` | `mat4_rotate_z` | `t3d_mat4_rotate` | yes* | no |
-| `t3d` | `mat4_scale` | `t3d_mat4_scale` | yes* | no |
-| `t3d` | `mat4_translate` | `t3d_mat4_translate` | yes* | no |
-| `t3d` | `mat4_transpose` | `t3d_mat4_transpose` | yes* | no |
+| `t3d` | `mat4_mul` | `t3d_mat4_mul` | yes* | yes |
+| `t3d` | `mat4_rotate_x` | `t3d_mat4_rotate_x` | yes* | yes |
+| `t3d` | `mat4_rotate_y` | `t3d_mat4_rotate_y` | yes* | yes |
+| `t3d` | `mat4_rotate_z` | `t3d_mat4_rotate_z` | yes* | yes |
+| `t3d` | `mat4_scale` | `t3d_mat4_scale` | yes* | yes |
+| `t3d` | `mat4_translate` | `t3d_mat4_translate` | yes* | yes |
+| `t3d` | `mat4_transpose` | `t3d_mat4_transpose` | yes* | yes |
 | `t3d` | `mat4fp_from_srt_euler` | `t3d_mat4fp_from_srt_euler` | yes* | no |
 | `t3d` | `matrix_pop` | `t3d_matrix_pop` | tiny3d | no |
 | `t3d` | `matrix_push` | `t3d_matrix_push` | tiny3d | no |
@@ -574,15 +574,15 @@ compiling the examples that use them.
 | `t3d` | `model_load` | `t3d_model_load` | tiny3d | no |
 | `t3d` | `pop_draw_flags` | `t3d_pop_draw_flags` | no | no |
 | `t3d` | `push_draw_flags` | `t3d_push_draw_flags` | no | no |
-| `t3d` | `quat_from_axis_angle` | `t3d_quat_from_axis_angle` | yes* | no |
-| `t3d` | `quat_identity` | `t3d_quat_identity` | yes* | no |
-| `t3d` | `quat_mul` | `t3d_quat_mul` | yes* | no |
-| `t3d` | `quat_nlerp` | `t3d_quat_nlerp` | yes* | no |
-| `t3d` | `quat_slerp` | `t3d_quat_slerp` | yes* | no |
+| `t3d` | `quat_from_axis_angle` | `t3d_quat_from_axis_angle` | yes* | yes |
+| `t3d` | `quat_identity` | `t3d_quat_identity` | yes* | yes |
+| `t3d` | `quat_mul` | `t3d_quat_mul` | yes* | yes |
+| `t3d` | `quat_nlerp` | `t3d_quat_nlerp` | yes* | yes |
+| `t3d` | `quat_slerp` | `t3d_quat_slerp` | yes* | yes |
 | `t3d` | `rdpq_draw_object` | `t3d_rdpq_draw_object` | no | no |
 | `t3d` | `screen_projection` | `t3d_screen_projection` | no | no |
 | `t3d` | `segment_set` | `t3d_segment_set` | tiny3d | no |
-| `t3d` | `set_camera` | `t3d_set_camera` | no | no |
+| `t3d` | `set_camera` | `t3d_set_camera` | no | yes |
 | `t3d` | `skeleton_create` | `t3d_skeleton_create` | tiny3d | no |
 | `t3d` | `skeleton_destroy` | `t3d_skeleton_destroy` | tiny3d | no |
 | `t3d` | `skeleton_draw` | `t3d_skeleton_draw` | yes* | no |
@@ -591,13 +591,18 @@ compiling the examples that use them.
 | `t3d` | `state_set_vertex_fx` | `t3d_state_set_vertex_fx` | tiny3d | no |
 | `t3d` | `tri_draw` | `t3d_tri_draw` | tiny3d | no |
 | `t3d` | `tri_sync` | `t3d_tri_sync` | tiny3d | no |
-| `t3d` | `vec3_cross` | `t3d_vec3_cross` | yes* | no |
-| `t3d` | `vec3_dot` | `t3d_vec3_dot` | yes* | no |
-| `t3d` | `vec3_lerp` | `t3d_vec3_lerp` | yes* | no |
-| `t3d` | `vec3_norm` | `t3d_vec3_norm` | yes* | no |
+| `t3d` | `vec3_add` | `t3d_vec3_add` | yes* | yes |
+| `t3d` | `vec3_cross` | `t3d_vec3_cross` | yes* | yes |
+| `t3d` | `vec3_dot` | `t3d_vec3_dot` | yes* | yes |
+| `t3d` | `vec3_len` | `t3d_vec3_len` | yes* | yes |
+| `t3d` | `vec3_lerp` | `t3d_vec3_lerp` | yes* | yes |
+| `t3d` | `vec3_norm` | `t3d_vec3_norm` | yes* | yes |
+| `t3d` | `vec3_scale` | `t3d_vec3_scale` | yes* | yes |
+| `t3d` | `vec3_sub` | `t3d_vec3_sub` | yes* | yes |
 | `t3d` | `vert_load` | `t3d_vert_load` | tiny3d | no |
 | `t3d` | `vert_load_srt` | `t3d_vert_load_srt` | no | no |
 | `t3d` | `viewport_attach` | `t3d_viewport_attach` | tiny3d | yes |
+| `t3d` | `viewport_calc_viewspace_pos` | `t3d_viewport_calc_viewspace_pos` | yes* | yes |
 | `t3d` | `viewport_create` | `t3d_viewport_create` | tiny3d | yes |
 | `t3d` | `viewport_set_area` | `t3d_viewport_set_area` | tiny3d | yes |
 | `t3d` | `viewport_set_fov` | `t3d_viewport_set_fov` | no | no |
@@ -635,7 +640,7 @@ compiling the examples that use them.
 | `xm64` | `set_vol` | `xm64player_set_vol` | yes | no |
 | `xm64` | `stop` | `xm64player_stop` | yes | no |
 
-**352 functions** across the module surface; **158** exist on the standalone HAL.
+**357 functions** across the module surface; **184** exist on the standalone HAL.
 
 Of the 237 lowered as a direct call: **120** are libdragon's own, **32** need Tiny3D, and **85** are **standalone-only**.
 
@@ -1021,6 +1026,48 @@ This module **exists** (it lowers to C `math.h` / libdragon helpers).
 | `math.rand_seed` | `__pak_srand(s)` | Seed the RNG |
 | `math.rand_range` | `__pak_rand_range(lo, hi)` | Random int in range |
 | `math.rand_f` | `__pak_rand_f()` | Random f32 in [0,1) |
+
+---
+
+### `n64.t3d` — Vec3 / Mat4 / Quat CPU Math (standalone)
+
+```pak
+use n64.t3d
+```
+
+Real Tiny3D's transform pipeline (`t3d.model_draw`, skinning, the RSP
+microcode) is libdragon+Tiny3D only — see `NOT_SUPPORTED.md`. What the
+standalone HAL gives a game instead is the plain CPU-side arithmetic real
+Tiny3D itself keeps in `t3dmath.h`: `Vec3 { x, y, z }`, `Quat { x, y, z, w }`,
+and row-major `Mat4 { m: [16]f32 }`, all literal-constructible in game code
+(`Vec3 { x: 1.0, y: 0.0, z: 0.0 }`) without needing to source
+`runtime/standalone/runtime.pk64` — their field layout is a compiler-known
+fallback (`register_external_types` in `tcl/mips_codegen.tcl`), the same
+mechanism `ButtonState`/`ControllerState` already use.
+
+Every `t3d.vec3_*` / `mat4_*` / `quat_*` function documented in the table
+above as `standalone: yes` is implemented this way: output-as-first-argument
+(`t3d.mat4_mul(out, a, b)`, matching real Tiny3D's own C API shape), safe to
+call with `out` aliasing an input (`t3d.mat4_mul(&m, &m, &parent)`). Four are
+standalone-only with no libdragon lowering yet: `vec3_add`, `vec3_sub`,
+`vec3_scale`, `vec3_len` (real Tiny3D has equivalents under different
+names/shapes — `t3d_vec3_diff` for `sub`, macros for the others — porting
+them to libdragon is future work, not done here). Nothing here touches the
+RDP or RSP; feeding a transformed point into `rdpq.triangle_*` remains the
+game's own job.
+
+`T3DViewport` builds on this: `t3d.viewport_set_projection` computes and
+stores a real perspective `Mat4`, `t3d.look_at`/`t3d.set_camera` compute and
+store a real view `Mat4` from `*Vec3` eye/target/up, and both recompute a
+combined `camproj` (their product) so per-vertex work doesn't redo that
+multiply. `t3d.viewport_calc_viewspace_pos(vp, world, out)` takes it from
+there: transforms a world-space `Vec3` by `camproj`, perspective-divides,
+and scales into the viewport's pixel rect, writing screen X/Y into
+`out.x`/`out.y` and post-divide NDC depth into `out.z`. This is the one
+piece of "pipeline" glue on the standalone backend — still no RDP/RSP
+interaction, no culling or clipping, no drawing: feeding the result into
+`rdpq.triangle_*` is still the game's own job, the same as
+`vec3_*`/`mat4_*`/`quat_*` above.
 
 ---
 

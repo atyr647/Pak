@@ -115,6 +115,9 @@
 	.extern t3d_model_draw
 	.extern t3d_mat4_identity
 	.extern t3d_mat4_rotate
+	.extern t3d_mat4_rotate_x
+	.extern t3d_mat4_rotate_y
+	.extern t3d_mat4_rotate_z
 	.extern t3d_mat4_translate
 	.extern t3d_mat4_scale
 	.extern t3d_mat4_mul
@@ -122,6 +125,10 @@
 	.extern t3d_mat4_from_srt_euler
 	.extern t3d_mat4_invert
 	.extern t3d_mat4_transpose
+	.extern t3d_vec3_add
+	.extern t3d_vec3_sub
+	.extern t3d_vec3_scale
+	.extern t3d_vec3_len
 	.extern t3d_vec3_norm
 	.extern t3d_vec3_cross
 	.extern t3d_vec3_dot
@@ -141,6 +148,7 @@
 	.extern t3d_viewport_set_fov
 	.extern t3d_set_camera
 	.extern t3d_look_at
+	.extern t3d_viewport_calc_viewspace_pos
 	.extern t3d_fog_set_enabled
 	.extern t3d_fog_set_range
 	.extern t3d_fog_set_color
@@ -407,11 +415,13 @@ Camera_try_move:
 .Lif_end_4:
     lwc1 $f12, 156($sp)
     cvt.w.s $f12, $f12
-    mfc1 $a1, $f12
+    mfc1 $t7, $f12
+    sw $t7, 160($sp)
     lw $t6, 136($sp)
     lwc1 $f12, 0($t6)
     cvt.w.s $f12, $f12
     mfc1 $a0, $f12
+    lw $a1, 160($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal map_get
@@ -1808,8 +1818,10 @@ main:
     li $t8, 1
     bne $t9, $t8, .Larm_skip_77
     nop
-    addiu $a1, $sp, 176
+    addiu $t7, $sp, 176
+    sw $t7, 180($sp)
     addiu $a0, $sp, 136
+    lw $a1, 180($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal update_playing

@@ -246,6 +246,8 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug** <!
 | Named-field variant construction (`Type.case { f: v }`) | ✅ Full | Stack-allocated with tag + payload stores |
 | Compound-assign `/=`, `%=`, `<<=`, `>>=` | ✅ Full | `/=` → `div`/`mflo`; `%=` → `div`/`mfhi`; shifts → `sllv`/`srav` |
 | Generics / traits | ✅ Full | Static dispatch monomorphises; `dyn Trait` is a `{self, vtable}` pair with a `.word` vtable per impl and `jalr` dispatch |
+| `t3d.vec3_*` / `mat4_*` / `quat_*` CPU math | ✅ Full | Real `t3d_`-prefixed functions in `runtime/standalone/runtime.pk64` (`register_external_types` gives game code `Vec3`/`Mat4`/`Quat`'s real field layout even without sourcing the HAL file). No RSP microcode, model loading, or skinning — that stays libdragon+Tiny3D only; see `NOT_SUPPORTED.md`. `vec3_add`/`sub`/`scale`/`len` are standalone-only, no libdragon lowering yet. |
+| `t3d.look_at` / `set_camera` / `viewport_calc_viewspace_pos` | ✅ Full | `T3DViewport` now stores real `proj`/`view`/`camproj` `Mat4`s (computed by `set_projection`/`look_at`, not just recorded scalars); `calc_viewspace_pos` transforms a world `Vec3` through them into a screen pixel + NDC depth. `register_external_types`'s `T3DViewport` fallback was resized (128→256 bytes) and given real fields to match — a size mismatch there would silently overflow whatever a caller's `let vp: T3DViewport = ...`/`static vp: T3DViewport = undefined` reserved. Still no culling/clipping/drawing — feeding a point into `rdpq.triangle_*` stays the caller's job. |
 
 
 ---

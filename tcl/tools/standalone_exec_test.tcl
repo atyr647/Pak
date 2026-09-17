@@ -96,11 +96,14 @@ entry {
 }
 } out 000000C8
 
-# t3d.look_at is deliberately not in the standalone HAL: it takes *Vec3, and
-# Vec3 field access has no support in this backend (see the comment in
-# runtime.pk64 next to where t3d_viewport_attach is defined). Checked here as
-# a rejection, not a working call, so a future attempt to add it half-done
-# fails this instead of shipping a function that silently reads garbage.
+# t3d.look_at/set_camera/viewport_calc_viewspace_pos (Phase 2): real Vec3/
+# Mat4 field access and the math library above make these implementable now
+# -- checked here as working calls with real hand-derived expected values
+# (eye=(0,0,5) looking at the origin, cross-checked against the same look-
+# at/perspective math worked out independently in Python; see
+# tcl/tools/rom_exec_test.tcl's matching scenario for the full derivation),
+# not the rejection this test used to assert. A regression back to E010
+# fails this the same way a half-done reintroduction would.
 proc checker_rejects_mips {src pattern} {
     set errs [pak::semantic_check [pak::parse_tokens [[pak::Lexer new $src] tokenize]] "<test>" mips]
     foreach d $errs {
@@ -111,20 +114,54 @@ proc checker_rejects_mips {src pattern} {
     }
     return 0
 }
-if {[checker_rejects_mips {
-use t3d
+if {![checker_rejects_mips {
+use n64.t3d
 entry {
-    let mut vp = t3d.viewport_create()
-    let mut eye: Vec3 = Vec3.zero()
-    let mut tgt: Vec3 = Vec3.zero()
-    let mut up: Vec3 = Vec3.up()
-    t3d.look_at(&vp, &eye, &tgt, &up)
+    let mut vp: T3DViewport = t3d.viewport_create()
+    let eye: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 5.0 }
+    let target: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    let up: Vec3 = Vec3 { x: 0.0, y: 1.0, z: 0.0 }
+    t3d.look_at(&vp, &eye, &target, &up)
 }
 } "t3d.look_at"]} {
-    puts "ok    t3d.look_at is rejected on the standalone backend"; incr pass
+    puts "ok    t3d.look_at is accepted on the standalone backend"; incr pass
 } else {
-    puts "FAIL  t3d.look_at should be rejected (E010) on the standalone backend"; incr fail
+    puts "FAIL  t3d.look_at should be accepted on the standalone backend"; incr fail
 }
+
+chk_rt "look_at + set_projection + calc_viewspace_pos: origin lands at screen center" {
+static out_x: i32 = 0
+static out_y: i32 = 0
+entry {
+    let mut vp: T3DViewport = t3d_viewport_create()
+    t3d_viewport_set_projection(&vp, 1.5707963, 1.0, 100.0)
+    let eye: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 5.0 }
+    let target: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d_set_camera(&vp, &eye, &target)
+    let world: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    let mut screen: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d_viewport_calc_viewspace_pos(&vp, &world, &screen)
+    out_x = screen.x as i32
+    out_y = screen.y as i32
+}
+} out_x 000000A0
+
+chk_rt "look_at + set_projection + calc_viewspace_pos: an off-axis point moves right" {
+static out: i32 = 0
+entry {
+    let mut vp: T3DViewport = t3d_viewport_create()
+    t3d_viewport_set_projection(&vp, 1.5707963, 1.0, 100.0)
+    let eye: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 5.0 }
+    let target: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d_set_camera(&vp, &eye, &target)
+    let world: Vec3 = Vec3 { x: 1.0, y: 0.0, z: 0.0 }
+    let mut screen: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d_viewport_calc_viewspace_pos(&vp, &world, &screen)
+    -- default viewport is 320x240 (4:3): cot(45deg)/aspect = 1/(320/240) =
+    -- 0.75, not 1.0, so this is 184, not the 192 a square viewport gives.
+    if screen.x > 183.9 and screen.x < 184.1 { out = 1 }
+}
+} out 00000001
 
 # The directional lights are per index, and an index past the fourth is
 # dropped rather than scribbling over the array's neighbours.
