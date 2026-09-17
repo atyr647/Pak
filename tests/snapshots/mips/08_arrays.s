@@ -344,13 +344,17 @@ main:
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
-    li $a2, 0
-    li $a1, 8
+    li $t8, 0
+    sw $t8, 232($sp)
+    li $t8, 8
+    sw $t8, 236($sp)
     addiu $t8, $sp, 136
     li $t7, 0
     sll $t7, $t7, 2
     addu $t8, $t8, $t7
     move $a0, $t8
+    lw $a1, 236($sp)
+    lw $a2, 232($sp)
     sw $t9, 96($sp)
     jal fill
     nop
@@ -392,12 +396,14 @@ main:
     addu $t7, $t7, $t6
     sw $t8, 0($t7)
     move $t9, $t8
-    li $a1, 8
+    li $t7, 8
+    sw $t7, 236($sp)
     addiu $t7, $sp, 136
     li $t6, 0
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     move $a0, $t7
+    lw $a1, 236($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal sum_array

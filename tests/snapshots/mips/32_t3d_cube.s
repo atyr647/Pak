@@ -364,10 +364,10 @@ transform_point:
 	.globl render_cube
 	.type render_cube, @function
 render_cube:
-    addiu $sp, $sp, -408
-    sw $ra, 404($sp)
-    sw $fp, 400($sp)
-    addiu $fp, $sp, 408
+    addiu $sp, $sp, -416
+    sw $ra, 412($sp)
+    sw $fp, 408($sp)
+    addiu $fp, $sp, 416
     sw $zero, 148($sp)
     sw $zero, 152($sp)
     sw $zero, 156($sp)
@@ -428,18 +428,24 @@ render_cube:
     sw $t7, 4($t8)
     lw $t7, 8($t9)
     sw $t7, 8($t8)
-    addiu $a3, $sp, 184
-    addiu $a2, $sp, 160
-    addiu $a1, $sp, 136
+    addiu $t8, $sp, 184
+    sw $t8, 208($sp)
+    addiu $t8, $sp, 160
+    sw $t8, 212($sp)
+    addiu $t8, $sp, 136
+    sw $t8, 216($sp)
     la $a0, gs
     addiu $a0, $a0, 256
+    lw $a1, 216($sp)
+    lw $a2, 212($sp)
+    lw $a3, 208($sp)
     sw $t9, 96($sp)
     jal t3d_mat4_from_srt_euler
     nop
     lw $t9, 96($sp)
     move $t9, $v0
     move $t9, $zero
-    addiu $t8, $sp, 208
+    addiu $t8, $sp, 220
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
@@ -457,7 +463,7 @@ render_cube:
     lw $t7, 28($t9)
     sw $t7, 28($t8)
     move $t9, $zero
-    addiu $t8, $sp, 240
+    addiu $t8, $sp, 252
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
@@ -475,9 +481,9 @@ render_cube:
     lw $t7, 28($t9)
     sw $t7, 28($t8)
     li $t9, 0
-    sw $t9, 272($sp)
+    sw $t9, 284($sp)
 .Lloop_h_2:
-    lw $t8, 272($sp)
+    lw $t8, 284($sp)
     li $t7, 8
     sge $t9, $t8, $t7
     beqz $t9, .Lif_end_4
@@ -485,112 +491,120 @@ render_cube:
     j .Lloop_x_3
     nop
 .Lif_end_4:
-    sw $zero, 288($sp)
-    sw $zero, 292($sp)
-    sw $zero, 296($sp)
+    sw $zero, 300($sp)
+    sw $zero, 304($sp)
+    sw $zero, 308($sp)
     la $t6, cube_vx
-    lw $t5, 272($sp)
+    lw $t5, 284($sp)
     sll $t5, $t5, 2
     addu $t6, $t6, $t5
     lwc1 $f12, 0($t6)
-    swc1 $f12, 288($sp)
+    swc1 $f12, 300($sp)
     la $t6, cube_vy
-    lw $t5, 272($sp)
+    lw $t5, 284($sp)
     sll $t5, $t5, 2
     addu $t6, $t6, $t5
     lwc1 $f12, 0($t6)
-    swc1 $f12, 292($sp)
+    swc1 $f12, 304($sp)
     la $t6, cube_vz
-    lw $t5, 272($sp)
+    lw $t5, 284($sp)
     sll $t5, $t5, 2
     addu $t6, $t6, $t5
     lwc1 $f12, 0($t6)
-    swc1 $f12, 296($sp)
-    addiu $t9, $sp, 288
-    addiu $t8, $sp, 276
+    swc1 $f12, 308($sp)
+    addiu $t9, $sp, 300
+    addiu $t8, $sp, 288
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
     lw $t7, 8($t9)
     sw $t7, 8($t8)
-    sw $zero, 312($sp)
-    sw $zero, 316($sp)
-    sw $zero, 320($sp)
+    sw $zero, 324($sp)
+    sw $zero, 328($sp)
+    sw $zero, 332($sp)
     la $t6, .Lf321
     lwc1 $f12, 0($t6)
-    swc1 $f12, 312($sp)
+    swc1 $f12, 324($sp)
     la $t6, .Lf321
     lwc1 $f12, 0($t6)
-    swc1 $f12, 316($sp)
+    swc1 $f12, 328($sp)
     la $t6, .Lf321
     lwc1 $f12, 0($t6)
-    swc1 $f12, 320($sp)
-    addiu $t9, $sp, 312
-    addiu $t8, $sp, 300
+    swc1 $f12, 332($sp)
+    addiu $t9, $sp, 324
+    addiu $t8, $sp, 312
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
     lw $t7, 8($t9)
     sw $t7, 8($t8)
-    addiu $a2, $sp, 300
-    addiu $a1, $sp, 276
+    addiu $t8, $sp, 312
+    sw $t8, 212($sp)
+    addiu $t8, $sp, 288
+    sw $t8, 216($sp)
     la $a0, gs
     addiu $a0, $a0, 256
+    lw $a1, 216($sp)
+    lw $a2, 212($sp)
     sw $t9, 96($sp)
     jal transform_point
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    sw $zero, 336($sp)
-    sw $zero, 340($sp)
-    sw $zero, 344($sp)
+    sw $zero, 348($sp)
+    sw $zero, 352($sp)
+    sw $zero, 356($sp)
     la $t6, .Lf321
     lwc1 $f12, 0($t6)
-    swc1 $f12, 336($sp)
+    swc1 $f12, 348($sp)
     la $t6, .Lf321
     lwc1 $f12, 0($t6)
-    swc1 $f12, 340($sp)
+    swc1 $f12, 352($sp)
     la $t6, .Lf321
     lwc1 $f12, 0($t6)
-    swc1 $f12, 344($sp)
-    addiu $t9, $sp, 336
-    addiu $t8, $sp, 324
+    swc1 $f12, 356($sp)
+    addiu $t9, $sp, 348
+    addiu $t8, $sp, 336
     lw $t7, 0($t9)
     sw $t7, 0($t8)
     lw $t7, 4($t9)
     sw $t7, 4($t8)
     lw $t7, 8($t9)
     sw $t7, 8($t8)
-    addiu $a2, $sp, 324
-    addiu $a1, $sp, 300
+    addiu $t8, $sp, 336
+    sw $t8, 212($sp)
+    addiu $t8, $sp, 312
+    sw $t8, 216($sp)
     la $a0, gs
+    lw $a1, 216($sp)
+    lw $a2, 212($sp)
     sw $t9, 96($sp)
     jal t3d_viewport_calc_viewspace_pos
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    addiu $t7, $sp, 324
+    addiu $t7, $sp, 336
     lwc1 $f12, 0($t7)
-    addiu $t7, $sp, 208
-    lw $t6, 272($sp)
+    addiu $t7, $sp, 220
+    lw $t6, 284($sp)
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     swc1 $f12, 0($t7)
     move $t9, $t8
-    addiu $t7, $sp, 324
+    addiu $t7, $sp, 336
     lwc1 $f12, 4($t7)
-    addiu $t7, $sp, 240
-    lw $t6, 272($sp)
+    addiu $t7, $sp, 252
+    lw $t6, 284($sp)
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     swc1 $f12, 0($t7)
     move $t9, $t8
     li $t8, 1
-    lw $t7, 272($sp)
+    lw $t7, 284($sp)
     addu $t8, $t7, $t8
-    sw $t8, 272($sp)
+    sw $t8, 284($sp)
     move $t9, $t8
     j .Lloop_h_2
     nop
@@ -606,9 +620,9 @@ render_cube:
     lw $t9, 96($sp)
     move $t9, $v0
     li $t9, 0
-    sw $t9, 348($sp)
+    sw $t9, 360($sp)
 .Lloop_h_5:
-    lw $t8, 348($sp)
+    lw $t8, 360($sp)
     li $t7, 12
     sge $t9, $t8, $t7
     beqz $t9, .Lif_end_7
@@ -617,7 +631,7 @@ render_cube:
     nop
 .Lif_end_7:
     la $t8, tri_idx
-    lw $t5, 348($sp)
+    lw $t5, 360($sp)
     li $t4, 3
     mul $t6, $t5, $t4
     li $t5, 0
@@ -625,9 +639,9 @@ render_cube:
     sll $t7, $t7, 2
     addu $t8, $t8, $t7
     lw $t9, 0($t8)
-    sw $t9, 352($sp)
+    sw $t9, 364($sp)
     la $t8, tri_idx
-    lw $t5, 348($sp)
+    lw $t5, 360($sp)
     li $t4, 3
     mul $t6, $t5, $t4
     li $t5, 1
@@ -635,9 +649,9 @@ render_cube:
     sll $t7, $t7, 2
     addu $t8, $t8, $t7
     lw $t9, 0($t8)
-    sw $t9, 356($sp)
+    sw $t9, 368($sp)
     la $t8, tri_idx
-    lw $t5, 348($sp)
+    lw $t5, 360($sp)
     li $t4, 3
     mul $t6, $t5, $t4
     li $t5, 2
@@ -645,73 +659,73 @@ render_cube:
     sll $t7, $t7, 2
     addu $t8, $t8, $t7
     lw $t9, 0($t8)
-    sw $t9, 360($sp)
-    addiu $t7, $sp, 208
-    lw $t6, 352($sp)
-    sll $t6, $t6, 2
-    addu $t7, $t7, $t6
-    lwc1 $f12, 0($t7)
-    cvt.w.s $f12, $f12
-    mfc1 $t9, $f12
-    sw $t9, 364($sp)
-    addiu $t7, $sp, 240
-    lw $t6, 352($sp)
-    sll $t6, $t6, 2
-    addu $t7, $t7, $t6
-    lwc1 $f12, 0($t7)
-    cvt.w.s $f12, $f12
-    mfc1 $t9, $f12
-    sw $t9, 368($sp)
-    addiu $t7, $sp, 208
-    lw $t6, 356($sp)
-    sll $t6, $t6, 2
-    addu $t7, $t7, $t6
-    lwc1 $f12, 0($t7)
-    cvt.w.s $f12, $f12
-    mfc1 $t9, $f12
     sw $t9, 372($sp)
-    addiu $t7, $sp, 240
-    lw $t6, 356($sp)
+    addiu $t7, $sp, 220
+    lw $t6, 364($sp)
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     lwc1 $f12, 0($t7)
     cvt.w.s $f12, $f12
     mfc1 $t9, $f12
     sw $t9, 376($sp)
-    addiu $t7, $sp, 208
-    lw $t6, 360($sp)
+    addiu $t7, $sp, 252
+    lw $t6, 364($sp)
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     lwc1 $f12, 0($t7)
     cvt.w.s $f12, $f12
     mfc1 $t9, $f12
     sw $t9, 380($sp)
-    addiu $t7, $sp, 240
-    lw $t6, 360($sp)
+    addiu $t7, $sp, 220
+    lw $t6, 368($sp)
     sll $t6, $t6, 2
     addu $t7, $t7, $t6
     lwc1 $f12, 0($t7)
     cvt.w.s $f12, $f12
     mfc1 $t9, $f12
     sw $t9, 384($sp)
-    lw $t7, 372($sp)
-    lw $t6, 364($sp)
-    subu $t8, $t7, $t6
-    lw $t6, 384($sp)
-    lw $t5, 368($sp)
-    subu $t7, $t6, $t5
-    mul $t9, $t8, $t7
-    sw $t9, 388($sp)
-    lw $t7, 376($sp)
+    addiu $t7, $sp, 252
     lw $t6, 368($sp)
+    sll $t6, $t6, 2
+    addu $t7, $t7, $t6
+    lwc1 $f12, 0($t7)
+    cvt.w.s $f12, $f12
+    mfc1 $t9, $f12
+    sw $t9, 388($sp)
+    addiu $t7, $sp, 220
+    lw $t6, 372($sp)
+    sll $t6, $t6, 2
+    addu $t7, $t7, $t6
+    lwc1 $f12, 0($t7)
+    cvt.w.s $f12, $f12
+    mfc1 $t9, $f12
+    sw $t9, 392($sp)
+    addiu $t7, $sp, 252
+    lw $t6, 372($sp)
+    sll $t6, $t6, 2
+    addu $t7, $t7, $t6
+    lwc1 $f12, 0($t7)
+    cvt.w.s $f12, $f12
+    mfc1 $t9, $f12
+    sw $t9, 396($sp)
+    lw $t7, 384($sp)
+    lw $t6, 376($sp)
     subu $t8, $t7, $t6
-    lw $t6, 380($sp)
-    lw $t5, 364($sp)
+    lw $t6, 396($sp)
+    lw $t5, 380($sp)
     subu $t7, $t6, $t5
     mul $t9, $t8, $t7
-    sw $t9, 392($sp)
+    sw $t9, 400($sp)
     lw $t7, 388($sp)
+    lw $t6, 380($sp)
+    subu $t8, $t7, $t6
     lw $t6, 392($sp)
+    lw $t5, 376($sp)
+    subu $t7, $t6, $t5
+    mul $t9, $t8, $t7
+    sw $t9, 404($sp)
+    lw $t7, 400($sp)
+    lw $t6, 404($sp)
     subu $t8, $t7, $t6
     li $t7, 0
     slt $t9, $t8, $t7
@@ -719,7 +733,7 @@ render_cube:
     nop
     la $t8, face_col
     la $t6, tri_face
-    lw $t5, 348($sp)
+    lw $t5, 360($sp)
     sll $t5, $t5, 2
     addu $t6, $t6, $t5
     lw $t7, 0($t6)
@@ -731,14 +745,14 @@ render_cube:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    lw $t8, 384($sp)
+    lw $t8, 396($sp)
     sw $t8, 20($sp)
-    lw $t8, 380($sp)
+    lw $t8, 392($sp)
     sw $t8, 16($sp)
-    lw $a3, 376($sp)
-    lw $a2, 372($sp)
-    lw $a1, 368($sp)
-    lw $a0, 364($sp)
+    lw $a3, 388($sp)
+    lw $a2, 384($sp)
+    lw $a1, 380($sp)
+    lw $a0, 376($sp)
     sw $t9, 96($sp)
     jal rdpq_triangle
     nop
@@ -746,17 +760,17 @@ render_cube:
     move $t9, $v0
 .Lif_end_8:
     li $t8, 1
-    lw $t7, 348($sp)
+    lw $t7, 360($sp)
     addu $t8, $t7, $t8
-    sw $t8, 348($sp)
+    sw $t8, 360($sp)
     move $t9, $t8
     j .Lloop_h_5
     nop
 .Lloop_x_6:
 .Lrender_cube_ret_1:
-    lw $fp, 400($sp)
-    lw $ra, 404($sp)
-    addiu $sp, $sp, 408
+    lw $fp, 408($sp)
+    lw $ra, 412($sp)
+    addiu $sp, $sp, 416
     jr $ra
     nop
 	.size render_cube, . - render_cube
@@ -980,9 +994,13 @@ init_scene:
     sw $t7, 4($t8)
     lw $t7, 8($t9)
     sw $t7, 8($t8)
-    addiu $a2, $sp, 172
-    addiu $a1, $sp, 148
+    addiu $t8, $sp, 172
+    sw $t8, 196($sp)
+    addiu $t8, $sp, 148
+    sw $t8, 200($sp)
     la $a0, gs
+    lw $a1, 200($sp)
+    lw $a2, 196($sp)
     sw $t9, 96($sp)
     jal t3d_set_camera
     nop

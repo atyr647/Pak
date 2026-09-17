@@ -3653,6 +3653,11 @@ proc pak::cg_api_lambda {mod fn arglist} {
         "t3d vec3_cross" { return "t3d_vec3_cross([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2])" }
         "t3d vec3_dot" { return "t3d_vec3_dot([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1])" }
         "t3d vec3_lerp" { return "t3d_vec3_lerp([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2], [lindex $arglist 3])" }
+        "t3d vec3_add" { return "t3d_vec3_add([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2])" }
+        "t3d vec3_sub" { return "t3d_vec3_diff([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2])" }
+        "t3d vec3_scale" { return "t3d_vec3_scale([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [lindex $arglist 2])" }
+        "t3d vec3_len" { return "t3d_vec3_len([pak::cg_addr $arglist 0])" }
+        "t3d viewport_calc_viewspace_pos" { return "t3d_viewport_calc_viewspace_pos([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 2], [pak::cg_addr $arglist 1])" }
         "t3d quat_identity" { return "t3d_quat_identity([pak::cg_addr $arglist 0])" }
         "t3d quat_from_axis_angle" { return "t3d_quat_from_axis_angle([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [lindex $arglist 2])" }
         "t3d quat_mul" { return "t3d_quat_mul([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2])" }
@@ -3772,6 +3777,13 @@ proc pak::cg_api_lambda {mod fn arglist} {
         "t3d look_at" {
             # Tiny3D spells this t3d_viewport_look_at. There is no t3d_look_at.
             return "t3d_viewport_look_at([join $arglist {, }])"
+        }
+        "t3d set_camera" {
+            # Real Tiny3D has no set_camera at all -- t3d.set_camera(vp, eye,
+            # target) is a Pak-only convenience over look_at with a default
+            # world-up, the same default the standalone HAL's own
+            # t3d_set_camera wrapper uses.
+            return "t3d_viewport_look_at([join $arglist {, }], &(T3DVec3){{0,1,0}})"
         }
         "t3d skeleton_draw" {
             # Tiny3D draws a skinned model through the MODEL, taking the

@@ -415,11 +415,13 @@ Camera_try_move:
 .Lif_end_4:
     lwc1 $f12, 156($sp)
     cvt.w.s $f12, $f12
-    mfc1 $a1, $f12
+    mfc1 $t7, $f12
+    sw $t7, 160($sp)
     lw $t6, 136($sp)
     lwc1 $f12, 0($t6)
     cvt.w.s $f12, $f12
     mfc1 $a0, $f12
+    lw $a1, 160($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal map_get
@@ -1816,8 +1818,10 @@ main:
     li $t8, 1
     bne $t9, $t8, .Larm_skip_77
     nop
-    addiu $a1, $sp, 176
+    addiu $t7, $sp, 176
+    sw $t7, 180($sp)
     addiu $a0, $sp, 136
+    lw $a1, 180($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal update_playing

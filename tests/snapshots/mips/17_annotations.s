@@ -349,12 +349,16 @@ main:
     la $t7, sink
     sw $t8, 0($t7)
     move $t9, $t8
-    li $a2, 320
-    li $a1, 0
+    li $t7, 320
+    sw $t7, 784($sp)
+    li $t7, 0
+    sw $t7, 788($sp)
     la $t7, dma_out
     li $t6, 0
     addu $t7, $t7, $t6
     move $a0, $t7
+    lw $a1, 788($sp)
+    lw $a2, 784($sp)
     sw $t9, 96($sp)
     sw $t8, 100($sp)
     jal sum_scanline

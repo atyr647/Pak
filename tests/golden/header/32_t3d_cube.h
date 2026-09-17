@@ -17,8 +17,6 @@ struct GameState {
     bool running;
 };
 
-void transform_point(T3DMat4 * m, T3DVec3 * p, T3DVec3 * out);
-void render_cube(void);
 void update(pak_joypad_status_t pad);
 void init_scene(void);
 

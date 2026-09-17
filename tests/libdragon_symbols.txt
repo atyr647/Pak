@@ -202,7 +202,6 @@ missing t3d.push_draw_flags
 missing t3d.rdpq_draw_object
 missing t3d.screen_projection
 tiny3d t3d.segment_set
-missing t3d.set_camera
 tiny3d t3d.skeleton_create
 tiny3d t3d.skeleton_destroy
 tiny3d t3d.skeleton_update

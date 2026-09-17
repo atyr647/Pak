@@ -358,18 +358,24 @@ render:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
+    lw $t6, 136($sp)
+    lw $t7, 4($t6)
+    li $t6, 16
+    addu $t8, $t7, $t6
+    sw $t8, 144($sp)
+    lw $t6, 136($sp)
+    lw $t7, 0($t6)
+    li $t6, 16
+    addu $t8, $t7, $t6
+    sw $t8, 148($sp)
     lw $t7, 136($sp)
     lw $t8, 4($t7)
-    li $t7, 16
-    addu $a3, $t8, $t7
-    lw $t7, 136($sp)
-    lw $t8, 0($t7)
-    li $t7, 16
-    addu $a2, $t8, $t7
-    lw $t8, 136($sp)
-    lw $a1, 4($t8)
+    sw $t8, 152($sp)
     lw $t8, 136($sp)
     lw $a0, 0($t8)
+    lw $a1, 152($sp)
+    lw $a2, 148($sp)
+    lw $a3, 144($sp)
     sw $t9, 96($sp)
     jal rdpq_fill_rectangle
     nop

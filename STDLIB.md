@@ -582,7 +582,7 @@ compiling the examples that use them.
 | `t3d` | `rdpq_draw_object` | `t3d_rdpq_draw_object` | no | no |
 | `t3d` | `screen_projection` | `t3d_screen_projection` | no | no |
 | `t3d` | `segment_set` | `t3d_segment_set` | tiny3d | no |
-| `t3d` | `set_camera` | `t3d_set_camera` | no | yes |
+| `t3d` | `set_camera` | `t3d_set_camera` | yes* | yes |
 | `t3d` | `skeleton_create` | `t3d_skeleton_create` | tiny3d | no |
 | `t3d` | `skeleton_destroy` | `t3d_skeleton_destroy` | tiny3d | no |
 | `t3d` | `skeleton_draw` | `t3d_skeleton_draw` | yes* | no |
@@ -642,7 +642,7 @@ compiling the examples that use them.
 
 **357 functions** across the module surface; **184** exist on the standalone HAL.
 
-Of the 237 lowered as a direct call: **120** are libdragon's own, **32** need Tiny3D, and **85** are **standalone-only**.
+Of the 236 lowered as a direct call: **120** are libdragon's own, **32** need Tiny3D, and **84** are **standalone-only**.
 
 Standalone-only is mostly by design rather than debt. libdragon owns the
 subsystem and exposes a different shape for it: interrupts are callbacks

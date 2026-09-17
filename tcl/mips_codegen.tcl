@@ -519,7 +519,7 @@ proc pak::mips_ann_align {anns cur} {
 
 # ── orchestrator ────────────────────────────────────────────────────────────
 oo::class create pak::MipsCodegen {
-    variable em pool ra ret_label scopes defers next_local frame_align float_slots float_depth loop_header loop_exit loop_defer_depth \
+    variable em pool ra ret_label scopes defers next_local frame_align float_slots float_depth arg_slots arg_depth loop_header loop_exit loop_defer_depth \
              loop_result sret_off sret_size \
              globals consts float_consts label_n fmtstr_counter \
              tenv_layouts tenv_enum_values tenv_variant_decls fn_decls \
@@ -1815,6 +1815,8 @@ oo::class create pak::MipsCodegen {
         set frame_align 8
         set float_slots [dict create]
         set float_depth 0
+        set arg_slots [dict create]
+        set arg_depth 0
         my push_scope
         if {[my type_passed_by_addr $ret_type]} {
             set sret_size [dict get [my mips_layout $ret_type] size]
@@ -4685,6 +4687,40 @@ oo::class create pak::MipsCodegen {
         return [dict get $float_slots $d]
     }
 
+    # Where an integer argument waits when it cannot be left in $a0-$a3. See
+    # marshal_args. Indexed by depth so a nested call's spills do not land on
+    # the slots its caller is still using.
+    method arg_slot {d} {
+        if {![dict exists $arg_slots $d]} {
+            dict set arg_slots $d \
+                [my declare_local "__aspill$d" [my mips_layout_name i32]]
+        }
+        return [dict get $arg_slots $d]
+    }
+
+    # Conservative: true unless this expression provably cannot reach a jal.
+    # Answering "no" wrongly costs a wrong argument at runtime, so anything
+    # not on the safe list answers "yes".
+    method expr_may_call {expr} {
+        switch -- [pak::kindof $expr] {
+            IntLit - BoolLit - NoneLit - UndefinedLit - FloatLit - StringLit -
+            SizeOf - AlignOf - OffsetOf - Ident - EnumVariantAccess {
+                return 0
+            }
+            UnaryOp {
+                return [my expr_may_call [pak::nfield $expr operand]]
+            }
+            Cast {
+                return [my expr_may_call [pak::nfield $expr expr]]
+            }
+            BinaryOp {
+                if {[my expr_may_call [pak::nfield $expr left]]} { return 1 }
+                return [my expr_may_call [pak::nfield $expr right]]
+            }
+            default { return 1 }
+        }
+    }
+
     method emit_float_binop {expr dst op} {
         # The left side goes to a stack slot, not to $f14: evaluating the right
         # side is free to use both FP registers, and did. `0.5 * (y + m / y)`
@@ -6960,12 +6996,42 @@ oo::class create pak::MipsCodegen {
         # touched $f14 -- and a nested expression or a call in float 0 does:
         # `ex(y * ln(x))` passed `x` where `y` belonged, because evaluating
         # ln(x) overwrote the register y had been parked in.
+        # The same hazard the float args above are parked to avoid, for the
+        # integer ones. Arguments are evaluated high index first, straight into
+        # $a0-$a3; an argument that makes a call has that call marshal its OWN
+        # arguments into $a0 upward, on top of the outer call's, so
+        # `two(two(1, 2), 9)` passed 2 where 9 belonged. Only outer arguments
+        # beyond the inner call's arity survived, which is why it looked
+        # intermittent.
+        #
+        # Everything above the lowest-indexed argument that can call is
+        # therefore evaluated into a stack slot and moved into place at the
+        # end. When no argument calls -- the overwhelming majority -- nothing
+        # is parked and the emitted code is unchanged.
+        set first_call -1
+        for {set i 0} {$i < $n} {incr i} {
+            if {[my expr_may_call [lindex $arglist $i]]} { set first_call $i; break }
+        }
+        set parked [dict create]
+        set adepth $arg_depth
+
         set fi_counter $float_total
         set float_args [dict create]
         set fdepth $float_depth
         for {set i [expr {$n - 1}]} {$i >= 0} {incr i -1} {
             set arg [lindex $arglist $i]
             set slot [expr {$i + $start_idx}]
+            if {$first_call >= 0 && $i > $first_call && ![my infer_is_float $arg]} {
+                set off [my arg_slot [expr {$adepth + $i}]]
+                set arg_depth [expr {$adepth + $n}]
+                set tmp [$ra alloc_temp]
+                my emit_expr $arg $tmp
+                set arg_depth $adepth
+                $em sw $tmp $off {$sp}
+                $ra free_temp $tmp
+                dict set parked $slot $off
+                continue
+            }
             if {[my infer_is_float $arg]} {
                 incr fi_counter -1
                 set fi $fi_counter
@@ -6984,6 +7050,18 @@ oo::class create pak::MipsCodegen {
                     $em sw $tmp [expr {($slot - 4) * 4 + 16}] {$sp}
                     $ra free_temp $tmp
                 }
+            }
+        }
+        # The parked integer arguments, now that every call is behind us.
+        foreach slot [lsort -integer [dict keys $parked]] {
+            set off [dict get $parked $slot]
+            if {$slot < 4} {
+                $em lw [lindex $::pak::ARG_GPRS $slot] $off {$sp}
+            } else {
+                set tmp [$ra alloc_temp]
+                $em lw $tmp $off {$sp}
+                $em sw $tmp [expr {($slot - 4) * 4 + 16}] {$sp}
+                $ra free_temp $tmp
             }
         }
         # o32: the first two floats in $f12/$f14, the rest in the caller's

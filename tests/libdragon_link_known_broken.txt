@@ -1,0 +1,16 @@
+# Canonical examples whose generated C does NOT cross-compile for mips64-elf
+# with libdragon's own N64_CFLAGS (which include -Werror).
+#
+# Maintained by tcl/tools/libdragon_link_test.tcl. Debt, not configuration:
+# fix the backend, drop the name.
+
+# 32_t3d_cube is the only canonical example that uses n64.t3d (Tiny3D). This
+# gate cross-compiles against a real installed libdragon at N64_INST but,
+# unlike tcl/tools/libdragon_api_test.tcl (which runs tools/fetch_tiny3d.sh
+# and adds Tiny3D's include path before compiling), never fetches or
+# includes Tiny3D's headers -- it only knows libdragon. T3DViewport, T3DMat4
+# and every t3d_* symbol are genuinely undeclared in that environment, not a
+# Pak codegen bug: `pak check` already warns W005/W006 on this file for
+# exactly this reason (Tiny3D not configured). Belongs here until this gate
+# grows a Tiny3D include step of its own.
+32_t3d_cube
