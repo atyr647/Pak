@@ -578,18 +578,89 @@ oo::class create pak::MipsCodegen {
     # structs containing e.g. Vec3 fields resolve.
     method register_external_types {} {
         foreach {name sz al fl} {
-            Vec3        12  4 1
-            Mat4        64  4 1
-            Quat        16  4 1
             Color        4  4 0
             T3DMat4     64  4 1
             T3DMat4FP  128 16 0
-            T3DViewport 128 16 0
         } {
             if {![dict exists $tenv_layouts $name]} {
                 dict set tenv_layouts $name [dict create size $sz align $al \
                     is_float $fl is_signed 1 is_ptr 0 fields {} frac_bits 0]
             }
+        }
+        # Vec3/Quat/Mat4 are plain, literal-constructible value structs (see
+        # runtime/standalone/runtime.pk64's own declarations), not opaque
+        # handles -- unlike the fieldless entries above, game code that never
+        # sources runtime.pk64 still needs their real field layout to build a
+        # `Vec3 { x: ..., y: ..., z: ... }` literal or read `.x`/`.m[i]`. This
+        # is a fallback only (the `if` guard): when runtime.pk64 itself is the
+        # file being compiled, its own `struct Vec3 { ... }` declaration is
+        # processed by register_struct and wins outright. The two must stay
+        # in sync by construction, which is why this mirrors register_struct's
+        # field layout exactly rather than reusing the old scalar-shaped
+        # `is_float 1, fields {}` entry -- that shape was for a real f32/f64
+        # scalar, and applying it to a 3/4/16-field aggregate is what made a
+        # `Mat4`/`Vec3`/`Quat` literal in a file without the real struct
+        # silently lower as a single garbage 8-byte float store instead of
+        # initializing its fields.
+        set f32 [pak::N TypeName name f32]
+        if {![dict exists $tenv_layouts Vec3]} {
+            set vf [dict create]
+            dict set vf x [dict create name x offset 0 size 4 align 4 type_node $f32]
+            dict set vf y [dict create name y offset 4 size 4 align 4 type_node $f32]
+            dict set vf z [dict create name z offset 8 size 4 align 4 type_node $f32]
+            dict set tenv_layouts Vec3 [dict create size 12 align 4 \
+                is_float 0 is_signed 1 is_ptr 0 fields $vf field_order {x y z} frac_bits 0]
+        }
+        if {![dict exists $tenv_layouts Quat]} {
+            set qf [dict create]
+            dict set qf x [dict create name x offset 0  size 4 align 4 type_node $f32]
+            dict set qf y [dict create name y offset 4  size 4 align 4 type_node $f32]
+            dict set qf z [dict create name z offset 8  size 4 align 4 type_node $f32]
+            dict set qf w [dict create name w offset 12 size 4 align 4 type_node $f32]
+            dict set tenv_layouts Quat [dict create size 16 align 4 \
+                is_float 0 is_signed 1 is_ptr 0 fields $qf field_order {x y z w} frac_bits 0]
+        }
+        if {![dict exists $tenv_layouts Mat4]} {
+            set marr [pak::N TypeArray size [pak::N IntLit value 16 raw "16"] inner $f32]
+            set mf [dict create]
+            dict set mf m [dict create name m offset 0 size 64 align 4 type_node $marr]
+            dict set tenv_layouts Mat4 [dict create size 64 align 4 \
+                is_float 0 is_signed 1 is_ptr 0 fields $mf field_order {m} frac_bits 0]
+        }
+        # T3DViewport (Phase 2): same reasoning as Vec3/Mat4/Quat above, and
+        # the same "must stay in sync with runtime.pk64's real declaration"
+        # constraint -- but here it is load-bearing even for code that never
+        # reads a field: `static vp: T3DViewport = undefined` reserves `size`
+        # bytes for the local/static slot game code declares, while
+        # `t3d_viewport_create()`'s sret copy writes however many bytes the
+        # REAL struct (compiled inside runtime.pk64) actually is. Those two
+        # sizes disagreeing -- as they did before Phase 2 added `proj`/`view`/
+        # `camproj` (real 64 bytes vs. this fallback's stale 128) -- is silently
+        # safe only in the direction fallback >= real; get it backwards and a
+        # viewport_create() return overflows the caller's reserved slot.
+        set i32 [pak::N TypeName name i32]
+        set mat4tn [pak::N TypeName name Mat4]
+        if {![dict exists $tenv_layouts T3DViewport]} {
+            set vpf [dict create]
+            set vp_off 0
+            foreach {fname ftn fsz} {
+                fov f32 4  near_plane f32 4  far_plane f32 4
+                eye_x f32 4  eye_y f32 4  eye_z f32 4
+                target_x f32 4  target_y f32 4  target_z f32 4
+                up_x f32 4  up_y f32 4  up_z f32 4
+                vx i32 4  vy i32 4  vw i32 4  vh i32 4
+                proj Mat4 64  view Mat4 64  camproj Mat4 64
+            } {
+                set tn [expr {$ftn eq "f32" ? $f32 : ($ftn eq "i32" ? $i32 : $mat4tn)}]
+                dict set vpf $fname [dict create name $fname offset $vp_off \
+                    size $fsz align 4 type_node $tn]
+                incr vp_off $fsz
+            }
+            dict set tenv_layouts T3DViewport [dict create size $vp_off align 4 \
+                is_float 0 is_signed 1 is_ptr 0 fields $vpf field_order {
+                    fov near_plane far_plane eye_x eye_y eye_z target_x target_y
+                    target_z up_x up_y up_z vx vy vw vh proj view camproj
+                } frac_bits 0]
         }
         # Opaque handles from libdragon and Tiny3D. Pak code only ever holds
         # these behind a pointer, so a pointer-sized slot is the whole layout.
@@ -3002,10 +3073,19 @@ oo::class create pak::MipsCodegen {
                 set arr_off [my declare_local __arr_lit [dict create size [expr {$n*4}] align 4 is_float 0 is_signed 1 is_ptr 0 fields {}]]
                 set i 0
                 foreach elem $elems {
-                    set tmp [$ra alloc_temp]
-                    my emit_expr $elem $tmp
-                    $em sw $tmp [expr {$arr_off + $i*4}] {$sp}
-                    $ra free_temp $tmp
+                    if {[my infer_is_float $elem]} {
+                        # Float convention: the value comes back in $f12, not
+                        # in a GPR -- storing whatever alloc_temp handed back
+                        # here (as the non-float branch does) stores garbage,
+                        # since nothing ever wrote a float result to it.
+                        my emit_expr $elem {$zero}
+                        $em swc1 {$f12} [expr {$arr_off + $i*4}] {$sp}
+                    } else {
+                        set tmp [$ra alloc_temp]
+                        my emit_expr $elem $tmp
+                        $em sw $tmp [expr {$arr_off + $i*4}] {$sp}
+                        $ra free_temp $tmp
+                    }
                     incr i
                 }
                 $em addiu $dst {$sp} $arr_off
@@ -3896,7 +3976,31 @@ oo::class create pak::MipsCodegen {
                     }
                     set tmp [$ra alloc_temp]
                     my emit_expr $fval_node $tmp
-                    my emit_typed_store $tmp [expr {$off + [dict get $fi offset]}] {$sp} $fl
+                    set fl_is_agg [expr {[dict exists $fl is_array] && [dict get $fl is_array]}]
+                    if {!$fl_is_agg && $ftype ne "" && ![pak::isnil $ftype]} {
+                        set fl_is_agg [my type_passed_by_addr $ftype]
+                    }
+                    if {$fl_is_agg} {
+                        # A fixed-size array, or a nested struct passed by
+                        # value (Mat4, or any other aggregate), is stored
+                        # inline in the struct -- but both decay to a pointer
+                        # wherever they are held in a register (emit_ident_load
+                        # for arrays, emit_struct_lit's own `$dst = &scratch`
+                        # return for a nested struct literal), so `$tmp` here
+                        # is the address of the literal's backing buffer, not
+                        # its bytes. Copying that address into the field with
+                        # emit_typed_store (as every scalar field below does)
+                        # would store a 4-byte pointer over what is really a
+                        # multi-word payload, leaving the rest of the field
+                        # whatever the zero-init above left there. Copy the
+                        # bytes themselves instead.
+                        set fdst [$ra alloc_temp]
+                        $em addiu $fdst {$sp} [expr {$off + [dict get $fi offset]}]
+                        my emit_memcpy $fdst $tmp [dict get $fl size]
+                        $ra free_temp $fdst
+                    } else {
+                        my emit_typed_store $tmp [expr {$off + [dict get $fi offset]}] {$sp} $fl
+                    }
                     $ra free_temp $tmp
                 }
             }

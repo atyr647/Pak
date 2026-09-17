@@ -177,6 +177,32 @@ set ::pak::MIPS_HAL_SYMBOLS [dict create \
     t3d_fog_set_range 1 \
     t3d_frame_start 1 \
     t3d_frame_end 1 \
+    t3d_vec3_add 1 \
+    t3d_vec3_sub 1 \
+    t3d_vec3_scale 1 \
+    t3d_vec3_cross 1 \
+    t3d_vec3_dot 1 \
+    t3d_vec3_len 1 \
+    t3d_vec3_norm 1 \
+    t3d_vec3_lerp 1 \
+    t3d_mat4_identity 1 \
+    t3d_mat4_translate 1 \
+    t3d_mat4_scale 1 \
+    t3d_mat4_rotate_x 1 \
+    t3d_mat4_rotate_y 1 \
+    t3d_mat4_rotate_z 1 \
+    t3d_mat4_mul 1 \
+    t3d_mat4_transpose 1 \
+    t3d_mat4_from_srt 1 \
+    t3d_mat4_from_srt_euler 1 \
+    t3d_quat_identity 1 \
+    t3d_quat_from_axis_angle 1 \
+    t3d_quat_mul 1 \
+    t3d_quat_nlerp 1 \
+    t3d_quat_slerp 1 \
+    t3d_set_camera 1 \
+    t3d_look_at 1 \
+    t3d_viewport_calc_viewspace_pos 1 \
     rumble_init 1 \
     rumble_is_plugged 1 \
     rumble_start 1 \

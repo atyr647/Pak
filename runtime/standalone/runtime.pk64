@@ -3699,6 +3699,360 @@ fn rdpq_sprite_blit(spr: *u8, x: i32, y: i32, flags: u32) {
     }
 }
 
+-- ── Vec3 / Mat4 / Quat math ─────────────────────────────────────────────────
+-- Real Tiny3D's transform pipeline runs on the RSP; this backend has none of
+-- that microcode. What it can give a standalone game is the CPU-side math
+-- Tiny3D itself keeps as plain arithmetic in t3dmath.h -- vec3/mat4/quat --
+-- so a game can build its own software transform (see 31_demo3d.pk64 for
+-- one already hand-rolling this) against a real library instead of writing
+-- the arithmetic out longhand. Nothing here touches the RDP or the RSP.
+--
+-- Conventions match Tiny3D's own: row-major Mat4 (m[row*4+col]), FOV/angles
+-- in radians, output-as-first-argument (t3d_mat4_mul(out, a, b), never
+-- t3d_mat4_mul(a, b) -> Mat4), matching real Tiny3D's C API shape exactly so
+-- the same call reads the same way on both backends even though nothing is
+-- shared past the source text.
+struct Vec3 { x: f32, y: f32, z: f32 }
+struct Quat { x: f32, y: f32, z: f32, w: f32 }
+struct Mat4 { m: [16]f32 }
+
+fn t3d_vec3_add(out: *Vec3, a: *Vec3, b: *Vec3) {
+    out.x = a.x + b.x
+    out.y = a.y + b.y
+    out.z = a.z + b.z
+}
+
+fn t3d_vec3_sub(out: *Vec3, a: *Vec3, b: *Vec3) {
+    out.x = a.x - b.x
+    out.y = a.y - b.y
+    out.z = a.z - b.z
+}
+
+fn t3d_vec3_scale(out: *Vec3, a: *Vec3, s: f32) {
+    out.x = a.x * s
+    out.y = a.y * s
+    out.z = a.z * s
+}
+
+-- Temps first: if `out` aliases `a` or `b` (t3d_vec3_cross(&v, &v, &w) is a
+-- normal thing to write), writing out.x before out.z is computed would
+-- read the just-overwritten value instead of the original.
+fn t3d_vec3_cross(out: *Vec3, a: *Vec3, b: *Vec3) {
+    let x: f32 = a.y * b.z - a.z * b.y
+    let y: f32 = a.z * b.x - a.x * b.z
+    let z: f32 = a.x * b.y - a.y * b.x
+    out.x = x
+    out.y = y
+    out.z = z
+}
+
+fn t3d_vec3_dot(a: *Vec3, b: *Vec3) -> f32 {
+    return a.x * b.x + a.y * b.y + a.z * b.z
+}
+
+fn t3d_vec3_len(a: *Vec3) -> f32 {
+    return math_sqrt_f(t3d_vec3_dot(a, a))
+}
+
+fn t3d_vec3_norm(out: *Vec3) {
+    let l: f32 = t3d_vec3_len(out)
+    if l > 0.0 {
+        out.x = out.x / l
+        out.y = out.y / l
+        out.z = out.z / l
+    }
+}
+
+fn t3d_vec3_lerp(out: *Vec3, a: *Vec3, b: *Vec3, t: f32) {
+    out.x = a.x + (b.x - a.x) * t
+    out.y = a.y + (b.y - a.y) * t
+    out.z = a.z + (b.z - a.z) * t
+}
+
+fn t3d_mat4_identity(out: *Mat4) {
+    let mut i: i32 = 0
+    loop {
+        if i >= 16 { break }
+        out.m[i] = 0.0
+        i = i + 1
+    }
+    out.m[0] = 1.0
+    out.m[5] = 1.0
+    out.m[10] = 1.0
+    out.m[15] = 1.0
+}
+
+-- Column-vector convention throughout (v' = M * v): translation lives in
+-- the last COLUMN (m[3]/m[7]/m[11]), not the last row.
+fn t3d_mat4_translate(out: *Mat4, x: f32, y: f32, z: f32) {
+    t3d_mat4_identity(out)
+    out.m[3] = x
+    out.m[7] = y
+    out.m[11] = z
+}
+
+fn t3d_mat4_scale(out: *Mat4, x: f32, y: f32, z: f32) {
+    t3d_mat4_identity(out)
+    out.m[0] = x
+    out.m[5] = y
+    out.m[10] = z
+}
+
+fn t3d_mat4_rotate_x(out: *Mat4, angle: f32) {
+    t3d_mat4_identity(out)
+    let c: f32 = math_cos_f(angle)
+    let s: f32 = math_sin_f(angle)
+    out.m[5] = c
+    out.m[6] = 0.0 - s
+    out.m[9] = s
+    out.m[10] = c
+}
+
+fn t3d_mat4_rotate_y(out: *Mat4, angle: f32) {
+    t3d_mat4_identity(out)
+    let c: f32 = math_cos_f(angle)
+    let s: f32 = math_sin_f(angle)
+    out.m[0] = c
+    out.m[2] = s
+    out.m[8] = 0.0 - s
+    out.m[10] = c
+}
+
+fn t3d_mat4_rotate_z(out: *Mat4, angle: f32) {
+    t3d_mat4_identity(out)
+    let c: f32 = math_cos_f(angle)
+    let s: f32 = math_sin_f(angle)
+    out.m[0] = c
+    out.m[1] = 0.0 - s
+    out.m[4] = s
+    out.m[5] = c
+}
+
+-- Built into a local first, then copied out: `out` is routinely the same
+-- pointer as `a` or `b` (t3d_mat4_mul(&m, &m, &parent) to accumulate a
+-- transform), and every entry of the result depends on multiple entries
+-- of both inputs, so writing straight into `out` would read back values
+-- this same call already overwrote.
+fn t3d_mat4_mul(out: *Mat4, a: *Mat4, b: *Mat4) {
+    let mut r: Mat4 = Mat4 { m: [
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0,
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0
+    ] }
+    let mut row: i32 = 0
+    loop {
+        if row >= 4 { break }
+        let mut col: i32 = 0
+        loop {
+            if col >= 4 { break }
+            let mut sum: f32 = 0.0
+            let mut k: i32 = 0
+            loop {
+                if k >= 4 { break }
+                sum = sum + a.m[row * 4 + k] * b.m[k * 4 + col]
+                k = k + 1
+            }
+            r.m[row * 4 + col] = sum
+            col = col + 1
+        }
+        row = row + 1
+    }
+    let mut i: i32 = 0
+    loop {
+        if i >= 16 { break }
+        out.m[i] = r.m[i]
+        i = i + 1
+    }
+}
+
+fn t3d_mat4_transpose(out: *Mat4, src: *Mat4) {
+    let mut r: Mat4 = Mat4 { m: [
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0,
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0
+    ] }
+    let mut row: i32 = 0
+    loop {
+        if row >= 4 { break }
+        let mut col: i32 = 0
+        loop {
+            if col >= 4 { break }
+            r.m[col * 4 + row] = src.m[row * 4 + col]
+            col = col + 1
+        }
+        row = row + 1
+    }
+    let mut i: i32 = 0
+    loop {
+        if i >= 16 { break }
+        out.m[i] = r.m[i]
+        i = i + 1
+    }
+}
+
+-- Standard unit-quaternion-to-rotation-matrix formula. Not part of the
+-- public t3d API (Tiny3D does not expose it standalone either -- game code
+-- goes through t3d_mat4_from_srt/srt_euler), so this stays a plain `fn`, not
+-- wired into MODULE_API.
+fn t3d_mat4_from_quat(out: *Mat4, q: *Quat) {
+    let x2: f32 = q.x + q.x
+    let y2: f32 = q.y + q.y
+    let z2: f32 = q.z + q.z
+    let xx: f32 = q.x * x2
+    let xy: f32 = q.x * y2
+    let xz: f32 = q.x * z2
+    let yy: f32 = q.y * y2
+    let yz: f32 = q.y * z2
+    let zz: f32 = q.z * z2
+    let wx: f32 = q.w * x2
+    let wy: f32 = q.w * y2
+    let wz: f32 = q.w * z2
+    t3d_mat4_identity(out)
+    out.m[0] = 1.0 - (yy + zz)
+    out.m[1] = xy - wz
+    out.m[2] = xz + wy
+    out.m[4] = xy + wz
+    out.m[5] = 1.0 - (xx + zz)
+    out.m[6] = yz - wx
+    out.m[8] = xz - wy
+    out.m[9] = yz + wx
+    out.m[10] = 1.0 - (xx + yy)
+}
+
+-- M = T * R * S: scale first, then rotate, then translate (v' = M*v).
+fn t3d_mat4_from_srt(out: *Mat4, scale: *Vec3, rot: *Quat, translate: *Vec3) {
+    let mut s: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_scale(&s, scale.x, scale.y, scale.z)
+    let mut r: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_from_quat(&r, rot)
+    -- R*S already has 0 in the translation column (R and S both do), so
+    -- writing translate over it afterward is exact, not an approximation.
+    t3d_mat4_mul(out, &r, &s)
+    out.m[3] = translate.x
+    out.m[7] = translate.y
+    out.m[11] = translate.z
+}
+
+-- Same as t3d_mat4_from_srt, with the rotation built from three Euler angles
+-- (radians) instead of a quaternion. Order is R = Rz * Ry * Rx -- X applied
+-- first, then Y, then Z -- a fixed, documented choice: Euler order is
+-- inherently arbitrary, and callers need one answer, not a family of them.
+fn t3d_mat4_from_srt_euler(out: *Mat4, scale: *Vec3, euler: *Vec3, translate: *Vec3) {
+    let mut rx: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_rotate_x(&rx, euler.x)
+    let mut ry: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_rotate_y(&ry, euler.y)
+    let mut rz: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_rotate_z(&rz, euler.z)
+    let mut ryx: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_mul(&ryx, &ry, &rx)
+    let mut r: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_mul(&r, &rz, &ryx)
+    let mut s: Mat4 = Mat4 { m: [
+        1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
+        0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0
+    ] }
+    t3d_mat4_scale(&s, scale.x, scale.y, scale.z)
+    t3d_mat4_mul(out, &r, &s)
+    out.m[3] = translate.x
+    out.m[7] = translate.y
+    out.m[11] = translate.z
+}
+
+fn t3d_quat_identity(out: *Quat) {
+    out.x = 0.0
+    out.y = 0.0
+    out.z = 0.0
+    out.w = 1.0
+}
+
+fn t3d_quat_from_axis_angle(out: *Quat, axis: *Vec3, angle: f32) {
+    let mut a: Vec3 = Vec3 { x: axis.x, y: axis.y, z: axis.z }
+    t3d_vec3_norm(&a)
+    let half: f32 = angle * 0.5
+    let s: f32 = math_sin_f(half)
+    out.x = a.x * s
+    out.y = a.y * s
+    out.z = a.z * s
+    out.w = math_cos_f(half)
+}
+
+-- Temps first, same aliasing reason as t3d_vec3_cross: out.w's formula still
+-- needs a.x/a.y/a.z after out.x has been written, if out aliases a.
+fn t3d_quat_mul(out: *Quat, a: *Quat, b: *Quat) {
+    let x: f32 = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y
+    let y: f32 = a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x
+    let z: f32 = a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w
+    let w: f32 = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z
+    out.x = x
+    out.y = y
+    out.z = z
+    out.w = w
+}
+
+fn t3d_quat_nlerp(out: *Quat, a: *Quat, b: *Quat, t: f32) {
+    out.x = a.x + (b.x - a.x) * t
+    out.y = a.y + (b.y - a.y) * t
+    out.z = a.z + (b.z - a.z) * t
+    out.w = a.w + (b.w - a.w) * t
+    let len: f32 = math_sqrt_f(out.x * out.x + out.y * out.y + out.z * out.z + out.w * out.w)
+    if len > 0.0 {
+        out.x = out.x / len
+        out.y = out.y / len
+        out.z = out.z / len
+        out.w = out.w / len
+    }
+}
+
+-- atan2(sin, cos) stands in for acos here: the standalone HAL has no
+-- math.acos_f, and sin(omega) is already on hand from the dot product, so
+-- this needs nothing this HAL does not already have.
+fn t3d_quat_slerp(out: *Quat, a: *Quat, b: *Quat, t: f32) {
+    let mut bx: f32 = b.x
+    let mut by: f32 = b.y
+    let mut bz: f32 = b.z
+    let mut bw: f32 = b.w
+    let mut cosom: f32 = a.x * bx + a.y * by + a.z * bz + a.w * bw
+    if cosom < 0.0 {
+        cosom = 0.0 - cosom
+        bx = 0.0 - bx
+        by = 0.0 - by
+        bz = 0.0 - bz
+        bw = 0.0 - bw
+    }
+    let mut sa: f32 = 1.0 - t
+    let mut sb: f32 = t
+    if cosom < 0.9995 {
+        let sinom: f32 = math_sqrt_f(1.0 - cosom * cosom)
+        let omega: f32 = math_atan2_f(sinom, cosom)
+        sa = math_sin_f((1.0 - t) * omega) / sinom
+        sb = math_sin_f(t * omega) / sinom
+    }
+    out.x = a.x * sa + bx * sb
+    out.y = a.y * sa + by * sb
+    out.z = a.z * sa + bz * sb
+    out.w = a.w * sa + bw * sb
+}
+
 -- ── Tiny3D state surface ────────────────────────────────────────────────────
 -- Tiny3D itself is 4,300 lines of C driving 4,700 lines of RSP microcode, and
 -- none of that runs here: the standalone HAL has no geometry pipeline. What it
@@ -3713,9 +4067,14 @@ fn rdpq_sprite_blit(spr: *u8, x: i32, y: i32, flags: u32) {
 -- `pak check --backend mips` reports E010 on each of them rather than
 -- pretending. See STDLIB.md, the `t3d` section.
 --
--- The matrices are stored, not applied. Nothing on this backend consumes them
--- yet, so they exist to be read back and to keep the surface honest about what
--- a viewport holds.
+-- The projection and view matrices are computed with the Vec3/Mat4 math
+-- above and stored on the viewport (`proj`, `view`, and their product
+-- `camproj`, recomputed whenever either input changes -- mirroring real
+-- Tiny3D's own `matCamProj`, not recomputed per vertex). What still isn't
+-- here is everything past that: nothing reads `camproj` except
+-- `t3d_viewport_calc_viewspace_pos`, there is no RSP transform, and
+-- `t3d.model_draw`/the skeleton and animation calls remain E010. See
+-- STDLIB.md, the `t3d` section.
 struct T3DViewport {
     fov: f32,
     near_plane: f32,
@@ -3732,7 +4091,10 @@ struct T3DViewport {
     vx: i32,
     vy: i32,
     vw: i32,
-    vh: i32
+    vh: i32,
+    proj: Mat4,
+    view: Mat4,
+    camproj: Mat4
 }
 
 static g_t3d_ready: i32 = 0
@@ -3763,7 +4125,7 @@ fn t3d_destroy() {
 -- A viewport covering the whole screen, with a projection a caller is expected
 -- to set before using it. Returned by value, which is what Tiny3D does too.
 fn t3d_viewport_create() -> T3DViewport {
-    return T3DViewport {
+    let mut vp: T3DViewport = T3DViewport {
         fov: 1.22,
         near_plane: 1.0,
         far_plane: 100.0,
@@ -3775,14 +4137,64 @@ fn t3d_viewport_create() -> T3DViewport {
         -- every other field in this literal is already a bare number for the
         -- same reason -- a viewport's default has no dependency on where in
         -- the file it is constructed from.
-        vx: 0, vy: 0, vw: 320, vh: 240
+        vx: 0, vy: 0, vw: 320, vh: 240,
+        proj: Mat4 { m: [
+            0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0,
+            0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0
+        ] },
+        view: Mat4 { m: [
+            0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0,
+            0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0
+        ] },
+        camproj: Mat4 { m: [
+            0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0,
+            0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0
+        ] }
     }
+    t3d_mat4_identity(&vp.proj)
+    t3d_mat4_identity(&vp.view)
+    t3d_mat4_identity(&vp.camproj)
+    return vp
+}
+
+-- Recomputes `camproj` from the viewport's current `proj`/`view`. Called at
+-- the end of whichever of set_projection/look_at/set_camera last changed,
+-- the same "combine once per update, not once per vertex" split real
+-- Tiny3D's own `matCamProj` uses -- `t3d_viewport_calc_viewspace_pos` below
+-- reads `camproj` directly rather than multiplying proj*view per point.
+fn t3d_viewport_update_camproj(vp: *T3DViewport) {
+    t3d_mat4_mul(&vp.camproj, &vp.proj, &vp.view)
 }
 
 fn t3d_viewport_set_projection(vp: *T3DViewport, fov: f32, near_plane: f32, far_plane: f32) {
     vp.fov = fov
     vp.near_plane = near_plane
     vp.far_plane = far_plane
+
+    let mut aspect: f32 = 320.0 / 240.0
+    if vp.vh != 0 {
+        aspect = (vp.vw as f32) / (vp.vh as f32)
+    }
+    -- Standard right-handed perspective projection (row-major, v' = M*v):
+    -- cot(fov/2) computed as cos/sin since this HAL has no tan.
+    let half: f32 = fov * 0.5
+    let s: f32 = math_sin_f(half)
+    let c: f32 = math_cos_f(half)
+    let mut cotan: f32 = 1.0
+    if s != 0.0 {
+        cotan = c / s
+    }
+    let mut p: Mat4 = Mat4 { m: [
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0,
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0
+    ] }
+    p.m[0] = cotan / aspect
+    p.m[5] = cotan
+    p.m[10] = (far_plane + near_plane) / (near_plane - far_plane)
+    p.m[11] = (2.0 * far_plane * near_plane) / (near_plane - far_plane)
+    p.m[14] = 0.0 - 1.0
+    vp.proj = p
+    t3d_viewport_update_camproj(vp)
 }
 
 fn t3d_viewport_set_area(vp: *T3DViewport, x: i32, y: i32, w: i32, h: i32) {
@@ -3796,14 +4208,78 @@ fn t3d_viewport_attach(vp: *T3DViewport) {
     g_t3d_vp = vp
 }
 
--- t3d.look_at is NOT here. It takes *Vec3 for eye/target/up, and Vec3 field
--- access (.x/.y/.z) has no support in this backend at all -- Vec3 is
--- pre-registered as an opaque 12-byte blob with no field layout, the same way
--- T3DModel and T3DSkeleton are, because nothing on this backend has ever
--- needed to read a component out of one. `pak check --backend mips` reports
--- E010 on it, the same as model_draw and the skeleton/anim calls: camera
--- look-at is vector math this backend cannot do, for the same reason it
--- cannot draw a model.
+-- Standard right-handed look-at: forward = normalize(target-eye), right =
+-- normalize(forward x up), a re-orthogonalized up = right x forward. Row-
+-- major, translation folded into the last column via -dot(axis, eye) so the
+-- result is `view = R * T(-eye)` in one matrix, not built as two and
+-- multiplied -- matching real Tiny3D's own `t3d_mat4_look_at`.
+fn t3d_look_at(vp: *T3DViewport, eye: *Vec3, target: *Vec3, up: *Vec3) {
+    let mut fwd: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d_vec3_sub(&fwd, target, eye)
+    t3d_vec3_norm(&fwd)
+    let mut right: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d_vec3_cross(&right, &fwd, up)
+    t3d_vec3_norm(&right)
+    let mut true_up: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d_vec3_cross(&true_up, &right, &fwd)
+
+    let mut v: Mat4 = Mat4 { m: [
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0,
+        0.0,0.0,0.0,0.0, 0.0,0.0,0.0,0.0
+    ] }
+    v.m[0] = right.x;   v.m[1] = right.y;   v.m[2] = right.z
+    v.m[4] = true_up.x; v.m[5] = true_up.y; v.m[6] = true_up.z
+    v.m[8] = 0.0 - fwd.x; v.m[9] = 0.0 - fwd.y; v.m[10] = 0.0 - fwd.z
+    v.m[3]  = 0.0 - t3d_vec3_dot(&right, eye)
+    v.m[7]  = 0.0 - t3d_vec3_dot(&true_up, eye)
+    v.m[11] = t3d_vec3_dot(&fwd, eye)
+    v.m[15] = 1.0
+    vp.view = v
+
+    vp.eye_x = eye.x; vp.eye_y = eye.y; vp.eye_z = eye.z
+    vp.target_x = target.x; vp.target_y = target.y; vp.target_z = target.z
+    vp.up_x = up.x; vp.up_y = up.y; vp.up_z = up.z
+    t3d_viewport_update_camproj(vp)
+}
+
+-- Convenience wrapper matching real Tiny3D's simpler `t3d_viewport_set_camera`
+-- shape: world-up (0,1,0), no explicit `up` argument.
+fn t3d_set_camera(vp: *T3DViewport, eye: *Vec3, target: *Vec3) {
+    let up: Vec3 = Vec3 { x: 0.0, y: 1.0, z: 0.0 }
+    t3d_look_at(vp, eye, target, &up)
+}
+
+-- World-space point -> screen pixel + depth, mirroring real Tiny3D's own
+-- `t3d_viewport_calc_viewspace_pos`: transform by `camproj`, perspective-
+-- divide by w, then scale NDC [-1,1] into the viewport's pixel rect (Y
+-- flipped, since NDC +Y is up and screen +Y is down). `out.x`/`out.y` are
+-- the screen pixel coordinates, `out.z` is the post-divide NDC depth --
+-- what a caller compares against a Z-buffer or feeds to `rdpq.triangle_z`,
+-- not a distance. Never touches the RDP or RSP: turning this into a drawn
+-- triangle is still the caller's job.
+fn t3d_viewport_calc_viewspace_pos(vp: *T3DViewport, world: *Vec3, out: *Vec3) {
+    let m: *Mat4 = &vp.camproj
+    let cx: f32 = world.x
+    let cy: f32 = world.y
+    let cz: f32 = world.z
+    let cw: f32 = 1.0
+    let rx: f32 = m.m[0] * cx + m.m[1] * cy + m.m[2] * cz + m.m[3] * cw
+    let ry: f32 = m.m[4] * cx + m.m[5] * cy + m.m[6] * cz + m.m[7] * cw
+    let rz: f32 = m.m[8] * cx + m.m[9] * cy + m.m[10] * cz + m.m[11] * cw
+    let rw: f32 = m.m[12] * cx + m.m[13] * cy + m.m[14] * cz + m.m[15] * cw
+
+    let mut w: f32 = rw
+    if w == 0.0 {
+        w = 0.0001
+    }
+    let ndc_x: f32 = rx / w
+    let ndc_y: f32 = ry / w
+    let ndc_z: f32 = rz / w
+
+    out.x = (vp.vx as f32) + (ndc_x * 0.5 + 0.5) * (vp.vw as f32)
+    out.y = (vp.vy as f32) + (1.0 - (ndc_y * 0.5 + 0.5)) * (vp.vh as f32)
+    out.z = ndc_z
+}
 
 fn t3d_light_set_ambient(r: i32, g: i32, b: i32) {
     g_t3d_amb_r = r

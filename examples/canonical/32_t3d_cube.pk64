@@ -1,0 +1,186 @@
+-- 32_t3d_cube.pk64
+-- A spinning cube drawn through the real t3d math + RDP triangle pipeline.
+-- Demonstrates: n64.t3d (Vec3/Mat4), mat4_from_srt_euler, a real viewport
+--   (set_projection + set_camera), viewport_calc_viewspace_pos, and
+--   rdpq.triangle -- as opposed to 31_demo3d.pk64, which projects by hand
+--   and rasterizes with fill_rectangle scanlines. Same idea, the real
+--   library doing the matrix and viewport work, and a real RDP triangle
+--   primitive doing the rasterizing, instead.
+--
+-- Standalone (`--backend mips`) only: `t3d.set_camera` and
+-- `viewport_calc_viewspace_pos` have no libdragon lowering here (Tiny3D's
+-- own camera/geometry API takes a different shape entirely) -- `pak check`
+-- warns W005/W006 on the default backend, same as any other standalone-
+-- only example. `rdpq.triangle` itself works on both backends.
+
+use n64.display
+use n64.controller
+use n64.rdpq
+use n64.timer
+use n64.t3d
+
+const SCREEN_W: i32 = 320
+const SCREEN_H: i32 = 240
+const TAU:      f32 = 6.2832
+
+-- ── Cube geometry (unit cube, 8 verts / 12 triangles) ────────────────────────
+-- Plain parallel arrays, not `[8]Vec3` -- a `static` array literal whose
+-- elements are themselves struct literals is untested territory this
+-- example doesn't need to be the first to exercise. Real `Vec3`s are built
+-- from these three floats where the pipeline actually needs one.
+
+static cube_vx: [8]f32 = [-1.0,  1.0,  1.0, -1.0, -1.0,  1.0,  1.0, -1.0]
+static cube_vy: [8]f32 = [-1.0, -1.0,  1.0,  1.0, -1.0, -1.0,  1.0,  1.0]
+static cube_vz: [8]f32 = [-1.0, -1.0, -1.0, -1.0,  1.0,  1.0,  1.0,  1.0]
+
+-- 6 faces x 2 triangles x 3 indices, wound the same way 31_demo3d.pk64's
+-- quads were (so the same screen-space cross-product test culls backfaces).
+static tri_idx: [36]i32 = [
+    0, 1, 2,   0, 2, 3,   -- back  (z = -1)
+    5, 4, 7,   5, 7, 6,   -- front (z = +1)
+    4, 0, 3,   4, 3, 7,   -- left  (x = -1)
+    1, 5, 6,   1, 6, 2,   -- right (x = +1)
+    3, 2, 6,   3, 6, 7,   -- top   (y = +1)
+    4, 5, 1,   4, 1, 0,   -- bottom(y = -1)
+]
+static tri_face: [12]i32 = [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]
+static face_col: [6]u32 = [
+    0xFF5500FF, 0xCC3300FF, 0xFF8800FF,
+    0x2266FFFF, 0x1144CCFF, 0x44AAFFFF,
+]
+
+-- ── State ─────────────────────────────────────────────────────────────────────
+
+struct GameState {
+    vp:      T3DViewport
+    model:   Mat4
+    ry:      f32
+    rx:      f32
+    spy:     f32
+    spx:     f32
+    running: bool
+}
+static gs: GameState = undefined
+
+-- ── Local vs. world vs. screen ───────────────────────────────────────────────
+-- The model matrix takes a vertex from cube-local space to world space; this
+-- is that one step (an ordinary affine 4x4 apply, w implicitly 1 -- no
+-- projective divide here, `mat4_from_srt_euler` never puts anything in the
+-- last row that would need one). `t3d.viewport_calc_viewspace_pos` does the
+-- rest: world -> camproj -> perspective divide -> viewport pixels.
+fn transform_point(m: *Mat4, p: *Vec3, out: *Vec3) {
+    out.x = m.m[0] * p.x + m.m[1] * p.y + m.m[2] * p.z + m.m[3]
+    out.y = m.m[4] * p.x + m.m[5] * p.y + m.m[6] * p.z + m.m[7]
+    out.z = m.m[8] * p.x + m.m[9] * p.y + m.m[10] * p.z + m.m[11]
+}
+
+-- ── Render ────────────────────────────────────────────────────────────────────
+
+@hot
+fn render_cube() {
+    let scale: Vec3 = Vec3 { x: 1.6, y: 1.6, z: 1.6 }
+    let euler: Vec3 = Vec3 { x: gs.rx, y: gs.ry, z: 0.0 }
+    let translate: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d.mat4_from_srt_euler(&gs.model, &scale, &euler, &translate)
+
+    let mut sx: [8]f32 = undefined
+    let mut sy: [8]f32 = undefined
+
+    let mut vi: i32 = 0
+    loop {
+        if vi >= 8 { break }
+        let local: Vec3 = Vec3 { x: cube_vx[vi], y: cube_vy[vi], z: cube_vz[vi] }
+        let mut world: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+        transform_point(&gs.model, &local, &world)
+        let mut screen: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+        t3d.viewport_calc_viewspace_pos(&gs.vp, &world, &screen)
+        sx[vi] = screen.x
+        sy[vi] = screen.y
+        vi += 1
+    }
+
+    -- Flat per-face colour, not Gouraud: `rdpq.triangle` (RDP 0x08) under
+    -- FILL mode, the same combination `31_demo3d.pk64`'s own `fill_quad`
+    -- uses for `rdpq.fill_rectangle` -- a real RDP triangle in place of the
+    -- scanline spans, not a shaded one. `set_mode_standard`'s combiner on
+    -- this backend always outputs TEX0 (see `rdp_set_mode_1cycle` in
+    -- runtime.pk64), so `rdpq.triangle_shade` reads back black without a
+    -- texture bound; FILL mode has no such problem and is the right mode
+    -- for a flat-coloured triangle regardless.
+    rdpq.set_mode_fill(face_col[0])
+    let mut ti: i32 = 0
+    loop {
+        if ti >= 12 { break }
+        let i0: i32 = tri_idx[ti * 3 + 0]
+        let i1: i32 = tri_idx[ti * 3 + 1]
+        let i2: i32 = tri_idx[ti * 3 + 2]
+        let x0: i32 = sx[i0] as i32
+        let y0: i32 = sy[i0] as i32
+        let x1: i32 = sx[i1] as i32
+        let y1: i32 = sy[i1] as i32
+        let x2: i32 = sx[i2] as i32
+        let y2: i32 = sy[i2] as i32
+        -- Backface cull via screen-space cross product, same test
+        -- 31_demo3d.pk64 uses (cull if the winding has flipped to CW).
+        let cza: i32 = (x1 - x0) * (y2 - y0)
+        let czb: i32 = (y1 - y0) * (x2 - x0)
+        if cza - czb < 0 {
+            rdpq.set_fill_color(face_col[tri_face[ti]])
+            rdpq.triangle(x0, y0, x1, y1, x2, y2)
+        }
+        ti += 1
+    }
+}
+
+-- ── Update ────────────────────────────────────────────────────────────────────
+
+fn update(pad: joypad_status_t) {
+    gs.ry += gs.spy
+    gs.rx += gs.spx
+    if gs.ry > TAU { gs.ry -= TAU }
+    if gs.rx > TAU { gs.rx -= TAU }
+    if pad.held.l { gs.spy -= 0.0006 }
+    if pad.held.r { gs.spy += 0.0006 }
+    if pad.pressed.start { gs.running = false }
+}
+
+-- ── Init ──────────────────────────────────────────────────────────────────────
+
+fn init_scene() {
+    gs.vp = t3d.viewport_create()
+    -- 60deg vertical FOV, near 1, far 50 -- the cube (radius ~1.6*sqrt(3))
+    -- sitting 6 units out is comfortably inside both the frustum and the
+    -- depth range.
+    t3d.viewport_set_projection(&gs.vp, 1.0472, 1.0, 50.0)
+    let eye: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 6.0 }
+    let target: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+    t3d.set_camera(&gs.vp, &eye, &target)
+    gs.ry = 0.0
+    gs.rx = 0.5
+    gs.spy = 0.02
+    gs.spx = 0.013
+    gs.running = true
+}
+
+-- ── Entry ─────────────────────────────────────────────────────────────────────
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    rdpq.init()
+    controller.init()
+    timer.init()
+    defer { rdpq.close() }
+
+    init_scene()
+
+    loop {
+        controller.poll()
+        let pad = controller.read(0)
+        update(pad)
+        if not gs.running { break }
+        let fb = display.get()
+        rdpq.attach_clear(fb, 0x101820FF)
+        render_cube()
+        rdpq.detach_show()
+    }
+}
