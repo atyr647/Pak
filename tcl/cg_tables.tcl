@@ -202,7 +202,6 @@ set ::pak::CG_API [dict create \
     {t3d rdpq_draw_object} {t3d_rdpq_draw_object} \
     {t3d screen_projection} {t3d_screen_projection} \
     {t3d segment_set} {t3d_segment_set} \
-    {t3d set_camera} {t3d_set_camera} \
     {t3d skeleton_create} {t3d_skeleton_create} \
     {t3d skeleton_destroy} {t3d_skeleton_destroy} \
     {t3d skeleton_update} {t3d_skeleton_update} \
@@ -337,6 +336,7 @@ set ::pak::CG_API_LAMBDA [dict create \
     {t3d light_set_ambient} {1} \
     {t3d light_set_directional} {1} \
     {t3d look_at} {1} \
+    {t3d set_camera} {1} \
     {t3d mat4_from_srt} {1} \
     {t3d mat4fp_from_srt_euler} {1} \
     {t3d mat4_from_srt_euler} {1} \

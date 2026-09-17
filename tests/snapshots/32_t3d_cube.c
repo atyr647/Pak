@@ -77,15 +77,12 @@ static uint32_t face_col[6] = {0xFF5500FF, 0xCC3300FF, 0xFF8800FF, 0x2266FFFF, 0
 
 static GameState gs;
 
-#ifdef mips_backend
+#if mips_backend
 void transform_point(T3DMat4 * m, T3DVec3 * p, T3DVec3 * out) {
     out->x = ((((m->m[0] * p->x) + (m->m[1] * p->y)) + (m->m[2] * p->z)) + m->m[3]);
     out->y = ((((m->m[4] * p->x) + (m->m[5] * p->y)) + (m->m[6] * p->z)) + m->m[7]);
     out->z = ((((m->m[8] * p->x) + (m->m[9] * p->y)) + (m->m[10] * p->z)) + m->m[11]);
 }
-#endif  /* mips_backend */
-
-#ifdef mips_backend
 __attribute__((hot))
 void render_cube(void) {
     T3DVec3 scale = (T3DVec3){.x = 1.6f, .y = 1.6f, .z = 1.6f};
@@ -132,7 +129,10 @@ void render_cube(void) {
         ti += 1;
     }
 }
-#endif  /* mips_backend */
+#else
+void render_cube(void) {
+}
+#endif
 
 void update(pak_joypad_status_t pad) {
     gs.ry += gs.spy;
@@ -159,7 +159,7 @@ void init_scene(void) {
     t3d_viewport_set_projection(&gs.vp, 1.0472f, 1.0f, 50.0f);
     T3DVec3 eye = (T3DVec3){.x = 0.0f, .y = 0.0f, .z = 6.0f};
     T3DVec3 target = (T3DVec3){.x = 0.0f, .y = 0.0f, .z = 0.0f};
-    t3d_set_camera(&gs.vp, &eye, &target);
+    t3d_viewport_look_at(&gs.vp, &eye, &target, &(T3DVec3){{0,1,0}});
     gs.ry = 0.0f;
     gs.rx = 0.5f;
     gs.spy = 0.02f;

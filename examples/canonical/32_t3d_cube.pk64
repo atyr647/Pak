@@ -69,13 +69,25 @@ static gs: GameState = undefined
 -- last row that would need one). `t3d.viewport_calc_viewspace_pos` does the
 -- rest: world -> camproj -> perspective divide -> viewport pixels.
 --
--- `@cfg(mips_backend)`: Pak's own `Mat4` (flat `m: [16]f32`) is a standalone-
--- only type -- on the libdragon backend, `Mat4` names real Tiny3D's
--- `T3DMat4`, whose `m` is `float[4][4]`, so `m.m[i]` here would not even be
--- the same field shape. This function has no meaning on that backend, only
--- a body that fails to compile there; `@cfg` keeps it out of the C output
--- entirely rather than emitting code with the wrong layout baked in.
-@cfg(mips_backend)
+-- `comptime if (mips_backend)`: Pak's own `Mat4` (flat `m: [16]f32`) is a
+-- standalone-only type -- on the libdragon backend, `Mat4` names real
+-- Tiny3D's `T3DMat4`, whose `m` is `float[4][4]`, so `m.m[i]` here would
+-- not even be the same field shape, and `render_cube` below also calls
+-- `t3d.viewport_calc_viewspace_pos`, which has no CG_API/CG_API_LAMBDA
+-- entry (standalone-only, no libdragon lowering yet). A plain `@cfg` on
+-- each function would drop them from the C output but leave the call site
+-- in `entry` below undeclared under a strict `-Werror=implicit-function-
+-- declaration` compile -- `@cfg` only annotates a top-level declaration,
+-- it can't reach into a function body to gate one call. `comptime if`
+-- resolves per-backend on both sides instead (real Pak-compile-time branch
+-- selection on the standalone backend via `comptime_cond_true`, `#if`/
+-- `#else`/`#endif` C-preprocessor selection here, where `mips_backend` is
+-- never defined), so the else branch's stub keeps `render_cube` a real,
+-- callable, do-nothing C function instead of an undeclared one. `pak
+-- check` on the default backend already warns W005/W006 on this file for
+-- the standalone-only calls inside the real branch.
+comptime if (mips_backend) {
+
 fn transform_point(m: *Mat4, p: *Vec3, out: *Vec3) {
     out.x = m.m[0] * p.x + m.m[1] * p.y + m.m[2] * p.z + m.m[3]
     out.y = m.m[4] * p.x + m.m[5] * p.y + m.m[6] * p.z + m.m[7]
@@ -84,15 +96,6 @@ fn transform_point(m: *Mat4, p: *Vec3, out: *Vec3) {
 
 -- ── Render ────────────────────────────────────────────────────────────────────
 
--- Also `@cfg(mips_backend)`: calls `transform_point` above and
--- `t3d.viewport_calc_viewspace_pos`, which -- unlike `t3d.set_camera` and
--- the other bare-mapped calls in `init_scene` below -- has no CG_API/
--- CG_API_LAMBDA entry at all (standalone-only, no libdragon lowering yet),
--- so the C backend has no rule for it and emits the Pak call syntax
--- unchanged instead of a diagnostic. `pak check` on the default backend
--- already warns W005/W006 on this file; `@cfg` is what keeps that gap from
--- reaching a real C compiler, not just a human reading the warnings.
-@cfg(mips_backend)
 @hot
 fn render_cube() {
     let scale: Vec3 = Vec3 { x: 1.6, y: 1.6, z: 1.6 }
@@ -147,6 +150,15 @@ fn render_cube() {
         }
         ti += 1
     }
+}
+
+} else {
+
+-- Never called on this backend (nothing here sets `mips_backend`), but
+-- must exist and be callable so `entry`'s unconditional `render_cube()`
+-- call below has a real C declaration to bind to.
+fn render_cube() {}
+
 }
 
 -- ── Update ────────────────────────────────────────────────────────────────────

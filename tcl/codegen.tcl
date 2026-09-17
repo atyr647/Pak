@@ -3778,6 +3778,13 @@ proc pak::cg_api_lambda {mod fn arglist} {
             # Tiny3D spells this t3d_viewport_look_at. There is no t3d_look_at.
             return "t3d_viewport_look_at([join $arglist {, }])"
         }
+        "t3d set_camera" {
+            # Real Tiny3D has no set_camera at all -- t3d.set_camera(vp, eye,
+            # target) is a Pak-only convenience over look_at with a default
+            # world-up, the same default the standalone HAL's own
+            # t3d_set_camera wrapper uses.
+            return "t3d_viewport_look_at([join $arglist {, }], &(T3DVec3){{0,1,0}})"
+        }
         "t3d skeleton_draw" {
             # Tiny3D draws a skinned model through the MODEL, taking the
             # skeleton second: t3d_model_draw_skinned(model, skel). Pak's
