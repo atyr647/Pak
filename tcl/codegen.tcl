@@ -3653,6 +3653,11 @@ proc pak::cg_api_lambda {mod fn arglist} {
         "t3d vec3_cross" { return "t3d_vec3_cross([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2])" }
         "t3d vec3_dot" { return "t3d_vec3_dot([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1])" }
         "t3d vec3_lerp" { return "t3d_vec3_lerp([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2], [lindex $arglist 3])" }
+        "t3d vec3_add" { return "t3d_vec3_add([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2])" }
+        "t3d vec3_sub" { return "t3d_vec3_diff([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2])" }
+        "t3d vec3_scale" { return "t3d_vec3_scale([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [lindex $arglist 2])" }
+        "t3d vec3_len" { return "t3d_vec3_len([pak::cg_addr $arglist 0])" }
+        "t3d viewport_calc_viewspace_pos" { return "t3d_viewport_calc_viewspace_pos([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 2], [pak::cg_addr $arglist 1])" }
         "t3d quat_identity" { return "t3d_quat_identity([pak::cg_addr $arglist 0])" }
         "t3d quat_from_axis_angle" { return "t3d_quat_from_axis_angle([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [lindex $arglist 2])" }
         "t3d quat_mul" { return "t3d_quat_mul([pak::cg_addr $arglist 0], [pak::cg_addr $arglist 1], [pak::cg_addr $arglist 2])" }

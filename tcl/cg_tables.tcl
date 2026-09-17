@@ -355,10 +355,15 @@ set ::pak::CG_API_LAMBDA [dict create \
     {t3d quat_mul} {1} \
     {t3d quat_nlerp} {1} \
     {t3d quat_slerp} {1} \
+    {t3d vec3_add} {1} \
     {t3d vec3_cross} {1} \
     {t3d vec3_dot} {1} \
     {t3d vec3_lerp} {1} \
+    {t3d vec3_len} {1} \
     {t3d vec3_norm} {1} \
+    {t3d vec3_scale} {1} \
+    {t3d vec3_sub} {1} \
+    {t3d viewport_calc_viewspace_pos} {1} \
     {timer delta} {1} \
     {vi get_height} {1} \
     {vi get_width} {1} \
