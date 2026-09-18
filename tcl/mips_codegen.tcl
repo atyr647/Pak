@@ -967,8 +967,15 @@ oo::class create pak::MipsCodegen {
             }
             TypeArray {
                 set inner [my mips_layout [pak::nfield $type_tv inner]]
+                # The size expression is usually an IntLit ([32]u8), but a
+                # named const ([VERT_COUNT]i32) is just as legal -- and falling
+                # back to 0 for anything else silently emitted `.space 0` for
+                # the whole array, aliasing it with whatever symbol came next.
+                # eval_const_expr already folds Ident-to-const (and +-*/ over
+                # those), so it resolves both cases the same way.
                 set sz [pak::nfield $type_tv size]
-                if {[pak::kindof $sz] eq "IntLit"} { set n [pak::fval $sz value] } else { set n 0 }
+                set n [my eval_const_expr $sz]
+                if {$n eq ""} { set n 0 }
                 return [dict create size [expr {[dict get $inner size] * $n}] \
                     align [dict get $inner align] is_float 0 is_signed 1 is_ptr 0 fields {} \
                     frac_bits 0 is_array 1]
@@ -1016,7 +1023,7 @@ oo::class create pak::MipsCodegen {
                     set esz [dict get $elem_layout size]
                     set eal [dict get $elem_layout align]
                     set cap_arg [lindex $gargs 1]
-                    set cap [expr {[pak::kindof $cap_arg] eq "IntLit" ? [pak::fval $cap_arg value] : 0}]
+                    set cap [my eval_const_expr $cap_arg]; if {$cap eq ""} { set cap 0 }
                     set data_sz [expr {$esz * $cap}]
                     set len_off [expr {($data_sz + 3) & ~3}]
                     set total [expr {$len_off + 4}]
@@ -1055,7 +1062,7 @@ oo::class create pak::MipsCodegen {
                     set esz [dict get $elem_layout size]
                     set eal [dict get $elem_layout align]
                     set cap_arg [lindex $gargs 1]
-                    set cap [expr {[pak::kindof $cap_arg] eq "IntLit" ? [pak::fval $cap_arg value] : 0}]
+                    set cap [my eval_const_expr $cap_arg]; if {$cap eq ""} { set cap 0 }
                     set data_sz [expr {$esz * $cap}]
                     set ctrl_off [expr {($data_sz + 3) & ~3}]
                     set total [expr {$ctrl_off + 12}]
@@ -1075,7 +1082,7 @@ oo::class create pak::MipsCodegen {
                     set kl [my mips_layout [lindex $gargs 0]]
                     set vl [my mips_layout [lindex $gargs 1]]
                     set cap_arg [lindex $gargs 2]
-                    set cap [expr {[pak::kindof $cap_arg] eq "IntLit" ? [pak::fval $cap_arg value] : 0}]
+                    set cap [my eval_const_expr $cap_arg]; if {$cap eq ""} { set cap 0 }
                     set ksz [dict get $kl size]; set kal [dict get $kl align]
                     set vsz [dict get $vl size]; set val_al [dict get $vl align]
                     set keys_sz [expr {$ksz * $cap}]
@@ -4395,7 +4402,7 @@ oo::class create pak::MipsCodegen {
             my emit_place_addr [pak::N Ident name $var_name type_args [pak::Seq {}]] $ptr
             $em sw $ptr $off {$sp}
             set sz [pak::nfield $type_node size]
-            set n [expr {[pak::kindof $sz] eq "IntLit" ? [pak::fval $sz value] : 0}]
+            set n [my eval_const_expr $sz]; if {$n eq ""} { set n 0 }
             $em li $ptr $n
             $em sw $ptr [expr {$off + 4}] {$sp}
         }
@@ -5441,7 +5448,7 @@ oo::class create pak::MipsCodegen {
                     if {$fn eq "len"} {
                         if {[pak::kindof $receiver_type_node] eq "TypeArray"} {
                             set sz [pak::nfield $receiver_type_node size]
-                            set n [expr {[pak::kindof $sz] eq "IntLit" ? [pak::fval $sz value] : 0}]
+                            set n [my eval_const_expr $sz]; if {$n eq ""} { set n 0 }
                             $em li $dst $n
                         } else {
                             set local [my lookup_local $obj_name]
