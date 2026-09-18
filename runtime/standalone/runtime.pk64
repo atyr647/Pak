@@ -671,6 +671,13 @@ const DPC_CMD_BUSY:  u32 = 0x0040
 const DPC_DMA_BUSY:  u32 = 0x0100
 
 -- Display list: 8 KiB of uncached RDRAM just past the Z buffer.
+--
+-- This is small: a scene of any size outgrows it in one frame and relies on
+-- the mid-frame flush in dl_cmd. One flush per frame works; three or more
+-- hang the DP and the frame never reaches detach, so the screen stays black
+-- (a 10-bay church nave needs four). Growing it is not as easy as it looks --
+-- 0xA02A0000 is the heap, and putting the list there corrupts loaded assets.
+-- Until the flush path is root-caused, a scene has to fit about two kicks.
 const DL_BASE:  u32 = 0xA0297000
 const DL_PHYS:  u32 = 0x00297000
 const DL_BYTES: u32 = 8192
@@ -785,10 +792,15 @@ fn dl_submit() {
     }
 }
 
--- Append one 64-bit command. A full buffer is submitted first, which is safe
--- because every command is self-contained once the DP has seen it.
-fn dl_cmd(w0: u32, w1: u32) {
-    if g_dl_off + 8 > DL_BYTES { dl_submit() }
+-- The largest RDP triangle command: 4 edge pairs + 8 shade + 8 texture + 2 Z.
+const DL_TRI_MAX: u32 = 176
+
+-- Usable capacity. The last 8 bytes are held back for the SYNC_FULL that
+-- every kick has to end with -- see dl_flush.
+const DL_LIMIT: u32 = DL_BYTES - 8
+
+-- Write one command with no capacity check. Callers guarantee the room.
+fn dl_put(w0: u32, w1: u32) {
     let p0: *volatile u32 = (DL_BASE + g_dl_off) as *volatile u32
     *p0 = w0
     let p1: *volatile u32 = (DL_BASE + g_dl_off + 4) as *volatile u32
@@ -796,8 +808,39 @@ fn dl_cmd(w0: u32, w1: u32) {
     g_dl_off = g_dl_off + 8
 }
 
+-- Hand off a full buffer mid-frame.
+--
+-- dl_submit waits for PIPE_BUSY to clear, and the DP only clears that on a
+-- SYNC_FULL -- which is why rdpq_detach appends one. An auto-flush that
+-- submitted without it spun in that wait forever, so the frame never reached
+-- detach and the screen stayed black. Any scene whose frame outgrew the
+-- buffer by more than one kick hung on the second one. Append the SYNC_FULL
+-- the wait is waiting for; DP state (modes, tile, TMEM) survives it, so
+-- splitting a frame across kicks only costs a pipeline drain.
+fn dl_flush() {
+    dl_put(RDP_SYNC_FULL << 24, 0)
+    dl_submit()
+}
+
+-- Reserve room for a whole multi-word command before any of it is written.
+-- dl_cmd/dl_word flush when the buffer fills, which is only safe BETWEEN
+-- commands: a triangle is 32-176 bytes of coefficients, and one split across
+-- two DP kicks is not two commands, it is a truncated command followed by a
+-- headless tail. The DP mis-parses both and the rest of the frame is lost.
+fn dl_reserve(bytes: u32) {
+    if g_dl_off + bytes > DL_LIMIT { dl_flush() }
+}
+
+-- Append one 64-bit command. A full buffer is flushed first, which is safe
+-- here because this is one whole command; multi-word commands must call
+-- dl_reserve first.
+fn dl_cmd(w0: u32, w1: u32) {
+    if g_dl_off + 8 > DL_LIMIT { dl_flush() }
+    dl_put(w0, w1)
+}
+
 fn dl_word(w: u32) {
-    if g_dl_off + 4 > DL_BYTES { dl_submit() }
+    if g_dl_off + 4 > DL_LIMIT { dl_flush() }
     let p: *volatile u32 = (DL_BASE + g_dl_off) as *volatile u32
     *p = w
     g_dl_off = g_dl_off + 4
@@ -1250,6 +1293,7 @@ fn rdp_edge_slope(dx: i32, dy: i32) -> i32 {
 }
 
 fn rdpq_triangle(x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
+    dl_reserve(DL_TRI_MAX)
     -- Sort the three vertices by Y (ya <= yb <= yc).
     let mut xa: i32 = x0
     let mut ya: i32 = y0
@@ -1297,6 +1341,7 @@ fn rdpq_triangle(x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
 fn rdpq_triangle_z(x0: i32, y0: i32, z0: i32,
                    x1: i32, y1: i32, z1: i32,
                    x2: i32, y2: i32, z2: i32) {
+    dl_reserve(DL_TRI_MAX)
     let mut xa: i32 = x0
     let mut ya: i32 = y0
     let mut za: i32 = z0
@@ -1379,6 +1424,7 @@ fn rdpq_triangle_tex(tile: u32,
                      x0: i32, y0: i32, s0: i32, t0: i32,
                      x1: i32, y1: i32, s1: i32, t1: i32,
                      x2: i32, y2: i32, s2: i32, t2: i32) {
+    dl_reserve(DL_TRI_MAX)
     let mut xa: i32 = x0
     let mut ya: i32 = y0
     let mut sa: i32 = s0
@@ -1488,6 +1534,7 @@ fn rdpq_triangle_tex_persp(tile: u32,
                      x0: i32, y0: i32, s0: i32, t0: i32, w0: i32,
                      x1: i32, y1: i32, s1: i32, t1: i32, w1: i32,
                      x2: i32, y2: i32, s2: i32, t2: i32, w2: i32) {
+    dl_reserve(DL_TRI_MAX)
     let mut xa: i32 = x0
     let mut ya: i32 = y0
     let mut sa: i32 = s0
@@ -1748,12 +1795,14 @@ fn rdp_tri_shade(opcode: u32,
 fn rdpq_triangle_shade(x0: i32, y0: i32, c0: u32,
                        x1: i32, y1: i32, c1: u32,
                        x2: i32, y2: i32, c2: u32) {
+    dl_reserve(DL_TRI_MAX)
     rdp_tri_shade(RDP_TRI_SHADE, x0, y0, c0, 0, x1, y1, c1, 0, x2, y2, c2, 0, 0)
 }
 
 fn rdpq_triangle_shade_z(x0: i32, y0: i32, c0: u32, z0: i32,
                          x1: i32, y1: i32, c1: u32, z1: i32,
                          x2: i32, y2: i32, c2: u32, z2: i32) {
+    dl_reserve(DL_TRI_MAX)
     rdp_tri_shade(RDP_TRI_SHADE_Z, x0, y0, c0, z0, x1, y1, c1, z1, x2, y2, c2, z2, 1)
 }
 
@@ -1835,6 +1884,7 @@ fn rdpq_triangle_shade_tex(tile: u32,
                            x0: i32, y0: i32, c0: u32, s0: i32, t0: i32,
                            x1: i32, y1: i32, c1: u32, s1: i32, t1: i32,
                            x2: i32, y2: i32, c2: u32, s2: i32, t2: i32) {
+    dl_reserve(DL_TRI_MAX)
     let mut xa: i32 = x0
     let mut ya: i32 = y0
     let mut ca: u32 = c0
@@ -1888,6 +1938,7 @@ fn rdpq_triangle_shade_tex_z(tile: u32,
                              x0: i32, y0: i32, c0: u32, s0: i32, t0: i32,
                              x1: i32, y1: i32, c1: u32, s1: i32, t1: i32,
                              x2: i32, y2: i32, c2: u32, s2: i32, t2: i32) {
+    dl_reserve(DL_TRI_MAX)
     let mut xa: i32 = x0
     let mut ya: i32 = y0
     let mut ca: u32 = c0
@@ -1952,6 +2003,7 @@ fn rdpq_triangle_tex_z(tile: u32,
                        x0: i32, y0: i32, s0: i32, t0: i32,
                        x1: i32, y1: i32, s1: i32, t1: i32,
                        x2: i32, y2: i32, s2: i32, t2: i32) {
+    dl_reserve(DL_TRI_MAX)
     let mut xa: i32 = x0
     let mut ya: i32 = y0
     let mut sa: i32 = s0

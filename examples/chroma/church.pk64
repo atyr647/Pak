@@ -49,6 +49,11 @@ const PAGE_BASE: u32 = 0x1020_0000
 @aligned(16)
 static page_buf: [2048]u8 = undefined
 
+-- Which page is in page_buf and bound in TMEM, or -1 for none. The LOD clamp
+-- sends every bay past the fourth to the same four pages, so without this the
+-- scene re-DMAs and re-binds them dozens of times a frame.
+static cur_page: i32 = -1
+
 -- ── nave geometry, in world units ───────────────────────────────────────────
 -- A corridor down +Z: floor, ceiling, and two walls, cut into bays. Each bay
 -- face is one quad and takes exactly one page.
@@ -56,7 +61,10 @@ const NAVE_HALF_W: i32 = 110
 const NAVE_FLOOR:  i32 = 0 - 80
 const NAVE_CEIL:   i32 = 150
 const BAY_DEPTH:   i32 = 150
-const BAYS:        i32 = 10
+-- Six, not ten: a ten-bay frame needs four DP kicks out of the 8 KiB display
+-- list, and three or more mid-frame flushes hang the DP (see DL_BYTES in
+-- runtime/standalone/runtime.pk64). Six fits in two and draws to the horizon.
+const BAYS:        i32 = 6
 const NEAR_Z:      i32 = 40
 
 -- Z-buffer values are 0..32767, nearest first.
@@ -89,10 +97,14 @@ fn depth_of(wz: i32) -> i32 {
 -- The four steps the checker enforces. Literals, not consts: the DMA checker
 -- reads the argument expressions directly (see 18_dma.pk64).
 fn stream_page(page: i32) {
-    cache.writeback(&page_buf[0], 2048)
+    -- writeback_inv (cache 0x15) flushes and invalidates each line in one op.
+    -- A writeback followed by a SEPARATE invalidate loses the page: the
+    -- invalidate drops the lines and the RDP, reading RDRAM through the KSEG1
+    -- alias in bind_page(), samples texels that were never flushed. Nothing
+    -- textured draws at all.
+    cache.writeback_inv(&page_buf[0], 2048)
     dma.read(&page_buf[0], 0x1020_0000 + (page * 2048) as u32, 2048)
     dma.wait()
-    cache.invalidate(&page_buf[0], 2048)
 }
 
 -- Hand the page to the DP and describe the tile.
@@ -134,8 +146,11 @@ fn draw_quad(x0: i32, y0: i32, z0: i32,
 fn draw_face(page: i32,
              nx0: i32, ny0: i32, nx1: i32, ny1: i32,
              near_z: i32, far_z: i32) {
-    stream_page(page)
-    bind_page()
+    if page != cur_page {
+        stream_page(page)
+        bind_page()
+        cur_page = page
+    }
 
     let zn: i32 = depth_of(near_z)
     let zf: i32 = depth_of(far_z)
