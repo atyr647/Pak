@@ -1,6 +1,14 @@
-# CHROMA nave on the Pak standalone RDP
+# CHROMA page streaming on the Pak standalone RDP
 
-`church.pk64` draws the nave with textured, Z-buffered triangles on the
+**This is not the Lambert nave.** It used to be called `church.pk64`, which
+conflated it with CHROMA64's `church_rdp.z64` — that one renders the real
+scene, all 325 triangles of `rom/lambert_scene.json`, windows and benches and
+altar. This is a synthetic corridor of identical bays built from hardcoded
+constants, and its only job is to prove 32×32 pages can be streamed off the
+cartridge and drawn without ever holding a texture in RAM. The pages happen to
+be crops of the church sheets; that is the whole of the resemblance.
+
+`pagestream.pk64` draws the corridor with textured, Z-buffered triangles on the
 standalone backend: **no libdragon, no RSP**. The CPU builds an RDP display
 list in uncached RDRAM and hands it to the DP. That is the same boot path FZ
 already runs, which is why Parallel/Angrylion should eat it.
@@ -15,8 +23,8 @@ Eighteen 256×256 RGBA16 sheets are **2.25 MB**. Embed them and you are not
 crash class as the old 2.9 MB ROM, just quieter.
 
 So nothing in this scene is a texture. The cart holds the pages; one 2 KB page
-at a time lands in RDRAM. The nave costs **~48 KB** of code and data, leaving
-1.95 MB free — `tcl/tools/church_test.tcl` asserts both numbers.
+at a time lands in RDRAM. The corridor costs **~48 KB** of code and data, leaving
+1.95 MB free — `tcl/tools/pagestream_test.tcl` asserts both numbers.
 
 ## Cart layout contract
 
@@ -54,11 +62,11 @@ bays smear.
   <!-- known-bug: affine-st-only -->. One page per quad keeps every triangle
   small enough that it does not show. Widen the bays and the texture will swim.
   This is the one limit that is visible in the picture.
-- **No screenshot golden for the streamed scene.** `tcl/tools/church_test.tcl`
+- **No screenshot golden for the streamed scene.** `tcl/tools/pagestream_test.tcl`
   asserts the three things the architecture rests on -- it fits under FB0, it
   fetches 2 KB pages over the PI, and the DP is handed
   SET_TEXTURE_IMAGE/SET_TILE/LOAD_TILE/TRI_TEX_Z -- but it asserts *commands*,
-  not pixels, and it runs without a cart image. Nothing yet renders the nave
+  not pixels, and it runs without a cart image. Nothing yet renders the corridor
   through angrylion and compares the result. The pieces exist:
   `tcl/mips_sim.tcl` honours PI_WR_LEN against a `--cart` image, and
   `tcl/tools/pixel_test.tcl` has the angrylion harness.
@@ -70,8 +78,8 @@ bays smear.
 
     pak asmobj runtime/standalone/boot.S       -o boot.pakobj
     pak objgen runtime/standalone/runtime.pk64 -o runtime.pakobj
-    pak objgen examples/chroma/church.pk64     -o church.pakobj
-    pak link boot.pakobj runtime.pakobj church.pakobj -o church.z64 --name "CHROMA CHURCH"
+    pak objgen examples/chroma/pagestream.pk64 -o pagestream.pakobj
+    pak link boot.pakobj runtime.pakobj pagestream.pakobj -o pagestream.z64 --name "CHROMA STREAM"
 
 Then append the page atlas at ROM offset `0x200000`.
 

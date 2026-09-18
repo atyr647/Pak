@@ -678,9 +678,9 @@ const DPC_DMA_BUSY:  u32 = 0x0100
 -- (a 10-bay church nave needs four). Growing it is not as easy as it looks --
 -- 0xA02A0000 is the heap, and putting the list there corrupts loaded assets.
 -- Until the flush path is root-caused, a scene has to fit about two kicks.
-const DL_BASE:  u32 = 0xA0297000
-const DL_PHYS:  u32 = 0x00297000
-const DL_BYTES: u32 = 8192
+const DL_BASE:  u32 = 0xA02A0000
+const DL_PHYS:  u32 = 0x002A0000
+const DL_BYTES: u32 = 65536
 
 static g_dl_off: u32 = 0        -- write cursor, bytes from DL_BASE
 
@@ -2592,7 +2592,7 @@ fn audio_set_buffer_num(n: i32) {
 -- ── Heap (bump allocator) ───────────────────────────────────────────────────
 -- Cached RDRAM above the framebuffers, Z, display list and audio PCM, below
 -- the stack. Freeing is a no-op: a game that needs reuse should use an arena.
-const HEAP_BASE:  u32 = 0x802A0000
+const HEAP_BASE:  u32 = 0x802B0000
 const HEAP_LIMIT: u32 = 0x803C0000
 
 -- g_boot_memsize is written by boot.S at reset, straight from the RDRAM size
