@@ -143,7 +143,7 @@ What is genuinely given up, stated honestly:
 | Forth advantage | Assessment |
 |---|---|
 | Sub-second round trip for a one-liner | Real, but matters only to a human, and a fixed command set covers most interactive poking |
-| Compose new behaviour on-target without the host | Real, and unnecessary when the host is always attached |
+| Compose new, named, persistent behaviour on-target, with zero host round-trip | Real -- see 4.1, this is understated below |
 | Independent of Pak's own codegen | Real -- a monitor compiled by the compiler it debugs shares its bugs. Mitigated by keeping the ISViewer asm path as a fallback, and `boot.S` is hand-written anyway |
 | Small and auditable | A Pak monitor is comparably small |
 
@@ -152,10 +152,59 @@ mental model, a dictionary and interpreter to maintain, and a build-order
 dependency in front of everything else.
 
 **If, after using the tether, a target-resident interactive evaluator is still
-wanted**, add a small RPN evaluator over the existing command primitives --
-perhaps 200 lines of Pak, giving composability without a second toolchain. The
-thing to skip is Forth-the-system: dictionary, compiler, immediate words,
-`CREATE`/`DOES>`. Revisit from evidence, not in advance.
+wanted**, see 4.1 for what that should actually be -- it is not a 200-line RPN
+evaluator, and it is not hand-written-assembly Forth either.
+
+### 4.1 The one row worth taking seriously: a target-resident dictionary
+
+The comparison above originally treated Forth's escape hatch as "run arbitrary
+code," which the hot-patch pipeline already covers. That undersells Forth's
+actual distinguishing property, which is narrower and more specific: **a
+resident dictionary of named, composable, immediately-executable procedures
+that the console itself can extend, with no host round-trip, and which persist
+and combine across a session.** `: my-word ... ;` typed at the console compiles
+into the dictionary and is callable by every word defined after it, forever
+(until reset). A fixed command table cannot become this no matter how large it
+grows -- it is a closed set by construction. A one-shot RPN evaluator over
+primitives cannot become this either: it can compose a single expression, but
+it cannot *name and keep* a new procedure for the next command to build on.
+
+So the fair statement is: if what is wanted is the environment growing itself
+during a session -- accumulating debug procedures, redefining them, building
+one on top of another, entirely at the console -- that is Forth's real home
+turf, and nothing short of a dictionary-plus-interpreter reaches it.
+
+The resolution is not "adopt Forth" but **take the dictionary idea, not the
+language**: a small growable table of named word definitions plus a
+tree-walking (or later, compiling) interpreter over them, written in Pak
+rather than hand-assembled MIPS with Forth's syntax and ABI. This keeps one
+language, one type system, one symbol table, and gets most of the
+capability -- persistent named composition, defined live over the tether --
+without a second toolchain to maintain.
+
+What is still given up relative to real Forth, precisely:
+
+1. **On-target compilation of new words to native speed.** A Pak-hosted
+   interpreter tree-walking a freshly-typed definition is interpreting, not
+   compiling -- slower per call than Forth's threaded code, let alone native
+   MIPS. Closing that gap means writing an actual small on-target compiler,
+   which is most of what makes Forth Forth, not an incidental feature of it.
+   Given the host is always at the desk in this project (not a field deployment
+   with no laptop), the case for paying that cost is weaker than it would be
+   elsewhere -- but it is a real, nameable cost, not a hand-wave.
+2. **Total independence from Pak's own codegen.** Unchanged from the row
+   above, and the one item on this list that is not about convenience: if
+   Pak's compiler has a latent bug that corrupts the monitor's own binary, a
+   hand-written-assembly kernel is structurally immune in a way a
+   Pak-compiled interpreter is not. This is the strongest argument for a real
+   Forth kernel that exists, and it should be weighed on its own, not folded
+   into the composability argument.
+
+Sequencing is unchanged: build the fixed command set first (Phase 3-4). Add
+the dictionary layer only once real sessions show the fixed set is the
+bottleneck -- and if it is, prefer the Pak-hosted dictionary interpreter over
+adopting Forth, reserving a hand-assembled kernel for the case where item 2
+above turns out to matter in practice.
 
 ---
 
