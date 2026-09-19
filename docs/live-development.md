@@ -119,92 +119,87 @@ Consequences:
 
 ## 4. Which language the monitor is written in
 
-**Decision: Pak. Do not build a Forth.**
+**Decision: Forth.** Reversed from an earlier draft of this note, which argued
+for a Pak-only monitor on pure engineering-efficiency grounds. The engineering
+comparison below is left in place because it is still accurate, but it is not
+the deciding factor: this is a hobby project, and hand-writing a Forth kernel
+in MIPS assembly and running it live on real silicon is the part worth
+building for its own sake. That is a legitimate reason to choose it, and it
+overrides "which option is marginally more efficient to build."
 
-The monitor's actual job is a framed-protocol command dispatcher plus a patch
-manager. That is not a language problem. The only part that wants a language is
-the escape hatch -- "do something the command set does not cover" -- and the
-hot-patch pipeline already provides one: compile a Pak function on the host,
-relocate it, upload it, call it. Once `UPLOAD_BLOB` + `CALL_FUNCTION` exist,
-arbitrary target-side execution exists, in the same language as the game, with
-the same types, the same symbols and the same compiler.
-
-Forth's value proposition is "interactively execute arbitrary code on a machine
-that has no host compiler attached." That premise has inverted: the host has
-the entire Pak toolchain on it.
-
-Evidence that a Pak monitor is well within reach: `runtime/standalone/runtime.pk64`
+The engineering case for a Pak-only monitor, for the record: the monitor's
+core job is a framed-protocol command dispatcher plus a patch manager, which
+is not a language problem, and the hot-patch pipeline (`UPLOAD_BLOB` +
+`CALL_FUNCTION`) already gives Pak an escape hatch for arbitrary target-side
+execution in the same language as the game. `runtime/standalone/runtime.pk64`
 is ~2600 lines of Pak already doing MMIO, PI DMA, SI/Joybus, an RDP driver and
-interrupt handling. A USB FIFO driver and a command dispatcher are strictly
-easier than what is already written.
+interrupt handling, so a USB driver and dispatcher in Pak was never in doubt
+as achievable.
 
-What is genuinely given up, stated honestly:
+What Forth gives up against that baseline, stated honestly:
 
-| Forth advantage | Assessment |
+| Forth property | Why it's kept |
 |---|---|
-| Sub-second round trip for a one-liner | Real, but matters only to a human, and a fixed command set covers most interactive poking |
-| Compose new, named, persistent behaviour on-target, with zero host round-trip | Real -- see 4.1, this is understated below |
-| Independent of Pak's own codegen | Real -- a monitor compiled by the compiler it debugs shares its bugs. Mitigated by keeping the ISViewer asm path as a fallback, and `boot.S` is hand-written anyway |
-| Small and auditable | A Pak monitor is comparably small |
+| Resident dictionary: `: my-word ... ;` compiles live at the console, named, persistent, composable by everything defined after it | No host round-trip closed set can reach this -- not a fixed command table, not a one-shot evaluator. This is Forth's actual home turf. |
+| Independent of Pak's own codegen | A hand-assembled kernel is structurally immune to a latent bug in the compiler it is meant to help debug. Genuinely the strongest engineering argument in Forth's favour, not just a nice-to-have. |
+| Sub-second round trip for a one-liner | Matters to the human at the terminal, which on this project is the entire audience. |
+| It's the part worth building for its own sake | The deciding vote. See the opening of section 4. |
 
-Against those: a second language, a second ABI to document and honour, a second
-mental model, a dictionary and interpreter to maintain, and a build-order
-dependency in front of everything else.
+Cost, paid deliberately: a second language, a second ABI to document and
+honour (section 8), a dictionary/threading model to hand-write and debug in
+MIPS assembly, and it sits ahead of hot-patching in the build order (section 9)
+rather than being a later nicety layered on top of a Pak-only monitor.
 
-**If, after using the tether, a target-resident interactive evaluator is still
-wanted**, see 4.1 for what that should actually be -- it is not a 200-line RPN
-evaluator, and it is not hand-written-assembly Forth either.
+### 4.1 What the kernel needs to actually be
 
-### 4.1 The one row worth taking seriously: a target-resident dictionary
+Not the full ANS Forth standard -- a minimal Subroutine-Threaded Code (STC)
+kernel, matching the target audience of "one person's own resident monitor,"
+not "a portable Forth system."
 
-The comparison above originally treated Forth's escape hatch as "run arbitrary
-code," which the hot-patch pipeline already covers. That undersells Forth's
-actual distinguishing property, which is narrower and more specific: **a
-resident dictionary of named, composable, immediately-executable procedures
-that the console itself can extend, with no host round-trip, and which persist
-and combine across a session.** `: my-word ... ;` typed at the console compiles
-into the dictionary and is callable by every word defined after it, forever
-(until reset). A fixed command table cannot become this no matter how large it
-grows -- it is a closed set by construction. A one-shot RPN evaluator over
-primitives cannot become this either: it can compose a single expression, but
-it cannot *name and keep* a new procedure for the next command to build on.
+Core primitives, in build order:
 
-So the fair statement is: if what is wanted is the environment growing itself
-during a session -- accumulating debug procedures, redefining them, building
-one on top of another, entirely at the console -- that is Forth's real home
-turf, and nothing short of a dictionary-plus-interpreter reaches it.
+```
+@  !  +  -  DUP  DROP  SWAP  OVER
+EXECUTE
+KEY?  KEY  EMIT
+```
 
-The resolution is not "adopt Forth" but **take the dictionary idea, not the
-language**: a small growable table of named word definitions plus a
-tree-walking (or later, compiling) interpreter over them, written in Pak
-rather than hand-assembled MIPS with Forth's syntax and ABI. This keeps one
-language, one type system, one symbol table, and gets most of the
-capability -- persistent named composition, defined live over the tether --
-without a second toolchain to maintain.
+Then the pieces that make it a *monitor* rather than a toy interpreter:
 
-What is still given up relative to real Forth, precisely:
+```
+CATCH  THROW              -- a malformed host command must not crash the kernel
+: ;                       -- colon definitions, the actual point of the exercise
+CREATE  DOES>             -- only once something concrete wants them; not day one
+```
 
-1. **On-target compilation of new words to native speed.** A Pak-hosted
-   interpreter tree-walking a freshly-typed definition is interpreting, not
-   compiling -- slower per call than Forth's threaded code, let alone native
-   MIPS. Closing that gap means writing an actual small on-target compiler,
-   which is most of what makes Forth Forth, not an incidental feature of it.
-   Given the host is always at the desk in this project (not a field deployment
-   with no laptop), the case for paying that cost is weaker than it would be
-   elsewhere -- but it is a real, nameable cost, not a hand-wave.
-2. **Total independence from Pak's own codegen.** Unchanged from the row
-   above, and the one item on this list that is not about convenience: if
-   Pak's compiler has a latent bug that corrupts the monitor's own binary, a
-   hand-written-assembly kernel is structurally immune in a way a
-   Pak-compiled interpreter is not. This is the strongest argument for a real
-   Forth kernel that exists, and it should be weighed on its own, not folded
-   into the composability argument.
+Then the development-specific words layered on top, all thin wrappers over
+primitives the monitor already needs regardless of language choice: `READ`,
+`WRITE`, `PATCH`, `ROLLBACK`, `CAPTURE`, `PROFILE`, `RESET`.
 
-Sequencing is unchanged: build the fixed command set first (Phase 3-4). Add
-the dictionary layer only once real sessions show the fixed set is the
-bottleneck -- and if it is, prefer the Pak-hosted dictionary interpreter over
-adopting Forth, reserving a hand-assembled kernel for the case where item 2
-above turns out to matter in practice.
+Two implementation notes carried over from the earlier draft, both still
+correct and still load-bearing:
+
+- **32-bit cells, not 64-bit.** The standalone backend targets an o32-style
+  ABI on the R4300i (`CURRENTLY_SUPPORTED.md`); `lw`/`sw`/`addiu` over the
+  data stack, not `ld`/`sd`/`daddiu`. Doubling every cell for no reason wastes
+  the dictionary's own memory.
+- **`$s0` as the data-stack pointer is the right call.** It is callee-saved
+  under o32, so Pak-compiled game code preserves it across calls for free --
+  the kernel's stack survives a call into the production runtime without
+  extra save/restore code at every boundary.
+
+### 4.2 Where the kernel lives, and what stays in Pak
+
+Forth is the resident monitor's language. It is not the whole development
+plane's language. Everything upstream of the kernel -- the compiler, the
+patch linker, the symbol database, the host tether service, frame decoding,
+crash symbolization -- stays Pak/Tcl on the host, per section 1's layering.
+The kernel's job stays narrow: transport, dispatch, memory/MMIO access, cache
+maintenance around a patch install, and the dictionary itself. Anything that
+can be a host-side concern should be, so the assembly that has to be
+hand-written and hand-debugged stays as small as the original 500-line
+estimate in the primitives list above, not a creeping reimplementation of the
+host tools on target.
 
 ---
 
@@ -342,30 +337,36 @@ Ordered by value delivered per unit of work, not by architectural layering.
 *At this point real-hardware crashes report as `UPDATE_PLAYER+0x34` instead of
 a red screen, with zero cartridge-specific code written.*
 
-**Phase 3 -- tether**
-7. SC64 transport backend in Pak
-8. Framed protocol + checksum, `PING`
-9. `READ_MEMORY`, `WRITE_MEMORY`, `LOOKUP_SYMBOL`
-10. `CAPTURE_FRAME` -- cheap, fixed addresses, and the single capability that
-    turns "the agent is guessing" into "the agent can see". Do not defer it.
+**Phase 3 -- minimal Forth kernel + tether**
+7. STC kernel: `@ ! + - DUP DROP SWAP OVER EXECUTE`, `$s0` data stack
+8. SC64 transport backend, `KEY? KEY EMIT` over it, `PING`
+9. `CATCH`/`THROW` around host-submitted text so a malformed command cannot
+   crash the kernel
+10. Colon definitions (`: ;`) -- the dictionary, the actual point of building
+    Forth rather than a fixed dispatcher
+11. `READ`/`WRITE` words over memory and MMIO, `LOOKUP-SYMBOL` against the
+    Phase 1 symbol table
+12. `CAPTURE` (framebuffer) -- cheap, fixed addresses, and the single
+    capability that turns "guessing what's on screen" into "seeing it". Do
+    not defer it.
 
 **Phase 4 -- patching**
-11. `pak link --base` and `--defsyms`
-12. Dispatch slots in game source
-13. `UPLOAD_BLOB`, verification, cache maintenance, `INSTALL_PATCH`
-14. `ROLLBACK_PATCH`
+13. `pak link --base` and `--defsyms`
+14. Dispatch slots in game source
+15. `PATCH` word: upload, verify, cache maintenance, publish pointer
+16. `ROLLBACK`
 
 **Phase 5 -- the loop**
-15. `INJECT_INPUT`, `PAUSE` / `STEP_FRAME`
-16. `PROFILE_FUNCTION` (needs a small asm helper -- CP0 `Count` cannot be
-    expressed in Pak)
-17. Host tool API for agent use
+17. Input injection, pause/step-frame words
+18. `PROFILE` (needs a small asm helper -- CP0 `Count` cannot be expressed in
+    Pak)
+19. Host-side tool API, for scripting the tether from outside the REPL
 
 **Deliberately deferred**: capability tiers, multi-client locking, audit logs,
 region permission tags, session recording, RSP diagnostics, display-list
-decode, and any resident interactive language. None of them are needed to close
-the develop-test-fix loop, and several solve problems a single developer at a
-single desk does not have.
+decode, `CREATE`/`DOES>` (add only once a concrete word wants it). None of
+them are needed to close the develop-test-fix loop, and several solve
+problems a single developer at a single desk does not have.
 
 ---
 
