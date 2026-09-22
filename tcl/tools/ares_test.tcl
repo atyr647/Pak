@@ -569,6 +569,50 @@ if {$lit} {
 }
 
 puts ""
+puts "== the same microcode at a real per-frame batch size (64 vertices, not 4) =="
+# rsp_task_vtx.pk64 proved the shape at a token batch of 4. rsp_vtx_batch.pk64
+# is the identical microcode (same while-loop body, so byte-for-byte the same
+# compiled output -- checked below) generalized to docs/rsp-microcode-in-
+# pak.md's own suggested capacity of 64 vertices/dispatch, run from a real
+# standalone-backend (MIPS) Pak program with 64 independently-varying
+# vertices instead of one repeated pattern, checked against a reference the
+# driver computes on the CPU rather than hand-typing 512 expected values.
+set fh [open tcl/tests/ares/rsp_vtx_batch.pk64 r]; set vbtask_src [read $fh]; close $fh
+set vbtask_ast [pak::parse_tokens [[pak::Lexer new $vbtask_src] tokenize]]
+set vbtask_recs [pak::rsp_generate_records $vbtask_ast]
+set vbtask_ctx [pak::enc::encode $vbtask_recs]
+set vbtask_bytes [dict get $vbtask_ctx secdata .text bytes]
+set vbtaskwant {}
+for {set i 0} {$i < [llength $vbtask_bytes]} {incr i 4} {
+    set w 0
+    for {set j 0} {$j < 4} {incr j} {
+        set w [expr {($w << 8) | ([lindex $vbtask_bytes [expr {$i+$j}]] & 0xFF)}]
+    }
+    lappend vbtaskwant [format 0x%08X $w]
+}
+set fh [open tcl/tests/ares/rsp_vtx_batch_driver.pk64 r]; set vbtaskdrv [read $fh]; close $fh
+set vbtaskgot {}
+if {[regexp {static ucode: \[\d+\]u32 = \[([^\]]*)\]} $vbtaskdrv -> vbtaskbody]} {
+    foreach tok [split [string map {"\n" " "} $vbtaskbody] ,] {
+        set tok [string trim $tok]
+        if {$tok ne ""} { lappend vbtaskgot [format 0x%08X [expr {$tok}]] }
+    }
+}
+ok "the microcode in rsp_vtx_batch_driver.pk64 is what rsp_vtx_batch.pk64 compiles to" \
+    [join $vbtaskgot " "] [join $vbtaskwant " "]
+
+set rom [build_rom rsp_vtx_batch tcl/tests/ares/rsp_vtx_batch_driver.pk64 "PAKRVB"]
+lassign [run_rom rsp_vtx_batch $rom $DISPLAY] shot log lit
+no_boot_timeout rsp_vtx_batch $log
+ok_true "rsp_vtx_batch: a frame reached the screen" $lit
+if {$lit} {
+    foreach {fx fy where} {20 20 top-left 160 120 centre 300 220 bottom-right} {
+        ok_colour "rsp_vtx_batch: $where is green (all 64 independently-varying vertices transformed correctly at a real per-frame batch size)" \
+            [probe $shot $DISPLAY $fx $fy] {0 255 0}
+    }
+}
+
+puts ""
 puts "== a Pak PROGRAM loads its RSP task as a Ucode ASSET, not an embedded array =="
 # The last piece of docs/rsp-microcode-in-pak.md's suggested order: `asset
 # add_ucode: Ucode from "rsp_task_add.pk64"` instead of a hand-copied
