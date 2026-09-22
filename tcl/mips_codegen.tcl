@@ -541,7 +541,7 @@ oo::class create pak::MipsCodegen {
              closure_envs closure_captures last_closure_env heap_inited \
              trait_decls trait_vtables assets asset_lens use_aliases \
              promo_decl_count promo_decl_type promo_decl_order promo_addr_taken \
-             promo_closure_names promoted_regs
+             promo_closure_names promoted_regs promo_use_count
 
     constructor {} {
         set em [pak::Emitter new]
@@ -1459,8 +1459,11 @@ oo::class create pak::MipsCodegen {
                 lappend promo_decl_order $nm
             }
         }
-        if {$in_closure && $kind eq "Ident"} {
-            dict set promo_closure_names [pak::fval $tv name] 1
+        if {$kind eq "Ident"} {
+            dict incr promo_use_count [pak::fval $tv name]
+            if {$in_closure} {
+                dict set promo_closure_names [pak::fval $tv name] 1
+            }
         }
         if {$kind eq "AddrOf"} {
             set operand [pak::nfield $tv expr]
@@ -1491,17 +1494,32 @@ oo::class create pak::MipsCodegen {
         set promo_decl_order {}
         set promo_addr_taken [dict create]
         set promo_closure_names [dict create]
+        set promo_use_count [dict create]
         my scan_promo_node $body 0
         set promoted_regs [dict create]
-        set avail {{$s0} {$s1} {$s2} {$s3} {$s4} {$s5}}
+        # A function with more eligible locals than registers (rdpq_triangle_
+        # tex_persp has ~50) has to pick which ones are worth a register --
+        # the ones read most often, not just the first ones declared. A
+        # straight-line function's swap-into-a/b/c temps (read once or
+        # twice each) would otherwise crowd out the values actually reused
+        # 3-4 times (edge/texture coefficient terms), for close to zero win.
+        set eligible {}
         foreach nm $promo_decl_order {
-            if {[llength $avail] == 0} break
             if {[dict get $promo_decl_count $nm] != 1} continue
             if {[dict exists $promo_addr_taken $nm]} continue
             if {[dict exists $promo_closure_names $nm]} continue
             set t [dict get $promo_decl_type $nm]
             if {[pak::isnil $t] || [pak::kindof $t] ne "TypeName"} continue
             if {[pak::fval $t name] ni {i32 u32}} continue
+            set uses 0
+            if {[dict exists $promo_use_count $nm]} { set uses [dict get $promo_use_count $nm] }
+            lappend eligible [list $uses $nm]
+        }
+        set eligible [lsort -integer -decreasing -index 0 $eligible]
+        set avail {{$s0} {$s1} {$s2} {$s3} {$s4} {$s5}}
+        foreach pair $eligible {
+            if {[llength $avail] == 0} break
+            set nm [lindex $pair 1]
             set r [lindex $avail 0]
             set avail [lrange $avail 1 end]
             dict set promoted_regs $nm $r
