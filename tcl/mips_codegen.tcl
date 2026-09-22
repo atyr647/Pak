@@ -275,6 +275,20 @@ oo::class create pak::RegAlloc {
 
     method alloc_order {} { return $alloc_order }
 
+    # A register-promoted local (see compute_promotable) reserves one of
+    # $s0-$s5 for its whole function scope, outside the normal alloc_temp/
+    # free_temp dance. Two things have to happen for that to be safe: the
+    # register must never again be handed out as scratch (or a nested
+    # expression's spill would clobber the local's live value), and it must
+    # still be saved/restored in the prologue/epilogue like any other
+    # callee-saved register this function touches -- exactly what
+    # used_callee_gprs (read by patch_prologue/emit_epilogue) is for.
+    method mark_saved_used {reg} {
+        set idx [lsearch -exact $free_saved $reg]
+        if {$idx >= 0} { set free_saved [lreplace $free_saved $idx $idx] }
+        if {$reg ni $used_saved} { lappend used_saved $reg }
+    }
+
     method used_callee_gprs {} {
         return [lsort -command pak::gpr_cmp $used_saved]
     }
@@ -525,7 +539,9 @@ oo::class create pak::MipsCodegen {
              tenv_layouts tenv_enum_values tenv_variant_decls fn_decls \
              generic_fns generic_structs generic_impls mono_emitted mono_queue type_nodes \
              closure_envs closure_captures last_closure_env heap_inited \
-             trait_decls trait_vtables assets asset_lens use_aliases
+             trait_decls trait_vtables assets asset_lens use_aliases \
+             promo_decl_count promo_decl_type promo_decl_order promo_addr_taken \
+             promo_closure_names promoted_regs
 
     constructor {} {
         set em [pak::Emitter new]
@@ -566,6 +582,7 @@ oo::class create pak::MipsCodegen {
         set assets [dict create]
         set asset_lens [dict create]
         set use_aliases [dict create]
+        set promoted_regs [dict create]
     }
     destructor {
         $em destroy
@@ -1386,11 +1403,124 @@ oo::class create pak::MipsCodegen {
             }
         }
     }
+    # ── register-resident locals ────────────────────────────────────────────
+    # A `let`/`let mut` local that is scalar (i32/u32), declared exactly once
+    # in the function, never has its address taken (`&x`), and is never
+    # referenced inside a nested closure (which captures by address, so it
+    # would need a real stack slot) can live in a dedicated $s0-$s5 register
+    # for its whole function scope instead of a stack slot reloaded on every
+    # read. Measured on tools/pak/lambert.pk64's draw_nave(): most locals in
+    # a hot function like rdpq_triangle_tex_persp are read 2-4 times each,
+    # every one of them a real `lw` before this, since the previous "register
+    # allocator" only ever used $t0-$t9/$s0-$s7 as scratch for one expression
+    # at a time (see the class comment above pak::RegAlloc) -- a local's
+    # value never stayed in a register across statements. $s6/$s7 are left
+    # out of the promotion pool so RegAlloc still has its own overflow tier
+    # for deeply nested expressions; only params are excluded from candidacy
+    # (their one-time ABI homing dance is a separate, lower-value case).
+    #
+    # Correctness hinges on three exclusions, all computed once per function
+    # by scan_promo_node before any codegen for its body runs:
+    #  - declared-once-only: a name reused for two sibling/nested `let`s (Pak
+    #    allows shadowing) must keep getting a FRESH stack slot each time, as
+    #    today, or the second declaration's register would silently clobber
+    #    a still-in-scope outer binding of the same name.
+    #  - never `&name`: a promoted local has no address at all.
+    #  - never referenced inside a Closure: closures capture their free
+    #    variables by address (see emit_closure / __cenv_*), which likewise
+    #    requires a real stack slot.
+    # A promoted local is still entered into `scopes` under a sentinel offset
+    # string ("REG:$sN") rather than a number, found by the ordinary
+    # lookup_local exactly like a stack local. load_from_sp/store_to_sp (the
+    # only two functions every read/write of a local's value funnels
+    # through -- emit_ident_load and emit_assign_target both already call
+    # them rather than emitting `lw`/`sw` directly) recognise the sentinel
+    # and emit a `move` instead. Every other consumer of lookup_local's
+    # result (address-of, closures, container/string methods, as_slice) only
+    # ever reaches a name this scan already excluded from promotion, so they
+    # need no changes -- and if that ever turned out wrong for some case
+    # this scan missed, the sentinel string fed into an `addiu`/`lw`
+    # immediate is not valid MIPS syntax, so it is a build-time asm failure,
+    # never a silently wrong program.
+    method scan_promo_node {tv in_closure} {
+        if {[pak::kindof $tv] eq ""} {
+            if {[lindex $tv 0] eq "seq"} {
+                foreach item [lindex $tv 1] { my scan_promo_node $item $in_closure }
+            }
+            return
+        }
+        set kind [pak::kindof $tv]
+        if {$kind eq "Closure"} { set in_closure 1 }
+        if {$kind eq "LetDecl"} {
+            set nm [pak::fval $tv name]
+            dict incr promo_decl_count $nm
+            if {![dict exists $promo_decl_type $nm]} {
+                dict set promo_decl_type $nm [pak::nfield $tv type]
+                lappend promo_decl_order $nm
+            }
+        }
+        if {$in_closure && $kind eq "Ident"} {
+            dict set promo_closure_names [pak::fval $tv name] 1
+        }
+        if {$kind eq "AddrOf"} {
+            set operand [pak::nfield $tv expr]
+            if {[pak::kindof $operand] eq "Ident"} {
+                dict set promo_addr_taken [pak::fval $operand name] 1
+            }
+        }
+        # DotAccess/IndexAccess/SliceExpr on a bare Ident can reach
+        # emit_place_addr too (method-call self, field/index addressing),
+        # the same implicit address-of AddrOf makes explicit. i32/u32 never
+        # legitimately appear here (no fields, not indexable), so this never
+        # excludes a real candidate -- it only closes off a path this scan
+        # would otherwise silently miss for some future type this promotion
+        # pool widens to.
+        if {$kind in {DotAccess IndexAccess SliceExpr}} {
+            set operand [pak::nfield $tv obj]
+            if {[pak::kindof $operand] eq "Ident"} {
+                dict set promo_addr_taken [pak::fval $operand name] 1
+            }
+        }
+        foreach f [dict get $::pak::SCHEMA $kind] {
+            my scan_promo_node [pak::nfield $tv $f] $in_closure
+        }
+    }
+    method compute_promotable {body} {
+        set promo_decl_count [dict create]
+        set promo_decl_type [dict create]
+        set promo_decl_order {}
+        set promo_addr_taken [dict create]
+        set promo_closure_names [dict create]
+        my scan_promo_node $body 0
+        set promoted_regs [dict create]
+        set avail {{$s0} {$s1} {$s2} {$s3} {$s4} {$s5}}
+        foreach nm $promo_decl_order {
+            if {[llength $avail] == 0} break
+            if {[dict get $promo_decl_count $nm] != 1} continue
+            if {[dict exists $promo_addr_taken $nm]} continue
+            if {[dict exists $promo_closure_names $nm]} continue
+            set t [dict get $promo_decl_type $nm]
+            if {[pak::isnil $t] || [pak::kindof $t] ne "TypeName"} continue
+            if {[pak::fval $t name] ni {i32 u32}} continue
+            set r [lindex $avail 0]
+            set avail [lrange $avail 1 end]
+            dict set promoted_regs $nm $r
+            $ra mark_saved_used $r
+        }
+    }
     # `anns` is the declaration's annotation list, if it has one. Without it a
     # @aligned(16) local got only its element type's alignment -- 1 for a byte
     # array -- so a stack DMA buffer the checker had passed under E202 landed
     # on an odd offset and the PI rejected it.
     method declare_local {name layout {type_node ""} {anns {}}} {
+        if {[dict exists $promoted_regs $name]} {
+            set r [dict get $promoted_regs $name]
+            if {[llength $scopes] > 0} {
+                set f [lindex $scopes end]; dict set f $name [list "REG:$r" $layout]; lset scopes end $f
+            }
+            if {$type_node ne ""} { dict set type_nodes $name $type_node }
+            return "REG:$r"
+        }
         set align [pak::mips_ann_align $anns [dict get $layout align]]
         if {$align > $frame_align} { set frame_align $align }
         set next_local [expr {($next_local + $align - 1) & ~($align - 1)}]
@@ -1810,6 +1940,7 @@ oo::class create pak::MipsCodegen {
         # grows (8-byte aligned) and the prologue immediates are patched.
         set spill_base 64
         set ra [pak::RegAlloc new [self] $spill_base]
+        my compute_promotable $body
         set scopes {}
         set defers {}
         set loop_header {}
@@ -2130,8 +2261,27 @@ oo::class create pak::MipsCodegen {
         }
         return [list [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}] 0]
     }
-    method load_from_sp {off dst layout}  { my emit_typed_load $dst $off {$sp} $layout }
-    method store_to_sp {off src layout}   { my emit_typed_store $src $off {$sp} $layout }
+    # A register-promoted local's "offset" is the sentinel string "REG:$sN"
+    # (see declare_local/compute_promotable) rather than a stack byte
+    # offset -- every read or write of a local's value funnels through
+    # these two functions, so this is the one place that needs to know
+    # about promotion at all.
+    method load_from_sp {off dst layout} {
+        if {[string match "REG:*" $off]} {
+            set r [string range $off 4 end]
+            if {$dst ne $r} { $em move $dst $r }
+            return
+        }
+        my emit_typed_load $dst $off {$sp} $layout
+    }
+    method store_to_sp {off src layout} {
+        if {[string match "REG:*" $off]} {
+            set r [string range $off 4 end]
+            if {$src ne $r} { $em move $r $src }
+            return
+        }
+        my emit_typed_store $src $off {$sp} $layout
+    }
 
     method emit_block {block} {
         my push_scope
@@ -5774,7 +5924,7 @@ oo::class create pak::MipsCodegen {
             float_slots $float_slots float_depth $float_depth \
             loop_header $loop_header loop_exit $loop_exit \
             loop_defer_depth $loop_defer_depth loop_result $loop_result \
-            sret_off $sret_off sret_size $sret_size]
+            sret_off $sret_off sret_size $sret_size promoted_regs $promoted_regs]
         set ra ""
         set loop_header {}
         set loop_exit {}
@@ -5798,6 +5948,7 @@ oo::class create pak::MipsCodegen {
         set loop_result [dict get $s loop_result]
         set sret_off [dict get $s sret_off]
         set sret_size [dict get $s sret_size]
+        set promoted_regs [dict get $s promoted_regs]
     }
 
     method type_name_of {expr} {
