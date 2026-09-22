@@ -28,10 +28,6 @@ _start:
     and     $8, $8, $9
     mtc0    $8, $12
 
-    /* ── Stack: top of first 4 MB RDRAM ── */
-    lui     $29, 0x8040         /* $sp = 0x80400000 */
-    addiu   $29, $29, -8
-
     /* ── Zero .bss ── */
     la      $8, __bss_start
     la      $9, __bss_end
@@ -75,6 +71,36 @@ _start:
     lw      $9, 0($8)
     la      $8, g_boot_memsize
     sw      $9, 0($8)
+
+    /* ── Stack: top of RDRAM, sized to what was actually just detected ──
+     * This used to be a plain "top of first 4 MB" set unconditionally
+     * before RDRAM size was even known (and before the heap-widening logic
+     * below existed). alloc()'s bump allocator (mips_codegen.tcl's
+     * emit_bump_alloc) widens its own ceiling to 0x807F0000 when
+     * g_boot_memsize shows the Expansion Pak, but a stack still parked at
+     * 0x80400000 -- "top of first 4 MB" -- gives the heap no reason to stop
+     * there: nothing stopped it growing straight past 0x80400000 and into
+     * memory the stack was actively using. Heap growth doesn't fault or
+     * warn when it does that -- it silently overwrites whatever the stack
+     * holds at that address, so the corruption doesn't surface as a bad
+     * pointer at the allocation site; it surfaces later, as a jump to
+     * garbage, whenever the corrupted frame's saved $ra gets used. Found by
+     * writing a plain byte-fill loop into the 11th of twelve straight
+     * 128 KiB allocations (nothing to do with CH64 or texture decoding)
+     * and printing $sp at the same time: $sp read back inside the range
+     * that same loop was about to write to. Moving the stack to the top of
+     * however much RDRAM is actually present removes the collision instead
+     * of just moving where the two ranges meet. */
+    /* $9 still holds the memsize the read above fetched -- nothing since
+     * then has touched it. */
+    li      $8, 0x400000
+    sltu    $8, $8, $9           /* $8 = (memsize > 0x400000) */
+    lui     $29, 0x8040          /* default: $sp = 0x80400000 (stock 4 MB) */
+    beqz    $8, .Lstack_set
+    addiu   $29, $29, -8         /* delay slot: applies either way */
+    lui     $29, 0x8080          /* expanded: overwrite with top of 8 MB */
+    addiu   $29, $29, -8
+.Lstack_set:
 
     /* ── Install exception vectors ──
      * Copy the 8-byte stub (j exception_entry; nop) to the four VR4300
