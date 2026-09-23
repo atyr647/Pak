@@ -548,7 +548,7 @@ oo::class create pak::MipsCodegen {
              closure_envs closure_captures last_closure_env heap_inited \
              trait_decls trait_vtables assets asset_lens use_aliases \
              promo_decl_count promo_decl_type promo_decl_order promo_addr_taken \
-             promo_closure_names promoted_regs promo_use_count
+             promo_closure_names promoted_regs promo_use_count promoted_freg used_freg
 
     constructor {} {
         set em [pak::Emitter new]
@@ -590,6 +590,8 @@ oo::class create pak::MipsCodegen {
         set asset_lens [dict create]
         set use_aliases [dict create]
         set promoted_regs [dict create]
+        set promoted_freg [dict create]
+        set used_freg {}
     }
     destructor {
         $em destroy
@@ -1516,6 +1518,8 @@ oo::class create pak::MipsCodegen {
         }
         my scan_promo_node $body 0
         set promoted_regs [dict create]
+        set promoted_freg [dict create]
+        set used_freg {}
         # A function with more eligible locals than registers (rdpq_triangle_
         # tex_persp has ~50) has to pick which ones are worth a register --
         # the ones read most often, not just the first ones declared. A
@@ -1544,6 +1548,40 @@ oo::class create pak::MipsCodegen {
             dict set promoted_regs $nm $r
             $ra mark_saved_used $r
         }
+        # f32 locals/params get the same treatment, in a disjoint register
+        # pool: every scalar float currently round-trips through a stack
+        # slot on every read/write (see the "Float convention" comment
+        # above emit_typed_load) because $f12/$f14 are the only two FP
+        # registers this backend ever names. $f20-$f26 are otherwise
+        # unused anywhere in Pak's own codegen or runtime, so they are free
+        # to be this function's own callee-saved float locals -- callee-
+        # saved in the same sense $s0-$s5 are: any function that uses one
+        # saves and restores it in its own prologue/epilogue (below), so a
+        # value living there survives a call into any other Pak-compiled
+        # function regardless of what that function does with $f20-$f26
+        # for its own promoted locals.
+        set eligible_f {}
+        foreach nm $promo_decl_order {
+            if {[dict get $promo_decl_count $nm] != 1} continue
+            if {[dict exists $promo_addr_taken $nm]} continue
+            if {[dict exists $promo_closure_names $nm]} continue
+            set t [dict get $promo_decl_type $nm]
+            if {[pak::isnil $t] || [pak::kindof $t] ne "TypeName"} continue
+            if {[pak::fval $t name] ne "f32"} continue
+            set uses 0
+            if {[dict exists $promo_use_count $nm]} { set uses [dict get $promo_use_count $nm] }
+            lappend eligible_f [list $uses $nm]
+        }
+        set eligible_f [lsort -integer -decreasing -index 0 $eligible_f]
+        set avail_f {{$f20} {$f22} {$f24} {$f26}}
+        foreach pair $eligible_f {
+            if {[llength $avail_f] == 0} break
+            set nm [lindex $pair 1]
+            set r [lindex $avail_f 0]
+            set avail_f [lrange $avail_f 1 end]
+            dict set promoted_freg $nm $r
+            lappend used_freg $r
+        }
     }
     # `anns` is the declaration's annotation list, if it has one. Without it a
     # @aligned(16) local got only its element type's alignment -- 1 for a byte
@@ -1557,6 +1595,14 @@ oo::class create pak::MipsCodegen {
             }
             if {$type_node ne ""} { dict set type_nodes $name $type_node }
             return "REG:$r"
+        }
+        if {[dict exists $promoted_freg $name]} {
+            set r [dict get $promoted_freg $name]
+            if {[llength $scopes] > 0} {
+                set f [lindex $scopes end]; dict set f $name [list "FREG:$r" $layout]; lset scopes end $f
+            }
+            if {$type_node ne ""} { dict set type_nodes $name $type_node }
+            return "FREG:$r"
         }
         set align [pak::mips_ann_align $anns [dict get $layout align]]
         if {$align > $frame_align} { set frame_align $align }
@@ -2153,7 +2199,7 @@ oo::class create pak::MipsCodegen {
     # 16 itself -- otherwise the alignment survives in this function and is
     # lost in everything it calls.
     method frame_size_for_locals {local_top callee} {
-        set save_bytes [expr {8 + 4 * [llength $callee]}]
+        set save_bytes [expr {8 + 4 * [llength $callee] + 4 * [llength $used_freg]}]
         set a [expr {$frame_align < 8 ? 8 : $frame_align}]
         return [expr {($local_top + $save_bytes + $a - 1) & ~($a - 1)}]
     }
@@ -2219,6 +2265,14 @@ oo::class create pak::MipsCodegen {
             lappend rlines [list i sw $reg "${off}(\$sp)"]
             incr i
         }
+        # Callee-saved float locals (see compute_promotable), same slots,
+        # continuing past the GPR ones.
+        foreach reg $used_freg {
+            set off [expr {$frame_size - 12 - $i * 4}]
+            lappend lines "    swc1 $reg, ${off}(\$sp)"
+            lappend rlines [list i swc1 $reg "${off}(\$sp)"]
+            incr i
+        }
         # Patch the text buffer: replace the placeholder comment within the
         # current function's prologue region [pstart, pend).
         set buf [$em buf]
@@ -2243,12 +2297,13 @@ oo::class create pak::MipsCodegen {
     }
 
     method emit_epilogue {frame_size} {
-        set callee [$ra used_callee_gprs]
+        set callee [concat [$ra used_callee_gprs] $used_freg]
         set n [llength $callee]
         for {set i 0} {$i < $n} {incr i} {
             set ri [expr {$n - 1 - $i}]
             set reg [lindex $callee $ri]
-            $em lw $reg [expr {$frame_size - 12 - $ri * 4}] {$sp}
+            set off [expr {$frame_size - 12 - $ri * 4}]
+            if {[lsearch -exact $used_freg $reg] >= 0} { $em lwc1 $reg $off {$sp} } else { $em lw $reg $off {$sp} }
         }
         $em lw {$fp} [expr {$frame_size - 8}] {$sp}
         $em lw {$ra} [expr {$frame_size - 4}] {$sp}
@@ -2324,12 +2379,24 @@ oo::class create pak::MipsCodegen {
             if {$dst ne $r} { $em move $dst $r }
             return
         }
+        if {[string match "FREG:*" $off]} {
+            set r [string range $off 5 end]
+            # Float convention: every read has to leave the value in $f12.
+            if {$r ne {$f12}} { $em mov_s {$f12} $r }
+            return
+        }
         my emit_typed_load $dst $off {$sp} $layout
     }
     method store_to_sp {off src layout} {
         if {[string match "REG:*" $off]} {
             set r [string range $off 4 end]
             if {$src ne $r} { $em move $r $src }
+            return
+        }
+        if {[string match "FREG:*" $off]} {
+            set r [string range $off 5 end]
+            # Float convention: every write's value arrives in $f12.
+            if {$r ne {$f12}} { $em mov_s $r {$f12} }
             return
         }
         my emit_typed_store $src $off {$sp} $layout
@@ -3620,7 +3687,14 @@ oo::class create pak::MipsCodegen {
                 set n [pak::fval $expr name]
                 set local [my lookup_local $n]
                 if {$local ne ""} {
-                    $em lw $dst [lindex $local 0] {$sp}
+                    set off [lindex $local 0]
+                    if {[string match "FREG:*" $off]} {
+                        # A promoted float local has no stack slot to read the
+                        # bits from -- mfc1 straight out of its register.
+                        $em mfc1 $dst [string range $off 5 end]
+                    } else {
+                        $em lw $dst $off {$sp}
+                    }
                 } elseif {[dict exists $globals $n]} {
                     set addr [$ra alloc_temp]
                     $em la $addr $n
@@ -4948,24 +5022,61 @@ oo::class create pak::MipsCodegen {
         }
     }
 
+    # True only for a float-valued expression whose OWN evaluation provably
+    # never writes $f14: a plain leaf load (constant, variable, one field or
+    # one array element off a bare local), never a nested arithmetic
+    # expression or anything that might reach a call. Whitelist, not a
+    # blacklist -- anything not recognized here is treated as unsafe, same
+    # as expr_may_call's own stated policy.
+    method float_operand_simple {expr} {
+        switch -- [pak::kindof $expr] {
+            FloatLit { return 1 }
+            Ident    { return 1 }
+            IndexAccess {
+                set base_ok [expr {[pak::kindof [pak::nfield $expr obj]] eq "Ident"}]
+                set idx_ok [expr {[pak::kindof [pak::nfield $expr index]] in {Ident IntLit}}]
+                return [expr {$base_ok && $idx_ok}]
+            }
+            DotAccess {
+                return [expr {[pak::kindof [pak::nfield $expr obj]] eq "Ident"}]
+            }
+            default { return 0 }
+        }
+    }
+
     method emit_float_binop {expr dst op} {
         # The left side goes to a stack slot, not to $f14: evaluating the right
         # side is free to use both FP registers, and did. `0.5 * (y + m / y)`
         # came out as `m * (m + m/y)` because every nested operand overwrote
         # $f14 on its way past, and a call on the right side clobbered it too.
-        set d $float_depth
-        set off [my float_slot $d]
-        set float_depth [expr {$d + 1}]
-        set tmp_lhs [$ra alloc_temp]
-        my emit_expr [pak::nfield $expr left] $tmp_lhs
-        $em swc1 {$f12} $off {$sp}
-        set tmp_rhs [$ra alloc_temp]
-        my emit_expr [pak::nfield $expr right] $tmp_rhs
-        set float_depth $d
-        $em lwc1 {$f14} $off {$sp}
-        # $f12 holds the right side, $f14 the left.
-        $ra free_temp $tmp_rhs
-        $ra free_temp $tmp_lhs
+        #
+        # Skip the stack round trip when the right side is a leaf that cannot
+        # possibly write $f14 on its own: park the left side (whatever it took
+        # to compute) straight into $f14 with one mov.s, since nothing between
+        # here and the right side's own single load can disturb it.
+        set left_expr [pak::nfield $expr left]
+        set right_expr [pak::nfield $expr right]
+        if {[my float_operand_simple $right_expr]} {
+            set tmp [$ra alloc_temp]
+            my emit_expr $left_expr $tmp
+            $em mov_s {$f14} {$f12}
+            my emit_expr $right_expr $tmp
+            $ra free_temp $tmp
+        } else {
+            set d $float_depth
+            set off [my float_slot $d]
+            set float_depth [expr {$d + 1}]
+            set tmp_lhs [$ra alloc_temp]
+            my emit_expr $left_expr $tmp_lhs
+            $em swc1 {$f12} $off {$sp}
+            set tmp_rhs [$ra alloc_temp]
+            my emit_expr $right_expr $tmp_rhs
+            set float_depth $d
+            $em lwc1 {$f14} $off {$sp}
+            # $f12 holds the right side, $f14 the left.
+            $ra free_temp $tmp_rhs
+            $ra free_temp $tmp_lhs
+        }
         switch -- $op {
             + { $em add_s {$f12} {$f14} {$f12} }
             - { $em sub_s {$f12} {$f14} {$f12} }
@@ -6161,7 +6272,8 @@ oo::class create pak::MipsCodegen {
             float_slots $float_slots float_depth $float_depth \
             loop_header $loop_header loop_exit $loop_exit \
             loop_defer_depth $loop_defer_depth loop_result $loop_result \
-            sret_off $sret_off sret_size $sret_size promoted_regs $promoted_regs]
+            sret_off $sret_off sret_size $sret_size promoted_regs $promoted_regs \
+            promoted_freg $promoted_freg used_freg $used_freg]
         set ra ""
         set loop_header {}
         set loop_exit {}
@@ -6186,6 +6298,8 @@ oo::class create pak::MipsCodegen {
         set sret_off [dict get $s sret_off]
         set sret_size [dict get $s sret_size]
         set promoted_regs [dict get $s promoted_regs]
+        set promoted_freg [dict get $s promoted_freg]
+        set used_freg [dict get $s used_freg]
     }
 
     method type_name_of {expr} {

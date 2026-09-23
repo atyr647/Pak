@@ -93,6 +93,51 @@ chk "a float local survives a call" {
     __out = a * b
 } 12.0 1e-6
 
+# emit_float_binop skips the stack spill when the right side is a leaf that
+# provably cannot touch $f14 (a plain variable, array element or struct
+# field): the left side goes straight into $f14 with one mov.s instead of a
+# swc1/lwc1 round trip. These exercise that path specifically -- a nested
+# left side (itself float arithmetic, so if this ever regressed to reusing
+# $f14 too early the values would corrupt each other exactly like the
+# original `y + m / y` bug above), a promoted float local on both sides, an
+# array element and a struct field as the "simple" right operand.
+chk "chained multiply, plain var on the right each time" {
+    let dx: f32 = 3.0
+    let fov: f32 = 2.0
+    let iw: f32 = 5.0
+    __out = dx * fov * iw
+} 30.0 1e-6
+
+chk "nested left, array element on the right" {
+    static arr: [2]f32 = [4.0, 0.5]
+    let a: f32 = 3.0
+    let b: f32 = 2.0
+    __out = (a + b) * arr[1]
+} 2.5 1e-6
+
+# struct fields need a struct decl, which must be top-level, not inside
+# entry -- built directly rather than through chk/chk_expr.
+set __struct_src "$::RT\nstruct P { x: f32, y: f32 }\nstatic __out: f32 = 0.0\nentry {\n    let p: P = P { x: 7.0, y: 0.5 }\n    let a: f32 = 3.0\n    __out = (a + a) * p.y\n}\n"
+if {[catch {set __got [run_float $__struct_src]} __err]} {
+    incr ::fail
+    puts "FAIL  nested left, struct field on the right -- [lindex [split $__err \n] 0]"
+} elseif {abs($__got - 3.0) <= 1e-6} {
+    incr ::pass
+    puts [format "ok    %-38s %.8g" "nested left, struct field on the right" $__got]
+} else {
+    incr ::fail
+    puts [format "FAIL  %-38s got %.8g  want %.8g (tol %g)" "nested left, struct field on the right" $__got 3.0 1e-6]
+}
+
+chk "five promoted float locals share the four-register pool" {
+    let a: f32 = 1.0
+    let b: f32 = 2.0
+    let c: f32 = 3.0
+    let d: f32 = 4.0
+    let e: f32 = 5.0
+    __out = a + b * c - d / e
+} 6.2 1e-6
+
 puts ""
 puts "== the functions themselves =="
 
