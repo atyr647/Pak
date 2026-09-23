@@ -548,7 +548,8 @@ oo::class create pak::MipsCodegen {
              closure_envs closure_captures last_closure_env heap_inited \
              trait_decls trait_vtables assets asset_lens use_aliases \
              promo_decl_count promo_decl_type promo_decl_order promo_addr_taken \
-             promo_closure_names promoted_regs promo_use_count promoted_freg used_freg
+             promo_closure_names promoted_regs promo_use_count promoted_freg used_freg \
+             call_max_args call_save_base
 
     constructor {} {
         set em [pak::Emitter new]
@@ -1497,6 +1498,30 @@ oo::class create pak::MipsCodegen {
             my scan_promo_node [pak::nfield $tv $f] $in_closure
         }
     }
+    # Find the widest argument list of any call reachable from this
+    # function's body, +2 to cover the worst case of an implicit self
+    # receiver and a hidden struct-return pointer both occupying argument
+    # slots ahead of the syntactic ones (see emit_direct_call/
+    # emit_method_call) -- cheaper to over-reserve a few bytes than to
+    # duplicate every call shape's own slot-counting logic here.
+    method scan_max_call_args {tv} {
+        if {[pak::kindof $tv] eq ""} {
+            if {[lindex $tv 0] eq "seq"} {
+                foreach item [lindex $tv 1] { my scan_max_call_args $item }
+            }
+            return
+        }
+        set kind [pak::kindof $tv]
+        if {$kind eq "Call"} {
+            set n [llength [pak::items [pak::nfield $tv args]]]
+            set slots [expr {$n + 2}]
+            if {$slots > $call_max_args} { set call_max_args $slots }
+        }
+        foreach f [dict get $::pak::SCHEMA $kind] {
+            my scan_max_call_args [pak::nfield $tv $f]
+        }
+    }
+
     method compute_promotable {body {params {}}} {
         set promo_decl_count [dict create]
         set promo_decl_type [dict create]
@@ -2020,16 +2045,30 @@ oo::class create pak::MipsCodegen {
         $em type_func $name
         $em label $name
         if {$ra ne ""} { catch {$ra destroy} }
-        # Frame layout: $sp+0..15 = O32 home area; $sp+16..63 = outgoing stack args
-        # (up to 12 extra args beyond the 4 register args); $sp+64..95 = 8 spill
-        # slots; $sp+96..135 = 10 call-save slots, one per caller-saved temp;
-        # $sp+136+ = local variables.  Keeping the spill and call-save areas
-        # above the O32 outgoing-arg area prevents marshal_args from clobbering
-        # either.  $fp/$ra (and used callee-saved GPRs) sit at the top of the
-        # frame.  The default size is 320 bytes so existing functions keep their
-        # instruction stream; if locals would overlap that save area the frame
-        # grows (8-byte aligned) and the prologue immediates are patched.
-        set spill_base 64
+        # Frame layout: $sp+0..15 = O32 home area; $sp+16.. = outgoing stack
+        # args (normally up to 12 extra args beyond the 4 register args, i.e.
+        # ending at 63 -- wider only when this function's own calls need
+        # more, see scan_max_call_args below); then 8 spill slots, then 10
+        # call-save slots (one per caller-saved temp), then local variables.
+        # Keeping the spill and call-save areas above the O32 outgoing-arg
+        # area prevents marshal_args from clobbering either. $fp/$ra (and
+        # used callee-saved GPRs) sit at the top of the frame. The default
+        # size is 320 bytes so existing functions keep their instruction
+        # stream; if locals would overlap that save area the frame grows
+        # (8-byte aligned) and the prologue immediates are patched.
+        #
+        # marshal_args spills an argument beyond the 4th straight to
+        # $sp+16, $sp+20, ... -- the O32 outgoing-argument area. A call with
+        # more than 12 such extra arguments (16 total, counting a possible
+        # hidden self receiver and struct-return pointer) would walk off the
+        # end of that area and into whatever this function put right above
+        # it. Size that area -- and everything stacked on it -- to what this
+        # function's own calls actually need, instead of assuming 16 is
+        # always enough.
+        set call_max_args 0
+        my scan_max_call_args $body
+        set spill_base [expr {max(64, 16 + max(0, $call_max_args - 4) * 4)}]
+        set call_save_base [expr {$spill_base + 8 * 4}]
         set ra [pak::RegAlloc new [self] $spill_base]
         my compute_promotable $body $params
         set scopes {}
@@ -2040,7 +2079,7 @@ oo::class create pak::MipsCodegen {
         set loop_result {}
         set sret_off ""
         set sret_size 0
-        set next_local [expr {$::pak::CALL_SAVE_BASE + 10 * 4}]
+        set next_local [expr {$call_save_base + 10 * 4}]
         set frame_align 8
         set float_slots [dict create]
         set float_depth 0
@@ -2161,7 +2200,7 @@ oo::class create pak::MipsCodegen {
         }
         set i 0
         foreach r $live {
-            $em sw $r [expr {$::pak::CALL_SAVE_BASE + $i * 4}] {$sp}
+            $em sw $r [expr {$call_save_base + $i * 4}] {$sp}
             incr i
         }
         return $live
@@ -2170,7 +2209,7 @@ oo::class create pak::MipsCodegen {
     method emit_call_restores {live} {
         set i 0
         foreach r $live {
-            $em lw $r [expr {$::pak::CALL_SAVE_BASE + $i * 4}] {$sp}
+            $em lw $r [expr {$call_save_base + $i * 4}] {$sp}
             incr i
         }
     }
@@ -6273,7 +6312,7 @@ oo::class create pak::MipsCodegen {
             loop_header $loop_header loop_exit $loop_exit \
             loop_defer_depth $loop_defer_depth loop_result $loop_result \
             sret_off $sret_off sret_size $sret_size promoted_regs $promoted_regs \
-            promoted_freg $promoted_freg used_freg $used_freg]
+            promoted_freg $promoted_freg used_freg $used_freg call_save_base $call_save_base]
         set ra ""
         set loop_header {}
         set loop_exit {}
@@ -6300,6 +6339,7 @@ oo::class create pak::MipsCodegen {
         set promoted_regs [dict get $s promoted_regs]
         set promoted_freg [dict get $s promoted_freg]
         set used_freg [dict get $s used_freg]
+        set call_save_base [dict get $s call_save_base]
     }
 
     method type_name_of {expr} {

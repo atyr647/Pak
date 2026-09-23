@@ -357,6 +357,63 @@ proc word_at {mw addr} { if {[dict exists $mw $addr]} { return [dict get $mw $ad
 check_eq "short-circuit: branches taken" [word_at $mw [dict get $syms out]] 11010
 check_eq "short-circuit: bump() ran only where it decides" [word_at $mw [dict get $syms calls]] 1
 
+# ── 5. a call with more than 16 argument slots widens its own frame ────────
+# marshal_args spills argument N (N>=4) to $sp+(N-4)*4+16 -- the O32
+# outgoing-argument area. That area used to stop at a hardcoded 64 bytes
+# (12 extra args, 16 total) regardless of how many a call actually had, so
+# argument 16's write (offset 64) landed on the same address as the
+# register allocator's own first spill slot. A 20-argument call is 22 slots
+# once the +2 safety margin for an implicit self/sret is added, so it must
+# widen spill_base (and everything stacked above it) instead of leaving the
+# two aliased.
+puts ""
+puts "== wide call (>16 argument slots) widens its own frame =="
+set wide_src {
+fn wide20(a0: i32, a1: i32, a2: i32, a3: i32, a4: i32, a5: i32, a6: i32, a7: i32,
+          a8: i32, a9: i32, a10: i32, a11: i32, a12: i32, a13: i32, a14: i32,
+          a15: i32, a16: i32, a17: i32, a18: i32, a19: i32) -> i32 {
+    return a16 + a17 + a18 + a19
+}
+static out: i32 = 0
+entry {
+    out = wide20(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19)
+}
+}
+set wide_recs [compile_records $wide_src]
+set wide_max_store_off -1
+set wide_frame_size -1
+set in_main 0
+foreach r $wide_recs {
+    if {[lindex $r 0] eq "label" && ![string match .L* [lindex $r 1]]} {
+        set in_main [expr {[lindex $r 1] eq "main"}]
+    }
+    if {!$in_main || [lindex $r 0] ne "i"} continue
+    if {[lindex $r 1] eq "addiu" && [lindex $r 2] eq {$sp} && [lindex $r 3] eq {$sp} \
+            && [lindex $r 4] < 0} {
+        set wide_frame_size [expr {-[lindex $r 4]}]
+    }
+    # Only the outgoing-argument writes: `sw $tN, off($sp)` for a temp/arg
+    # register, not $ra/$fp/a callee-saved register's own prologue slot.
+    if {[lindex $r 1] eq "sw" && [lindex $r 2] in $::pak::CALLER_SAVED_GPRS \
+            && [regexp {^(\d+)\(\$sp\)$} [lindex $r 3] -> off]} {
+        if {$off > $wide_max_store_off} { set wide_max_store_off $off }
+    }
+}
+ok "wide call: frame widened past the hardcoded 144" [expr {$wide_frame_size > 144}] \
+    "  frame_size=$wide_frame_size"
+# The widest outgoing-argument write (argument 19, offset 76) must not reach
+# into whatever this function's own frame stacks above the outgoing-arg
+# area (the old hardcoded scheme put a register-allocator spill slot at
+# exactly offset 64, colliding with argument 16's write).
+ok "wide call: outgoing-arg store stays inside its own area" \
+    [expr {$wide_max_store_off <= 76}] "  max_store_off=$wide_max_store_off"
+
+set run [pak::mips_sim_run [pak::records_to_asm [pak::optimize_records $wide_recs]] main 200000]
+set syms [dict get $run data_syms]
+set mw [dict get $run mem_w]
+check_eq "wide call: callee sums its last 4 of 20 args (16+17+18+19)" \
+    [word_at $mw [dict get $syms out]] 70
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }
