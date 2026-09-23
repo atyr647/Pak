@@ -1,0 +1,112 @@
+-- ares driver for kernels.pk64 (tcl/tools/bench_codegen.tcl prepends the
+-- kernels). Times each kernel with the COP0 Count register -- real emulated
+-- CPU cycles, independent of how fast ares itself runs on the host -- and
+-- reports ticks plus checksum over the IS-Viewer channel. A green screen
+-- means every kernel finished.
+use n64.display
+use n64.rdpq
+use n64.debug
+use n64.timer
+
+@aligned(16)
+static page: [2048]u8 = undefined
+
+fn fill_page() {
+    let base: u32 = (&page[0] as u32) | 0xA000_0000
+    let mut i: i32 = 0
+    loop {
+        if i >= 1024 { break }
+        let p: *volatile u16 = (base + (i * 2) as u32) as *volatile u16
+        if (i % 32) < 16 { *p = 0xF801 as u16 } else { *p = 0x003F as u16 }
+        i = i + 1
+    }
+}
+
+-- Tiny perspective-textured triangles: the RDP rasterizes a handful of
+-- pixels each, so the time is the CPU's triangle setup and command writes.
+fn k_tri() -> i32 {
+    let mut i: i32 = 0
+    loop {
+        if i >= 2000 { break }
+        let x: i32 = (i * 7) % 300
+        let y: i32 = (i * 13) % 220
+        rdpq.triangle_tex_persp(0,
+            x, y, 0, 0, 65536,
+            x + 4, y, 8, 0, 60000,
+            x, y + 4, 0, 8, 50000)
+        i += 1
+    }
+    return i
+}
+
+-- Single-command writes: the display-list append path on its own.
+fn k_cmd() -> i32 {
+    let mut i: i32 = 0
+    loop {
+        if i >= 20000 { break }
+        rdpq.set_prim_color(i as u32)
+        i += 1
+    }
+    return i
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+    debug.init()
+    rdpq.init()
+    fill_page()
+    bench_setup()
+
+    let t0: u32 = timer.get_ticks()
+    let c0: i32 = k_project()
+    let t1: u32 = timer.get_ticks()
+    let d0: u32 = t1 - t0
+    debug.log("BENCH k_project ticks={d0} sum={c0}\n")
+
+    let t2: u32 = timer.get_ticks()
+    let c1: i32 = k_cull()
+    let t3: u32 = timer.get_ticks()
+    let d1: u32 = t3 - t2
+    debug.log("BENCH k_cull ticks={d1} sum={c1}\n")
+
+    let t4: u32 = timer.get_ticks()
+    let c2: i32 = k_calls()
+    let t5: u32 = timer.get_ticks()
+    let d2: u32 = t5 - t4
+    debug.log("BENCH k_calls ticks={d2} sum={c2}\n")
+
+    let t6: u32 = timer.get_ticks()
+    let c3: i32 = k_muldiv()
+    let t7: u32 = timer.get_ticks()
+    let d3: u32 = t7 - t6
+    debug.log("BENCH k_muldiv ticks={d3} sum={c3}\n")
+
+    let fb0: u32 = display.get()
+    rdpq.attach_clear(fb0, 0x000000FF)
+    rdpq.set_texture_image((&page[0] as u32) | 0xA000_0000, 0, 2, 32)
+    rdpq.set_tile_mask(0, 0, 2, 8, 0, 0, 2, 2, 5, 5)
+    rdpq.load_tile(0, 0, 0, 32, 32)
+    rdpq.set_tile_size(0, 0, 0, 32, 32)
+    rdpq.sync_tile()
+    rdpq.set_mode_standard_persp()
+
+    let t8: u32 = timer.get_ticks()
+    let c4: i32 = k_tri()
+    let t9: u32 = timer.get_ticks()
+    let d4: u32 = t9 - t8
+    debug.log("BENCH k_tri ticks={d4} sum={c4}\n")
+
+    let t10: u32 = timer.get_ticks()
+    let c5: i32 = k_cmd()
+    let t11: u32 = timer.get_ticks()
+    let d5: u32 = t11 - t10
+    debug.log("BENCH k_cmd ticks={d5} sum={c5}\n")
+    rdpq.detach_show()
+    debug.log("BENCH done\n")
+
+    loop {
+        let fb: u32 = display.get()
+        rdpq.attach_clear(fb, 0x00FF00FF)
+        rdpq.detach_show()
+    }
+}

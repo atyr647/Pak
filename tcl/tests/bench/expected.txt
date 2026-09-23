@@ -1,0 +1,9 @@
+# Checksums every kernel must return (see tcl/tools/bench_codegen.tcl).
+# The four CPU kernels were cross-checked against an independent Python
+# model using float32/int32 semantics; k_tri and k_cmd return their counts.
+k_project 1920929
+k_cull 66052409
+k_calls 599970000
+k_muldiv 875956341
+k_tri 2000
+k_cmd 20000
