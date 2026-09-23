@@ -132,6 +132,7 @@ proc pak::asm::encode {op operands addr syms} {
         mfc1 { return [list [pak::asm::R 0x11 0x00 [$g [lindex $a 0]] [pak::asm::fpr [lindex $a 1]] 0 0]] }
         cvt.s.w { return [list [pak::asm::R 0x11 0x14 0 [pak::asm::fpr [lindex $a 1]] [pak::asm::fpr [lindex $a 0]] 0x20]] }
         cvt.w.s { return [list [pak::asm::R 0x11 0x10 0 [pak::asm::fpr [lindex $a 1]] [pak::asm::fpr [lindex $a 0]] 0x24]] }
+        trunc.w.s { return [list [pak::asm::R 0x11 0x10 0 [pak::asm::fpr [lindex $a 1]] [pak::asm::fpr [lindex $a 0]] 0x0D]] }
         sync { return [list [pak::asm::R 0 0 0 0 0 0x0f]] }
         bge - bgt - ble - blt {
             return [pak::asm::expand_branch_cmp $op $a $addr $syms]

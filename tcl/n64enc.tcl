@@ -488,6 +488,14 @@ proc pak::enc::emit_real {ctxVar mnem args} {
         emit_word ctx [R 0x11 $fmt 0 [fpr $fs] [fpr $fd] $funct]
         return
     }
+    # COP1 fixed-rounding convert to word: round/trunc/ceil/floor.w.s (.d)  fd,fs
+    if {[regexp {^(round|trunc|ceil|floor)\.w\.(s|d)$} $mnem -> opn fmtc]} {
+        lassign $ops fd fs
+        set fmt [expr {$fmtc eq "s" ? 16 : 17}]
+        set funct [dict get {round 0x0C trunc 0x0D ceil 0x0E floor 0x0F} $opn]
+        emit_word ctx [R 0x11 $fmt 0 [fpr $fs] [fpr $fd] $funct]
+        return
+    }
     # COP1 fmt unary: mov.s/neg.s/abs.s/sqrt.s (and .d)  fd,fs
     #   [31:26]=0x11 [25:21]=fmt [20:16]=0 [15:11]=fs [10:6]=fd [5:0]=funct
     if {[regexp {^(mov|neg|abs|sqrt)\.(s|d)$} $mnem -> opn fmtc]} {

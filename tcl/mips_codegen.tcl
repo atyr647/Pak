@@ -157,6 +157,7 @@ oo::class create pak::Emitter {
     method mfc1 {gpr fpr} { my instr "mfc1" "$gpr," $fpr }
     method cvt_s_w {fd fs} { my instr "cvt.s.w" "$fd," $fs }
     method cvt_w_s {fd fs} { my instr "cvt.w.s" "$fd," $fs }
+    method trunc_w_s {fd fs} { my instr "trunc.w.s" "$fd," $fs }
     method cvt_d_w {fd fs} { my instr "cvt.d.w" "$fd," $fs }
     method cvt_w_d {fd fs} { my instr "cvt.w.d" "$fd," $fs }
     method add_s {fd fs ft} { my instr "add.s" "$fd," "$fs," $ft }
@@ -4628,7 +4629,9 @@ oo::class create pak::MipsCodegen {
             # source register: `f as i32` compiled to a `move` from an
             # unrelated temporary. Truncation toward zero, and no scaling for a
             # fixed-point target, matches what the C backend emits ((int32_t)f).
-            $em cvt_w_s {$f12} {$f12}
+            # trunc.w.s, not cvt.w.s: cvt rounds in the FCSR's mode, which is
+            # round-to-nearest at reset, so on hardware `2.7 as i32` was 3.
+            $em trunc_w_s {$f12} {$f12}
             $em mfc1 $dst {$f12}
             if {[dict get $to size] < 4} {
                 pak::emit_int_cast $em $dst $dst [dict get $to size] [dict get $to is_signed]

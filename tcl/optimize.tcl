@@ -29,7 +29,7 @@ set ::pak::opt::DST_FIRST {li la lui move addiu addi addu subu mul and or xor no
 set ::pak::opt::FPU_DST_FIRST {
     add.s sub.s mul.s div.s mov.s neg.s abs.s sqrt.s
     add.d sub.d mul.d div.d mov.d neg.d abs.d sqrt.d
-    cvt.s.w cvt.w.s cvt.d.w cvt.w.d cvt.s.d cvt.d.s
+    cvt.s.w cvt.w.s cvt.d.w cvt.w.d cvt.s.d cvt.d.s trunc.w.s
     mfc1
 }
 set ::pak::opt::LOADW_OPS {lw lh lb lhu lbu lwc1 ldc1 ld}

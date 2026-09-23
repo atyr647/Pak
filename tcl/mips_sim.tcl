@@ -535,6 +535,15 @@ proc exec_insn {op args} {
             set F([lindex $args 0]) [double_to_fbits [expr {double($w)}]]
         }
         cvt.w.s {
+            # Rounds in the FCSR's mode. Nothing sets it, so it is the reset
+            # value: round to nearest, ties to even -- what the hardware does.
+            set v [fpv [lindex $args 1]]
+            set f [expr {floor($v)}]
+            set d [expr {$v - $f}]
+            if {$d > 0.5 || ($d == 0.5 && fmod($f, 2.0) != 0.0)} { set f [expr {$f + 1.0}] }
+            set F([lindex $args 0]) [expr {int($f) & 0xFFFFFFFF}]
+        }
+        trunc.w.s {
             set v [fpv [lindex $args 1]]
             set F([lindex $args 0]) [expr {int($v) & 0xFFFFFFFF}]
         }
