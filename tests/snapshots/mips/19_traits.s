@@ -290,22 +290,23 @@ Enemy_update:
     sw $ra, 156($sp)
     sw $fp, 152($sp)
     addiu $fp, $sp, 160
+    swc1 $f20, 148($sp)
     sw $a0, 136($sp)
-    swc1 $f12, 140($sp)
+    mov.s $f20, $f12
     lw $t7, 136($sp)
     lwc1 $f12, 8($t7)
-    swc1 $f12, 144($sp)
-    lwc1 $f12, 140($sp)
-    lwc1 $f14, 144($sp)
+    mov.s $f14, $f12
+    mov.s $f12, $f20
     mul.s $f12, $f14, $f12
-    swc1 $f12, 144($sp)
+    swc1 $f12, 140($sp)
     lw $t7, 136($sp)
     lwc1 $f12, 0($t7)
-    lwc1 $f14, 144($sp)
+    lwc1 $f14, 140($sp)
     add.s $f12, $f12, $f14
     lw $t8, 136($sp)
     swc1 $f12, 0($t8)
 .LEnemy_update_ret_3:
+    lwc1 $f20, 148($sp)
     lw $fp, 152($sp)
     lw $ra, 156($sp)
     addiu $sp, $sp, 160

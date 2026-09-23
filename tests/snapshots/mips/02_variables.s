@@ -204,31 +204,31 @@
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -176
-    sw $ra, 172($sp)
-    sw $fp, 168($sp)
-    addiu $fp, $sp, 176
-    sw $s0, 164($sp)
+    addiu $sp, $sp, -168
+    sw $ra, 164($sp)
+    sw $fp, 160($sp)
+    addiu $fp, $sp, 168
+    sw $s0, 156($sp)
+    swc1 $f20, 152($sp)
     li $t9, 10
     move $s0, $t9
     la $t8, .Lf320
     lwc1 $f12, 0($t8)
-    swc1 $f12, 136($sp)
+    mov.s $f20, $f12
     li $t9, 1
-    sb $t9, 140($sp)
+    sb $t9, 136($sp)
     la $t9, .Lstr1
-    sw $t9, 144($sp)
+    sw $t9, 140($sp)
     move $t8, $s0
     li $t7, 1
     addu $t9, $t8, $t7
     move $s0, $t9
-    lwc1 $f12, 136($sp)
-    swc1 $f12, 148($sp)
-    la $t6, .Lf322
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 148($sp)
+    mov.s $f12, $f20
+    mov.s $f14, $f12
+    la $t7, .Lf322
+    lwc1 $f12, 0($t7)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 136($sp)
+    mov.s $f20, $f12
     li $t9, 5
     move $t8, $s0
     addu $t9, $t8, $t9
@@ -247,10 +247,10 @@ main:
     mflo $t9
     move $s0, $t9
     li $t9, 0
-    sw $t9, 152($sp)
+    sw $t9, 144($sp)
     la $t8, .Lf323
     lwc1 $f12, 0($t8)
-    swc1 $f12, 156($sp)
+    swc1 $f12, 148($sp)
     li $t9, 1
     la $t8, frame_count
     lw $t8, 0($t8)
@@ -261,26 +261,26 @@ main:
     move $s0, $t9
     la $t8, .Lf324
     lwc1 $f12, 0($t8)
-    swc1 $f12, 136($sp)
+    mov.s $f20, $f12
     li $t9, 0
-    sb $t9, 140($sp)
+    sb $t9, 136($sp)
     la $t9, frame_count
     lw $t9, 0($t9)
-    sw $t9, 152($sp)
-    lwc1 $f12, 156($sp)
-    swc1 $f12, 148($sp)
-    la $t6, .Lf325
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 148($sp)
-    add.s $f12, $f14, $f12
-    swc1 $f12, 156($sp)
-    la $t9, .Lstr6
     sw $t9, 144($sp)
+    lwc1 $f12, 148($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf325
+    lwc1 $f12, 0($t7)
+    add.s $f12, $f14, $f12
+    swc1 $f12, 148($sp)
+    la $t9, .Lstr6
+    sw $t9, 140($sp)
 .Lmain_ret_0:
-    lw $s0, 164($sp)
-    lw $fp, 168($sp)
-    lw $ra, 172($sp)
-    addiu $sp, $sp, 176
+    lwc1 $f20, 152($sp)
+    lw $s0, 156($sp)
+    lw $fp, 160($sp)
+    lw $ra, 164($sp)
+    addiu $sp, $sp, 168
     jr $ra
     nop
 	.size main, . - main

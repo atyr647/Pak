@@ -204,29 +204,27 @@
 	.globl Circle_area
 	.type Circle_area, @function
 Circle_area:
-    addiu $sp, $sp, -160
-    sw $ra, 156($sp)
-    sw $fp, 152($sp)
-    addiu $fp, $sp, 160
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
     sw $a0, 136($sp)
     la $t7, .Lf320
     lwc1 $f12, 0($t7)
-    swc1 $f12, 144($sp)
-    lw $t6, 136($sp)
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 144($sp)
-    mul.s $f12, $f14, $f12
-    swc1 $f12, 140($sp)
+    mov.s $f14, $f12
     lw $t7, 136($sp)
     lwc1 $f12, 0($t7)
-    lwc1 $f14, 140($sp)
+    mul.s $f12, $f14, $f12
+    mov.s $f14, $f12
+    lw $t8, 136($sp)
+    lwc1 $f12, 0($t8)
     mul.s $f12, $f14, $f12
     j .LCircle_area_ret_0
     nop
 .LCircle_area_ret_0:
-    lw $fp, 152($sp)
-    lw $ra, 156($sp)
-    addiu $sp, $sp, 160
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size Circle_area, . - Circle_area
@@ -242,10 +240,9 @@ Circle_perimeter:
     sw $a0, 136($sp)
     la $t8, .Lf321
     lwc1 $f12, 0($t8)
-    swc1 $f12, 140($sp)
-    lw $t7, 136($sp)
-    lwc1 $f12, 0($t7)
-    lwc1 $f14, 140($sp)
+    mov.s $f14, $f12
+    lw $t8, 136($sp)
+    lwc1 $f12, 0($t8)
     mul.s $f12, $f14, $f12
     j .LCircle_perimeter_ret_1
     nop
@@ -279,10 +276,9 @@ Rect_area:
     sw $a0, 136($sp)
     lw $t8, 136($sp)
     lwc1 $f12, 0($t8)
-    swc1 $f12, 140($sp)
-    lw $t7, 136($sp)
-    lwc1 $f12, 4($t7)
-    lwc1 $f14, 140($sp)
+    mov.s $f14, $f12
+    lw $t8, 136($sp)
+    lwc1 $f12, 4($t8)
     mul.s $f12, $f14, $f12
     j .LRect_area_ret_2
     nop
@@ -298,29 +294,28 @@ Rect_area:
 	.globl Rect_perimeter
 	.type Rect_perimeter, @function
 Rect_perimeter:
-    addiu $sp, $sp, -160
-    sw $ra, 156($sp)
-    sw $fp, 152($sp)
-    addiu $fp, $sp, 160
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
     sw $a0, 136($sp)
     la $t8, .Lf322
     lwc1 $f12, 0($t8)
     swc1 $f12, 140($sp)
     lw $t6, 136($sp)
     lwc1 $f12, 0($t6)
-    swc1 $f12, 144($sp)
-    lw $t5, 136($sp)
-    lwc1 $f12, 4($t5)
-    lwc1 $f14, 144($sp)
+    mov.s $f14, $f12
+    lw $t6, 136($sp)
+    lwc1 $f12, 4($t6)
     add.s $f12, $f14, $f12
     lwc1 $f14, 140($sp)
     mul.s $f12, $f14, $f12
     j .LRect_perimeter_ret_3
     nop
 .LRect_perimeter_ret_3:
-    lw $fp, 152($sp)
-    lw $ra, 156($sp)
-    addiu $sp, $sp, 160
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size Rect_perimeter, . - Rect_perimeter

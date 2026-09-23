@@ -204,10 +204,10 @@
 	.globl area
 	.type area, @function
 area:
-    addiu $sp, $sp, -176
-    sw $ra, 172($sp)
-    sw $fp, 168($sp)
-    addiu $fp, $sp, 176
+    addiu $sp, $sp, -168
+    sw $ra, 164($sp)
+    sw $fp, 160($sp)
+    addiu $fp, $sp, 168
     move $t9, $a0
     addiu $t8, $sp, 136
     lw $t7, 0($t9)
@@ -224,14 +224,12 @@ area:
     lwc1 $f12, 4($t9)
     swc1 $f12, 148($sp)
     lwc1 $f12, 148($sp)
-    swc1 $f12, 156($sp)
+    mov.s $f14, $f12
     lwc1 $f12, 148($sp)
-    lwc1 $f14, 156($sp)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 152($sp)
-    la $t6, .Lf320
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 152($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf320
+    lwc1 $f12, 0($t7)
     mul.s $f12, $f14, $f12
     j .Larea_ret_0
     nop
@@ -243,13 +241,12 @@ area:
     bne $t8, $t7, .Larm_skip_5
     nop
     lwc1 $f12, 4($t9)
-    swc1 $f12, 160($sp)
-    lwc1 $f12, 8($t9)
-    swc1 $f12, 164($sp)
-    lwc1 $f12, 160($sp)
     swc1 $f12, 152($sp)
-    lwc1 $f12, 164($sp)
-    lwc1 $f14, 152($sp)
+    lwc1 $f12, 8($t9)
+    swc1 $f12, 156($sp)
+    lwc1 $f12, 152($sp)
+    mov.s $f14, $f12
+    lwc1 $f12, 156($sp)
     mul.s $f12, $f14, $f12
     j .Larea_ret_0
     nop
@@ -268,9 +265,9 @@ area:
 .Larm_skip_7:
 .Lmatch_end_1:
 .Larea_ret_0:
-    lw $fp, 168($sp)
-    lw $ra, 172($sp)
-    addiu $sp, $sp, 176
+    lw $fp, 160($sp)
+    lw $ra, 164($sp)
+    addiu $sp, $sp, 168
     jr $ra
     nop
 	.size area, . - area

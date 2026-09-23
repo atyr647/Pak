@@ -243,27 +243,31 @@ Player_move:
     sw $ra, 156($sp)
     sw $fp, 152($sp)
     addiu $fp, $sp, 160
+    swc1 $f20, 148($sp)
+    swc1 $f22, 144($sp)
     sw $a0, 136($sp)
-    swc1 $f12, 140($sp)
+    mov.s $f20, $f12
     mov.s $f12, $f14
-    swc1 $f12, 144($sp)
-    lwc1 $f12, 140($sp)
-    swc1 $f12, 148($sp)
+    mov.s $f22, $f12
+    mov.s $f12, $f20
+    swc1 $f12, 140($sp)
     lw $t7, 136($sp)
     lwc1 $f12, 0($t7)
-    lwc1 $f14, 148($sp)
+    lwc1 $f14, 140($sp)
     add.s $f12, $f12, $f14
     lw $t8, 136($sp)
     swc1 $f12, 0($t8)
-    lwc1 $f12, 144($sp)
-    swc1 $f12, 148($sp)
+    mov.s $f12, $f22
+    swc1 $f12, 140($sp)
     lw $t7, 136($sp)
     lwc1 $f12, 4($t7)
-    lwc1 $f14, 148($sp)
+    lwc1 $f14, 140($sp)
     add.s $f12, $f12, $f14
     lw $t8, 136($sp)
     swc1 $f12, 4($t8)
 .LPlayer_move_ret_1:
+    lwc1 $f22, 144($sp)
+    lwc1 $f20, 148($sp)
     lw $fp, 152($sp)
     lw $ra, 156($sp)
     addiu $sp, $sp, 160

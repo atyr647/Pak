@@ -204,10 +204,10 @@
 	.globl transform_point
 	.type transform_point, @function
 transform_point:
-    addiu $sp, $sp, -176
-    sw $ra, 172($sp)
-    sw $fp, 168($sp)
-    addiu $fp, $sp, 176
+    addiu $sp, $sp, -168
+    sw $ra, 164($sp)
+    sw $fp, 160($sp)
+    addiu $fp, $sp, 168
     sw $a0, 136($sp)
     sw $a1, 140($sp)
     sw $a2, 144($sp)
@@ -216,10 +216,9 @@ transform_point:
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lwc1 $f12, 0($t4)
-    swc1 $f12, 160($sp)
-    lw $t3, 140($sp)
-    lwc1 $f12, 0($t3)
-    lwc1 $f14, 160($sp)
+    mov.s $f14, $f12
+    lw $t4, 140($sp)
+    lwc1 $f12, 0($t4)
     mul.s $f12, $f14, $f12
     swc1 $f12, 156($sp)
     lw $t3, 136($sp)
@@ -227,10 +226,9 @@ transform_point:
     sll $t2, $t2, 2
     addu $t3, $t3, $t2
     lwc1 $f12, 0($t3)
-    swc1 $f12, 160($sp)
-    lw $t2, 140($sp)
-    lwc1 $f12, 4($t2)
-    lwc1 $f14, 160($sp)
+    mov.s $f14, $f12
+    lw $t3, 140($sp)
+    lwc1 $f12, 4($t3)
     mul.s $f12, $f14, $f12
     lwc1 $f14, 156($sp)
     add.s $f12, $f14, $f12
@@ -240,10 +238,9 @@ transform_point:
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lwc1 $f12, 0($t4)
-    swc1 $f12, 156($sp)
-    lw $t3, 140($sp)
-    lwc1 $f12, 8($t3)
-    lwc1 $f14, 156($sp)
+    mov.s $f14, $f12
+    lw $t4, 140($sp)
+    lwc1 $f12, 8($t4)
     mul.s $f12, $f14, $f12
     lwc1 $f14, 152($sp)
     add.s $f12, $f14, $f12
@@ -262,10 +259,9 @@ transform_point:
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lwc1 $f12, 0($t4)
-    swc1 $f12, 160($sp)
-    lw $t3, 140($sp)
-    lwc1 $f12, 0($t3)
-    lwc1 $f14, 160($sp)
+    mov.s $f14, $f12
+    lw $t4, 140($sp)
+    lwc1 $f12, 0($t4)
     mul.s $f12, $f14, $f12
     swc1 $f12, 156($sp)
     lw $t3, 136($sp)
@@ -273,10 +269,9 @@ transform_point:
     sll $t2, $t2, 2
     addu $t3, $t3, $t2
     lwc1 $f12, 0($t3)
-    swc1 $f12, 160($sp)
-    lw $t2, 140($sp)
-    lwc1 $f12, 4($t2)
-    lwc1 $f14, 160($sp)
+    mov.s $f14, $f12
+    lw $t3, 140($sp)
+    lwc1 $f12, 4($t3)
     mul.s $f12, $f14, $f12
     lwc1 $f14, 156($sp)
     add.s $f12, $f14, $f12
@@ -286,10 +281,9 @@ transform_point:
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lwc1 $f12, 0($t4)
-    swc1 $f12, 156($sp)
-    lw $t3, 140($sp)
-    lwc1 $f12, 8($t3)
-    lwc1 $f14, 156($sp)
+    mov.s $f14, $f12
+    lw $t4, 140($sp)
+    lwc1 $f12, 8($t4)
     mul.s $f12, $f14, $f12
     lwc1 $f14, 152($sp)
     add.s $f12, $f14, $f12
@@ -308,10 +302,9 @@ transform_point:
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lwc1 $f12, 0($t4)
-    swc1 $f12, 160($sp)
-    lw $t3, 140($sp)
-    lwc1 $f12, 0($t3)
-    lwc1 $f14, 160($sp)
+    mov.s $f14, $f12
+    lw $t4, 140($sp)
+    lwc1 $f12, 0($t4)
     mul.s $f12, $f14, $f12
     swc1 $f12, 156($sp)
     lw $t3, 136($sp)
@@ -319,10 +312,9 @@ transform_point:
     sll $t2, $t2, 2
     addu $t3, $t3, $t2
     lwc1 $f12, 0($t3)
-    swc1 $f12, 160($sp)
-    lw $t2, 140($sp)
-    lwc1 $f12, 4($t2)
-    lwc1 $f14, 160($sp)
+    mov.s $f14, $f12
+    lw $t3, 140($sp)
+    lwc1 $f12, 4($t3)
     mul.s $f12, $f14, $f12
     lwc1 $f14, 156($sp)
     add.s $f12, $f14, $f12
@@ -332,10 +324,9 @@ transform_point:
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lwc1 $f12, 0($t4)
-    swc1 $f12, 156($sp)
-    lw $t3, 140($sp)
-    lwc1 $f12, 8($t3)
-    lwc1 $f14, 156($sp)
+    mov.s $f14, $f12
+    lw $t4, 140($sp)
+    lwc1 $f12, 8($t4)
     mul.s $f12, $f14, $f12
     lwc1 $f14, 152($sp)
     add.s $f12, $f14, $f12
@@ -350,9 +341,9 @@ transform_point:
     lw $t8, 144($sp)
     swc1 $f12, 8($t8)
 .Ltransform_point_ret_0:
-    lw $fp, 168($sp)
-    lw $ra, 172($sp)
-    addiu $sp, $sp, 176
+    lw $fp, 160($sp)
+    lw $ra, 164($sp)
+    addiu $sp, $sp, 168
     jr $ra
     nop
 	.size transform_point, . - transform_point
@@ -790,10 +781,9 @@ update:
     swc1 $f12, 324($t8)
     la $t7, gs
     lwc1 $f12, 320($t7)
-    swc1 $f12, 140($sp)
-    la $t6, .Lf322
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 140($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf322
+    lwc1 $f12, 0($t7)
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_11
@@ -814,10 +804,9 @@ update:
 .Lif_end_10:
     la $t7, gs
     lwc1 $f12, 324($t7)
-    swc1 $f12, 140($sp)
-    la $t6, .Lf322
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 140($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf322
+    lwc1 $f12, 0($t7)
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_13

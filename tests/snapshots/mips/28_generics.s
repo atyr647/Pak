@@ -401,11 +401,13 @@ identity__f32:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    swc1 $f12, 136($sp)
-    lwc1 $f12, 136($sp)
+    swc1 $f20, 140($sp)
+    mov.s $f20, $f12
+    mov.s $f12, $f20
     j .Lidentity__f32_ret_2
     nop
 .Lidentity__f32_ret_2:
+    lwc1 $f20, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -471,17 +473,18 @@ max_of__i32:
 	.globl max_of__f32
 	.type max_of__f32, @function
 max_of__f32:
-    addiu $sp, $sp, -160
-    sw $ra, 156($sp)
-    sw $fp, 152($sp)
-    addiu $fp, $sp, 160
-    swc1 $f12, 136($sp)
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
+    swc1 $f20, 140($sp)
+    swc1 $f22, 136($sp)
+    mov.s $f20, $f12
     mov.s $f12, $f14
-    swc1 $f12, 140($sp)
-    lwc1 $f12, 136($sp)
-    swc1 $f12, 144($sp)
-    lwc1 $f12, 140($sp)
-    lwc1 $f14, 144($sp)
+    mov.s $f22, $f12
+    mov.s $f12, $f20
+    mov.s $f14, $f12
+    mov.s $f12, $f22
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_8
@@ -490,17 +493,19 @@ max_of__f32:
 .Lfgt_8:
     beqz $t9, .Lif_end_7
     nop
-    lwc1 $f12, 136($sp)
+    mov.s $f12, $f20
     j .Lmax_of__f32_ret_6
     nop
 .Lif_end_7:
-    lwc1 $f12, 140($sp)
+    mov.s $f12, $f22
     j .Lmax_of__f32_ret_6
     nop
 .Lmax_of__f32_ret_6:
-    lw $fp, 152($sp)
-    lw $ra, 156($sp)
-    addiu $sp, $sp, 160
+    lwc1 $f22, 136($sp)
+    lwc1 $f20, 140($sp)
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size max_of__f32, . - max_of__f32

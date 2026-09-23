@@ -231,17 +231,18 @@ add:
 	.globl max
 	.type max, @function
 max:
-    addiu $sp, $sp, -160
-    sw $ra, 156($sp)
-    sw $fp, 152($sp)
-    addiu $fp, $sp, 160
-    swc1 $f12, 136($sp)
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
+    swc1 $f20, 140($sp)
+    swc1 $f22, 136($sp)
+    mov.s $f20, $f12
     mov.s $f12, $f14
-    swc1 $f12, 140($sp)
-    lwc1 $f12, 136($sp)
-    swc1 $f12, 144($sp)
-    lwc1 $f12, 140($sp)
-    lwc1 $f14, 144($sp)
+    mov.s $f22, $f12
+    mov.s $f12, $f20
+    mov.s $f14, $f12
+    mov.s $f12, $f22
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_3
@@ -250,17 +251,19 @@ max:
 .Lfgt_3:
     beqz $t9, .Lif_end_2
     nop
-    lwc1 $f12, 136($sp)
+    mov.s $f12, $f20
     j .Lmax_ret_1
     nop
 .Lif_end_2:
-    lwc1 $f12, 140($sp)
+    mov.s $f12, $f22
     j .Lmax_ret_1
     nop
 .Lmax_ret_1:
-    lw $fp, 152($sp)
-    lw $ra, 156($sp)
-    addiu $sp, $sp, 160
+    lwc1 $f22, 136($sp)
+    lwc1 $f20, 140($sp)
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size max, . - max
@@ -273,15 +276,17 @@ clamp:
     sw $ra, 156($sp)
     sw $fp, 152($sp)
     addiu $fp, $sp, 160
-    swc1 $f12, 136($sp)
+    swc1 $f20, 148($sp)
+    swc1 $f22, 144($sp)
+    swc1 $f24, 140($sp)
+    mov.s $f20, $f12
     mov.s $f12, $f14
-    swc1 $f12, 140($sp)
+    mov.s $f22, $f12
     lwc1 $f12, 8($fp)
-    swc1 $f12, 144($sp)
-    lwc1 $f12, 136($sp)
-    swc1 $f12, 148($sp)
-    lwc1 $f12, 140($sp)
-    lwc1 $f14, 148($sp)
+    mov.s $f24, $f12
+    mov.s $f12, $f20
+    mov.s $f14, $f12
+    mov.s $f12, $f22
     c.lt.s $f14, $f12
     li $t9, 0
     bc1f .Lflt_6
@@ -290,14 +295,13 @@ clamp:
 .Lflt_6:
     beqz $t9, .Lif_end_5
     nop
-    lwc1 $f12, 140($sp)
+    mov.s $f12, $f22
     j .Lclamp_ret_4
     nop
 .Lif_end_5:
-    lwc1 $f12, 136($sp)
-    swc1 $f12, 148($sp)
-    lwc1 $f12, 144($sp)
-    lwc1 $f14, 148($sp)
+    mov.s $f12, $f20
+    mov.s $f14, $f12
+    mov.s $f12, $f24
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_8
@@ -306,14 +310,17 @@ clamp:
 .Lfgt_8:
     beqz $t9, .Lif_end_7
     nop
-    lwc1 $f12, 144($sp)
+    mov.s $f12, $f24
     j .Lclamp_ret_4
     nop
 .Lif_end_7:
-    lwc1 $f12, 136($sp)
+    mov.s $f12, $f20
     j .Lclamp_ret_4
     nop
 .Lclamp_ret_4:
+    lwc1 $f24, 140($sp)
+    lwc1 $f22, 144($sp)
+    lwc1 $f20, 148($sp)
     lw $fp, 152($sp)
     lw $ra, 156($sp)
     addiu $sp, $sp, 160

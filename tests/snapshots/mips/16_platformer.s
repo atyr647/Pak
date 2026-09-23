@@ -899,21 +899,20 @@ aabb_overlap:
 	.globl check_platform_landing
 	.type check_platform_landing, @function
 check_platform_landing:
-    addiu $sp, $sp, -192
-    sw $ra, 188($sp)
-    sw $fp, 184($sp)
-    addiu $fp, $sp, 192
-    sw $s0, 180($sp)
-    sw $s1, 176($sp)
-    sw $s2, 172($sp)
+    addiu $sp, $sp, -184
+    sw $ra, 180($sp)
+    sw $fp, 176($sp)
+    addiu $fp, $sp, 184
+    sw $s0, 172($sp)
+    sw $s1, 168($sp)
+    sw $s2, 164($sp)
     move $s1, $a0
     move $s2, $a1
     sw $a2, 136($sp)
     lw $t8, 136($sp)
-    swc1 $f12, 140($sp)
-    la $t6, .Lf320
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 140($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf320
+    lwc1 $f12, 0($t7)
     c.le.s $f14, $f12
     li $t9, 0
     bc1f .Lfle_9
@@ -941,47 +940,47 @@ check_platform_landing:
     mul $t7, $t7, $t6
     addu $t8, $t8, $t7
     move $t9, $t8
-    sw $t9, 144($sp)
-    lw $t8, 144($sp)
+    sw $t9, 140($sp)
+    lw $t8, 140($sp)
     lbu $t9, 16($t8)
     beqz $t9, .Lif_end_12
     nop
     move $t8, $s2
     li $t7, 16
     addu $t9, $t8, $t7
-    sw $t9, 148($sp)
-    lw $t7, 144($sp)
+    sw $t9, 144($sp)
+    lw $t7, 140($sp)
     lw $t8, 12($t7)
-    sw $t8, 156($sp)
-    lw $t7, 144($sp)
+    sw $t8, 152($sp)
+    lw $t7, 140($sp)
     lw $t8, 8($t7)
-    sw $t8, 160($sp)
-    lw $t7, 144($sp)
+    sw $t8, 156($sp)
+    lw $t7, 140($sp)
     lw $t8, 4($t7)
-    sw $t8, 164($sp)
-    lw $t7, 144($sp)
+    sw $t8, 160($sp)
+    lw $t7, 140($sp)
     lw $t8, 0($t7)
     sw $t8, 16($sp)
     li $a3, 4
     li $a2, 12
-    lw $t8, 148($sp)
+    lw $t8, 144($sp)
     li $t7, 2
     subu $a1, $t8, $t7
     move $a0, $s1
-    lw $t8, 164($sp)
-    sw $t8, 20($sp)
     lw $t8, 160($sp)
-    sw $t8, 24($sp)
+    sw $t8, 20($sp)
     lw $t8, 156($sp)
+    sw $t8, 24($sp)
+    lw $t8, 152($sp)
     sw $t8, 28($sp)
     jal aabb_overlap
     nop
     move $t9, $v0
-    sb $t9, 152($sp)
-    lbu $t9, 152($sp)
+    sb $t9, 148($sp)
+    lbu $t9, 148($sp)
     beqz $t9, .Lif_end_13
     nop
-    lw $t9, 144($sp)
+    lw $t9, 140($sp)
     lw $v0, 4($t9)
     j .Lcheck_platform_landing_ret_7
     nop
@@ -999,12 +998,12 @@ check_platform_landing:
     j .Lcheck_platform_landing_ret_7
     nop
 .Lcheck_platform_landing_ret_7:
-    lw $s2, 172($sp)
-    lw $s1, 176($sp)
-    lw $s0, 180($sp)
-    lw $fp, 184($sp)
-    lw $ra, 188($sp)
-    addiu $sp, $sp, 192
+    lw $s2, 164($sp)
+    lw $s1, 168($sp)
+    lw $s0, 172($sp)
+    lw $fp, 176($sp)
+    lw $ra, 180($sp)
+    addiu $sp, $sp, 184
     jr $ra
     nop
 	.size check_platform_landing, . - check_platform_landing
@@ -1109,19 +1108,17 @@ Player_physics:
     sw $t9, 0($t8)
     lw $t7, 136($sp)
     lw $t8, 8($t7)
-    swc1 $f12, 140($sp)
-    la $t6, .Lf323
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 140($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf323
+    lwc1 $f12, 0($t7)
     mul.s $f12, $f14, $f12
     lw $t8, 136($sp)
     sw $t9, 8($t8)
     lw $t7, 136($sp)
     lw $t8, 0($t7)
-    swc1 $f12, 140($sp)
-    la $t6, .Lf320
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 140($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf320
+    lwc1 $f12, 0($t7)
     c.lt.s $f14, $f12
     li $t9, 0
     bc1f .Lflt_19
@@ -1137,10 +1134,9 @@ Player_physics:
 .Lif_end_18:
     lw $t7, 136($sp)
     lw $t8, 0($t7)
-    swc1 $f12, 140($sp)
-    la $t6, .Lf324
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 140($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf324
+    lwc1 $f12, 0($t7)
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_21
@@ -1166,10 +1162,10 @@ Player_physics:
 	.globl Player_resolve_collisions
 	.type Player_resolve_collisions, @function
 Player_resolve_collisions:
-    addiu $sp, $sp, -168
-    sw $ra, 164($sp)
-    sw $fp, 160($sp)
-    addiu $fp, $sp, 168
+    addiu $sp, $sp, -160
+    sw $ra, 156($sp)
+    sw $fp, 152($sp)
+    addiu $fp, $sp, 160
     sw $a0, 136($sp)
     lw $t7, 136($sp)
     lw $t8, 0($t7)
@@ -1242,10 +1238,9 @@ Player_resolve_collisions:
 .Lif_end_23:
     lw $t7, 136($sp)
     lw $t8, 4($t7)
-    swc1 $f12, 152($sp)
-    la $t6, .Lf325
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 152($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf325
+    lwc1 $f12, 0($t7)
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_29
@@ -1278,9 +1273,9 @@ Player_resolve_collisions:
     sw $t9, 20($t8)
 .Lif_end_28:
 .LPlayer_resolve_collisions_ret_22:
-    lw $fp, 160($sp)
-    lw $ra, 164($sp)
-    addiu $sp, $sp, 168
+    lw $fp, 152($sp)
+    lw $ra, 156($sp)
+    addiu $sp, $sp, 160
     jr $ra
     nop
 	.size Player_resolve_collisions, . - Player_resolve_collisions
@@ -1289,11 +1284,11 @@ Player_resolve_collisions:
 	.globl Player_handle_input
 	.type Player_handle_input, @function
 Player_handle_input:
-    addiu $sp, $sp, -168
-    sw $ra, 164($sp)
-    sw $fp, 160($sp)
-    addiu $fp, $sp, 168
-    sw $s0, 156($sp)
+    addiu $sp, $sp, -160
+    sw $ra, 156($sp)
+    sw $fp, 152($sp)
+    addiu $fp, $sp, 160
+    sw $s0, 148($sp)
     sw $a0, 136($sp)
     move $t9, $a1
     addiu $t8, $sp, 140
@@ -1312,10 +1307,9 @@ Player_handle_input:
     nop
     lw $t7, 144($sp)
     sll $t8, $t7, 16
-    swc1 $f12, 148($sp)
-    la $t6, .Lf326
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 148($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf326
+    lwc1 $f12, 0($t7)
     mul.s $f12, $f14, $f12
     lw $t8, 136($sp)
     sw $t9, 8($t8)
@@ -1333,10 +1327,9 @@ Player_handle_input:
     nop
     lw $t7, 144($sp)
     sll $t8, $t7, 16
-    swc1 $f12, 148($sp)
-    la $t6, .Lf326
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 148($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf326
+    lwc1 $f12, 0($t7)
     mul.s $f12, $f14, $f12
     lw $t8, 136($sp)
     sw $t9, 8($t8)
@@ -1402,10 +1395,10 @@ Player_handle_input:
 .Lif_end_37:
 .Lif_end_36:
 .LPlayer_handle_input_ret_30:
-    lw $s0, 156($sp)
-    lw $fp, 160($sp)
-    lw $ra, 164($sp)
-    addiu $sp, $sp, 168
+    lw $s0, 148($sp)
+    lw $fp, 152($sp)
+    lw $ra, 156($sp)
+    addiu $sp, $sp, 160
     jr $ra
     nop
 	.size Player_handle_input, . - Player_handle_input
@@ -1436,10 +1429,9 @@ Player_update_state:
     nop
     lw $t7, 136($sp)
     lw $t8, 12($t7)
-    swc1 $f12, 140($sp)
-    la $t6, .Lf320
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 140($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf320
+    lwc1 $f12, 0($t7)
     c.lt.s $f14, $f12
     li $t9, 0
     bc1f .Lflt_45
@@ -1473,10 +1465,9 @@ Player_update_state:
 .Lelif_else_46:
     lw $t7, 136($sp)
     lw $t8, 8($t7)
-    swc1 $f12, 140($sp)
-    la $t6, .Lf327
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 140($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf327
+    lwc1 $f12, 0($t7)
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_49
@@ -1665,29 +1656,27 @@ Camera_init:
 	.globl Camera_follow
 	.type Camera_follow, @function
 Camera_follow:
-    addiu $sp, $sp, -168
-    sw $ra, 164($sp)
-    sw $fp, 160($sp)
-    addiu $fp, $sp, 168
+    addiu $sp, $sp, -160
+    sw $ra, 156($sp)
+    sw $fp, 152($sp)
+    addiu $fp, $sp, 160
     sw $a0, 136($sp)
     sw $a1, 140($sp)
     lw $t8, 140($sp)
-    swc1 $f12, 148($sp)
-    la $t6, .Lf328
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 148($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf328
+    lwc1 $f12, 0($t7)
     sub.s $f12, $f14, $f12
     sw $t9, 144($sp)
     lw $t8, 144($sp)
     lw $t6, 136($sp)
     lw $t7, 0($t6)
     subu $t9, $t8, $t7
-    sw $t9, 152($sp)
-    lw $t8, 152($sp)
-    swc1 $f12, 148($sp)
-    la $t6, .Lf329
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 148($sp)
+    sw $t9, 148($sp)
+    lw $t8, 148($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf329
+    lwc1 $f12, 0($t7)
     mul.s $f12, $f14, $f12
     lw $t7, 136($sp)
     lw $t8, 0($t7)
@@ -1696,10 +1685,9 @@ Camera_follow:
     sw $t9, 0($t8)
     lw $t7, 136($sp)
     lw $t8, 0($t7)
-    swc1 $f12, 148($sp)
-    la $t6, .Lf320
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 148($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf320
+    lwc1 $f12, 0($t7)
     c.lt.s $f14, $f12
     li $t9, 0
     bc1f .Lflt_63
@@ -1719,9 +1707,9 @@ Camera_follow:
     lw $t8, 136($sp)
     sw $t9, 8($t8)
 .LCamera_follow_ret_61:
-    lw $fp, 160($sp)
-    lw $ra, 164($sp)
-    addiu $sp, $sp, 168
+    lw $fp, 152($sp)
+    lw $ra, 156($sp)
+    addiu $sp, $sp, 160
     jr $ra
     nop
 	.size Camera_follow, . - Camera_follow
