@@ -144,6 +144,28 @@ foreach r $opt {
 }
 check_eq "jal delay filled from prev addiu" $seq {jal addiu jr nop}
 
+# jal writes $ra before its delay slot runs. A function's `sw $ra` right
+# before its first call must stay put: moved into the slot, it saved the
+# call's own return address and the function returned into itself.
+set recs {
+    {d section .text}
+    {label t}
+    {i addiu {$sp} {$sp} -32}
+    {i sw {$ra} {28($sp)}}
+    {i jal foo}
+    {i nop}
+    {i lw {$ra} {28($sp)}}
+    {i addiu {$sp} {$sp} 32}
+    {i jr {$ra}}
+    {i nop}
+}
+set opt [pak::optimize_records $recs 0 0 1 0 0]
+set seq {}
+foreach r $opt {
+    if {[lindex $r 0] eq "i"} { lappend seq [lindex $r 1] }
+}
+check_eq "sw \$ra never fills a jal delay slot" [lrange $seq 0 3] {addiu sw jal nop}
+
 puts ""
 puts "== store never moves (DPC_END) =="
 # sw to DPC_END, then a load-use pair, then an independent li that the

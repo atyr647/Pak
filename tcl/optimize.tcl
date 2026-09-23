@@ -267,7 +267,19 @@ proc pak::opt::fill_delay_slots {recs} {
                         && ![string match ".*" $prev_op]} {
                     set prev_writes [regs_written $prev_op [ops $prev]]
                     set branch_reads [regs_read [mnem $br] [ops $br]]
-                    if {![sets_overlap $prev_writes $branch_reads]} {
+                    # jal/jalr write the link register BEFORE the delay slot
+                    # runs, so `sw $ra, K($sp)` moved behind the first call of
+                    # a function saved the call's own return address -- the
+                    # function then returned into itself.
+                    set link {}
+                    if {[mnem $br] eq "jal"} { set link {{$ra}} }
+                    if {[mnem $br] eq "jalr"} {
+                        set link {{$ra}}
+                        if {[llength [ops $br]] >= 2} { set link [list [lindex [ops $br] 0]] }
+                    }
+                    set prev_regs [regs_in [ops $prev]]
+                    if {![sets_overlap $prev_writes $branch_reads] \
+                            && ![sets_overlap $prev_regs $link]} {
                         lappend result $br
                         lappend result $prev
                         incr i 3
