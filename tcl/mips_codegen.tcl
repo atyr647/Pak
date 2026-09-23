@@ -1572,6 +1572,14 @@ oo::class create pak::MipsCodegen {
         $em blank
         foreach decl [pak::items [pak::nfield $program decls]] { my emit_top_decl $decl }
         my flush_mono
+        foreach decl [pak::items [pak::nfield $program decls]] {
+            if {[pak::kindof $decl] eq "EntryBlock"} {
+                # .bss (zeroed at boot), so it sorts after the program's own
+                # statics instead of shifting every one of them by a word.
+                $pool add_static __pak_heap_ptr 4 4 ""
+                break
+            }
+        }
         $pool emit_rodata $em
         $pool emit_data $em
         return [$em getvalue]
@@ -5038,16 +5046,18 @@ oo::class create pak::MipsCodegen {
         $ra free_temp $d
     }
 
-    method ensure_heap {} {
-        if {$heap_inited} return
-        set heap_inited 1
-        $pool add_static __pak_heap_ptr 4 4 0
-    }
+    # The heap cursor is one symbol for the whole program, defined by the
+    # object that holds `entry` (generate does that) and referenced by every
+    # other: the runtime's __pak_alloc, which Vec growth and PakFS buffers
+    # use, bumps the same cursor as every inline `alloc`. Two cursors each
+    # starting at the heap base handed out the same memory twice.
+    method ensure_heap {} {}
 
     # Inline bump: no jal, so the sim (and a ROM without the HAL linked)
     # actually returns a pointer. 8-byte aligned, free is a no-op.
-    # First allocation seeds the cursor at the standalone HAL heap base so
-    # we don't need a 64 KiB .bss reservation in the object.
+    # First allocation seeds the cursor at the standalone HAL heap base
+    # (runtime.pk64's HEAP_BASE) so we don't need a .bss reservation in the
+    # object. 0x802A0000-0x802AFFFF below it is the RDP display list.
     #
     # Bounded against g_boot_memsize (runtime/standalone/runtime.pk64,
     # written by boot.S at reset from IPL3's own detected RDRAM size):
@@ -5072,7 +5082,7 @@ oo::class create pak::MipsCodegen {
         $em lw $base 0 $hp
         $em bnez $base $inited
         $em nop
-        $em li $base 0x802A0000
+        $em li $base 0x802B0000
         $em label $inited
         $em addiu $aln $size_reg 7
         $em li $hp 0xFFFFFFF8

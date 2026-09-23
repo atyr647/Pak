@@ -701,7 +701,7 @@ alloc(Type, n)        -- allocate n T's on heap, returns *T
 free(ptr)             -- free heap pointer
 ```
 
-On the MIPS backend `alloc` is an inline bump from `0x802A0000` (same base as
+On the MIPS backend `alloc` is an inline bump from `0x802B0000` (same base as
 the standalone HAL); `free` is a no-op. The C backend maps to `malloc`/`free`.
 
 ### Sizeof / Offsetof / Alignof [IMPLEMENTED]

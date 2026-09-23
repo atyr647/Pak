@@ -40,7 +40,7 @@ set ::pak::LINK_BASE_ADDR 0x80000400
 # Standalone RDRAM map (cached KSEG0). Uncached KSEG1 is these | 0xA0000000.
 # Layout, low to high:
 #   0x80000000 vectors (boot.S copies a trampoline here at runtime)
-#   .text / .rodata / .data / .bss | 64-byte gap | FB0 FB1 FB2 | Z | DL | PCM | heap | stack
+#   .text / .rodata / .data / .bss | 64-byte gap | FB0 FB1 FB2 | Z | PCM | DL | heap | stack
 # Framebuffers, Z, the RDP display list, heap and stack are NOT relocatable: the
 # runtime hard-codes the same numbers. The linker refuses to place a section
 # that would collide with them.
@@ -50,15 +50,16 @@ set ::pak::MEM_FB_SIZE       0x25800          ;# 320 * 240 * 2
 set ::pak::MEM_FB_COUNT      3
 set ::pak::MEM_ZB            0x80271000
 set ::pak::MEM_ZB_SIZE       0x25800
-set ::pak::MEM_DL_BASE       0x80297000
-set ::pak::MEM_DL_SIZE       8192
 set ::pak::MEM_AB_BASE       0x80299000
 set ::pak::MEM_AB_SIZE       0x7000          ;# PCM ring, up to 8 buffers
-set ::pak::MEM_HEAP_BASE     0x802A0000
+set ::pak::MEM_DL_BASE       0x802A0000      ;# runtime.pk64 DL_BASE (KSEG1 alias)
+set ::pak::MEM_DL_SIZE       0x10000         ;# runtime.pk64 DL_BYTES
+set ::pak::MEM_HEAP_BASE     0x802B0000      ;# runtime.pk64 HEAP_BASE
 set ::pak::MEM_HEAP_LIMIT    0x803C0000
 set ::pak::MEM_STACK_TOP     0x80400000
 # FB2 ends at 0x80270800; 64-byte gap then Z at 0x80271000 (matches runtime).
-# Z is 320×240×16-bit (0x25800), then DL at 0x80297000, PCM at 0x80299000.
+# Z is 320×240×16-bit (0x25800), PCM at 0x80299000, the 64 KiB display list at
+# 0x802A0000, heap from 0x802B0000.
 
 # Fixed section order, and the alignment applied BEFORE each section is placed
 # (matching n64.ld's ALIGN directives). .text starts at the already-16-aligned

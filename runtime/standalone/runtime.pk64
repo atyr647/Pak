@@ -670,14 +670,10 @@ const DPC_PIPE_BUSY: u32 = 0x0020
 const DPC_CMD_BUSY:  u32 = 0x0040
 const DPC_DMA_BUSY:  u32 = 0x0100
 
--- Display list: 8 KiB of uncached RDRAM just past the Z buffer.
---
--- This is small: a scene of any size outgrows it in one frame and relies on
--- the mid-frame flush in dl_cmd. One flush per frame works; three or more
--- hang the DP and the frame never reaches detach, so the screen stays black
--- (a 10-bay church nave needs four). Growing it is not as easy as it looks --
--- 0xA02A0000 is the heap, and putting the list there corrupts loaded assets.
--- Until the flush path is root-caused, a scene has to fit about two kicks.
+-- Display list: 64 KiB of uncached RDRAM at 0xA02A0000, directly below the
+-- heap (HEAP_BASE, 0x802B0000). A frame that outgrows it is split across DP
+-- kicks by dl_flush. mips_codegen.tcl's inline `alloc` bump and
+-- tcl/n64link.tcl's memory map must agree with both numbers.
 const DL_BASE:  u32 = 0xA02A0000
 const DL_PHYS:  u32 = 0x002A0000
 const DL_BYTES: u32 = 65536
@@ -2619,25 +2615,12 @@ fn system_has_expansion() -> i32 {
 -- heap keeps.
 const HEAP_LIMIT_EXPANDED: u32 = 0x807F0000
 
-static g_heap_ptr:   u32 = 0
-static g_heap_limit: u32 = 0
-
--- Not what `alloc()` compiles to: mips_codegen.tcl's emit_bump_alloc
--- inlines its own bump at every call site (no jal), reading g_boot_memsize
--- directly, so this bound check is duplicated there rather than shared.
--- Nothing in the codegen currently emits a call to this function -- kept
--- for whatever, now or later, does call it by name.
+-- The same bump `alloc` compiles to (mips_codegen.tcl's emit_bump_alloc,
+-- which seeds at HEAP_BASE and stops at HEAP_LIMIT or, with the Expansion
+-- Pak, HEAP_LIMIT_EXPANDED), so Vec growth and PakFS buffers advance the one
+-- heap cursor every inline `alloc` in the program uses.
 fn __pak_alloc(size: i32) -> *u8 {
-    if g_heap_ptr == 0 {
-        g_heap_ptr = HEAP_BASE
-        g_heap_limit = HEAP_LIMIT
-        if g_boot_memsize > 0x400000 { g_heap_limit = HEAP_LIMIT_EXPANDED }
-    }
-    let aligned: u32 = ((size as u32) + 7) & 0xFFFFFFF8
-    if g_heap_ptr + aligned > g_heap_limit { return 0 as *u8 }
-    let p: u32 = g_heap_ptr
-    g_heap_ptr = g_heap_ptr + aligned
-    return p as *u8
+    return alloc(u8, size)
 }
 
 fn __pak_free(p: *u8) {
