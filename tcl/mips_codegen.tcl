@@ -1495,13 +1495,25 @@ oo::class create pak::MipsCodegen {
             my scan_promo_node [pak::nfield $tv $f] $in_closure
         }
     }
-    method compute_promotable {body} {
+    method compute_promotable {body {params {}}} {
         set promo_decl_count [dict create]
         set promo_decl_type [dict create]
         set promo_decl_order {}
         set promo_addr_taken [dict create]
         set promo_closure_names [dict create]
         set promo_use_count [dict create]
+        # A parameter is declared once, on entry; homing it into its register
+        # is then one `move` from $aN instead of a store and a load per read.
+        # A `let` of the same name in the body counts as a second declaration
+        # and keeps both on the stack.
+        foreach p [pak::items $params] {
+            set nm [pak::fval $p name]
+            dict incr promo_decl_count $nm
+            if {![dict exists $promo_decl_type $nm]} {
+                dict set promo_decl_type $nm [pak::nfield $p type]
+                lappend promo_decl_order $nm
+            }
+        }
         my scan_promo_node $body 0
         set promoted_regs [dict create]
         # A function with more eligible locals than registers (rdpq_triangle_
@@ -1973,7 +1985,7 @@ oo::class create pak::MipsCodegen {
         # grows (8-byte aligned) and the prologue immediates are patched.
         set spill_base 64
         set ra [pak::RegAlloc new [self] $spill_base]
-        my compute_promotable $body
+        my compute_promotable $body $params
         set scopes {}
         set defers {}
         set loop_header {}
@@ -2092,8 +2104,15 @@ oo::class create pak::MipsCodegen {
         return $live
     }
 
-    method emit_call_saves {} {
-        set live [my live_caller_saved]
+    # `dead` names registers whose value the call does not need to survive:
+    # the destination the result is about to be written into, or a function
+    # pointer that is never read again. Saving them was a sw/lw pair around
+    # every call in the program.
+    method emit_call_saves {{dead {}}} {
+        set live {}
+        foreach r [my live_caller_saved] {
+            if {$r ni $dead} { lappend live $r }
+        }
         set i 0
         foreach r $live {
             $em sw $r [expr {$::pak::CALL_SAVE_BASE + $i * 4}] {$sp}
@@ -2110,22 +2129,25 @@ oo::class create pak::MipsCodegen {
         }
     }
 
-    method emit_jal {target} {
-        set live [my emit_call_saves]
+    method emit_jal {target {dead {}}} {
+        set live [my emit_call_saves $dead]
         $em jal $target
         $em nop
         my emit_call_restores $live
     }
 
-    method emit_jalr_reg {reg} {
-        set live [my emit_call_saves]
+    method emit_jalr_reg {reg {dead {}}} {
+        set live [my emit_call_saves [concat $dead [list $reg]]]
         $em jalr $reg
         $em nop
         my emit_call_restores $live
     }
 
-    # Default frame is 320 bytes. Grow (8-byte aligned) when locals would
-    # overlap $fp/$ra and any callee-saved GPRs parked at the top.
+    # The frame is exactly what the function needs: the fixed low area
+    # (outgoing args, spill slots, call saves), its locals, then $fp/$ra and
+    # any callee-saved GPRs parked at the top. It used to be a flat 320 bytes
+    # minimum, which spread every call's stack traffic over more D-cache lines
+    # than it touched.
     # A slot offset is only as aligned as $sp is, and $sp moves by the frame
     # size, so a frame holding a 16-byte-aligned local has to be a multiple of
     # 16 itself -- otherwise the alignment survives in this function and is
@@ -2133,14 +2155,11 @@ oo::class create pak::MipsCodegen {
     method frame_size_for_locals {local_top callee} {
         set save_bytes [expr {8 + 4 * [llength $callee]}]
         set a [expr {$frame_align < 8 ? 8 : $frame_align}]
-        set need [expr {($local_top + $save_bytes + $a - 1) & ~($a - 1)}]
-        if {$need < 320} { return 320 }
-        return $need
+        return [expr {($local_top + $save_bytes + $a - 1) & ~($a - 1)}]
     }
 
-    # Prologue is emitted before the body, so a grown frame has to rewrite the
-    # addiu/sw immediates. Functions that fit in 320 bytes are left untouched
-    # so their instruction stream (and the mips goldens) stay identical.
+    # Prologue is emitted before the body with a placeholder 320-byte frame,
+    # so the real size has to rewrite the addiu/sw immediates.
     method patch_frame_size {frame_size pstart pend rstart rend} {
         if {$frame_size == 320} return
         set ra_off [expr {$frame_size - 4}]
@@ -2562,8 +2581,15 @@ oo::class create pak::MipsCodegen {
                 my add_defer [pak::nfield $stmt body]
             }
             ExprStmt {
+                set e [pak::nfield $stmt expr]
+                # `x = v` as a statement: its value is discarded, so take the
+                # statement form, which does not hold a register for it.
+                if {[pak::kindof $e] eq "Assign"} {
+                    my emit_stmt $e
+                    return
+                }
                 set tmp [$ra alloc_temp]
-                my emit_expr [pak::nfield $stmt expr] $tmp
+                my emit_expr $e $tmp
                 $ra free_temp $tmp
             }
             Block      { my emit_block $stmt }
@@ -5876,7 +5902,7 @@ oo::class create pak::MipsCodegen {
                 }
                 set fptr [$ra alloc_temp]
                 my emit_ident_load $fname $fptr
-                my emit_jalr_reg $fptr
+                my emit_jalr_reg $fptr [list $dst]
                 $ra free_temp $fptr
                 if {$dst ne {$v0}} { $em move $dst {$v0} }
                 return
@@ -5907,7 +5933,7 @@ oo::class create pak::MipsCodegen {
         my marshal_args [pak::nfield $expr args]
         set fptr [$ra alloc_temp]
         my emit_expr $func $fptr
-        my emit_jalr_reg $fptr
+        my emit_jalr_reg $fptr [list $dst]
         $ra free_temp $fptr
         if {$dst ne {$v0}} { $em move $dst {$v0} }
     }
@@ -6232,7 +6258,7 @@ oo::class create pak::MipsCodegen {
                 set start 2
             }
             my marshal_args $args_seq $start
-            my emit_jal $fname
+            my emit_jal $fname [list $dst]
             $em addiu $dst {$sp} $off
             return
         }
@@ -6242,7 +6268,7 @@ oo::class create pak::MipsCodegen {
         } else {
             my marshal_args $args_seq
         }
-        my emit_jal $fname
+        my emit_jal $fname [list $dst]
         if {$dst ne {$v0}} { $em move $dst {$v0} }
     }
 
@@ -6318,12 +6344,12 @@ oo::class create pak::MipsCodegen {
             $em addiu {$a0} {$sp} $off
             $em move {$a1} $selfp
             my marshal_args $args_seq 2
-            my emit_jalr_reg $fptr
+            my emit_jalr_reg $fptr [list $dst]
             $em addiu $dst {$sp} $off
         } else {
             $em move {$a0} $selfp
             my marshal_args $args_seq 1
-            my emit_jalr_reg $fptr
+            my emit_jalr_reg $fptr [list $dst]
             if {$dst ne {$v0}} { $em move $dst {$v0} }
         }
         $ra free_temp $selfp
@@ -6350,7 +6376,7 @@ oo::class create pak::MipsCodegen {
             set sym "${mod}_${fn}"
         }
         if {$sym eq ""} { set sym "${mod}_${fn}" }
-        my emit_jal $sym
+        my emit_jal $sym [list $dst]
         if {$dst ne {$v0}} { $em move $dst {$v0} }
     }
 

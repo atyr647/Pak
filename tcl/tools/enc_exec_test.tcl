@@ -104,7 +104,7 @@ set recs {
     {i sw {$t3} 16($sp)}
     {i lw {$t3} 16($sp)}
 }
-set opt [pak::optimize_records $recs 1 0 0 0 0]
+set opt [pak::optimize_records $recs 1 0 0 0 0 0]
 # li 0 -> move $t0, $zero; move $t1,$t1 dropped; li+addu -> addiu; sw+lw -> sw
 set mnems {}
 foreach r $opt {
@@ -119,7 +119,7 @@ set recs {
     {i li {$t1} 3}
     {i addu {$t2} {$t0} {$t1}}
 }
-set opt [pak::optimize_records $recs 0 0 0 0 1]
+set opt [pak::optimize_records $recs 0 0 0 0 1 0]
 set found 0
 foreach r $opt {
     if {$r eq {i li {$t2} 5}} { set found 1 }
@@ -137,7 +137,7 @@ set recs {
     {i jr {$ra}}
     {i nop}
 }
-set opt [pak::optimize_records $recs 0 0 1 0 0]
+set opt [pak::optimize_records $recs 0 0 1 0 0 0]
 set seq {}
 foreach r $opt {
     if {[lindex $r 0] eq "i"} { lappend seq [lindex $r 1] }
@@ -159,7 +159,7 @@ set recs {
     {i jr {$ra}}
     {i nop}
 }
-set opt [pak::optimize_records $recs 0 0 1 0 0]
+set opt [pak::optimize_records $recs 0 0 1 0 0 0]
 set seq {}
 foreach r $opt {
     if {[lindex $r 0] eq "i"} { lappend seq [lindex $r 1] }
