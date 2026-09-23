@@ -204,10 +204,10 @@
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -160
+    sw $ra, 156($sp)
+    sw $fp, 152($sp)
+    addiu $fp, $sp, 160
     li $t8, 4096
     sw $t8, 136($sp)
     la $t8, rx_buffer
@@ -215,10 +215,8 @@ main:
     addu $t8, $t8, $t7
     move $a0, $t8
     lw $a1, 136($sp)
-    sw $t9, 96($sp)
     jal data_cache_hit_writeback
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $t8, 4096
     sw $t8, 140($sp)
@@ -230,15 +228,11 @@ main:
     move $a0, $t8
     lw $a1, 136($sp)
     lw $a2, 140($sp)
-    sw $t9, 96($sp)
     jal dma_read
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal dma_wait
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $t8, 4096
     sw $t8, 136($sp)
@@ -247,26 +241,23 @@ main:
     addu $t8, $t8, $t7
     move $a0, $t8
     lw $a1, 136($sp)
-    sw $t9, 96($sp)
     jal data_cache_hit_invalidate
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     la $t8, rx_buffer
     li $t7, 0
     addu $t8, $t8, $t7
     lbu $t9, 0($t8)
     sb $t9, 144($sp)
-    lbu $t8, 144($sp)
-    la $t7, rx_buffer
-    li $t6, 1
-    addu $t7, $t7, $t6
-    sb $t8, 0($t7)
-    move $t9, $t8
+    lbu $t9, 144($sp)
+    la $t8, rx_buffer
+    li $t7, 1
+    addu $t8, $t8, $t7
+    sb $t9, 0($t8)
 .Lmain_ret_0:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 152($sp)
+    lw $ra, 156($sp)
+    addiu $sp, $sp, 160
     jr $ra
     nop
 	.size main, . - main
@@ -276,3 +267,7 @@ main:
 	.globl rx_buffer
 rx_buffer:
 	.space 4096
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.space 4

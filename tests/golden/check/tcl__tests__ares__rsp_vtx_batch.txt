@@ -1,0 +1,1 @@
+(E010 error "'use rsp.vacc' is only valid when compiling for the RSP target" "This file is an RSP microcode, not a c program. Check it with `pak check --backend rsp`, matching how it will actually be built (`pak build --backend rsp`).")

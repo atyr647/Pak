@@ -204,25 +204,27 @@
 	.globl Sprite_draw
 	.type Sprite_draw, @function
 Sprite_draw:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -160
+    sw $ra, 156($sp)
+    sw $fp, 152($sp)
+    addiu $fp, $sp, 160
+    sw $s0, 148($sp)
+    sw $s1, 144($sp)
     sw $a0, 136($sp)
-    sw $a1, 140($sp)
-    sw $a2, 144($sp)
-    lw $t8, 140($sp)
-    lw $t7, 136($sp)
-    sw $t8, 0($t7)
-    move $t9, $t8
-    lw $t8, 144($sp)
-    lw $t7, 136($sp)
-    sw $t8, 4($t7)
-    move $t9, $t8
+    move $s0, $a1
+    move $s1, $a2
+    move $t9, $s0
+    lw $t8, 136($sp)
+    sw $t9, 0($t8)
+    move $t9, $s1
+    lw $t8, 136($sp)
+    sw $t9, 4($t8)
 .LSprite_draw_ret_0:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $s1, 144($sp)
+    lw $s0, 148($sp)
+    lw $fp, 152($sp)
+    lw $ra, 156($sp)
+    addiu $sp, $sp, 160
     jr $ra
     nop
 	.size Sprite_draw, . - Sprite_draw
@@ -231,19 +233,19 @@ Sprite_draw:
 	.globl Sprite_get_width
 	.type Sprite_get_width, @function
 Sprite_get_width:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
     sw $a0, 136($sp)
     lw $t9, 136($sp)
     lw $v0, 8($t9)
     j .LSprite_get_width_ret_1
     nop
 .LSprite_get_width_ret_1:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size Sprite_get_width, . - Sprite_get_width
@@ -252,19 +254,19 @@ Sprite_get_width:
 	.globl Sprite_get_height
 	.type Sprite_get_height, @function
 Sprite_get_height:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
     sw $a0, 136($sp)
     lw $t9, 136($sp)
     lw $v0, 12($t9)
     j .LSprite_get_height_ret_2
     nop
 .LSprite_get_height_ret_2:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size Sprite_get_height, . - Sprite_get_height
@@ -284,30 +286,29 @@ Drawable_from_Sprite:
 	.globl Enemy_update
 	.type Enemy_update, @function
 Enemy_update:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -160
+    sw $ra, 156($sp)
+    sw $fp, 152($sp)
+    addiu $fp, $sp, 160
     sw $a0, 136($sp)
     swc1 $f12, 140($sp)
-    lw $t6, 136($sp)
-    lwc1 $f12, 8($t6)
+    lw $t7, 136($sp)
+    lwc1 $f12, 8($t7)
     swc1 $f12, 144($sp)
     lwc1 $f12, 140($sp)
     lwc1 $f14, 144($sp)
     mul.s $f12, $f14, $f12
     swc1 $f12, 144($sp)
-    lw $t6, 136($sp)
-    lwc1 $f12, 0($t6)
+    lw $t7, 136($sp)
+    lwc1 $f12, 0($t7)
     lwc1 $f14, 144($sp)
     add.s $f12, $f12, $f14
-    lw $t7, 136($sp)
-    swc1 $f12, 0($t7)
-    move $t9, $t8
+    lw $t8, 136($sp)
+    swc1 $f12, 0($t8)
 .LEnemy_update_ret_3:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 152($sp)
+    lw $ra, 156($sp)
+    addiu $sp, $sp, 160
     jr $ra
     nop
 	.size Enemy_update, . - Enemy_update
@@ -327,10 +328,10 @@ Updatable_from_Enemy:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -208
+    sw $ra, 204($sp)
+    sw $fp, 200($sp)
+    addiu $fp, $sp, 208
     sw $zero, 152($sp)
     sw $zero, 156($sp)
     sw $zero, 160($sp)
@@ -357,27 +358,20 @@ main:
     move $a0, $t8
     li $a2, 20
     li $a1, 10
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    sw $t8, 96($sp)
     jal Sprite_draw
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
+    lw $t8, 96($sp)
     move $t9, $v0
-    addiu $t7, $sp, 136
-    move $a0, $t7
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    sw $t7, 104($sp)
+    addiu $t8, $sp, 136
+    move $a0, $t8
+    sw $t8, 96($sp)
     jal Sprite_get_width
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    lw $t7, 104($sp)
-    move $t8, $v0
-    la $t7, sink
-    sw $t8, 0($t7)
-    move $t9, $t8
+    lw $t8, 96($sp)
+    move $t9, $v0
+    la $t8, sink
+    sw $t9, 0($t8)
     sw $zero, 180($sp)
     sw $zero, 184($sp)
     sw $zero, 188($sp)
@@ -404,24 +398,21 @@ main:
     lwc1 $f12, 0($t7)
     swc1 $f12, 192($sp)
     lwc1 $f12, 192($sp)
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    sw $t8, 96($sp)
     jal Enemy_update
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
+    lw $t8, 96($sp)
     move $t9, $v0
-    addiu $t6, $sp, 168
-    lwc1 $f12, 0($t6)
-    cvt.w.s $f12, $f12
-    mfc1 $t8, $f12
-    la $t7, sink
-    sw $t8, 0($t7)
-    move $t9, $t8
+    addiu $t7, $sp, 168
+    lwc1 $f12, 0($t7)
+    trunc.w.s $f12, $f12
+    mfc1 $t9, $f12
+    la $t8, sink
+    sw $t9, 0($t8)
 .Lmain_ret_4:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 200($sp)
+    lw $ra, 204($sp)
+    addiu $sp, $sp, 208
     jr $ra
     nop
 	.size main, . - main
@@ -452,3 +443,9 @@ _pak_Updatable_vtable_Enemy:
 	.globl sink
 sink:
 	.word 0
+
+	.section .bss
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.space 4

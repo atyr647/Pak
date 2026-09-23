@@ -204,94 +204,83 @@
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -176
+    sw $ra, 172($sp)
+    sw $fp, 168($sp)
+    addiu $fp, $sp, 176
+    sw $s0, 164($sp)
     li $t9, 10
-    sw $t9, 136($sp)
+    move $s0, $t9
     la $t8, .Lf320
     lwc1 $f12, 0($t8)
-    swc1 $f12, 140($sp)
+    swc1 $f12, 136($sp)
     li $t9, 1
-    sb $t9, 144($sp)
+    sb $t9, 140($sp)
     la $t9, .Lstr1
-    sw $t9, 148($sp)
-    lw $t7, 136($sp)
-    li $t6, 1
-    addu $t8, $t7, $t6
-    sw $t8, 136($sp)
-    move $t9, $t8
-    lwc1 $f12, 140($sp)
-    swc1 $f12, 152($sp)
-    la $t5, .Lf322
-    lwc1 $f12, 0($t5)
-    lwc1 $f14, 152($sp)
+    sw $t9, 144($sp)
+    move $t8, $s0
+    li $t7, 1
+    addu $t9, $t8, $t7
+    move $s0, $t9
+    lwc1 $f12, 136($sp)
+    swc1 $f12, 148($sp)
+    la $t6, .Lf322
+    lwc1 $f12, 0($t6)
+    lwc1 $f14, 148($sp)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 140($sp)
-    move $t9, $t8
-    li $t8, 5
-    lw $t7, 136($sp)
-    addu $t8, $t7, $t8
-    sw $t8, 136($sp)
-    move $t9, $t8
-    li $t8, 2
-    lw $t7, 136($sp)
-    subu $t8, $t7, $t8
-    sw $t8, 136($sp)
-    move $t9, $t8
-    li $t8, 3
-    lw $t7, 136($sp)
-    mul $t8, $t7, $t8
-    sw $t8, 136($sp)
-    move $t9, $t8
-    li $t8, 2
-    lw $t7, 136($sp)
-    div $zero, $t7, $t8
-    mflo $t8
-    sw $t8, 136($sp)
-    move $t9, $t8
+    swc1 $f12, 136($sp)
+    li $t9, 5
+    move $t8, $s0
+    addu $t9, $t8, $t9
+    move $s0, $t9
+    li $t9, 2
+    move $t8, $s0
+    subu $t9, $t8, $t9
+    move $s0, $t9
+    li $t9, 3
+    move $t8, $s0
+    mul $t9, $t8, $t9
+    move $s0, $t9
+    li $t9, 2
+    move $t8, $s0
+    div $zero, $t8, $t9
+    mflo $t9
+    move $s0, $t9
     li $t9, 0
-    sw $t9, 156($sp)
+    sw $t9, 152($sp)
     la $t8, .Lf323
     lwc1 $f12, 0($t8)
-    swc1 $f12, 160($sp)
-    li $t8, 1
-    la $t7, frame_count
-    lw $t7, 0($t7)
-    addu $t8, $t7, $t8
-    la $t7, frame_count
-    sw $t8, 0($t7)
-    move $t9, $t8
-    li $t8, 100
-    sw $t8, 136($sp)
-    move $t9, $t8
-    la $t7, .Lf324
-    lwc1 $f12, 0($t7)
-    swc1 $f12, 140($sp)
-    move $t9, $t8
-    li $t8, 0
-    sb $t8, 144($sp)
-    move $t9, $t8
+    swc1 $f12, 156($sp)
+    li $t9, 1
     la $t8, frame_count
     lw $t8, 0($t8)
-    sw $t8, 156($sp)
-    move $t9, $t8
-    lwc1 $f12, 160($sp)
-    swc1 $f12, 152($sp)
-    la $t5, .Lf325
-    lwc1 $f12, 0($t5)
-    lwc1 $f14, 152($sp)
+    addu $t9, $t8, $t9
+    la $t8, frame_count
+    sw $t9, 0($t8)
+    li $t9, 100
+    move $s0, $t9
+    la $t8, .Lf324
+    lwc1 $f12, 0($t8)
+    swc1 $f12, 136($sp)
+    li $t9, 0
+    sb $t9, 140($sp)
+    la $t9, frame_count
+    lw $t9, 0($t9)
+    sw $t9, 152($sp)
+    lwc1 $f12, 156($sp)
+    swc1 $f12, 148($sp)
+    la $t6, .Lf325
+    lwc1 $f12, 0($t6)
+    lwc1 $f14, 148($sp)
     add.s $f12, $f14, $f12
-    swc1 $f12, 160($sp)
-    move $t9, $t8
-    la $t8, .Lstr6
-    sw $t8, 148($sp)
-    move $t9, $t8
+    swc1 $f12, 156($sp)
+    la $t9, .Lstr6
+    sw $t9, 144($sp)
 .Lmain_ret_0:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $s0, 164($sp)
+    lw $fp, 168($sp)
+    lw $ra, 172($sp)
+    addiu $sp, $sp, 176
     jr $ra
     nop
 	.size main, . - main
@@ -324,3 +313,9 @@ main:
 	.globl frame_count
 frame_count:
 	.word 0
+
+	.section .bss
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.space 4

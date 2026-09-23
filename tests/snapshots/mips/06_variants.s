@@ -204,10 +204,10 @@
 	.globl area
 	.type area, @function
 area:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -176
+    sw $ra, 172($sp)
+    sw $fp, 168($sp)
+    addiu $fp, $sp, 176
     move $t9, $a0
     addiu $t8, $sp, 136
     lw $t7, 0($t9)
@@ -268,9 +268,9 @@ area:
 .Larm_skip_7:
 .Lmatch_end_1:
 .Larea_ret_0:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 168($sp)
+    lw $ra, 172($sp)
+    addiu $sp, $sp, 176
     jr $ra
     nop
 	.size area, . - area
@@ -279,10 +279,10 @@ area:
 	.globl entity_id
 	.type entity_id, @function
 entity_id:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
     sb $a0, 136($sp)
     lb $t9, 136($sp)
     li $t8, 0
@@ -323,9 +323,9 @@ entity_id:
 .Larm_skip_17:
 .Lmatch_end_9:
 .Lentity_id_ret_8:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size entity_id, . - entity_id
@@ -334,81 +334,61 @@ entity_id:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -232
+    sw $ra, 228($sp)
+    sw $fp, 224($sp)
+    addiu $fp, $sp, 232
     sw $zero, 136($sp)
     sw $zero, 140($sp)
     sw $zero, 144($sp)
-    li $t7, 0
-    sb $t7, 136($sp)
-    la $t6, .Lf322
-    lwc1 $f12, 0($t6)
+    li $t8, 0
+    sb $t8, 136($sp)
+    la $t7, .Lf322
+    lwc1 $f12, 0($t7)
     swc1 $f12, 140($sp)
     addiu $a0, $sp, 136
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
     jal area
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    move $t8, $v0
-    la $t7, sink
-    swc1 $f12, 0($t7)
-    move $t9, $t8
+    move $t9, $v0
+    la $t8, sink
+    swc1 $f12, 0($t8)
     sw $zero, 148($sp)
     sw $zero, 152($sp)
     sw $zero, 156($sp)
-    li $t7, 1
-    sb $t7, 148($sp)
-    la $t6, .Lf323
-    lwc1 $f12, 0($t6)
+    li $t8, 1
+    sb $t8, 148($sp)
+    la $t7, .Lf323
+    lwc1 $f12, 0($t7)
     swc1 $f12, 152($sp)
-    la $t6, .Lf324
-    lwc1 $f12, 0($t6)
+    la $t7, .Lf324
+    lwc1 $f12, 0($t7)
     swc1 $f12, 156($sp)
     addiu $a0, $sp, 148
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
     jal area
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    move $t8, $v0
-    la $t7, sink
-    swc1 $f12, 0($t7)
-    move $t9, $t8
+    move $t9, $v0
+    la $t8, sink
+    swc1 $f12, 0($t8)
     sw $zero, 160($sp)
     sw $zero, 164($sp)
     sw $zero, 168($sp)
-    li $t7, 2
-    sb $t7, 160($sp)
+    li $t8, 2
+    sb $t8, 160($sp)
     addiu $a0, $sp, 160
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
     jal area
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    move $t8, $v0
-    la $t7, sink
-    swc1 $f12, 0($t7)
-    move $t9, $t8
+    move $t9, $v0
+    la $t8, sink
+    swc1 $f12, 0($t8)
     sw $zero, 172($sp)
-    li $t7, 1
-    sb $t7, 172($sp)
+    li $t8, 1
+    sb $t8, 172($sp)
     addiu $a0, $sp, 172
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
     jal entity_id
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    move $t8, $v0
-    la $t7, sink_i
-    sw $t8, 0($t7)
-    move $t9, $t8
+    move $t9, $v0
+    la $t8, sink_i
+    sw $t9, 0($t8)
     sw $zero, 180($sp)
     sw $zero, 184($sp)
     sw $zero, 188($sp)
@@ -427,11 +407,10 @@ main:
     nop
     lbu $t8, 1($t9)
     sb $t8, 192($sp)
-    lbu $t6, 192($sp)
-    move $t7, $t6
-    la $t6, sink_i
-    sw $t7, 0($t6)
+    lbu $t7, 192($sp)
     move $t8, $t7
+    la $t7, sink_i
+    sw $t8, 0($t7)
     j .Lmatch_end_19
     nop
 .Larm_skip_21:
@@ -443,23 +422,21 @@ main:
     sw $t8, 196($sp)
     lw $t8, 8($t9)
     sw $t8, 200($sp)
-    lw $t6, 196($sp)
-    lw $t5, 200($sp)
-    addu $t7, $t6, $t5
-    la $t6, sink_i
-    sw $t7, 0($t6)
-    move $t8, $t7
+    lw $t7, 196($sp)
+    lw $t6, 200($sp)
+    addu $t8, $t7, $t6
+    la $t7, sink_i
+    sw $t8, 0($t7)
     j .Lmatch_end_19
     nop
 .Larm_skip_23:
     li $t8, 0
     bne $t9, $t8, .Larm_skip_25
     nop
-    li $t6, 1
-    subu $t7, $zero, $t6
-    la $t6, sink_i
-    sw $t7, 0($t6)
-    move $t8, $t7
+    li $t7, 1
+    subu $t8, $zero, $t7
+    la $t7, sink_i
+    sw $t8, 0($t7)
     j .Lmatch_end_19
     nop
 .Larm_skip_25:
@@ -479,38 +456,35 @@ main:
     li $t8, 0
     bne $t9, $t8, .Larm_skip_28
     nop
-    li $t7, 1
-    la $t6, sink_i
-    sw $t7, 0($t6)
-    move $t8, $t7
+    li $t8, 1
+    la $t7, sink_i
+    sw $t8, 0($t7)
     j .Lmatch_end_26
     nop
 .Larm_skip_28:
     li $t8, 0
     bne $t9, $t8, .Larm_skip_30
     nop
-    li $t7, 2
-    la $t6, sink_i
-    sw $t7, 0($t6)
-    move $t8, $t7
+    li $t8, 2
+    la $t7, sink_i
+    sw $t8, 0($t7)
     j .Lmatch_end_26
     nop
 .Larm_skip_30:
     li $t8, 0
     bne $t9, $t8, .Larm_skip_32
     nop
-    li $t7, 0
-    la $t6, sink_i
-    sw $t7, 0($t6)
-    move $t8, $t7
+    li $t8, 0
+    la $t7, sink_i
+    sw $t8, 0($t7)
     j .Lmatch_end_26
     nop
 .Larm_skip_32:
 .Lmatch_end_26:
 .Lmain_ret_18:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 224($sp)
+    lw $ra, 228($sp)
+    addiu $sp, $sp, 232
     jr $ra
     nop
 	.size main, . - main
@@ -541,3 +515,9 @@ sink:
 	.globl sink_i
 sink_i:
 	.word 0
+
+	.section .bss
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.space 4

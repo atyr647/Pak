@@ -204,10 +204,10 @@
 	.globl do_work
 	.type do_work, @function
 do_work:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
     li $t8, 1
     li $t7, 256
     mul $t8, $t8, $t7
@@ -215,7 +215,7 @@ do_work:
     lw $t7, 0($t6)
     bnez $t7, .Lheap_ok_1
     nop
-    li $t7, 0x802A0000
+    li $t7, 0x802B0000
 .Lheap_ok_1:
     addiu $t5, $t8, 7
     li $t6, 0xFFFFFFF8
@@ -244,23 +244,19 @@ do_work:
 .Lheap_done_4:
     sw $t9, 136($sp)
     la $a0, .Lstr0
-    sw $t9, 96($sp)
     jal debugf
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     la $a0, .Lstr1
-    sw $t9, 96($sp)
     jal debugf
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     lw $t8, 136($sp)
     move $t9, $zero
 .Ldo_work_ret_0:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size do_work, . - do_work
@@ -269,43 +265,33 @@ do_work:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $t9, 96($sp)
+    addiu $sp, $sp, -144
+    sw $ra, 140($sp)
+    sw $fp, 136($sp)
+    addiu $fp, $sp, 144
     jal do_work
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     la $a0, .Lstr2
-    sw $t9, 96($sp)
     jal debugf
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     la $a0, .Lstr3
-    sw $t9, 96($sp)
     jal debugf
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     la $a0, .Lstr4
-    sw $t9, 96($sp)
     jal debugf
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     la $a0, .Lstr5
-    sw $t9, 96($sp)
     jal debugf
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
 .Lmain_ret_5:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 136($sp)
+    lw $ra, 140($sp)
+    addiu $sp, $sp, 144
     jr $ra
     nop
 	.size main, . - main
@@ -330,8 +316,8 @@ main:
 .Lstr5:
 	.asciiz "shutting down"
 
-	.section .data
+	.section .bss
 	.align 2
 	.globl __pak_heap_ptr
 __pak_heap_ptr:
-	.word 0
+	.space 4

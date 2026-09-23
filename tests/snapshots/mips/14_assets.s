@@ -297,44 +297,34 @@ _pak_asset_get_bg_sprite:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
     li $t8, 0
     sw $t8, 16($sp)
     li $a3, 0
     li $a2, 2
     li $a1, 0
     li $a0, 0
-    sw $t9, 96($sp)
     jal display_init
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_init
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
 .Lloop_h_4:
-    sw $t9, 96($sp)
     jal display_get
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     sw $t9, 136($sp)
     lw $a0, 136($sp)
     move $a1, $zero
-    sw $t9, 96($sp)
     jal rdpq_attach_clear
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_set_mode_copy
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 0
     li $a2, 0
@@ -344,10 +334,8 @@ main:
     nop
     lw $t9, 96($sp)
     move $a0, $v0
-    sw $t9, 96($sp)
     jal rdpq_sprite_blit
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 0
     li $a2, 120
@@ -357,10 +345,8 @@ main:
     nop
     lw $t9, 96($sp)
     move $a0, $v0
-    sw $t9, 96($sp)
     jal rdpq_sprite_blit
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 0
     li $a2, 80
@@ -370,23 +356,19 @@ main:
     nop
     lw $t9, 96($sp)
     move $a0, $v0
-    sw $t9, 96($sp)
     jal rdpq_sprite_blit
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_detach_show
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     j .Lloop_h_4
     nop
 .Lloop_x_5:
 .Lmain_ret_3:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size main, . - main
@@ -415,3 +397,9 @@ _pak_asset_enemy_sprite:
 	.globl _pak_asset_bg_sprite
 _pak_asset_bg_sprite:
 	.word 0
+
+	.section .bss
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.space 4

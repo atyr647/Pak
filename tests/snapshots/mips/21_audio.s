@@ -204,23 +204,25 @@
 	.globl gen_sample
 	.type gen_sample, @function
 gen_sample:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
+    sw $s0, 140($sp)
+    sw $s1, 136($sp)
+    move $s1, $a0
     li $t9, 100
-    sw $t9, 140($sp)
-    lw $t7, 136($sp)
-    lw $t6, 140($sp)
+    move $s0, $t9
+    move $t8, $s1
+    move $t7, $s0
+    div $zero, $t8, $t7
+    mfhi $t9
+    move $t7, $s0
+    li $t6, 2
     div $zero, $t7, $t6
-    mfhi $t8
-    lw $t6, 140($sp)
-    li $t5, 2
-    div $zero, $t6, $t5
-    mflo $t7
-    slt $t9, $t8, $t7
-    beqz $t9, .Lif_end_1
+    mflo $t8
+    slt $t7, $t9, $t8
+    beqz $t7, .Lif_end_1
     nop
     li $t9, 8000
     sll $v0, $t9, 16
@@ -235,9 +237,11 @@ gen_sample:
     j .Lgen_sample_ret_0
     nop
 .Lgen_sample_ret_0:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $s1, 136($sp)
+    lw $s0, 140($sp)
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size gen_sample, . - gen_sample
@@ -246,78 +250,68 @@ gen_sample:
 	.globl fill_audio_buffer
 	.type fill_audio_buffer, @function
 fill_audio_buffer:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $t9, 96($sp)
+    addiu $sp, $sp, -160
+    sw $ra, 156($sp)
+    sw $fp, 152($sp)
+    addiu $fp, $sp, 160
+    sw $s0, 148($sp)
     jal audio_get_buffer
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     sw $t9, 136($sp)
-    lw $t8, 136($sp)
-    move $t7, $zero
-    seq $t9, $t8, $t7
-    beqz $t9, .Lif_end_3
+    lw $t9, 136($sp)
+    move $t8, $zero
+    bne $t9, $t8, .Lif_end_3
     nop
     j .Lfill_audio_buffer_ret_2
     nop
 .Lif_end_3:
     li $t9, 0
-    sw $t9, 140($sp)
+    move $s0, $t9
 .Lloop_h_4:
-    lw $t8, 140($sp)
-    li $t7, 1470
-    sge $t9, $t8, $t7
-    beqz $t9, .Lif_end_6
+    move $t9, $s0
+    slti $t8, $t9, 1470
+    beqz $t8, .Lloop_x_5
     nop
-    j .Lloop_x_5
-    nop
-.Lif_end_6:
     la $t7, frame
     lw $t7, 0($t7)
     li $t6, 735
     mul $t8, $t7, $t6
-    lw $t6, 140($sp)
+    move $t6, $s0
     li $t5, 2
     div $zero, $t6, $t5
     mflo $t7
     addu $a0, $t8, $t7
-    sw $t9, 96($sp)
     jal gen_sample
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sh $t9, 144($sp)
-    lh $t8, 144($sp)
-    lw $t7, 136($sp)
-    lw $t6, 140($sp)
-    sll $t6, $t6, 1
-    addu $t7, $t7, $t6
-    sh $t8, 0($t7)
-    move $t9, $t8
-    lh $t8, 144($sp)
-    lw $t7, 136($sp)
-    lw $t5, 140($sp)
-    li $t4, 1
-    addu $t6, $t5, $t4
-    sll $t6, $t6, 1
-    addu $t7, $t7, $t6
-    sh $t8, 0($t7)
-    move $t9, $t8
-    lw $t7, 140($sp)
-    li $t6, 2
-    addu $t8, $t7, $t6
-    sw $t8, 140($sp)
-    move $t9, $t8
+    sh $t9, 140($sp)
+    lh $t9, 140($sp)
+    lw $t8, 136($sp)
+    move $t7, $s0
+    sll $t7, $t7, 1
+    addu $t8, $t8, $t7
+    sh $t9, 0($t8)
+    lh $t9, 140($sp)
+    lw $t8, 136($sp)
+    move $t6, $s0
+    li $t5, 1
+    addu $t7, $t6, $t5
+    sll $t7, $t7, 1
+    addu $t8, $t8, $t7
+    sh $t9, 0($t8)
+    move $t8, $s0
+    li $t7, 2
+    addu $t9, $t8, $t7
+    move $s0, $t9
     j .Lloop_h_4
     nop
 .Lloop_x_5:
 .Lfill_audio_buffer_ret_2:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $s0, 148($sp)
+    lw $fp, 152($sp)
+    lw $ra, 156($sp)
+    addiu $sp, $sp, 160
     jr $ra
     nop
 	.size fill_audio_buffer, . - fill_audio_buffer
@@ -326,86 +320,67 @@ fill_audio_buffer:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
     li $t8, 1
     sw $t8, 16($sp)
     li $a3, 0
     li $a2, 3
     li $a1, 2
     li $a0, 0
-    sw $t9, 96($sp)
     jal display_init
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_init
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a1, 4
     li $a0, 44100
-    sw $t9, 96($sp)
     jal audio_init
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
 .Lloop_h_8:
-    sw $t9, 96($sp)
     jal fill_audio_buffer
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal display_get
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     sw $t9, 136($sp)
     lw $a0, 136($sp)
     move $a1, $zero
-    sw $t9, 96($sp)
     jal rdpq_attach_clear
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a0, 437923583
-    sw $t9, 96($sp)
     jal rdpq_set_mode_fill
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 240
     li $a2, 320
     li $a1, 0
     li $a0, 0
-    sw $t9, 96($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_detach_show
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    la $t7, frame
-    lw $t7, 0($t7)
-    li $t6, 1
-    addu $t8, $t7, $t6
-    la $t7, frame
-    sw $t8, 0($t7)
-    move $t9, $t8
+    la $t8, frame
+    lw $t8, 0($t8)
+    li $t7, 1
+    addu $t9, $t8, $t7
+    la $t8, frame
+    sw $t9, 0($t8)
     j .Lloop_h_8
     nop
 .Lloop_x_9:
 .Lmain_ret_7:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size main, . - main
@@ -415,3 +390,9 @@ main:
 	.globl frame
 frame:
 	.word 0
+
+	.section .bss
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.space 4
