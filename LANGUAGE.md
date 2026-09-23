@@ -778,6 +778,10 @@ Listed from **lowest** to **highest** precedence:
 
 **Logical operators use words:** `and`, `or`, `not` — NOT `&&`, `||`, `!`
 
+`and` and `or` short-circuit: the right operand is evaluated only when the left
+one does not already decide the result, so `p? and p.x > 0` never reads
+through a null `p`.
+
 ### Assignment Operators [IMPLEMENTED]
 
 ```

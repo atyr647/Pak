@@ -117,6 +117,11 @@ proc pak::asm::encode {op operands addr syms} {
             set off [expr {($tgt - ($addr + 4)) >> 2}]
             return [list [$I $opc [$g [lindex $a 0]] [$g [lindex $a 1]] $off]]
         }
+        bltz - bgez {
+            set tgt [pak::asm::sym [lindex $a 1] $syms]
+            set off [expr {($tgt - ($addr + 4)) >> 2}]
+            return [list [$I 0x01 [$g [lindex $a 0]] [expr {$op eq "bgez" ? 1 : 0}] $off]]
+        }
         beqz - bnez {
             set opc [expr {$op eq "beqz" ? 0x04 : 0x05}]
             set tgt [pak::asm::sym [lindex $a 1] $syms]

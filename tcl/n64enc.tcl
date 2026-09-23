@@ -608,6 +608,17 @@ proc pak::enc::emit_real {ctxVar mnem args} {
         dict set ctx secdata $sec brmeta $woff [list 0x07 [gpr $s] 0]
         return
     }
+    # BLTZ / BGEZ: REGIMM (op=0x01), rt=0 / rt=1
+    if {$mnem eq "bltz" || $mnem eq "bgez"} {
+        lassign $ops s label
+        set rt [expr {$mnem eq "bgez" ? 1 : 0}]
+        set woff [cur_off ctx]
+        emit_word ctx [I 0x01 [gpr $s] $rt 0]
+        add_branch_fixup ctx $woff $label
+        set sec [dict get $ctx cur]
+        dict set ctx secdata $sec brmeta $woff [list 0x01 [gpr $s] $rt]
+        return
+    }
     # BLEZ: blez $rs, label  op=0x06, rt=0
     if {$mnem eq "blez"} {
         lassign $ops s label

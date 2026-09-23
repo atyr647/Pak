@@ -324,6 +324,39 @@ dict for {addr val} $mw {
 }
 check_eq "fact(5) == 120" $sink_got 120
 
+# ── 4. `and` / `or` short-circuit ───────────────────────────────────────────
+# The right side must not run once the left side decides the result -- in a
+# condition and as a value. Both sides used to be evaluated unconditionally,
+# so `p? and p.x > 0` read through a null pointer.
+puts ""
+puts "== and/or short-circuit =="
+
+set src {
+static calls: i32 = 0
+static out: i32 = 0
+fn bump() -> i32 {
+    calls += 1
+    return 1
+}
+entry {
+    let zero: i32 = 0
+    let one: i32 = 1
+    if zero == 1 and bump() == 1 { out = out + 1 }
+    if one == 1 or bump() == 1 { out = out + 10 }
+    let v: bool = zero == 1 and bump() == 1
+    if v { out = out + 100 }
+    let w: bool = one == 1 or bump() == 1
+    if w { out = out + 1000 }
+    if one == 1 and bump() == 1 { out = out + 10000 }
+}
+}
+set run [pak::mips_sim_run [pak::records_to_asm [pak::optimize_records [compile_records $src]]] main 200000]
+set syms [dict get $run data_syms]
+set mw [dict get $run mem_w]
+proc word_at {mw addr} { if {[dict exists $mw $addr]} { return [dict get $mw $addr] }; return 0 }
+check_eq "short-circuit: branches taken" [word_at $mw [dict get $syms out]] 11010
+check_eq "short-circuit: bump() ran only where it decides" [word_at $mw [dict get $syms calls]] 1
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

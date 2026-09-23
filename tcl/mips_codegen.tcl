@@ -141,6 +141,12 @@ oo::class create pak::Emitter {
     method bnez {r lbl}   { my instr "bnez" "$r," $lbl }
     method bge {s1 s2 lbl} { my instr "bge" "$s1," "$s2," $lbl }
     method bne {s1 s2 lbl} { my instr "bne" "$s1," "$s2," $lbl }
+    method beq {s1 s2 lbl} { my instr "beq" "$s1," "$s2," $lbl }
+    method bltz {r lbl}   { my instr "bltz" "$r," $lbl }
+    method bgez {r lbl}   { my instr "bgez" "$r," $lbl }
+    method blez {r lbl}   { my instr "blez" "$r," $lbl }
+    method bgtz {r lbl}   { my instr "bgtz" "$r," $lbl }
+    method slti {d s imm} { my instr "slti" "$d," "$s," $imm }
     # typed loads / stores
     method lh {d off base}  { my instr "lh" "$d," "${off}($base)" }
     method lhu {d off base} { my instr "lhu" "$d," "${off}($base)" }
@@ -2607,11 +2613,14 @@ oo::class create pak::MipsCodegen {
         set has_else [expr {![pak::isnil [pak::nfield $stmt else_branch]]}]
         set elifs [pak::items [pak::nfield $stmt elif_branches]]
         if {$has_else || [llength $elifs] > 0} { set else_label [my fresh_label ".Lif_else"] } else { set else_label $end_label }
-        set cond [$ra alloc_temp]
-        my emit_expr [pak::nfield $stmt condition] $cond
-        $em beqz $cond $else_label
-        $em nop
-        $ra free_temp $cond
+        if {!$has_else && [llength $elifs] == 0} {
+            set jump [my loop_jump_target [pak::nfield $stmt then]]
+            if {$jump ne ""} {
+                my emit_cond_branch [pak::nfield $stmt condition] $jump 1
+                return
+            }
+        }
+        my emit_cond_branch [pak::nfield $stmt condition] $else_label 0
         my emit_block [pak::nfield $stmt then]
         if {[llength $elifs] > 0 || $has_else} { $em j $end_label; $em nop }
         set current_else $else_label
@@ -2619,11 +2628,7 @@ oo::class create pak::MipsCodegen {
             set p [pak::items $pair]
             $em label $current_else
             set next_else [my fresh_label ".Lelif_else"]
-            set cond [$ra alloc_temp]
-            my emit_expr [lindex $p 0] $cond
-            $em beqz $cond $next_else
-            $em nop
-            $ra free_temp $cond
+            my emit_cond_branch [lindex $p 0] $next_else 0
             my emit_block [lindex $p 1]
             $em j $end_label
             $em nop
@@ -2639,17 +2644,31 @@ oo::class create pak::MipsCodegen {
         $em label $end_label
     }
 
+    # `if c { break }` / `if c { continue }` is one conditional branch to the
+    # loop's exit or header -- when leaving the block runs nothing: no defer
+    # registered since the loop began, and no break value to store.
+    method loop_jump_target {then} {
+        if {[llength $loop_exit] == 0} { return "" }
+        set stmts [pak::items [pak::nfield $then stmts]]
+        if {[llength $stmts] != 1} { return "" }
+        set st [lindex $stmts 0]
+        set kind [pak::kindof $st]
+        if {$kind ni {Break Continue}} { return "" }
+        if {$kind eq "Break" && ![pak::isnil [pak::nfield $st value]]} { return "" }
+        for {set i [lindex $loop_defer_depth end]} {$i < [llength $defers]} {incr i} {
+            if {[llength [lindex $defers $i]] > 0} { return "" }
+        }
+        if {$kind eq "Break"} { return [lindex $loop_exit end] }
+        return [lindex $loop_header end]
+    }
+
     method emit_while {stmt} {
         set header [my fresh_label ".Lwhile_h"]
         set exit_l [my fresh_label ".Lwhile_x"]
         lappend loop_header $header; lappend loop_exit $exit_l
         lappend loop_defer_depth [llength $defers]
         $em label $header
-        set cond [$ra alloc_temp]
-        my emit_expr [pak::nfield $stmt condition] $cond
-        $em beqz $cond $exit_l
-        $em nop
-        $ra free_temp $cond
+        my emit_cond_branch [pak::nfield $stmt condition] $exit_l 0
         my emit_block [pak::nfield $stmt body]
         $em j $header
         $em nop
@@ -2665,11 +2684,7 @@ oo::class create pak::MipsCodegen {
         lappend loop_defer_depth [llength $defers]
         $em label $header
         my emit_block [pak::nfield $stmt body]
-        set cond [$ra alloc_temp]
-        my emit_expr [pak::nfield $stmt condition] $cond
-        $em bnez $cond $header
-        $em nop
-        $ra free_temp $cond
+        my emit_cond_branch [pak::nfield $stmt condition] $header 1
         $em label $exit_l
         set loop_header [lrange $loop_header 0 end-1]; set loop_exit [lrange $loop_exit 0 end-1]
         set loop_defer_depth [lrange $loop_defer_depth 0 end-1]
@@ -5166,6 +5181,18 @@ oo::class create pak::MipsCodegen {
 
     method emit_binop {expr dst} {
         set op [pak::fval $expr op]
+        if {$op in {&& ||}} {
+            set f [my fresh_label .Lsc_f]
+            set e [my fresh_label .Lsc_e]
+            my emit_cond_branch $expr $f 0
+            $em li $dst 1
+            $em j $e
+            $em nop
+            $em label $f
+            $em move $dst {$zero}
+            $em label $e
+            return
+        }
         # Float path: dispatch to FPU arithmetic / comparisons
         if {[my infer_is_float [pak::nfield $expr left]] || \
             [my infer_is_float [pak::nfield $expr right]]} {
@@ -5245,6 +5272,159 @@ oo::class create pak::MipsCodegen {
         }
         $ra free_temp $rhs
         $ra free_temp $lhs
+    }
+
+    # ── conditions as branches ──────────────────────────────────────────────
+    # Jump to $label when $expr is true ($sense 1) or false ($sense 0), and
+    # fall through otherwise. A comparison becomes the branch itself instead of
+    # a 0/1 value tested by a second branch, and `and`/`or` short-circuit: the
+    # right side is not evaluated once the left decides the result, which is
+    # what makes `p? and p.x > 0` safe.
+    method emit_cond_branch {expr label sense} {
+        set k [pak::kindof $expr]
+        if {$k eq "UnaryOp" && [pak::fval $expr op] eq "!"} {
+            my emit_cond_branch [pak::nfield $expr operand] $label [expr {!$sense}]
+            return
+        }
+        if {$k eq "BoolLit"} {
+            if {([pak::fval $expr value] ? 1 : 0) == $sense} { $em j $label; $em nop }
+            return
+        }
+        if {$k eq "BinaryOp"} {
+            set op [pak::fval $expr op]
+            set l [pak::nfield $expr left]
+            set r [pak::nfield $expr right]
+            if {$op in {&& ||}} {
+                # `a && b` is decided false by either side, `a || b` true.
+                set decides [expr {$op eq "&&" ? 0 : 1}]
+                if {$sense == $decides} {
+                    my emit_cond_branch $l $label $sense
+                    my emit_cond_branch $r $label $sense
+                } else {
+                    set skip [my fresh_label .Lsc]
+                    my emit_cond_branch $l $skip $decides
+                    my emit_cond_branch $r $label $sense
+                    $em label $skip
+                }
+                return
+            }
+            if {$op in {== != < <= > >=} \
+                    && ![my infer_is_float $l] && ![my infer_is_float $r]} {
+                my emit_cmp_branch $op $l $r $label $sense
+                return
+            }
+        }
+        set c [$ra alloc_temp]
+        my emit_expr $expr $c
+        if {$sense} { $em bnez $c $label } else { $em beqz $c $label }
+        $em nop
+        $ra free_temp $c
+    }
+
+    # A plain integer literal usable as an I-type immediate, or "".
+    method cmp_imm {e} {
+        if {[pak::kindof $e] ne "IntLit"} { return "" }
+        set v [pak::fval $e value]
+        if {![string is entier -strict $v]} { return "" }
+        if {$v < -32768 || $v > 32767} { return "" }
+        return [expr {$v}]
+    }
+
+    method emit_cmp_branch {op l r label sense} {
+        if {!$sense} {
+            set op [dict get {== != != == < >= >= < > <= <= >} $op]
+        }
+        set uns [expr {[my infer_is_unsigned $l] || [my infer_is_unsigned $r]}]
+        # Same operand evaluation as emit_binop: an immediate is only used where
+        # emit_binop would have loaded the same literal unscaled.
+        set k ""
+        if {[my infer_frac_bits $l] == 0 && [my infer_frac_bits $r] == 0} {
+            set k [my cmp_imm $r]
+        }
+        if {$uns && $k ne "" && $k < 0} { set k "" }
+        if {$k ne ""} {
+            set lhs [$ra alloc_temp]
+            my emit_expr $l $lhs
+            my emit_cmp_imm_branch $op $lhs $k $uns $label
+            $ra free_temp $lhs
+            return
+        }
+        if {[my expr_has_call $r] && ![my expr_has_call $l]} {
+            set rhs [$ra alloc_temp]
+            my emit_expr $r $rhs
+            set lhs [$ra alloc_temp]
+            my emit_expr $l $lhs
+        } else {
+            set lhs [$ra alloc_temp]
+            my emit_expr $l $lhs
+            set rhs [$ra alloc_temp]
+            my emit_expr $r $rhs
+        }
+        set slt [expr {$uns ? "sltu" : "slt"}]
+        set t [$ra alloc_temp]
+        switch -- $op {
+            == { $em beq $lhs $rhs $label }
+            != { $em bne $lhs $rhs $label }
+            <  { $em $slt $t $lhs $rhs; $em bnez $t $label }
+            >= { $em $slt $t $lhs $rhs; $em beqz $t $label }
+            >  { $em $slt $t $rhs $lhs; $em bnez $t $label }
+            <= { $em $slt $t $rhs $lhs; $em beqz $t $label }
+        }
+        $em nop
+        $ra free_temp $t
+        $ra free_temp $rhs
+        $ra free_temp $lhs
+    }
+
+    # Branch to $label when `lhs op k` holds, k a 16-bit literal.
+    method emit_cmp_imm_branch {op lhs k uns label} {
+        if {$k == 0} {
+            switch -- $op {
+                == { $em beqz $lhs $label; $em nop; return }
+                != { $em bnez $lhs $label; $em nop; return }
+            }
+            if {!$uns} {
+                switch -- $op {
+                    <  { $em bltz $lhs $label }
+                    >= { $em bgez $lhs $label }
+                    >  { $em bgtz $lhs $label }
+                    <= { $em blez $lhs $label }
+                }
+                $em nop
+                return
+            }
+            # Unsigned against 0: `< 0` never holds, `>= 0` always does.
+            switch -- $op {
+                <  { return }
+                >= { $em j $label; $em nop; return }
+                >  { $em bnez $lhs $label; $em nop; return }
+                <= { $em beqz $lhs $label; $em nop; return }
+            }
+        }
+        set t [$ra alloc_temp]
+        set slti [expr {$uns ? "sltiu" : "slti"}]
+        switch -- $op {
+            == - != {
+                $em li $t $k
+                if {$op eq "=="} { $em beq $lhs $t $label } else { $em bne $lhs $t $label }
+            }
+            <  { $em $slti $t $lhs $k; $em bnez $t $label }
+            >= { $em $slti $t $lhs $k; $em beqz $t $label }
+            >  - <= {
+                # x > k is !(x < k+1); x <= k is x < k+1. k+1 must still fit.
+                if {$k < 32767} {
+                    $em $slti $t $lhs [expr {$k + 1}]
+                    if {$op eq ">"} { $em beqz $t $label } else { $em bnez $t $label }
+                } else {
+                    $em li $t $k
+                    set slt [expr {$uns ? "sltu" : "slt"}]
+                    $em $slt $t $t $lhs
+                    if {$op eq ">"} { $em bnez $t $label } else { $em beqz $t $label }
+                }
+            }
+        }
+        $em nop
+        $ra free_temp $t
     }
 
     method emit_unop {expr dst} {
