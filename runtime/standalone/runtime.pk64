@@ -1421,15 +1421,48 @@ fn muldiv_shr16(a: i32, m: i32) -> i32 {
 -- own -- confirmed on the real Lambert scene, where every triangle's `nz`
 -- denominator and every w-normalization (`d == 65536`, hit on literally
 -- every triangle) pushed well past the safe range. This version takes the
--- full 64-bit product via `multu` and does a manual 32-iteration
--- shift-subtract divide on the 64-bit magnitude, so no intermediate step
--- can overflow.
+-- full 64-bit product via `multu` and does a manual 64-iteration
+-- restoring-division shift-subtract on the 64-bit magnitude, so no
+-- intermediate step can overflow and the result is exact regardless of how
+-- many bits the true quotient needs (only the low 32 survive in the 32-bit
+-- $t6 accumulator, matching ordinary MIPS register truncation) -- real
+-- Lambert-scene geometry never needs more than the low ~20 bits, but an
+-- earlier 32-iteration version that assumed the quotient always fit in 32
+-- bits (valid only when the product's high half is already less than the
+-- divisor) gave silently wrong answers once tcl/tools/rdp_test.tcl's
+-- synthetic worst-case triangle proved that assumption false.
+--
+-- Per iteration: shift the next dividend bit out of {hi:lo} into the
+-- remainder ($t0); if the remainder's *previous* top bit was set, the shift
+-- overflowed 32 bits, so the true (unbounded) remainder is definitely past
+-- the divisor and an unconditional subtract (which wraps correctly in a
+-- 32-bit register) is both necessary and sufficient -- otherwise compare
+-- and subtract as usual.
 static __rdp_muldiv_tmp: i32 = 0
+static __rdp_a: i32 = 0
+static __rdp_m: i32 = 0
+static __rdp_d: i32 = 0
 
+-- The general path below is not the first statement in this function (the
+-- two fast-path `if`s run ahead of it), so $a0-$a2 are no longer guaranteed
+-- to hold the original arguments by the time it runs -- that guarantee only
+-- holds for asm as a function's very first statement (see muldiv_shr16
+-- above, and the asm-block convention in IDIOMS.md). Route a/m/d through
+-- ordinary Pak assignments into statics first, which the compiler tracks
+-- correctly regardless of position, then have the asm block read them back.
 fn rdp_muldiv(a: i32, m: i32, d: i32) -> i32 {
     if d == 0 { return 0 }
     if d == 65536 { return muldiv_shr16(a, m) }
+    __rdp_a = a
+    __rdp_m = m
+    __rdp_d = d
     asm {
+        "la $t8, __rdp_a"
+        "lw $a0, 0($t8)"
+        "la $t8, __rdp_m"
+        "lw $a1, 0($t8)"
+        "la $t8, __rdp_d"
+        "lw $a2, 0($t8)"
         "slt $t3, $a0, $zero"
         "move $t0, $a0"
         "beqz $t3, .Lmd_a_done"
@@ -1453,20 +1486,32 @@ fn rdp_muldiv(a: i32, m: i32, d: i32) -> i32 {
         "multu $t0, $t1"
         "mfhi $t4"
         "mflo $t5"
+        "li $t0, 0"
         "li $t6, 0"
-        "li $t9, 32"
+        "li $t9, 64"
         ".Lmd_loop:"
+        "srl $t8, $t4, 31"
         "sll $t4, $t4, 1"
-        "srl $t8, $t5, 31"
-        "or $t4, $t4, $t8"
+        "srl $t7, $t5, 31"
+        "or $t4, $t4, $t7"
         "sll $t5, $t5, 1"
+        "srl $t7, $t0, 31"
+        "sll $t0, $t0, 1"
+        "or $t0, $t0, $t8"
         "sll $t6, $t6, 1"
-        "sltu $t8, $t4, $t2"
-        "bnez $t8, .Lmd_skip"
+        "beqz $t7, .Lmd_check"
         "nop"
-        "subu $t4, $t4, $t2"
+        "subu $t0, $t0, $t2"
         "ori $t6, $t6, 1"
-        ".Lmd_skip:"
+        "j .Lmd_next"
+        "nop"
+        ".Lmd_check:"
+        "sltu $t7, $t0, $t2"
+        "bnez $t7, .Lmd_next"
+        "nop"
+        "subu $t0, $t0, $t2"
+        "ori $t6, $t6, 1"
+        ".Lmd_next:"
         "addiu $t9, $t9, -1"
         "bnez $t9, .Lmd_loop"
         "nop"
