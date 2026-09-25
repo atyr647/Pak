@@ -671,14 +671,46 @@ const DPC_CMD_BUSY:  u32 = 0x0040
 const DPC_DMA_BUSY:  u32 = 0x0100
 
 -- Display list: 64 KiB of uncached RDRAM at 0xA02A0000, directly below the
--- heap (HEAP_BASE, 0x802B0000). A frame that outgrows it is split across DP
--- kicks by dl_flush. mips_codegen.tcl's inline `alloc` bump and
+-- heap (HEAP_BASE, 0x802B0000). mips_codegen.tcl's inline `alloc` bump and
 -- tcl/n64link.tcl's memory map must agree with both numbers.
+--
+-- Split into two 32 KiB halves, alternated by dl_submit, instead of one
+-- 64 KiB region: a frame whose command stream needs more than one DP kick
+-- is routine for a scene of any size (a few thousand triangles already
+-- outgrows even the full 64 KiB), and the old single-buffer scheme made
+-- every one of those kicks a full stop -- dl_submit wrote DPC_START/END
+-- and then spun in DPC_STATUS until the RDP finished draining THAT exact
+-- kick before the CPU could write another word of the display list, so
+-- the RDP sat idle while the CPU built each chunk and the CPU sat idle
+-- while the RDP drew it, never both busy at once. With two halves, a kick
+-- points the DPC at the half just filled and moves the write cursor to
+-- the OTHER half immediately, no wait -- the CPU can keep building the
+-- rest of the frame while the RDP works through what was just handed it.
+-- The real DPC still tracks only one current list at a time, so the ONE
+-- wait that remains is right before the next kick would move DPC_START/
+-- END again: it has to confirm the RDP is actually done with whatever it
+-- kicked before this one. That wait is for however much of the PREVIOUS
+-- kick is still outstanding by the time the CPU is ready to hand over the
+-- next one, not for that kick's full duration measured from the moment it
+-- was issued -- the difference is the whole benefit of the second buffer.
 const DL_BASE:  u32 = 0xA02A0000
 const DL_PHYS:  u32 = 0x002A0000
 const DL_BYTES: u32 = 65536
+const DL_RING_N: u32 = 2
+const DL_SLOT_BYTES: u32 = DL_BYTES / DL_RING_N
 
-static g_dl_off: u32 = 0        -- write cursor, bytes from DL_BASE
+static g_dl_off:  u32 = 0        -- write cursor, bytes from the CURRENT slot's base
+static g_dl_slot: u32 = 0        -- which half (0 or 1) the CPU is writing into
+
+fn dl_slot_base(slot: u32) -> u32 {
+    if slot == 0 { return DL_BASE }
+    return DL_BASE + DL_SLOT_BYTES
+}
+
+fn dl_slot_phys(slot: u32) -> u32 {
+    if slot == 0 { return DL_PHYS }
+    return DL_PHYS + DL_SLOT_BYTES
+}
 
 -- RDP command opcodes.
 const RDP_TRI_FILL:        u32 = 0x08
@@ -767,52 +799,88 @@ static g_sprite_cache_valid: u32 = 0
 
 fn dl_reset() {
     g_dl_off = 0
+    g_dl_slot = 0
 }
 
--- Hand the pending commands to the DP and wait for it to drain. The DP reads
--- physical addresses, so the KSEG1 alias is masked off.
-fn dl_submit() {
-    if g_dl_off == 0 { return }
-    let len: u32 = g_dl_off
-    g_dl_off = 0
-
-    -- Take the DP out of XBUS mode (it reads RDRAM, not RSP DMEM) and make
-    -- sure it is neither frozen nor flushing before pointing it at the list.
-    vi_write(DPC_STATUS, DPC_CLR_XBUS | DPC_CLR_FREEZE | DPC_CLR_FLUSH)
-    vi_write(DPC_START, DL_PHYS)
-    vi_write(DPC_END, DL_PHYS + len)
-
+-- Block until the RDP has drained everything submitted so far, including
+-- whatever the most recent dl_submit just kicked. dl_submit itself only
+-- waits for the kick BEFORE this one (see its own comment) -- this is the
+-- full wait the old single-buffer dl_submit always did, for the few
+-- callers (rdpq_close, rdpq_detach, rdpq_sync_full) that need the drawing
+-- to have actually finished: before vi_show displays a framebuffer, or
+-- wherever else "SYNC_FULL means it" is the point of calling it.
+--
+-- PIPE_BUSY only clears on a SYNC_FULL (see dl_flush's comment on the same
+-- fact), so this only terminates if the most recent kick's command stream
+-- ended with one -- true of every path that reaches here, since all three
+-- callers put one right before submitting, and dl_submit's own g_dl_off
+-- == 0 short-circuit means a bare call with nothing pending just re-checks
+-- whatever the last real kick already left behind.
+fn dl_finish() {
     loop {
         let st: u32 = vi_read(DPC_STATUS)
         if (st & (DPC_PIPE_BUSY | DPC_CMD_BUSY | DPC_DMA_BUSY)) == 0 { break }
     }
 }
 
+-- Hand the current slot's pending commands to the DP and switch the write
+-- cursor to the OTHER slot, without waiting for THIS kick to be drained.
+-- The DP reads physical addresses, so the KSEG1 alias is masked off.
+--
+-- The real DPC tracks only one current list (DPC_START/END) at a time, so
+-- before this call can point it at a new one, it has to confirm the RDP
+-- is done with whatever was kicked before -- which, by construction, is
+-- always the OTHER slot (the two calls before this one kicked the other
+-- slot and then this one, alternating), so this is also the wait that
+-- makes it safe for the CPU to have been writing fresh content into that
+-- slot the whole time since. See the const block above for why that wait
+-- is usually short or free rather than a full kick's duration.
+fn dl_submit() {
+    if g_dl_off == 0 { return }
+    let len: u32 = g_dl_off
+    let slot: u32 = g_dl_slot
+    g_dl_off = 0
+
+    dl_finish()
+
+    -- Take the DP out of XBUS mode (it reads RDRAM, not RSP DMEM) and make
+    -- sure it is neither frozen nor flushing before pointing it at the list.
+    vi_write(DPC_STATUS, DPC_CLR_XBUS | DPC_CLR_FREEZE | DPC_CLR_FLUSH)
+    vi_write(DPC_START, dl_slot_phys(slot))
+    vi_write(DPC_END, dl_slot_phys(slot) + len)
+
+    g_dl_slot = 1 - slot
+}
+
 -- The largest RDP triangle command: 4 edge pairs + 8 shade + 8 texture + 2 Z.
 const DL_TRI_MAX: u32 = 176
 
--- Usable capacity. The last 8 bytes are held back for the SYNC_FULL that
--- every kick has to end with -- see dl_flush.
-const DL_LIMIT: u32 = DL_BYTES - 8
+-- Usable capacity per slot. The last 8 bytes are held back for the
+-- SYNC_FULL that every kick has to end with -- see dl_flush.
+const DL_LIMIT: u32 = DL_SLOT_BYTES - 8
 
 -- Write one command with no capacity check. Callers guarantee the room.
 fn dl_put(w0: u32, w1: u32) {
-    let p0: *volatile u32 = (DL_BASE + g_dl_off) as *volatile u32
+    let base: u32 = dl_slot_base(g_dl_slot)
+    let p0: *volatile u32 = (base + g_dl_off) as *volatile u32
     *p0 = w0
-    let p1: *volatile u32 = (DL_BASE + g_dl_off + 4) as *volatile u32
+    let p1: *volatile u32 = (base + g_dl_off + 4) as *volatile u32
     *p1 = w1
     g_dl_off = g_dl_off + 8
 }
 
 -- Hand off a full buffer mid-frame.
 --
--- dl_submit waits for PIPE_BUSY to clear, and the DP only clears that on a
--- SYNC_FULL -- which is why rdpq_detach appends one. An auto-flush that
--- submitted without it spun in that wait forever, so the frame never reached
--- detach and the screen stayed black. Any scene whose frame outgrew the
--- buffer by more than one kick hung on the second one. Append the SYNC_FULL
--- the wait is waiting for; DP state (modes, tile, TMEM) survives it, so
--- splitting a frame across kicks only costs a pipeline drain.
+-- dl_submit's own wait needs PIPE_BUSY to clear, and the DP only clears
+-- that on a SYNC_FULL -- which is why rdpq_detach appends one. An
+-- auto-flush that submitted without it spun in that wait forever, so the
+-- frame never reached detach and the screen stayed black. Any scene whose
+-- frame outgrew the buffer by more than one kick hung on the second one.
+-- Append the SYNC_FULL the wait is waiting for; DP state (modes, tile,
+-- TMEM) survives it, so splitting a frame across kicks only costs a
+-- pipeline drain -- and, with the two-slot dl_submit above, only the part
+-- of that drain still outstanding by the time the OTHER slot fills up
+-- too, not the whole thing measured from this kick.
 fn dl_flush() {
     dl_put(RDP_SYNC_FULL << 24, 0)
     dl_submit()
@@ -837,7 +905,7 @@ fn dl_cmd(w0: u32, w1: u32) {
 
 fn dl_word(w: u32) {
     if g_dl_off + 4 > DL_LIMIT { dl_flush() }
-    let p: *volatile u32 = (DL_BASE + g_dl_off) as *volatile u32
+    let p: *volatile u32 = (dl_slot_base(g_dl_slot) + g_dl_off) as *volatile u32
     *p = w
     g_dl_off = g_dl_off + 4
 }
@@ -880,6 +948,7 @@ fn rdpq_init() {
 
 fn rdpq_close() {
     dl_submit()
+    dl_finish()
 }
 
 -- SET_COLOR_IMAGE: format (RGBA=0), size (16bpp=2), width-1, physical address.
@@ -925,6 +994,7 @@ fn rdpq_attach_clear(fb: u32, color: u32) {
 fn rdpq_detach() {
     dl_cmd(RDP_SYNC_FULL << 24, 0)
     dl_submit()
+    dl_finish()
     g_current_fb = 0
 }
 
@@ -2214,6 +2284,7 @@ fn rdpq_triangle_tex_z(tile: u32,
 fn rdpq_sync_full() {
     dl_cmd(RDP_SYNC_FULL << 24, 0)
     dl_submit()
+    dl_finish()
 }
 
 fn rdpq_sync_pipe() {
