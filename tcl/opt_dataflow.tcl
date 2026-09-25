@@ -413,45 +413,82 @@ proc pak::opt::df::kill {copyVar constVar r} {
     }
 }
 
-proc pak::opt::df::propagate {recs} {
-    set out {}
+# Two states agree on a fact (a copy or a known constant) only where both
+# have it, and agree on the value. Used to merge multiple predecessors'
+# out-states into a block's in-state: a fact holds on entry only if every
+# path in agrees it holds -- the same "must" reasoning dce's exit_live/
+# all_live union does for liveness, just intersection instead of union
+# because this is "known true everywhere", not "possibly still needed".
+proc pak::opt::df::meet2 {copyA constA copyB constB} {
     set copy [dict create]
+    foreach k [dict keys $copyA] {
+        if {[dict exists $copyB $k] && [dict get $copyB $k] eq [dict get $copyA $k]} {
+            dict set copy $k [dict get $copyA $k]
+        }
+    }
     set const [dict create]
-    set n [llength $recs]
+    foreach k [dict keys $constA] {
+        if {[dict exists $constB $k] && [dict get $constB $k] eq [dict get $constA $k]} {
+            dict set const $k [dict get $constA $k]
+        }
+    }
+    return [list $copy $const]
+}
+
+# dict `eq` compares the two dicts' *string* representations, which differ
+# whenever the same key/value pairs were inserted in a different order --
+# two states that are the same set of facts can still print unequal. The
+# fixpoint loop below needs a real "did anything change" test, not that.
+proc pak::opt::df::state_eq {copyA constA copyB constB} {
+    if {[dict size $copyA] != [dict size $copyB]} { return 0 }
+    if {[dict size $constA] != [dict size $constB]} { return 0 }
+    foreach k [dict keys $copyA] {
+        if {![dict exists $copyB $k] || [dict get $copyB $k] ne [dict get $copyA $k]} { return 0 }
+    }
+    foreach k [dict keys $constA] {
+        if {![dict exists $constB $k] || [dict get $constB $k] ne [dict get $constA $k]} { return 0 }
+    }
+    return 1
+}
+
+# Apply one block's instructions to an in-state, returning its out-state.
+# With rewrite=1 also returns the block's records with every read a known
+# copy/constant rewrites, and the same immediate-form strength reduction the
+# old single-pass version did -- same per-instruction logic either way, run
+# once per block per fixpoint iteration to find the in-states, then once
+# more per block (rewrite=1) against the converged in-state to build the
+# final output. Mirrors walk_block's split role for dce: one function, two
+# uses (probe the effect, then commit it).
+proc pak::opt::df::run_block {recs idxs copy const rewrite} {
+    set out {}
     set pending_call 0
-    set end_after 0
-    for {set i 0} {$i < $n} {incr i} {
-        set r [lindex $recs $i]
+    foreach idx $idxs {
+        set r [lindex $recs $idx]
         if {[lindex $r 0] ne "i"} {
-            if {[lindex $r 0] eq "label"} {
-                set copy [dict create]; set const [dict create]
-            }
-            lappend out $r
+            if {$rewrite} { lappend out $r }
             continue
         }
         set op [lindex $r 1]
         set ops [lrange $r 2 end]
         lassign [shape $op $ops] kind pos base
-        # Rewrite reads.
-        foreach p $pos {
-            set t [lindex $ops $p]
-            if {[dict exists $copy $t]} { lset ops $p [dict get $copy $t] }
-        }
-        if {$base ne ""} {
-            set m [lindex $ops $base]
-            if {[regexp $::pak::opt::df::MEM_RE $m -> off b] && [dict exists $copy $b]} {
-                lset ops $base "${off}([dict get $copy $b])"
+        if {$rewrite} {
+            foreach p $pos {
+                set t [lindex $ops $p]
+                if {[dict exists $copy $t]} { lset ops $p [dict get $copy $t] }
             }
+            if {$base ne ""} {
+                set m [lindex $ops $base]
+                if {[regexp $::pak::opt::df::MEM_RE $m -> off b] && [dict exists $copy $b]} {
+                    lset ops $base "${off}([dict get $copy $b])"
+                }
+            }
+            if {$kind eq "call" && $op eq "jalr"} {
+                set t [lindex $ops end]
+                if {[dict exists $copy $t]} { lset ops end [dict get $copy $t] }
+            }
+            lassign [strength $op $ops $const] op ops
         }
-        if {$kind eq "call" && $op eq "jalr"} {
-            set t [lindex $ops end]
-            if {[dict exists $copy $t]} { lset ops end [dict get $copy $t] }
-        }
-        # Immediate forms for a known constant operand.
-        lassign [strength $op $ops $const] op ops
-        set r [list i $op {*}$ops]
-        lappend out $r
-        # Update what is known.
+        if {$rewrite} { lappend out [list i $op {*}$ops] }
         lassign [defuse $op $ops] defs uses
         foreach d $defs { kill copy const $d }
         if {$op eq "move" && [llength $defs] == 1} {
@@ -474,17 +511,109 @@ proc pak::opt::df::propagate {recs} {
             foreach c $::pak::opt::df::CLOBBER { kill copy const $c }
             set pending_call 0
         }
-        if {$end_after} {
-            set copy [dict create]; set const [dict create]
-            set end_after 0
-        }
         if {$kind eq "call"} { set pending_call 1 }
-        if {$kind in {branch jump ret call}} {
-            # The next instruction is the delay slot; the block ends after it.
-            if {$kind ne "call"} { set end_after 1 }
+    }
+    return [list $out $copy $const]
+}
+
+# The in-state of block bi from its predecessors' converged out-states: the
+# function's own entry (bi 0) starts knowing nothing, same as the old
+# single-pass version did at the top of the function; a block reached from
+# more than one predecessor knows only what every predecessor agrees on;
+# and a predecessor this fixpoint hasn't visited yet (a loop back-edge, the
+# first time around) contributes "nothing known" rather than being skipped
+# -- safe because meet only removes facts, so treating an unvisited pred as
+# fact-free can only under-report this round, and the next round picks up
+# whatever that predecessor settles on.
+proc pak::opt::df::block_in {preds_bi out_copy out_const visited} {
+    if {[llength $preds_bi] == 0} { return [list [dict create] [dict create]] }
+    # An empty dict and "" print identically in Tcl, so "has icopy been set
+    # yet" cannot be an `eq ""` check on icopy itself -- a predecessor whose
+    # real out-state has no facts at all (entirely ordinary) would look
+    # exactly like "not set yet" and let a LATER predecessor's state simply
+    # overwrite it instead of being intersected against it. An explicit
+    # flag is the only reliable way to tell "no predecessor seen yet" apart
+    # from "the predecessor we saw happened to know nothing".
+    set first 1
+    set icopy [dict create]
+    set iconst [dict create]
+    foreach pb $preds_bi {
+        if {![lindex $visited $pb]} {
+            return [list [dict create] [dict create]]
+        }
+        if {$first} {
+            set icopy [lindex $out_copy $pb]
+            set iconst [lindex $out_const $pb]
+            set first 0
+        } else {
+            lassign [meet2 $icopy $iconst [lindex $out_copy $pb] [lindex $out_const $pb]] icopy iconst
         }
     }
-    return $out
+    return [list $icopy $iconst]
+}
+
+# Real basic-block dataflow, not a single reset-at-every-label pass: a copy
+# or known constant now survives crossing into a block every path into it
+# agrees on, not just a straight run with no label in between -- the join
+# after an if/else where both arms leave a register at the same known value
+# is exactly the case the old version couldn't see, because it forgot
+# everything at the label starting the merged code either arm falls into.
+proc pak::opt::df::propagate {recs} {
+    lassign [cfg $recs] blocks succs
+    set nb [llength $blocks]
+    if {$nb == 0} { return $recs }
+    set preds {}
+    for {set bi 0} {$bi < $nb} {incr bi} { lappend preds {} }
+    for {set bi 0} {$bi < $nb} {incr bi} {
+        foreach s [lindex $succs $bi] {
+            if {$s eq "EXIT" || $s eq "EXIT_ALL"} continue
+            set p [lindex $preds $s]
+            lappend p $bi
+            lset preds $s $p
+        }
+    }
+    set out_copy {}; set out_const {}; set visited {}
+    for {set bi 0} {$bi < $nb} {incr bi} {
+        lappend out_copy [dict create]; lappend out_const [dict create]; lappend visited 0
+    }
+    set changed 1
+    set iter 0
+    set cap [expr {$nb * 2 + 16}]
+    while {$changed} {
+        incr iter
+        if {$iter > $cap} {
+            # Should always converge (each round only intersects facts
+            # further); if it somehow doesn't, leave the function as
+            # emitted rather than commit a state that never settled.
+            return $recs
+        }
+        set changed 0
+        for {set bi 0} {$bi < $nb} {incr bi} {
+            if {$bi == 0} {
+                set icopy [dict create]; set iconst [dict create]
+            } else {
+                lassign [block_in [lindex $preds $bi] $out_copy $out_const $visited] icopy iconst
+            }
+            lassign [run_block $recs [lindex $blocks $bi] $icopy $iconst 0] _ ocopy oconst
+            if {![lindex $visited $bi] || ![state_eq $ocopy $oconst [lindex $out_copy $bi] [lindex $out_const $bi]]} {
+                lset out_copy $bi $ocopy
+                lset out_const $bi $oconst
+                lset visited $bi 1
+                set changed 1
+            }
+        }
+    }
+    set result {}
+    for {set bi 0} {$bi < $nb} {incr bi} {
+        if {$bi == 0} {
+            set icopy [dict create]; set iconst [dict create]
+        } else {
+            lassign [block_in [lindex $preds $bi] $out_copy $out_const $visited] icopy iconst
+        }
+        lassign [run_block $recs [lindex $blocks $bi] $icopy $iconst 1] brecs _ _
+        lappend result {*}$brecs
+    }
+    return $result
 }
 
 # `addu $d, $a, $k` with $k a known 16-bit constant -> `addiu $d, $a, K`, and

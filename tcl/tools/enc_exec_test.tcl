@@ -498,6 +498,123 @@ set structlit_mw [dict get $structlit_run mem_w]
 check_eq "struct literal fields survive an inlined wrapper (3+4+... = 31)" \
     [word_at $structlit_mw [dict get $structlit_syms result]] 31
 
+# ── 8. opt_dataflow.tcl's copy/constant propagation runs real forward
+# dataflow over the function's basic-block CFG instead of resetting
+# everything at every label ─────────────────────────────────────────────
+# The single linear pass this replaced forgot every known copy/constant at
+# ANY label, including a plain join point after an if/else -- so a value
+# both arms left at the same known constant was still read back through
+# a register the join point had no idea was constant. Real per-block
+# dataflow (propagate's own in-state is now the meet of every predecessor
+# block's out-state, exactly like dce's liveness already was) sees that
+# join point as knowing the constant, same as it should.
+puts ""
+puts "== copy/constant propagation crosses a real block join =="
+set join_src {
+static out: i32 = 0
+entry {
+    let n: i32 = 5
+    let mut x: i32 = 0
+    if n > 3 {
+        x = 7
+    } else {
+        x = 7
+    }
+    out = x + 2
+}
+}
+set join_recs [compile_records $join_src]
+set join_opt [pak::optimize_records $join_recs]
+set join_run [pak::mips_sim_run [pak::records_to_asm $join_opt] main 200000]
+set join_syms [dict get $join_run data_syms]
+set join_mw [dict get $join_run mem_w]
+check_eq "both if/else arms agreeing on a constant: out = 7+2" \
+    [word_at $join_mw [dict get $join_syms out]] 9
+# The two arms' own `x = 7` assignments become fully dead (the join reads
+# the constant directly) only once the join point actually knows it --
+# proof this exercised the cross-block path, not just gotten the right
+# answer some other way.
+set join_li7 0
+foreach r $join_opt {
+    if {[lindex $r 0] eq "i" && [lindex $r 1] eq "li" && [lindex $r 3] == 7} { incr join_li7 }
+}
+check_eq "the constant survives as exactly one shared li, not one per arm" $join_li7 1
+
+# ── 9. ...and the meet across predecessors is a real intersection: two
+# arms that do NOT agree must not let one arm's fact leak into the other's
+# ───────────────────────────────────────────────────────────────────────
+# A block reached from two predecessors takes the state of the LAST one
+# processed unless the merge is a genuine intersection. Tcl doesn't help:
+# an empty dict and "" print identically, so a naive "have I seen the
+# first predecessor yet" check written as `$state eq ""` cannot tell "no
+# predecessor visited yet" apart from "the first predecessor legitimately
+# knew nothing" -- and silently lets every later predecessor overwrite
+# instead of merge. Two if/else pairs with DIFFERENT constants on each
+# arm, one exercised each direction, catch exactly that: get it wrong and
+# at least one of these reads back the other arm's value instead of its
+# own.
+puts ""
+puts "== the block-join meet is a real intersection, not last-writer-wins =="
+set nomerge_src {
+static out_then: i32 = 0
+static out_else: i32 = 0
+entry {
+    let n: i32 = 5
+    let mut x: i32 = 0
+    if n > 3 {
+        x = 7
+    } else {
+        x = 99
+    }
+    out_then = x + 2
+
+    let m: i32 = 1
+    let mut y: i32 = 0
+    if m > 3 {
+        y = 7
+    } else {
+        y = 99
+    }
+    out_else = y + 2
+}
+}
+set nomerge_recs [compile_records $nomerge_src]
+set nomerge_run [pak::mips_sim_run [pak::records_to_asm [pak::optimize_records $nomerge_recs]] main 200000]
+set nomerge_syms [dict get $nomerge_run data_syms]
+set nomerge_mw [dict get $nomerge_run mem_w]
+check_eq "the taken-then-arm's own value survives (7+2)" \
+    [word_at $nomerge_mw [dict get $nomerge_syms out_then]] 9
+check_eq "the taken-else-arm's own value survives (99+2), not the other arm's" \
+    [word_at $nomerge_mw [dict get $nomerge_syms out_else]] 101
+
+# ── 10. a loop's back-edge can't leave the pre-loop constant standing ────
+# A value known constant only going INTO a loop, and redefined by the loop
+# body itself every iteration, must not still read as that pre-loop
+# constant after the back edge -- the fixpoint has to actually reach the
+# loop header's real (non-constant) in-state, not stop after the first,
+# not-yet-looped-back pass.
+puts ""
+puts "== a loop back-edge invalidates a pre-loop constant, doesn't keep it =="
+set loop_src {
+static total: i32 = 0
+entry {
+    let mut sum: i32 = 5
+    let mut i: i32 = 0
+    loop {
+        i += 1
+        sum = sum + i
+        if i >= 5 { break }
+    }
+    total = sum
+}
+}
+set loop_recs [compile_records $loop_src]
+set loop_run [pak::mips_sim_run [pak::records_to_asm [pak::optimize_records $loop_recs]] main 200000]
+set loop_syms [dict get $loop_run data_syms]
+set loop_mw [dict get $loop_run mem_w]
+check_eq "5 + (1+2+3+4+5) over the loop's back edge" \
+    [word_at $loop_mw [dict get $loop_syms total]] 20
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }
