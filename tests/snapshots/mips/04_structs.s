@@ -208,26 +208,28 @@ Player_init:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
     la $t8, .Lf320
     lwc1 $f12, 0($t8)
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 0($t8)
     la $t8, .Lf320
     lwc1 $f12, 0($t8)
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 4($t8)
     li $t9, 100
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 8($t8)
     la $t8, .Lf321
     lwc1 $f12, 0($t8)
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 12($t8)
     li $t9, 1
-    lw $t8, 136($sp)
+    move $t8, $s0
     sb $t9, 16($t8)
 .LPlayer_init_ret_0:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -243,31 +245,33 @@ Player_move:
     sw $ra, 156($sp)
     sw $fp, 152($sp)
     addiu $fp, $sp, 160
-    swc1 $f20, 148($sp)
-    swc1 $f22, 144($sp)
-    sw $a0, 136($sp)
+    sw $s0, 148($sp)
+    swc1 $f20, 144($sp)
+    swc1 $f22, 140($sp)
+    move $s0, $a0
     mov.s $f20, $f12
     mov.s $f12, $f14
     mov.s $f22, $f12
     mov.s $f12, $f20
-    swc1 $f12, 140($sp)
-    lw $t7, 136($sp)
+    swc1 $f12, 136($sp)
+    move $t7, $s0
     lwc1 $f12, 0($t7)
-    lwc1 $f14, 140($sp)
+    lwc1 $f14, 136($sp)
     add.s $f12, $f12, $f14
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 0($t8)
     mov.s $f12, $f22
-    swc1 $f12, 140($sp)
-    lw $t7, 136($sp)
+    swc1 $f12, 136($sp)
+    move $t7, $s0
     lwc1 $f12, 4($t7)
-    lwc1 $f14, 140($sp)
+    lwc1 $f14, 136($sp)
     add.s $f12, $f12, $f14
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 4($t8)
 .LPlayer_move_ret_1:
-    lwc1 $f22, 144($sp)
-    lwc1 $f20, 148($sp)
+    lwc1 $f22, 140($sp)
+    lwc1 $f20, 144($sp)
+    lw $s0, 148($sp)
     lw $fp, 152($sp)
     lw $ra, 156($sp)
     addiu $sp, $sp, 160
@@ -283,14 +287,16 @@ Player_is_alive:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
-    lw $t8, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t8, $s0
     lw $t9, 8($t8)
     li $t8, 0
     sgt $v0, $t9, $t8
     j .LPlayer_is_alive_ret_2
     nop
 .LPlayer_is_alive_ret_2:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -307,23 +313,25 @@ Player_take_damage:
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
     sw $s0, 140($sp)
-    sw $a0, 136($sp)
-    move $s0, $a1
-    move $t9, $s0
-    lw $t7, 136($sp)
+    sw $s1, 136($sp)
+    move $s0, $a0
+    move $s1, $a1
+    move $t9, $s1
+    move $t7, $s0
     lw $t8, 8($t7)
     subu $t9, $t8, $t9
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 8($t8)
-    lw $t8, 136($sp)
+    move $t8, $s0
     lw $t9, 8($t8)
     bgtz $t9, .Lif_end_4
     nop
     li $t9, 0
-    lw $t8, 136($sp)
+    move $t8, $s0
     sb $t9, 16($t8)
 .Lif_end_4:
 .LPlayer_take_damage_ret_3:
+    lw $s1, 136($sp)
     lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)

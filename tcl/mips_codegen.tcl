@@ -17,6 +17,9 @@
 set _mcghere [file dirname [file normalize [info script]]]
 source [file join $_mcghere ast.tcl]
 source [file join $_mcghere mips_tables.tcl]
+# A pure AST-to-AST pass (small leaf-function call sites spliced in before
+# codegen), applied only for this backend -- see opt_inline.tcl's header.
+source [file join $_mcghere opt_inline.tcl]
 # The HAL contract, so the codegen can ask the SAME question the checker asks:
 # `pak check --backend mips` accepts a module call when the standalone HAL
 # defines its symbol, and mips_hal_has is what decides that. Testing MIPS_API
@@ -1414,20 +1417,29 @@ oo::class create pak::MipsCodegen {
         }
     }
     # ── register-resident locals ────────────────────────────────────────────
-    # A `let`/`let mut` local that is scalar (i32/u32), declared exactly once
-    # in the function, never has its address taken (`&x`), and is never
-    # referenced inside a nested closure (which captures by address, so it
-    # would need a real stack slot) can live in a dedicated $s0-$s5 register
-    # for its whole function scope instead of a stack slot reloaded on every
-    # read. Measured on tools/pak/lambert.pk64's draw_nave(): most locals in
-    # a hot function like rdpq_triangle_tex_persp are read 2-4 times each,
-    # every one of them a real `lw` before this, since the previous "register
-    # allocator" only ever used $t0-$t9/$s0-$s7 as scratch for one expression
-    # at a time (see the class comment above pak::RegAlloc) -- a local's
-    # value never stayed in a register across statements. $s6/$s7 are left
-    # out of the promotion pool so RegAlloc still has its own overflow tier
-    # for deeply nested expressions; only params are excluded from candidacy
-    # (their one-time ABI homing dance is a separate, lower-value case).
+    # A `let`/`let mut` local or parameter that is scalar (i32/u32, or a
+    # pointer -- see the DotAccess/IndexAccess/SliceExpr note in
+    # scan_promo_node below for how a pointer stays eligible even when
+    # dotted/indexed), declared exactly once in the function, never has its
+    # address taken (`&x`), and is never referenced inside a nested closure
+    # (which captures by address, so it would need a real stack slot) can
+    # live in a dedicated $s0-$s5 register for its whole function scope
+    # instead of a stack slot reloaded on every read. Measured on
+    # tools/pak/lambert.pk64's draw_nave(): most locals in a hot function
+    # like rdpq_triangle_tex_persp are read 2-4 times each, every one of
+    # them a real `lw` before this, since the previous "register allocator"
+    # only ever used $t0-$t9/$s0-$s7 as scratch for one expression at a
+    # time (see the class comment above pak::RegAlloc) -- a local's value
+    # never stayed in a register across statements. $s6/$s7 are left out of
+    # the promotion pool so RegAlloc still has its own overflow tier for
+    # deeply nested expressions. A parameter is homed here on entry with
+    # one `move` from its incoming $aN instead of the usual store-then-
+    # reload-on-every-use, which matters most for a pointer receiver
+    # (`self: *Foo`) read repeatedly across a method body -- previously the
+    # one type of promotable-shaped value never actually promoted, since
+    # dotting it (`self.x`) looked, to this scan alone, indistinguishable
+    # from a value-type struct field write that genuinely needs a real
+    # stack address.
     #
     # Correctness hinges on three exclusions, all computed once per function
     # by scan_promo_node before any codegen for its body runs:
@@ -1483,15 +1495,35 @@ oo::class create pak::MipsCodegen {
         }
         # DotAccess/IndexAccess/SliceExpr on a bare Ident can reach
         # emit_place_addr too (method-call self, field/index addressing),
-        # the same implicit address-of AddrOf makes explicit. i32/u32 never
-        # legitimately appear here (no fields, not indexable), so this never
-        # excludes a real candidate -- it only closes off a path this scan
-        # would otherwise silently miss for some future type this promotion
-        # pool widens to.
+        # the same implicit address-of AddrOf makes explicit -- EXCEPT when
+        # the ident's own declared type is a pointer. emit_place_addr's
+        # DotAccess case already knows this distinction (it checks
+        # type_is_ptr and, for a pointer base, evaluates the pointer's
+        # *value* via emit_expr rather than taking the variable's own
+        # address -- see the method below), so `self.x`/`ptr.field` on a
+        # promoted pointer local only ever needs a register read, exactly
+        # what promotion gives for free. A value-type struct/array local
+        # still needs a real stack address for the same syntax, so it stays
+        # excluded. promo_decl_type is populated for params up front and
+        # for `let`s in the same left-to-right order this scan runs in, so
+        # the type is already known by the time a use is seen -- an
+        # unannotated `let` (no declared type recorded here) falls back to
+        # the conservative exclusion, same as before this pointer carve-out
+        # existed.
         if {$kind in {DotAccess IndexAccess SliceExpr}} {
             set operand [pak::nfield $tv obj]
             if {[pak::kindof $operand] eq "Ident"} {
-                dict set promo_addr_taken [pak::fval $operand name] 1
+                set onm [pak::fval $operand name]
+                set base_is_ptr 0
+                if {[dict exists $promo_decl_type $onm]} {
+                    set ot [dict get $promo_decl_type $onm]
+                    if {![pak::isnil $ot] && [pak::kindof $ot] eq "TypePointer"} {
+                        set base_is_ptr 1
+                    }
+                }
+                if {!$base_is_ptr} {
+                    dict set promo_addr_taken $onm 1
+                }
             }
         }
         foreach f [dict get $::pak::SCHEMA $kind] {
@@ -1557,8 +1589,13 @@ oo::class create pak::MipsCodegen {
             if {[dict exists $promo_addr_taken $nm]} continue
             if {[dict exists $promo_closure_names $nm]} continue
             set t [dict get $promo_decl_type $nm]
-            if {[pak::isnil $t] || [pak::kindof $t] ne "TypeName"} continue
-            if {[pak::fval $t name] ni {i32 u32}} continue
+            if {[pak::isnil $t]} continue
+            set tk [pak::kindof $t]
+            if {$tk eq "TypeName"} {
+                if {[pak::fval $t name] ni {i32 u32}} continue
+            } elseif {$tk ne "TypePointer"} {
+                continue
+            }
             set uses 0
             if {[dict exists $promo_use_count $nm]} { set uses [dict get $promo_use_count $nm] }
             lappend eligible [list $uses $nm]
@@ -4407,7 +4444,12 @@ oo::class create pak::MipsCodegen {
             set env [my lookup_local __env]
             if {$env ne ""} {
                 set ep [$ra alloc_temp]
-                $em lw $ep [lindex $env 0] {$sp}
+                # __env is a plain TypePointer parameter, itself eligible for
+                # the same register promotion as any other pointer param (see
+                # compute_promotable) -- go through load_from_sp rather than
+                # assuming its local is a numeric $sp offset, exactly as any
+                # other read of a local's value has to.
+                my load_from_sp [lindex $env 0] $ep [lindex $env 1]
                 $em lw $ep [expr {$idx * 4}] $ep
                 $em lw $dst 0 $ep
                 $ra free_temp $ep
@@ -5725,7 +5767,9 @@ oo::class create pak::MipsCodegen {
                     set idx [dict get $closure_captures $name]
                     set env [my lookup_local __env]
                     set ep [$ra alloc_temp]
-                    $em lw $ep [lindex $env 0] {$sp}
+                    # See the matching read path (emit_ident_load) for why
+                    # this can't assume __env's local is a numeric $sp offset.
+                    my load_from_sp [lindex $env 0] $ep [lindex $env 1]
                     $em lw $ep [expr {$idx * 4}] $ep
                     $em sw $val_reg 0 $ep
                     $ra free_temp $ep
@@ -7639,6 +7683,7 @@ proc pak::mips_generate {program} {
 # Generate the structured record stream (for the binary encoder). Returns the
 # same instruction/directive records that back the text output.
 proc pak::mips_generate_records {program} {
+    set program [pak::inline_program $program]
     set cg [pak::MipsCodegen new]
     $cg generate $program
     set recs [$cg getrecords]

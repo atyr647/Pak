@@ -208,104 +208,106 @@ update:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
     li $a0, 0
     jal joypad_get_status
     nop
     move $t9, $v0
-    sw $t9, 140($sp)
-    addiu $t7, $sp, 140
+    sw $t9, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 7($t8)
     beqz $t9, .Lif_end_1
     nop
     li $t9, 2
-    lw $t7, 136($sp)
+    move $t7, $s0
     lw $t8, 0($t7)
     addu $t9, $t8, $t9
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 0($t8)
 .Lif_end_1:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 6($t8)
     beqz $t9, .Lif_end_2
     nop
     li $t9, 2
-    lw $t7, 136($sp)
+    move $t7, $s0
     lw $t8, 0($t7)
     subu $t9, $t8, $t9
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 0($t8)
 .Lif_end_2:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 5($t8)
     beqz $t9, .Lif_end_3
     nop
     li $t9, 2
-    lw $t7, 136($sp)
+    move $t7, $s0
     lw $t8, 4($t7)
     addu $t9, $t8, $t9
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 4($t8)
 .Lif_end_3:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 4($t8)
     beqz $t9, .Lif_end_4
     nop
     li $t9, 2
-    lw $t7, 136($sp)
+    move $t7, $s0
     lw $t8, 4($t7)
     subu $t9, $t8, $t9
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 4($t8)
 .Lif_end_4:
-    lw $t8, 136($sp)
+    move $t8, $s0
     lw $t9, 0($t8)
     bgez $t9, .Lif_end_5
     nop
     li $t9, 0
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 0($t8)
 .Lif_end_5:
-    lw $t8, 136($sp)
+    move $t8, $s0
     lw $t9, 0($t8)
     slti $t8, $t9, 321
     bnez $t8, .Lif_end_6
     nop
     li $t9, 320
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 0($t8)
 .Lif_end_6:
-    lw $t8, 136($sp)
+    move $t8, $s0
     lw $t9, 4($t8)
     bgez $t9, .Lif_end_7
     nop
     li $t9, 0
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 4($t8)
 .Lif_end_7:
-    lw $t8, 136($sp)
+    move $t8, $s0
     lw $t9, 4($t8)
     slti $t8, $t9, 241
     bnez $t8, .Lif_end_8
     nop
     li $t9, 240
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 4($t8)
 .Lif_end_8:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 4($t7)
     lb $t9, 3($t8)
     beqz $t9, .Lif_end_9
     nop
     li $t9, 0
-    lw $t8, 136($sp)
+    move $t8, $s0
     sb $t9, 8($t8)
 .Lif_end_9:
 .Lupdate_ret_0:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -321,12 +323,13 @@ render:
     sw $ra, 164($sp)
     sw $fp, 160($sp)
     addiu $fp, $sp, 168
-    sw $a0, 136($sp)
+    sw $s0, 156($sp)
+    move $s0, $a0
     jal display_get
     nop
     move $t9, $v0
-    sw $t9, 140($sp)
-    lw $a0, 140($sp)
+    sw $t9, 136($sp)
+    lw $a0, 136($sp)
     move $a1, $zero
     jal rdpq_attach_clear
     nop
@@ -335,24 +338,24 @@ render:
     jal rdpq_set_mode_fill
     nop
     move $t9, $v0
-    lw $t6, 136($sp)
+    move $t6, $s0
     lw $t7, 4($t6)
     li $t6, 16
     addu $t8, $t7, $t6
-    sw $t8, 144($sp)
-    lw $t6, 136($sp)
+    sw $t8, 140($sp)
+    move $t6, $s0
     lw $t7, 0($t6)
     li $t6, 16
     addu $t8, $t7, $t6
-    sw $t8, 148($sp)
-    lw $t7, 136($sp)
+    sw $t8, 144($sp)
+    move $t7, $s0
     lw $t8, 4($t7)
-    sw $t8, 152($sp)
-    lw $t8, 136($sp)
+    sw $t8, 148($sp)
+    move $t8, $s0
     lw $a0, 0($t8)
-    lw $a1, 152($sp)
-    lw $a2, 148($sp)
-    lw $a3, 144($sp)
+    lw $a1, 148($sp)
+    lw $a2, 144($sp)
+    lw $a3, 140($sp)
     jal rdpq_fill_rectangle
     nop
     move $t9, $v0
@@ -360,6 +363,7 @@ render:
     nop
     move $t9, $v0
 .Lrender_ret_10:
+    lw $s0, 156($sp)
     lw $fp, 160($sp)
     lw $ra, 164($sp)
     addiu $sp, $sp, 168

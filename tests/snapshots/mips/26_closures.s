@@ -523,16 +523,18 @@ __closure_11:
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
     sw $s0, 140($sp)
+    sw $s1, 136($sp)
     move $s0, $a0
-    sw $a1, 136($sp)
+    move $s1, $a1
     move $t9, $s0
-    lw $t7, 136($sp)
+    move $t7, $s1
     lw $t7, 0($t7)
     lw $t8, 0($t7)
     addu $v0, $t9, $t8
     j .L__closure_11_ret_17
     nop
 .L__closure_11_ret_17:
+    lw $s1, 136($sp)
     lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)

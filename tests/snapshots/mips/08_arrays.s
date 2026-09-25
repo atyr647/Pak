@@ -210,19 +210,20 @@ sum_array:
     addiu $fp, $sp, 160
     sw $s0, 148($sp)
     sw $s1, 144($sp)
-    sw $a0, 136($sp)
-    move $s1, $a1
+    sw $s2, 140($sp)
+    move $s1, $a0
+    move $s2, $a1
     li $t9, 0
     move $s0, $t9
     li $t9, 0
-    sw $t9, 140($sp)
-    move $t8, $s1
+    sw $t9, 136($sp)
+    move $t8, $s2
 .Lfor_h_1:
-    lw $t7, 140($sp)
+    lw $t7, 136($sp)
     bge $t7, $t8, .Lfor_x_3
     nop
-    lw $t5, 136($sp)
-    lw $t4, 140($sp)
+    move $t5, $s1
+    lw $t4, 136($sp)
     sll $t4, $t4, 2
     addu $t5, $t5, $t4
     lw $t6, 0($t5)
@@ -230,9 +231,9 @@ sum_array:
     addu $t6, $t5, $t6
     move $s0, $t6
 .Lfor_i_2:
-    lw $t7, 140($sp)
+    lw $t7, 136($sp)
     addiu $t7, $t7, 1
-    sw $t7, 140($sp)
+    sw $t7, 136($sp)
     j .Lfor_h_1
     nop
 .Lfor_x_3:
@@ -240,6 +241,7 @@ sum_array:
     j .Lsum_array_ret_0
     nop
 .Lsum_array_ret_0:
+    lw $s2, 140($sp)
     lw $s1, 144($sp)
     lw $s0, 148($sp)
     lw $fp, 152($sp)
@@ -259,30 +261,32 @@ fill:
     addiu $fp, $sp, 160
     sw $s0, 148($sp)
     sw $s1, 144($sp)
-    sw $a0, 136($sp)
-    move $s0, $a1
-    move $s1, $a2
+    sw $s2, 140($sp)
+    move $s0, $a0
+    move $s1, $a1
+    move $s2, $a2
     li $t9, 0
-    sw $t9, 140($sp)
-    move $t8, $s0
+    sw $t9, 136($sp)
+    move $t8, $s1
 .Lfor_h_5:
-    lw $t7, 140($sp)
+    lw $t7, 136($sp)
     bge $t7, $t8, .Lfor_x_7
     nop
-    move $t6, $s1
-    lw $t5, 136($sp)
-    lw $t4, 140($sp)
+    move $t6, $s2
+    move $t5, $s0
+    lw $t4, 136($sp)
     sll $t4, $t4, 2
     addu $t5, $t5, $t4
     sw $t6, 0($t5)
 .Lfor_i_6:
-    lw $t7, 140($sp)
+    lw $t7, 136($sp)
     addiu $t7, $t7, 1
-    sw $t7, 140($sp)
+    sw $t7, 136($sp)
     j .Lfor_h_5
     nop
 .Lfor_x_7:
 .Lfill_ret_4:
+    lw $s2, 140($sp)
     lw $s1, 144($sp)
     lw $s0, 148($sp)
     lw $fp, 152($sp)

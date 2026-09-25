@@ -208,6 +208,7 @@ main:
     sw $ra, 164($sp)
     sw $fp, 160($sp)
     addiu $fp, $sp, 168
+    sw $s0, 156($sp)
     li $t8, 64
     sw $t8, 136($sp)
     li $t8, 0
@@ -257,8 +258,8 @@ main:
     nop
     move $t9, $v0
     la $t9, .Lstr0
-    sw $t9, 152($sp)
-    lw $a0, 152($sp)
+    move $s0, $t9
+    move $a0, $s0
     jal strlen
     nop
     move $t9, $v0
@@ -276,6 +277,7 @@ main:
     addu $t8, $t8, $t7
     sb $t9, 0($t8)
 .Lmain_ret_0:
+    lw $s0, 156($sp)
     lw $fp, 160($sp)
     lw $ra, 164($sp)
     addiu $sp, $sp, 168

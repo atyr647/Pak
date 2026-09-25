@@ -336,11 +336,13 @@ reset:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
     li $t9, 0
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 0($t8)
 .Lreset_ret_9:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -356,14 +358,16 @@ increment:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
-    lw $t7, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t7, $s0
     lw $t8, 0($t7)
     li $t7, 1
     addu $t9, $t8, $t7
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 0($t8)
 .Lincrement_ret_10:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152

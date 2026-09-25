@@ -261,95 +261,97 @@ Camera_rotate:
     sw $ra, 172($sp)
     sw $fp, 168($sp)
     addiu $fp, $sp, 176
-    swc1 $f20, 164($sp)
-    swc1 $f22, 160($sp)
-    swc1 $f24, 156($sp)
-    swc1 $f26, 152($sp)
-    sw $a0, 136($sp)
+    sw $s0, 164($sp)
+    swc1 $f20, 160($sp)
+    swc1 $f22, 156($sp)
+    swc1 $f24, 152($sp)
+    swc1 $f26, 148($sp)
+    move $s0, $a0
     mov.s $f24, $f12
     mov.s $f12, $f24
-    swc1 $f12, 140($sp)
-    lwc1 $f12, 140($sp)
+    swc1 $f12, 136($sp)
+    lwc1 $f12, 136($sp)
     jal math_cos_f
     nop
     move $t9, $v0
     mov.s $f20, $f12
     mov.s $f12, $f24
-    swc1 $f12, 140($sp)
-    lwc1 $f12, 140($sp)
+    swc1 $f12, 136($sp)
+    lwc1 $f12, 136($sp)
     jal math_sin_f
     nop
     move $t9, $v0
     mov.s $f22, $f12
-    lw $t8, 136($sp)
+    move $t8, $s0
     lwc1 $f12, 8($t8)
     mov.s $f26, $f12
-    lw $t8, 136($sp)
+    move $t8, $s0
     lwc1 $f12, 16($t8)
-    swc1 $f12, 144($sp)
-    lw $t6, 136($sp)
+    swc1 $f12, 140($sp)
+    move $t6, $s0
     lwc1 $f12, 8($t6)
     mov.s $f14, $f12
     mov.s $f12, $f20
     mul.s $f12, $f14, $f12
-    swc1 $f12, 140($sp)
-    lw $t5, 136($sp)
+    swc1 $f12, 136($sp)
+    move $t5, $s0
     lwc1 $f12, 12($t5)
     mov.s $f14, $f12
     mov.s $f12, $f22
     mul.s $f12, $f14, $f12
-    lwc1 $f14, 140($sp)
+    lwc1 $f14, 136($sp)
     sub.s $f12, $f14, $f12
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 8($t8)
     mov.s $f12, $f26
     mov.s $f14, $f12
     mov.s $f12, $f22
     mul.s $f12, $f14, $f12
-    swc1 $f12, 140($sp)
-    lw $t5, 136($sp)
+    swc1 $f12, 136($sp)
+    move $t5, $s0
     lwc1 $f12, 12($t5)
     mov.s $f14, $f12
     mov.s $f12, $f20
     mul.s $f12, $f14, $f12
-    lwc1 $f14, 140($sp)
+    lwc1 $f14, 136($sp)
     add.s $f12, $f14, $f12
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 12($t8)
-    lw $t6, 136($sp)
+    move $t6, $s0
     lwc1 $f12, 16($t6)
     mov.s $f14, $f12
     mov.s $f12, $f20
     mul.s $f12, $f14, $f12
-    swc1 $f12, 140($sp)
-    lw $t5, 136($sp)
+    swc1 $f12, 136($sp)
+    move $t5, $s0
     lwc1 $f12, 20($t5)
     mov.s $f14, $f12
     mov.s $f12, $f22
     mul.s $f12, $f14, $f12
-    lwc1 $f14, 140($sp)
+    lwc1 $f14, 136($sp)
     sub.s $f12, $f14, $f12
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 16($t8)
-    lwc1 $f12, 144($sp)
+    lwc1 $f12, 140($sp)
     mov.s $f14, $f12
     mov.s $f12, $f22
     mul.s $f12, $f14, $f12
-    swc1 $f12, 140($sp)
-    lw $t5, 136($sp)
+    swc1 $f12, 136($sp)
+    move $t5, $s0
     lwc1 $f12, 20($t5)
     mov.s $f14, $f12
     mov.s $f12, $f20
     mul.s $f12, $f14, $f12
-    lwc1 $f14, 140($sp)
+    lwc1 $f14, 136($sp)
     add.s $f12, $f14, $f12
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 20($t8)
 .LCamera_rotate_ret_3:
-    lwc1 $f26, 152($sp)
-    lwc1 $f24, 156($sp)
-    lwc1 $f22, 160($sp)
-    lwc1 $f20, 164($sp)
+    lwc1 $f26, 148($sp)
+    lwc1 $f24, 152($sp)
+    lwc1 $f22, 156($sp)
+    lwc1 $f20, 160($sp)
+    lw $s0, 164($sp)
     lw $fp, 168($sp)
     lw $ra, 172($sp)
     addiu $sp, $sp, 176
@@ -365,27 +367,28 @@ Camera_try_move:
     sw $ra, 164($sp)
     sw $fp, 160($sp)
     addiu $fp, $sp, 168
-    swc1 $f20, 156($sp)
-    swc1 $f22, 152($sp)
-    swc1 $f24, 148($sp)
-    swc1 $f26, 144($sp)
-    sw $a0, 136($sp)
+    sw $s0, 156($sp)
+    swc1 $f20, 152($sp)
+    swc1 $f22, 148($sp)
+    swc1 $f24, 144($sp)
+    swc1 $f26, 140($sp)
+    move $s0, $a0
     mov.s $f24, $f12
     mov.s $f12, $f14
     mov.s $f26, $f12
-    lw $t7, 136($sp)
+    move $t7, $s0
     lwc1 $f12, 0($t7)
     mov.s $f14, $f12
     mov.s $f12, $f24
     add.s $f12, $f14, $f12
     mov.s $f20, $f12
-    lw $t7, 136($sp)
+    move $t7, $s0
     lwc1 $f12, 4($t7)
     mov.s $f14, $f12
     mov.s $f12, $f26
     add.s $f12, $f14, $f12
     mov.s $f22, $f12
-    lw $t7, 136($sp)
+    move $t7, $s0
     lwc1 $f12, 4($t7)
     trunc.w.s $f12, $f12
     mfc1 $a1, $f12
@@ -398,32 +401,33 @@ Camera_try_move:
     bnez $t9, .Lif_end_5
     nop
     mov.s $f12, $f20
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 0($t8)
 .Lif_end_5:
     mov.s $f12, $f22
     trunc.w.s $f12, $f12
     mfc1 $t8, $f12
-    sw $t8, 140($sp)
-    lw $t7, 136($sp)
+    sw $t8, 136($sp)
+    move $t7, $s0
     lwc1 $f12, 0($t7)
     trunc.w.s $f12, $f12
     mfc1 $a0, $f12
-    lw $a1, 140($sp)
+    lw $a1, 136($sp)
     jal map_get
     nop
     move $t9, $v0
     bnez $t9, .Lif_end_6
     nop
     mov.s $f12, $f22
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 4($t8)
 .Lif_end_6:
 .LCamera_try_move_ret_4:
-    lwc1 $f26, 144($sp)
-    lwc1 $f24, 148($sp)
-    lwc1 $f22, 152($sp)
-    lwc1 $f20, 156($sp)
+    lwc1 $f26, 140($sp)
+    lwc1 $f24, 144($sp)
+    lwc1 $f22, 148($sp)
+    lwc1 $f20, 152($sp)
+    lw $s0, 156($sp)
     lw $fp, 160($sp)
     lw $ra, 164($sp)
     addiu $sp, $sp, 168
@@ -517,7 +521,7 @@ render_minimap:
     sw $s3, 160($sp)
     sw $s4, 156($sp)
     sw $s5, 152($sp)
-    sw $a0, 136($sp)
+    move $s3, $a0
     li $t9, 0
     move $s0, $t9
 .Lwhile_h_16:
@@ -542,22 +546,22 @@ render_minimap:
     addu $t7, $t6, $t5
     addu $t8, $t8, $t7
     lbu $t9, 0($t8)
-    sb $t9, 140($sp)
+    sb $t9, 136($sp)
     li $t8, 252
     move $t6, $s1
     li $t5, 4
     mul $t7, $t6, $t5
     addu $t9, $t8, $t7
-    move $s3, $t9
+    move $s4, $t9
     li $t8, 2
     move $t6, $s0
     li $t5, 4
     mul $t7, $t6, $t5
     addu $t9, $t8, $t7
-    move $s4, $t9
+    move $s5, $t9
     li $t9, 858993663
     move $s2, $t9
-    lbu $t9, 140($sp)
+    lbu $t9, 136($sp)
     li $t8, 1
     bne $t9, $t8, .Lif_else_21
     nop
@@ -566,7 +570,7 @@ render_minimap:
     j .Lif_end_20
     nop
 .Lif_else_21:
-    lbu $t9, 140($sp)
+    lbu $t9, 136($sp)
     li $t8, 2
     bne $t9, $t8, .Lelif_else_22
     nop
@@ -575,7 +579,7 @@ render_minimap:
     j .Lif_end_20
     nop
 .Lelif_else_22:
-    lbu $t9, 140($sp)
+    lbu $t9, 136($sp)
     li $t8, 3
     bne $t9, $t8, .Lelif_else_23
     nop
@@ -589,14 +593,14 @@ render_minimap:
     jal rdpq_set_fill_color
     nop
     move $t9, $v0
-    move $t8, $s4
+    move $t8, $s5
     li $t7, 4
     addu $a3, $t8, $t7
-    move $t8, $s3
+    move $t8, $s4
     li $t7, 4
     addu $a2, $t8, $t7
-    move $a1, $s4
-    move $a0, $s3
+    move $a1, $s5
+    move $a0, $s4
     jal rdpq_fill_rectangle
     nop
     move $t9, $v0
@@ -615,16 +619,16 @@ render_minimap:
     nop
 .Lwhile_x_17:
     li $t8, 252
-    lw $t4, 136($sp)
+    move $t4, $s3
     lwc1 $f12, 0($t4)
     trunc.w.s $f12, $f12
     mfc1 $t6, $f12
     li $t5, 4
     mul $t7, $t6, $t5
     addu $t9, $t8, $t7
-    move $s5, $t9
+    sw $t9, 140($sp)
     li $t8, 2
-    lw $t4, 136($sp)
+    move $t4, $s3
     lwc1 $f12, 4($t4)
     trunc.w.s $f12, $f12
     mfc1 $t6, $f12
@@ -639,11 +643,11 @@ render_minimap:
     lw $t8, 144($sp)
     li $t7, 4
     addu $a3, $t8, $t7
-    move $t8, $s5
+    lw $t8, 140($sp)
     li $t7, 4
     addu $a2, $t8, $t7
     lw $a1, 144($sp)
-    move $a0, $s5
+    lw $a0, 140($sp)
     jal rdpq_fill_rectangle
     nop
     move $t9, $v0
@@ -681,7 +685,7 @@ render_3d:
     swc1 $f26, 192($sp)
     sw $a0, 136($sp)
     lw $t9, 136($sp)
-    sw $t9, 140($sp)
+    move $s0, $t9
     li $a0, 219884287
     jal rdpq_set_mode_fill
     nop
@@ -705,68 +709,68 @@ render_3d:
     nop
     move $t9, $v0
     li $t9, 0
-    move $s0, $t9
+    move $s1, $t9
 .Lwhile_h_25:
-    move $t9, $s0
+    move $t9, $s1
     li $t8, 320
     slt $t7, $t9, $t8
     beqz $t7, .Lwhile_x_26
     nop
     la $t5, .Lf320
     lwc1 $f12, 0($t5)
-    swc1 $f12, 152($sp)
-    move $t4, $s0
+    swc1 $f12, 148($sp)
+    move $t4, $s1
     mtc1 $t4, $f12
     cvt.s.w $f12, $f12
-    lwc1 $f14, 152($sp)
+    lwc1 $f14, 148($sp)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 148($sp)
+    swc1 $f12, 144($sp)
     li $t5, 320
     mtc1 $t5, $f12
     cvt.s.w $f12, $f12
-    lwc1 $f14, 148($sp)
+    lwc1 $f14, 144($sp)
     div.s $f12, $f14, $f12
     mov.s $f14, $f12
     la $t7, .Lf321
     lwc1 $f12, 0($t7)
     sub.s $f12, $f14, $f12
-    swc1 $f12, 144($sp)
-    lw $t7, 140($sp)
+    swc1 $f12, 140($sp)
+    move $t7, $s0
     lwc1 $f12, 8($t7)
-    swc1 $f12, 148($sp)
-    lw $t5, 140($sp)
+    swc1 $f12, 144($sp)
+    move $t5, $s0
     lwc1 $f12, 16($t5)
     mov.s $f14, $f12
-    lwc1 $f12, 144($sp)
+    lwc1 $f12, 140($sp)
     mul.s $f12, $f14, $f12
-    lwc1 $f14, 148($sp)
+    lwc1 $f14, 144($sp)
     add.s $f12, $f14, $f12
-    swc1 $f12, 156($sp)
-    lw $t7, 140($sp)
+    swc1 $f12, 152($sp)
+    move $t7, $s0
     lwc1 $f12, 12($t7)
-    swc1 $f12, 148($sp)
-    lw $t5, 140($sp)
+    swc1 $f12, 144($sp)
+    move $t5, $s0
     lwc1 $f12, 20($t5)
     mov.s $f14, $f12
-    lwc1 $f12, 144($sp)
+    lwc1 $f12, 140($sp)
     mul.s $f12, $f14, $f12
-    lwc1 $f14, 148($sp)
+    lwc1 $f14, 144($sp)
     add.s $f12, $f14, $f12
-    swc1 $f12, 160($sp)
-    lw $t7, 140($sp)
+    swc1 $f12, 156($sp)
+    move $t7, $s0
     lwc1 $f12, 0($t7)
     trunc.w.s $f12, $f12
     mfc1 $t9, $f12
-    move $s1, $t9
-    lw $t7, 140($sp)
+    move $s2, $t9
+    move $t7, $s0
     lwc1 $f12, 4($t7)
     trunc.w.s $f12, $f12
     mfc1 $t9, $f12
-    move $s2, $t9
+    move $s3, $t9
     la $t8, .Lf322
     lwc1 $f12, 0($t8)
     mov.s $f20, $f12
-    lwc1 $f12, 156($sp)
+    lwc1 $f12, 152($sp)
     mov.s $f14, $f12
     la $t7, .Lf323
     lwc1 $f12, 0($t7)
@@ -781,10 +785,10 @@ render_3d:
     la $t7, .Lf321
     lwc1 $f12, 0($t7)
     mov.s $f14, $f12
-    lwc1 $f12, 156($sp)
+    lwc1 $f12, 152($sp)
     div.s $f12, $f14, $f12
-    swc1 $f12, 148($sp)
-    lwc1 $f12, 148($sp)
+    swc1 $f12, 144($sp)
+    lwc1 $f12, 144($sp)
     jal math_abs_f
     nop
     move $t9, $v0
@@ -793,7 +797,7 @@ render_3d:
     la $t8, .Lf322
     lwc1 $f12, 0($t8)
     mov.s $f22, $f12
-    lwc1 $f12, 160($sp)
+    lwc1 $f12, 156($sp)
     mov.s $f14, $f12
     la $t7, .Lf323
     lwc1 $f12, 0($t7)
@@ -808,18 +812,18 @@ render_3d:
     la $t7, .Lf321
     lwc1 $f12, 0($t7)
     mov.s $f14, $f12
-    lwc1 $f12, 160($sp)
+    lwc1 $f12, 156($sp)
     div.s $f12, $f14, $f12
-    swc1 $f12, 148($sp)
-    lwc1 $f12, 148($sp)
+    swc1 $f12, 144($sp)
+    lwc1 $f12, 144($sp)
     jal math_abs_f
     nop
     move $t9, $v0
     mov.s $f22, $f12
 .Lif_end_29:
     li $t9, 1
-    sw $t9, 164($sp)
-    move $t5, $s1
+    sw $t9, 160($sp)
+    move $t5, $s2
     mtc1 $t5, $f12
     cvt.s.w $f12, $f12
     mov.s $f14, $f12
@@ -827,14 +831,14 @@ render_3d:
     lwc1 $f12, 0($t5)
     add.s $f12, $f14, $f12
     mov.s $f14, $f12
-    lw $t6, 140($sp)
+    move $t6, $s0
     lwc1 $f12, 0($t6)
     sub.s $f12, $f14, $f12
     mov.s $f14, $f12
     mov.s $f12, $f20
     mul.s $f12, $f14, $f12
     mov.s $f26, $f12
-    lwc1 $f12, 156($sp)
+    lwc1 $f12, 152($sp)
     mov.s $f14, $f12
     la $t7, .Lf323
     lwc1 $f12, 0($t7)
@@ -848,14 +852,14 @@ render_3d:
     nop
     li $t8, 1
     subu $t9, $zero, $t8
-    sw $t9, 164($sp)
-    lw $t6, 140($sp)
+    sw $t9, 160($sp)
+    move $t6, $s0
     lwc1 $f12, 0($t6)
-    swc1 $f12, 148($sp)
-    move $t5, $s1
+    swc1 $f12, 144($sp)
+    move $t5, $s2
     mtc1 $t5, $f12
     cvt.s.w $f12, $f12
-    lwc1 $f14, 148($sp)
+    lwc1 $f14, 144($sp)
     sub.s $f12, $f14, $f12
     mov.s $f14, $f12
     mov.s $f12, $f20
@@ -863,8 +867,8 @@ render_3d:
     mov.s $f26, $f12
 .Lif_end_31:
     li $t9, 1
-    sw $t9, 168($sp)
-    move $t5, $s2
+    sw $t9, 164($sp)
+    move $t5, $s3
     mtc1 $t5, $f12
     cvt.s.w $f12, $f12
     mov.s $f14, $f12
@@ -872,14 +876,14 @@ render_3d:
     lwc1 $f12, 0($t5)
     add.s $f12, $f14, $f12
     mov.s $f14, $f12
-    lw $t6, 140($sp)
+    move $t6, $s0
     lwc1 $f12, 4($t6)
     sub.s $f12, $f14, $f12
     mov.s $f14, $f12
     mov.s $f12, $f22
     mul.s $f12, $f14, $f12
-    swc1 $f12, 172($sp)
-    lwc1 $f12, 160($sp)
+    swc1 $f12, 168($sp)
+    lwc1 $f12, 156($sp)
     mov.s $f14, $f12
     la $t7, .Lf323
     lwc1 $f12, 0($t7)
@@ -893,39 +897,39 @@ render_3d:
     nop
     li $t8, 1
     subu $t9, $zero, $t8
-    sw $t9, 168($sp)
-    lw $t6, 140($sp)
+    sw $t9, 164($sp)
+    move $t6, $s0
     lwc1 $f12, 4($t6)
-    swc1 $f12, 148($sp)
-    move $t5, $s2
+    swc1 $f12, 144($sp)
+    move $t5, $s3
     mtc1 $t5, $f12
     cvt.s.w $f12, $f12
-    lwc1 $f14, 148($sp)
+    lwc1 $f14, 144($sp)
     sub.s $f12, $f14, $f12
     mov.s $f14, $f12
     mov.s $f12, $f22
     mul.s $f12, $f14, $f12
-    swc1 $f12, 172($sp)
+    swc1 $f12, 168($sp)
 .Lif_end_33:
     li $t9, 0
-    move $s3, $t9
+    move $s4, $t9
     li $t9, 0
-    sb $t9, 176($sp)
+    sb $t9, 172($sp)
     li $t9, 0
-    sb $t9, 177($sp)
+    sb $t9, 173($sp)
     li $t9, 0
-    sw $t9, 180($sp)
+    sw $t9, 176($sp)
 .Lwhile_h_35:
-    lbu $t9, 177($sp)
+    lbu $t9, 173($sp)
     bnez $t9, .Lwhile_x_36
     nop
-    lw $t9, 180($sp)
+    lw $t9, 176($sp)
     slti $t8, $t9, 24
     beqz $t8, .Lwhile_x_36
     nop
     mov.s $f12, $f26
     mov.s $f14, $f12
-    lwc1 $f12, 172($sp)
+    lwc1 $f12, 168($sp)
     c.lt.s $f14, $f12
     li $t9, 0
     bc1f .Lflt_39
@@ -935,56 +939,56 @@ render_3d:
     beqz $t9, .Lif_else_38
     nop
     mov.s $f12, $f20
-    swc1 $f12, 148($sp)
+    swc1 $f12, 144($sp)
     mov.s $f12, $f26
-    lwc1 $f14, 148($sp)
+    lwc1 $f14, 144($sp)
     add.s $f12, $f12, $f14
     mov.s $f26, $f12
-    lw $t9, 164($sp)
-    move $t8, $s1
+    lw $t9, 160($sp)
+    move $t8, $s2
     addu $t9, $t8, $t9
-    move $s1, $t9
+    move $s2, $t9
     li $t9, 0
-    move $s3, $t9
+    move $s4, $t9
     j .Lif_end_37
     nop
 .Lif_else_38:
     mov.s $f12, $f22
-    swc1 $f12, 148($sp)
-    lwc1 $f12, 172($sp)
-    lwc1 $f14, 148($sp)
+    swc1 $f12, 144($sp)
+    lwc1 $f12, 168($sp)
+    lwc1 $f14, 144($sp)
     add.s $f12, $f12, $f14
-    swc1 $f12, 172($sp)
-    lw $t9, 168($sp)
-    move $t8, $s2
+    swc1 $f12, 168($sp)
+    lw $t9, 164($sp)
+    move $t8, $s3
     addu $t9, $t8, $t9
-    move $s2, $t9
-    li $t9, 1
     move $s3, $t9
+    li $t9, 1
+    move $s4, $t9
 .Lif_end_37:
-    move $a1, $s2
-    move $a0, $s1
+    move $a1, $s3
+    move $a0, $s2
     jal map_get
     nop
     move $t9, $v0
-    sb $t9, 176($sp)
-    lbu $t9, 176($sp)
+    sb $t9, 172($sp)
+    lbu $t9, 172($sp)
     beqz $t9, .Lif_end_40
     nop
     li $t9, 1
-    sb $t9, 177($sp)
+    sb $t9, 173($sp)
 .Lif_end_40:
     li $t9, 1
-    lw $t8, 180($sp)
+    lw $t8, 176($sp)
     addu $t9, $t8, $t9
-    sw $t9, 180($sp)
+    sw $t9, 176($sp)
     j .Lwhile_h_35
     nop
 .Lwhile_x_36:
     la $t8, .Lf321
     lwc1 $f12, 0($t8)
     mov.s $f24, $f12
-    move $t9, $s3
+    move $t9, $s4
     bnez $t9, .Lif_else_42
     nop
     mov.s $f12, $f26
@@ -995,7 +999,7 @@ render_3d:
     j .Lif_end_41
     nop
 .Lif_else_42:
-    lwc1 $f12, 172($sp)
+    lwc1 $f12, 168($sp)
     mov.s $f14, $f12
     mov.s $f12, $f22
     sub.s $f12, $f14, $f12
@@ -1025,34 +1029,34 @@ render_3d:
     div.s $f12, $f14, $f12
     trunc.w.s $f12, $f12
     mfc1 $t9, $f12
-    move $s4, $t9
-    move $t9, $s4
+    move $s5, $t9
+    move $t9, $s5
     li $t8, 240
     slt $t7, $t8, $t9
     beqz $t7, .Lif_end_45
     nop
     li $t9, 240
-    move $s4, $t9
+    move $s5, $t9
 .Lif_end_45:
     li $t8, 120
-    move $t6, $s4
+    move $t6, $s5
     li $t5, 2
     div $zero, $t6, $t5
     mflo $t7
     subu $t9, $t8, $t7
-    move $s5, $t9
+    sw $t9, 180($sp)
     li $t8, 120
-    move $t6, $s4
+    move $t6, $s5
     li $t5, 2
     div $zero, $t6, $t5
     mflo $t7
     addu $t9, $t8, $t7
     sw $t9, 184($sp)
-    move $t9, $s5
+    lw $t9, 180($sp)
     bgez $t9, .Lif_end_46
     nop
     li $t9, 0
-    move $s5, $t9
+    sw $t9, 180($sp)
 .Lif_end_46:
     lw $t9, 184($sp)
     li $t8, 240
@@ -1062,8 +1066,8 @@ render_3d:
     li $t9, 240
     sw $t9, 184($sp)
 .Lif_end_47:
-    move $a1, $s3
-    lbu $a0, 176($sp)
+    move $a1, $s4
+    lbu $a0, 172($sp)
     jal wall_color
     nop
     move $t9, $v0
@@ -1073,18 +1077,18 @@ render_3d:
     nop
     move $t9, $v0
     lw $a3, 184($sp)
-    move $t8, $s0
+    move $t8, $s1
     li $t7, 2
     addu $a2, $t8, $t7
-    move $a1, $s5
-    move $a0, $s0
+    lw $a1, 180($sp)
+    move $a0, $s1
     jal rdpq_fill_rectangle
     nop
     move $t9, $v0
     li $t9, 2
-    move $t8, $s0
+    move $t8, $s1
     addu $t9, $t8, $t9
-    move $s0, $t9
+    move $s1, $t9
     j .Lwhile_h_25
     nop
 .Lwhile_x_26:
@@ -1116,56 +1120,93 @@ update_playing:
     addiu $fp, $sp, 184
     sw $s0, 172($sp)
     sw $s1, 168($sp)
-    sw $a0, 136($sp)
+    sw $s2, 164($sp)
+    move $s0, $a0
     move $t9, $a1
-    addiu $t8, $sp, 140
+    addiu $t8, $sp, 136
     lw $t7, 0($t9)
     sw $t7, 0($t8)
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 12($t7)
     move $t9, $t8
-    move $s1, $t9
-    addiu $t7, $sp, 140
+    move $s2, $t9
+    addiu $t7, $sp, 136
     lw $t8, 16($t7)
     move $t9, $t8
-    move $s0, $t9
-    move $t9, $s1
+    move $s1, $t9
+    move $t9, $s2
     li $t8, 12
     slt $t7, $t8, $t9
     bnez $t7, .Lsc_50
     nop
-    move $t9, $s1
+    move $t9, $s2
     li $t7, 12
     subu $t8, $zero, $t7
     slt $t7, $t9, $t8
     beqz $t7, .Lif_end_49
     nop
 .Lsc_50:
-    lw $t8, 136($sp)
+    move $t8, $s0
     move $a0, $t8
-    move $t6, $s1
+    move $t6, $s2
     mtc1 $t6, $f12
     cvt.s.w $f12, $f12
-    swc1 $f12, 148($sp)
+    swc1 $f12, 144($sp)
     la $t4, .Lf325
     lwc1 $f12, 0($t4)
     subu $t6, $zero, $t5
-    lwc1 $f14, 148($sp)
+    lwc1 $f14, 144($sp)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 144($sp)
-    lwc1 $f12, 144($sp)
+    swc1 $f12, 140($sp)
+    lwc1 $f12, 140($sp)
     sw $t8, 96($sp)
     jal Camera_rotate
     nop
     lw $t8, 96($sp)
     move $t9, $v0
 .Lif_end_49:
-    move $t9, $s0
+    move $t9, $s1
     li $t8, 12
     slt $t7, $t8, $t9
     beqz $t7, .Lif_end_51
     nop
-    move $t7, $s0
+    move $t7, $s1
+    mtc1 $t7, $f12
+    cvt.s.w $f12, $f12
+    mov.s $f14, $f12
+    la $t7, .Lf325
+    lwc1 $f12, 0($t7)
+    mul.s $f12, $f14, $f12
+    swc1 $f12, 148($sp)
+    move $t8, $s0
+    move $a0, $t8
+    move $t6, $s0
+    lwc1 $f12, 12($t6)
+    mov.s $f14, $f12
+    lwc1 $f12, 148($sp)
+    mul.s $f12, $f14, $f12
+    swc1 $f12, 144($sp)
+    move $t6, $s0
+    lwc1 $f12, 8($t6)
+    mov.s $f14, $f12
+    lwc1 $f12, 148($sp)
+    mul.s $f12, $f14, $f12
+    swc1 $f12, 140($sp)
+    lwc1 $f14, 144($sp)
+    lwc1 $f12, 140($sp)
+    sw $t8, 96($sp)
+    jal Camera_try_move
+    nop
+    lw $t8, 96($sp)
+    move $t9, $v0
+.Lif_end_51:
+    move $t9, $s1
+    li $t7, 12
+    subu $t8, $zero, $t7
+    slt $t7, $t9, $t8
+    beqz $t7, .Lif_end_52
+    nop
+    move $t7, $s1
     mtc1 $t7, $f12
     cvt.s.w $f12, $f12
     mov.s $f14, $f12
@@ -1173,132 +1214,96 @@ update_playing:
     lwc1 $f12, 0($t7)
     mul.s $f12, $f14, $f12
     swc1 $f12, 152($sp)
-    lw $t8, 136($sp)
+    move $t8, $s0
     move $a0, $t8
-    lw $t6, 136($sp)
+    move $t6, $s0
     lwc1 $f12, 12($t6)
     mov.s $f14, $f12
     lwc1 $f12, 152($sp)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 148($sp)
-    lw $t6, 136($sp)
+    swc1 $f12, 144($sp)
+    move $t6, $s0
     lwc1 $f12, 8($t6)
     mov.s $f14, $f12
     lwc1 $f12, 152($sp)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 144($sp)
-    lwc1 $f14, 148($sp)
-    lwc1 $f12, 144($sp)
-    sw $t8, 96($sp)
-    jal Camera_try_move
-    nop
-    lw $t8, 96($sp)
-    move $t9, $v0
-.Lif_end_51:
-    move $t9, $s0
-    li $t7, 12
-    subu $t8, $zero, $t7
-    slt $t7, $t9, $t8
-    beqz $t7, .Lif_end_52
-    nop
-    move $t7, $s0
-    mtc1 $t7, $f12
-    cvt.s.w $f12, $f12
-    mov.s $f14, $f12
-    la $t7, .Lf325
-    lwc1 $f12, 0($t7)
-    mul.s $f12, $f14, $f12
-    swc1 $f12, 156($sp)
-    lw $t8, 136($sp)
-    move $a0, $t8
-    lw $t6, 136($sp)
-    lwc1 $f12, 12($t6)
-    mov.s $f14, $f12
-    lwc1 $f12, 156($sp)
-    mul.s $f12, $f14, $f12
-    swc1 $f12, 148($sp)
-    lw $t6, 136($sp)
-    lwc1 $f12, 8($t6)
-    mov.s $f14, $f12
-    lwc1 $f12, 156($sp)
-    mul.s $f12, $f14, $f12
-    swc1 $f12, 144($sp)
-    lwc1 $f14, 148($sp)
-    lwc1 $f12, 144($sp)
+    swc1 $f12, 140($sp)
+    lwc1 $f14, 144($sp)
+    lwc1 $f12, 140($sp)
     sw $t8, 96($sp)
     jal Camera_try_move
     nop
     lw $t8, 96($sp)
     move $t9, $v0
 .Lif_end_52:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 8($t8)
     beqz $t9, .Lif_end_53
     nop
-    lw $t8, 136($sp)
+    move $t8, $s0
     move $a0, $t8
-    lw $t6, 136($sp)
+    move $t6, $s0
     lwc1 $f12, 20($t6)
-    swc1 $f12, 160($sp)
+    swc1 $f12, 156($sp)
     la $t4, .Lf326
     lwc1 $f12, 0($t4)
     subu $t6, $zero, $t5
-    lwc1 $f14, 160($sp)
-    mul.s $f12, $f14, $f12
-    swc1 $f12, 148($sp)
-    lw $t6, 136($sp)
-    lwc1 $f12, 16($t6)
-    swc1 $f12, 160($sp)
-    la $t4, .Lf326
-    lwc1 $f12, 0($t4)
-    subu $t6, $zero, $t5
-    lwc1 $f14, 160($sp)
+    lwc1 $f14, 156($sp)
     mul.s $f12, $f14, $f12
     swc1 $f12, 144($sp)
-    lwc1 $f14, 148($sp)
-    lwc1 $f12, 144($sp)
+    move $t6, $s0
+    lwc1 $f12, 16($t6)
+    swc1 $f12, 156($sp)
+    la $t4, .Lf326
+    lwc1 $f12, 0($t4)
+    subu $t6, $zero, $t5
+    lwc1 $f14, 156($sp)
+    mul.s $f12, $f14, $f12
+    swc1 $f12, 140($sp)
+    lwc1 $f14, 144($sp)
+    lwc1 $f12, 140($sp)
     sw $t8, 96($sp)
     jal Camera_try_move
     nop
     lw $t8, 96($sp)
     move $t9, $v0
 .Lif_end_53:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 9($t8)
     beqz $t9, .Lif_end_54
     nop
-    lw $t8, 136($sp)
+    move $t8, $s0
     move $a0, $t8
-    lw $t6, 136($sp)
+    move $t6, $s0
     lwc1 $f12, 20($t6)
     mov.s $f14, $f12
     la $t6, .Lf326
     lwc1 $f12, 0($t6)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 148($sp)
-    lw $t6, 136($sp)
+    swc1 $f12, 144($sp)
+    move $t6, $s0
     lwc1 $f12, 16($t6)
     mov.s $f14, $f12
     la $t6, .Lf326
     lwc1 $f12, 0($t6)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 144($sp)
-    lwc1 $f14, 148($sp)
-    lwc1 $f12, 144($sp)
+    swc1 $f12, 140($sp)
+    lwc1 $f14, 144($sp)
+    lwc1 $f12, 140($sp)
     sw $t8, 96($sp)
     jal Camera_try_move
     nop
     lw $t8, 96($sp)
     move $t9, $v0
 .Lif_end_54:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 7($t8)
     beqz $t9, .Lif_end_55
     nop
-    lw $t8, 136($sp)
+    move $t8, $s0
     move $a0, $t8
     la $t6, .Lf327
     lwc1 $f12, 0($t6)
@@ -1309,12 +1314,12 @@ update_playing:
     lw $t8, 96($sp)
     move $t9, $v0
 .Lif_end_55:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 6($t8)
     beqz $t9, .Lif_end_56
     nop
-    lw $t8, 136($sp)
+    move $t8, $s0
     move $a0, $t8
     la $t7, .Lf327
     lwc1 $f12, 0($t7)
@@ -1324,76 +1329,77 @@ update_playing:
     lw $t8, 96($sp)
     move $t9, $v0
 .Lif_end_56:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 4($t8)
     beqz $t9, .Lif_end_57
     nop
-    lw $t8, 136($sp)
+    move $t8, $s0
     move $a0, $t8
-    lw $t6, 136($sp)
+    move $t6, $s0
     lwc1 $f12, 12($t6)
     mov.s $f14, $f12
     la $t6, .Lf326
     lwc1 $f12, 0($t6)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 148($sp)
-    lw $t6, 136($sp)
+    swc1 $f12, 144($sp)
+    move $t6, $s0
     lwc1 $f12, 8($t6)
     mov.s $f14, $f12
     la $t6, .Lf326
     lwc1 $f12, 0($t6)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 144($sp)
-    lwc1 $f14, 148($sp)
-    lwc1 $f12, 144($sp)
+    swc1 $f12, 140($sp)
+    lwc1 $f14, 144($sp)
+    lwc1 $f12, 140($sp)
     sw $t8, 96($sp)
     jal Camera_try_move
     nop
     lw $t8, 96($sp)
     move $t9, $v0
 .Lif_end_57:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 5($t8)
     beqz $t9, .Lif_end_58
     nop
-    lw $t8, 136($sp)
+    move $t8, $s0
     move $a0, $t8
-    lw $t5, 136($sp)
+    move $t5, $s0
     lwc1 $f12, 12($t5)
     neg.s $f12, $f12
     mov.s $f14, $f12
     la $t6, .Lf326
     lwc1 $f12, 0($t6)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 148($sp)
-    lw $t5, 136($sp)
+    swc1 $f12, 144($sp)
+    move $t5, $s0
     lwc1 $f12, 8($t5)
     neg.s $f12, $f12
     mov.s $f14, $f12
     la $t6, .Lf326
     lwc1 $f12, 0($t6)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 144($sp)
-    lwc1 $f14, 148($sp)
-    lwc1 $f12, 144($sp)
+    swc1 $f12, 140($sp)
+    lwc1 $f14, 144($sp)
+    lwc1 $f12, 140($sp)
     sw $t8, 96($sp)
     jal Camera_try_move
     nop
     lw $t8, 96($sp)
     move $t9, $v0
 .Lif_end_58:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 4($t7)
     lb $t9, 3($t8)
     beqz $t9, .Lif_end_59
     nop
     li $t9, 2
-    lw $t8, 136($sp)
+    move $t8, $s0
     sb $t9, 24($t8)
 .Lif_end_59:
 .Lupdate_playing_ret_48:
+    lw $s2, 164($sp)
     lw $s1, 168($sp)
     lw $s0, 172($sp)
     lw $fp, 176($sp)
@@ -1411,17 +1417,18 @@ render_screen:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
     jal display_get
     nop
     move $t9, $v0
-    sw $t9, 140($sp)
-    lw $a0, 140($sp)
+    sw $t9, 136($sp)
+    lw $a0, 136($sp)
     move $a1, $zero
     jal rdpq_attach_clear
     nop
     move $t9, $v0
-    lw $t8, 136($sp)
+    move $t8, $s0
     lbu $t9, 24($t8)
     li $t8, 0
     bne $t9, $t8, .Larm_skip_63
@@ -1447,13 +1454,13 @@ render_screen:
     li $t8, 1
     bne $t9, $t8, .Larm_skip_65
     nop
-    lw $a0, 136($sp)
+    move $a0, $s0
     sw $t9, 96($sp)
     jal render_3d
     nop
     lw $t9, 96($sp)
     move $t8, $v0
-    lw $a0, 136($sp)
+    move $a0, $s0
     sw $t9, 96($sp)
     jal render_minimap
     nop
@@ -1465,13 +1472,13 @@ render_screen:
     li $t8, 2
     bne $t9, $t8, .Larm_skip_67
     nop
-    lw $a0, 136($sp)
+    move $a0, $s0
     sw $t9, 96($sp)
     jal render_3d
     nop
     lw $t9, 96($sp)
     move $t8, $v0
-    lw $a0, 136($sp)
+    move $a0, $s0
     sw $t9, 96($sp)
     jal render_minimap
     nop
@@ -1521,6 +1528,7 @@ render_screen:
     nop
     move $t9, $v0
 .Lrender_screen_ret_60:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -1536,44 +1544,46 @@ init_game:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
     la $t8, .Lf328
     lwc1 $f12, 0($t8)
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 0($t8)
     la $t8, .Lf329
     lwc1 $f12, 0($t8)
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 4($t8)
     la $t8, .Lf321
     lwc1 $f12, 0($t8)
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 8($t8)
     la $t8, .Lf323
     lwc1 $f12, 0($t8)
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 12($t8)
     la $t8, .Lf323
     lwc1 $f12, 0($t8)
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 16($t8)
     la $t8, .Lf3210
     lwc1 $f12, 0($t8)
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 20($t8)
     li $t9, 10
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 32($t8)
     li $t9, 0
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 36($t8)
     li $t9, 0
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 28($t8)
     li $t9, 0
-    lw $t8, 136($sp)
+    move $t8, $s0
     sb $t9, 24($t8)
 .Linit_game_ret_70:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152

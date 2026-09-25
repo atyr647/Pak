@@ -255,11 +255,12 @@ fill_audio_buffer:
     sw $fp, 152($sp)
     addiu $fp, $sp, 160
     sw $s0, 148($sp)
+    sw $s1, 144($sp)
     jal audio_get_buffer
     nop
     move $t9, $v0
-    sw $t9, 136($sp)
-    lw $t9, 136($sp)
+    move $s1, $t9
+    move $t9, $s1
     move $t8, $zero
     bne $t9, $t8, .Lif_end_3
     nop
@@ -285,15 +286,15 @@ fill_audio_buffer:
     jal gen_sample
     nop
     move $t9, $v0
-    sh $t9, 140($sp)
-    lh $t9, 140($sp)
-    lw $t8, 136($sp)
+    sh $t9, 136($sp)
+    lh $t9, 136($sp)
+    move $t8, $s1
     move $t7, $s0
     sll $t7, $t7, 1
     addu $t8, $t8, $t7
     sh $t9, 0($t8)
-    lh $t9, 140($sp)
-    lw $t8, 136($sp)
+    lh $t9, 136($sp)
+    move $t8, $s1
     move $t6, $s0
     li $t5, 1
     addu $t7, $t6, $t5
@@ -308,6 +309,7 @@ fill_audio_buffer:
     nop
 .Lloop_x_5:
 .Lfill_audio_buffer_ret_2:
+    lw $s1, 144($sp)
     lw $s0, 148($sp)
     lw $fp, 152($sp)
     lw $ra, 156($sp)

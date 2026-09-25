@@ -543,15 +543,17 @@ Pair__i32_sum_i32:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
-    lw $t8, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t8, $s0
     lw $t9, 0($t8)
-    lw $t7, 136($sp)
+    move $t7, $s0
     lw $t8, 4($t7)
     addu $v0, $t9, $t8
     j .LPair__i32_sum_i32_ret_10
     nop
 .LPair__i32_sum_i32_ret_10:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -567,12 +569,14 @@ Pair__i32_get_first:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t9, $s0
     lw $v0, 0($t9)
     j .LPair__i32_get_first_ret_11
     nop
 .LPair__i32_get_first_ret_11:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -588,12 +592,14 @@ Pair__i32_get_second:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t9, $s0
     lw $v0, 4($t9)
     j .LPair__i32_get_second_ret_12
     nop
 .LPair__i32_get_second_ret_12:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -609,15 +615,17 @@ Pair__f32_sum_i32:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
-    lw $t8, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t8, $s0
     lw $t9, 0($t8)
-    lw $t7, 136($sp)
+    move $t7, $s0
     lw $t8, 4($t7)
     addu $v0, $t9, $t8
     j .LPair__f32_sum_i32_ret_13
     nop
 .LPair__f32_sum_i32_ret_13:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -633,12 +641,14 @@ Pair__f32_get_first:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t9, $s0
     lw $v0, 0($t9)
     j .LPair__f32_get_first_ret_14
     nop
 .LPair__f32_get_first_ret_14:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -654,12 +664,14 @@ Pair__f32_get_second:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t9, $s0
     lw $v0, 4($t9)
     j .LPair__f32_get_second_ret_15
     nop
 .LPair__f32_get_second_ret_15:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -675,15 +687,17 @@ Pair__T_sum_i32:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
-    lw $t8, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t8, $s0
     lw $t9, 0($t8)
-    lw $t7, 136($sp)
+    move $t7, $s0
     lw $t8, 4($t7)
     addu $v0, $t9, $t8
     j .LPair__T_sum_i32_ret_16
     nop
 .LPair__T_sum_i32_ret_16:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -699,12 +713,14 @@ Pair__T_get_first:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t9, $s0
     lw $v0, 0($t9)
     j .LPair__T_get_first_ret_17
     nop
 .LPair__T_get_first_ret_17:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -720,12 +736,14 @@ Pair__T_get_second:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t9, $s0
     lw $v0, 4($t9)
     j .LPair__T_get_second_ret_18
     nop
 .LPair__T_get_second_ret_18:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152

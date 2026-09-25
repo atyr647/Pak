@@ -208,18 +208,19 @@ load_level:
     sw $ra, 164($sp)
     sw $fp, 160($sp)
     addiu $fp, $sp, 168
+    sw $s0, 156($sp)
     sw $a0, 136($sp)
-    sw $a1, 140($sp)
-    lw $t9, 140($sp)
+    move $s0, $a1
+    move $t9, $s0
     move $t8, $zero
     bne $t9, $t8, .Lif_end_1
     nop
+    sw $zero, 140($sp)
     sw $zero, 144($sp)
-    sw $zero, 148($sp)
-    sb $zero, 144($sp)
+    sb $zero, 140($sp)
     li $t8, 0
-    sw $t8, 148($sp)
-    addiu $t9, $sp, 144
+    sw $t8, 144($sp)
+    addiu $t9, $sp, 140
     lw $t8, 136($sp)
     lw $t7, 0($t9)
     sw $t7, 0($t8)
@@ -229,13 +230,13 @@ load_level:
     j .Lload_level_ret_0
     nop
 .Lif_end_1:
+    sw $zero, 148($sp)
     sw $zero, 152($sp)
-    sw $zero, 156($sp)
     li $t9, 1
-    sb $t9, 152($sp)
+    sb $t9, 148($sp)
     li $t8, 42
-    sw $t8, 156($sp)
-    addiu $t9, $sp, 152
+    sw $t8, 152($sp)
+    addiu $t9, $sp, 148
     lw $t8, 136($sp)
     lw $t7, 0($t9)
     sw $t7, 0($t8)
@@ -245,6 +246,7 @@ load_level:
     j .Lload_level_ret_0
     nop
 .Lload_level_ret_0:
+    lw $s0, 156($sp)
     lw $fp, 160($sp)
     lw $ra, 164($sp)
     addiu $sp, $sp, 168

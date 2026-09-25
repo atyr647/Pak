@@ -211,23 +211,24 @@ sum_scanline:
     sw $s0, 156($sp)
     sw $s1, 152($sp)
     sw $s2, 148($sp)
-    sw $a0, 136($sp)
-    move $s2, $a1
+    sw $s3, 144($sp)
+    move $s2, $a0
+    move $s3, $a1
     move $s0, $a2
     li $t9, 0
     move $s1, $t9
     li $t9, 0
-    sw $t9, 140($sp)
+    sw $t9, 136($sp)
     move $t8, $s0
 .Lfor_h_1:
-    lw $t7, 140($sp)
+    lw $t7, 136($sp)
     bge $t7, $t8, .Lfor_x_3
     nop
-    lw $t4, 136($sp)
-    move $t1, $s2
+    move $t4, $s2
+    move $t1, $s3
     move $t0, $s0
     mul $t2, $t1, $t0
-    lw $t1, 140($sp)
+    lw $t1, 136($sp)
     addu $t3, $t2, $t1
     addu $t4, $t4, $t3
     lbu $t5, 0($t4)
@@ -236,9 +237,9 @@ sum_scanline:
     addu $t6, $t5, $t6
     move $s1, $t6
 .Lfor_i_2:
-    lw $t7, 140($sp)
+    lw $t7, 136($sp)
     addiu $t7, $t7, 1
-    sw $t7, 140($sp)
+    sw $t7, 136($sp)
     j .Lfor_h_1
     nop
 .Lfor_x_3:
@@ -246,6 +247,7 @@ sum_scanline:
     j .Lsum_scanline_ret_0
     nop
 .Lsum_scanline_ret_0:
+    lw $s3, 144($sp)
     lw $s2, 148($sp)
     lw $s1, 152($sp)
     lw $s0, 156($sp)

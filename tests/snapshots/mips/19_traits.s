@@ -210,16 +210,18 @@ Sprite_draw:
     addiu $fp, $sp, 160
     sw $s0, 148($sp)
     sw $s1, 144($sp)
-    sw $a0, 136($sp)
-    move $s0, $a1
-    move $s1, $a2
-    move $t9, $s0
-    lw $t8, 136($sp)
-    sw $t9, 0($t8)
+    sw $s2, 140($sp)
+    move $s0, $a0
+    move $s1, $a1
+    move $s2, $a2
     move $t9, $s1
-    lw $t8, 136($sp)
+    move $t8, $s0
+    sw $t9, 0($t8)
+    move $t9, $s2
+    move $t8, $s0
     sw $t9, 4($t8)
 .LSprite_draw_ret_0:
+    lw $s2, 140($sp)
     lw $s1, 144($sp)
     lw $s0, 148($sp)
     lw $fp, 152($sp)
@@ -237,12 +239,14 @@ Sprite_get_width:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t9, $s0
     lw $v0, 8($t9)
     j .LSprite_get_width_ret_1
     nop
 .LSprite_get_width_ret_1:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -258,12 +262,14 @@ Sprite_get_height:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
-    lw $t9, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t9, $s0
     lw $v0, 12($t9)
     j .LSprite_get_height_ret_2
     nop
 .LSprite_get_height_ret_2:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -290,23 +296,25 @@ Enemy_update:
     sw $ra, 156($sp)
     sw $fp, 152($sp)
     addiu $fp, $sp, 160
-    swc1 $f20, 148($sp)
-    sw $a0, 136($sp)
+    sw $s0, 148($sp)
+    swc1 $f20, 144($sp)
+    move $s0, $a0
     mov.s $f20, $f12
-    lw $t7, 136($sp)
+    move $t7, $s0
     lwc1 $f12, 8($t7)
     mov.s $f14, $f12
     mov.s $f12, $f20
     mul.s $f12, $f14, $f12
-    swc1 $f12, 140($sp)
-    lw $t7, 136($sp)
+    swc1 $f12, 136($sp)
+    move $t7, $s0
     lwc1 $f12, 0($t7)
-    lwc1 $f14, 140($sp)
+    lwc1 $f14, 136($sp)
     add.s $f12, $f12, $f14
-    lw $t8, 136($sp)
+    move $t8, $s0
     swc1 $f12, 0($t8)
 .LEnemy_update_ret_3:
-    lwc1 $f20, 148($sp)
+    lwc1 $f20, 144($sp)
+    lw $s0, 148($sp)
     lw $fp, 152($sp)
     lw $ra, 156($sp)
     addiu $sp, $sp, 160

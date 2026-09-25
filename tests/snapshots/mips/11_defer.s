@@ -208,6 +208,7 @@ do_work:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
+    sw $s0, 140($sp)
     li $t8, 1
     li $t7, 256
     mul $t8, $t8, $t7
@@ -242,7 +243,7 @@ do_work:
     la $t6, __pak_heap_ptr
     sw $t7, 0($t6)
 .Lheap_done_4:
-    sw $t9, 136($sp)
+    move $s0, $t9
     la $a0, .Lstr0
     jal debugf
     nop
@@ -251,9 +252,10 @@ do_work:
     jal debugf
     nop
     move $t9, $v0
-    lw $t8, 136($sp)
+    move $t8, $s0
     move $t9, $zero
 .Ldo_work_ret_0:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152

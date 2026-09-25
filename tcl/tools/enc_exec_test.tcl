@@ -414,6 +414,90 @@ set mw [dict get $run mem_w]
 check_eq "wide call: callee sums its last 4 of 20 args (16+17+18+19)" \
     [word_at $mw [dict get $syms out]] 70
 
+# ── 6. a user `goto`/`label` doesn't fool the dataflow pass's per-function
+# chunking ───────────────────────────────────────────────────────────────
+# opt_dataflow.tcl used to split the record stream into one chunk per
+# function by looking for "a label not prefixed with .L" -- every label
+# MipsCodegen generates for its own control flow IS .L-prefixed, so that
+# stood in for "a real function's own name label" as long as nothing else
+# used a bare label. A user's own `goto`/`label` (LANGUAGE.md,
+# "[IMPLEMENTED]") is exactly such a bare label sitting INSIDE a function,
+# not a new one, and used to split liveness analysis right there --
+# corrupting any value assigned before the `goto` and read only after its
+# target. tcl/opt_inline.tcl's leaf-function inliner produces exactly this
+# shape (every `return` becomes `<result> = <value>; goto <end>`), which is
+# how this was actually found: two inlined calls to the same tiny function,
+# back to back, silently dropped the second call's result to 0 under full
+# optimization even though the unoptimized build and the simulator-checked
+# AST were both correct.
+puts ""
+puts "== user goto/label survives dataflow's per-function chunking =="
+set goto_src {
+fn rdp_ch(c: u32, sh: u32) -> i32 {
+    return (((c >> sh) & 0xFF) as i32) << 16
+}
+static out_ra: i32 = 0
+static out_ga: i32 = 0
+entry {
+    let ca: u32 = 0xAABBCCDD
+    let ra: i32 = rdp_ch(ca, 24)
+    let ga: i32 = rdp_ch(ca, 16)
+    out_ra = ra
+    out_ga = ga
+}
+}
+set goto_recs [compile_records $goto_src]
+set goto_run [pak::mips_sim_run [pak::records_to_asm [pak::optimize_records $goto_recs]] main 200000]
+set goto_syms [dict get $goto_run data_syms]
+set goto_mw [dict get $goto_run mem_w]
+check_eq "goto/label: first inlined call's result (0xAA0000)" \
+    [word_at $goto_mw [dict get $goto_syms out_ra]] 11141120
+check_eq "goto/label: second inlined call's result doesn't get dropped to 0 (0xBB0000)" \
+    [word_at $goto_mw [dict get $goto_syms out_ga]] 12255232
+
+# ── 7. inlining a call whose callee's own body is spliced into a struct
+# literal's argument doesn't corrupt the struct literal's OWN fields ──────
+# tcl/opt_inline.tcl's AST rename pass used to flatten any nested seq whose
+# rewritten result "looked like" a seq -- meant only for a `return` turning
+# into two sibling statements (`<result> = <value>; goto <end>`), which is
+# the only case that ever needs to splice more than one sibling in. But
+# StructLit.fields is ALSO a seq of nested {name, value} pairs, and the same
+# over-eager flattening spread each pair's two elements directly into the
+# outer fields list, corrupting the struct's shape and silently dropping
+# both field values (they end up zero-initialized and never written).
+# Found via a real case (t3d_look_at's `Vec3 { x: 0.0, y: 1.0, z: 0.0 }`
+# inside an inlined wrapper), reduced to this.
+puts ""
+puts "== inlining doesn't corrupt a struct literal's own field values =="
+set structlit_src {
+struct Pair { a: i32, b: i32 }
+fn sum_pair(p: *Pair) -> i32 {
+    let x: i32 = p.a
+    let y: i32 = p.b
+    let z: i32 = x + y
+    let w: i32 = z + x
+    let v: i32 = w + y
+    let u: i32 = v + z
+    let t: i32 = u + w
+    return t
+}
+fn wrapper(out: *i32) {
+    let pair: Pair = Pair { a: 3, b: 4 }
+    let r: i32 = sum_pair(&pair)
+    *out = r
+}
+static result: i32 = 0
+entry {
+    wrapper(&result)
+}
+}
+set structlit_recs [compile_records $structlit_src]
+set structlit_run [pak::mips_sim_run [pak::records_to_asm [pak::optimize_records $structlit_recs]] main 200000]
+set structlit_syms [dict get $structlit_run data_syms]
+set structlit_mw [dict get $structlit_run mem_w]
+check_eq "struct literal fields survive an inlined wrapper (3+4+... = 31)" \
+    [word_at $structlit_mw [dict get $structlit_syms result]] 31
+
 puts ""
 puts "PASS=$::pass  FAIL=$::fail"
 if {$::fail > 0} { exit 1 }

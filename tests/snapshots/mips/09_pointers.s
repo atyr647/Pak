@@ -208,14 +208,16 @@ double_value:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
-    lw $t7, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t7, $s0
     lw $t8, 0($t7)
     li $t7, 2
     mul $t9, $t8, $t7
-    lw $t8, 136($sp)
+    move $t8, $s0
     sw $t9, 0($t8)
 .Ldouble_value_ret_0:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -231,42 +233,46 @@ main:
     sw $ra, 164($sp)
     sw $fp, 160($sp)
     addiu $fp, $sp, 168
+    sw $s0, 156($sp)
+    sw $s1, 152($sp)
+    sw $s2, 148($sp)
+    sw $s3, 144($sp)
     li $t9, 10
     sw $t9, 136($sp)
     addiu $t9, $sp, 136
-    sw $t9, 140($sp)
-    lw $a0, 140($sp)
+    move $s0, $t9
+    move $a0, $s0
     jal double_value
     nop
     move $t9, $v0
-    lw $t8, 140($sp)
+    move $t8, $s0
     lw $t9, 0($t8)
     la $t8, sink
     sw $t9, 0($t8)
     li $t9, 99
-    lw $t8, 140($sp)
+    move $t8, $s0
     sw $t9, 0($t8)
     lw $t9, 136($sp)
     la $t8, sink
     sw $t9, 0($t8)
     move $t9, $zero
-    sw $t9, 144($sp)
+    move $s1, $t9
     addiu $t9, $sp, 136
-    sw $t9, 148($sp)
-    lw $t9, 144($sp)
+    move $s2, $t9
+    move $t9, $s1
     move $t8, $zero
     beq $t9, $t8, .Lif_end_2
     nop
-    lw $t8, 144($sp)
+    move $t8, $s1
     lw $t9, 0($t8)
     la $t8, sink
     sw $t9, 0($t8)
 .Lif_end_2:
-    lw $t9, 148($sp)
+    move $t9, $s2
     move $t8, $zero
     beq $t9, $t8, .Lif_end_3
     nop
-    lw $t8, 148($sp)
+    move $t8, $s2
     lw $t9, 0($t8)
     la $t8, sink
     sw $t9, 0($t8)
@@ -305,10 +311,14 @@ main:
     la $t6, __pak_heap_ptr
     sw $t7, 0($t6)
 .Lheap_done_7:
-    sw $t9, 152($sp)
-    lw $t8, 152($sp)
+    move $s3, $t9
+    move $t8, $s3
     move $t9, $zero
 .Lmain_ret_1:
+    lw $s3, 144($sp)
+    lw $s2, 148($sp)
+    lw $s1, 152($sp)
+    lw $s0, 156($sp)
     lw $fp, 160($sp)
     lw $ra, 164($sp)
     addiu $sp, $sp, 168

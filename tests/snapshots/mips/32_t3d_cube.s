@@ -208,139 +208,145 @@ transform_point:
     sw $ra, 164($sp)
     sw $fp, 160($sp)
     addiu $fp, $sp, 168
-    sw $a0, 136($sp)
-    sw $a1, 140($sp)
-    sw $a2, 144($sp)
-    lw $t4, 136($sp)
+    sw $s0, 156($sp)
+    sw $s1, 152($sp)
+    sw $s2, 148($sp)
+    move $s0, $a0
+    move $s1, $a1
+    move $s2, $a2
+    move $t4, $s0
     li $t3, 0
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lwc1 $f12, 0($t4)
     mov.s $f14, $f12
-    lw $t4, 140($sp)
+    move $t4, $s1
     lwc1 $f12, 0($t4)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 156($sp)
-    lw $t3, 136($sp)
+    swc1 $f12, 144($sp)
+    move $t3, $s0
     li $t2, 1
     sll $t2, $t2, 2
     addu $t3, $t3, $t2
     lwc1 $f12, 0($t3)
     mov.s $f14, $f12
-    lw $t3, 140($sp)
+    move $t3, $s1
     lwc1 $f12, 4($t3)
     mul.s $f12, $f14, $f12
-    lwc1 $f14, 156($sp)
+    lwc1 $f14, 144($sp)
     add.s $f12, $f14, $f12
-    swc1 $f12, 152($sp)
-    lw $t4, 136($sp)
+    swc1 $f12, 140($sp)
+    move $t4, $s0
     li $t3, 2
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lwc1 $f12, 0($t4)
     mov.s $f14, $f12
-    lw $t4, 140($sp)
+    move $t4, $s1
     lwc1 $f12, 8($t4)
     mul.s $f12, $f14, $f12
-    lwc1 $f14, 152($sp)
+    lwc1 $f14, 140($sp)
     add.s $f12, $f14, $f12
-    swc1 $f12, 148($sp)
-    lw $t6, 136($sp)
+    swc1 $f12, 136($sp)
+    move $t6, $s0
     li $t5, 3
     sll $t5, $t5, 2
     addu $t6, $t6, $t5
     lwc1 $f12, 0($t6)
-    lwc1 $f14, 148($sp)
+    lwc1 $f14, 136($sp)
     add.s $f12, $f14, $f12
-    lw $t8, 144($sp)
+    move $t8, $s2
     swc1 $f12, 0($t8)
-    lw $t4, 136($sp)
+    move $t4, $s0
     li $t3, 4
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lwc1 $f12, 0($t4)
     mov.s $f14, $f12
-    lw $t4, 140($sp)
+    move $t4, $s1
     lwc1 $f12, 0($t4)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 156($sp)
-    lw $t3, 136($sp)
+    swc1 $f12, 144($sp)
+    move $t3, $s0
     li $t2, 5
     sll $t2, $t2, 2
     addu $t3, $t3, $t2
     lwc1 $f12, 0($t3)
     mov.s $f14, $f12
-    lw $t3, 140($sp)
+    move $t3, $s1
     lwc1 $f12, 4($t3)
     mul.s $f12, $f14, $f12
-    lwc1 $f14, 156($sp)
+    lwc1 $f14, 144($sp)
     add.s $f12, $f14, $f12
-    swc1 $f12, 152($sp)
-    lw $t4, 136($sp)
+    swc1 $f12, 140($sp)
+    move $t4, $s0
     li $t3, 6
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lwc1 $f12, 0($t4)
     mov.s $f14, $f12
-    lw $t4, 140($sp)
+    move $t4, $s1
     lwc1 $f12, 8($t4)
     mul.s $f12, $f14, $f12
-    lwc1 $f14, 152($sp)
+    lwc1 $f14, 140($sp)
     add.s $f12, $f14, $f12
-    swc1 $f12, 148($sp)
-    lw $t6, 136($sp)
+    swc1 $f12, 136($sp)
+    move $t6, $s0
     li $t5, 7
     sll $t5, $t5, 2
     addu $t6, $t6, $t5
     lwc1 $f12, 0($t6)
-    lwc1 $f14, 148($sp)
+    lwc1 $f14, 136($sp)
     add.s $f12, $f14, $f12
-    lw $t8, 144($sp)
+    move $t8, $s2
     swc1 $f12, 4($t8)
-    lw $t4, 136($sp)
+    move $t4, $s0
     li $t3, 8
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lwc1 $f12, 0($t4)
     mov.s $f14, $f12
-    lw $t4, 140($sp)
+    move $t4, $s1
     lwc1 $f12, 0($t4)
     mul.s $f12, $f14, $f12
-    swc1 $f12, 156($sp)
-    lw $t3, 136($sp)
+    swc1 $f12, 144($sp)
+    move $t3, $s0
     li $t2, 9
     sll $t2, $t2, 2
     addu $t3, $t3, $t2
     lwc1 $f12, 0($t3)
     mov.s $f14, $f12
-    lw $t3, 140($sp)
+    move $t3, $s1
     lwc1 $f12, 4($t3)
     mul.s $f12, $f14, $f12
-    lwc1 $f14, 156($sp)
+    lwc1 $f14, 144($sp)
     add.s $f12, $f14, $f12
-    swc1 $f12, 152($sp)
-    lw $t4, 136($sp)
+    swc1 $f12, 140($sp)
+    move $t4, $s0
     li $t3, 10
     sll $t3, $t3, 2
     addu $t4, $t4, $t3
     lwc1 $f12, 0($t4)
     mov.s $f14, $f12
-    lw $t4, 140($sp)
+    move $t4, $s1
     lwc1 $f12, 8($t4)
     mul.s $f12, $f14, $f12
-    lwc1 $f14, 152($sp)
+    lwc1 $f14, 140($sp)
     add.s $f12, $f14, $f12
-    swc1 $f12, 148($sp)
-    lw $t6, 136($sp)
+    swc1 $f12, 136($sp)
+    move $t6, $s0
     li $t5, 11
     sll $t5, $t5, 2
     addu $t6, $t6, $t5
     lwc1 $f12, 0($t6)
-    lwc1 $f14, 148($sp)
+    lwc1 $f14, 136($sp)
     add.s $f12, $f14, $f12
-    lw $t8, 144($sp)
+    move $t8, $s2
     swc1 $f12, 8($t8)
 .Ltransform_point_ret_0:
+    lw $s2, 148($sp)
+    lw $s1, 152($sp)
+    lw $s0, 156($sp)
     lw $fp, 160($sp)
     lw $ra, 164($sp)
     addiu $sp, $sp, 168

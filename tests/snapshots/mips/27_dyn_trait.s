@@ -208,20 +208,22 @@ Circle_area:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
     la $t7, .Lf320
     lwc1 $f12, 0($t7)
     mov.s $f14, $f12
-    lw $t7, 136($sp)
+    move $t7, $s0
     lwc1 $f12, 0($t7)
     mul.s $f12, $f14, $f12
     mov.s $f14, $f12
-    lw $t8, 136($sp)
+    move $t8, $s0
     lwc1 $f12, 0($t8)
     mul.s $f12, $f14, $f12
     j .LCircle_area_ret_0
     nop
 .LCircle_area_ret_0:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -237,16 +239,18 @@ Circle_perimeter:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
     la $t8, .Lf321
     lwc1 $f12, 0($t8)
     mov.s $f14, $f12
-    lw $t8, 136($sp)
+    move $t8, $s0
     lwc1 $f12, 0($t8)
     mul.s $f12, $f14, $f12
     j .LCircle_perimeter_ret_1
     nop
 .LCircle_perimeter_ret_1:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -273,16 +277,18 @@ Rect_area:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
-    lw $t8, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t8, $s0
     lwc1 $f12, 0($t8)
     mov.s $f14, $f12
-    lw $t8, 136($sp)
+    move $t8, $s0
     lwc1 $f12, 4($t8)
     mul.s $f12, $f14, $f12
     j .LRect_area_ret_2
     nop
 .LRect_area_ret_2:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
@@ -298,21 +304,23 @@ Rect_perimeter:
     sw $ra, 148($sp)
     sw $fp, 144($sp)
     addiu $fp, $sp, 152
-    sw $a0, 136($sp)
+    sw $s0, 140($sp)
+    move $s0, $a0
     la $t8, .Lf322
     lwc1 $f12, 0($t8)
-    swc1 $f12, 140($sp)
-    lw $t6, 136($sp)
+    swc1 $f12, 136($sp)
+    move $t6, $s0
     lwc1 $f12, 0($t6)
     mov.s $f14, $f12
-    lw $t6, 136($sp)
+    move $t6, $s0
     lwc1 $f12, 4($t6)
     add.s $f12, $f14, $f12
-    lwc1 $f14, 140($sp)
+    lwc1 $f14, 136($sp)
     mul.s $f12, $f14, $f12
     j .LRect_perimeter_ret_3
     nop
 .LRect_perimeter_ret_3:
+    lw $s0, 140($sp)
     lw $fp, 144($sp)
     lw $ra, 148($sp)
     addiu $sp, $sp, 152
