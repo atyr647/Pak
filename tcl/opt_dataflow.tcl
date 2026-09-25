@@ -122,10 +122,27 @@ proc pak::opt::df::defuse {op ops} {
 # is not local (.L*) and runs to the next such label. Directives and data
 # between functions stay where they are.
 proc pak::opt::df::run {recs} {
+    # Split into one chunk per function so optimize_fn's liveness analysis
+    # never has to reason about more than one function's control flow at
+    # once. Used to key this off "a label not prefixed with .L" -- every
+    # label MipsCodegen generates for its own control flow (fresh_label:
+    # if/loop join points, asm-block targets) IS .L-prefixed, so that
+    # worked as long as the only non-.L label in a function was its own
+    # name. A user's own `label name:` (goto/label, LANGUAGE.md's
+    # "[IMPLEMENTED]" feature) is a real label living INSIDE a function,
+    # not a new one, and is never .L-prefixed either -- so it silently cut
+    # a function into fragments right where dce most needed to see the
+    # whole thing, corrupting liveness for anything assigned before a
+    # `goto` and read only after its target label. Every real function
+    # start has one unambiguous marker instead, emitted by emit_fn right
+    # before its own label ($em type_func $name -> `.type $name,
+    # @function`, a {d type $name @function} record) and by nothing else,
+    # so split there.
     set out {}
     set cur {}
     foreach r $recs {
-        if {[lindex $r 0] eq "label" && ![string match .L* [lindex $r 1]]} {
+        if {[lindex $r 0] eq "d" && [lindex $r 1] eq "type" \
+                && [lindex $r 3] eq "@function"} {
             if {[llength $cur]} { lappend out {*}[optimize_fn $cur] }
             set cur {}
         }
