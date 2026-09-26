@@ -21,8 +21,9 @@
 # PI_STATUS back. On hardware those are different things: the write clears an
 # interrupt, the read reports busy bits. The simulator used to hand back the
 # 0x02 that was just written, so dma_wait spun on IO_BUSY forever; it now
-# models the read side (see the lw handler in tcl/mips_sim.tcl) and the DP/VI
-# presets below are the only ones a scene still needs.
+# models the read side (see the lw handler in tcl/mips_sim.tcl), as it now
+# does for DPC_STATUS too, and the VI preset below is the only one a scene
+# still needs.
 
 set HERE [file dirname [file normalize [info script]]]
 set REPO [file normalize [file join $HERE .. ..]]
@@ -177,9 +178,9 @@ proc run_scene {budget} {
     if {[string match "UNPORTED*" $asm] || [string match "ERROR*" $asm]} {
         return [list err [lindex [split $asm "\n"] 0]]
     }
-    # DP idle, VI past the active region.
+    # VI past the active region. DPC_STATUS is modeled by the simulator, not
+    # preset idle -- see the same note in rdp_test.tcl.
     set preset [dict create \
-        0xA410000C 0 \
         0xA4400010 {0x1E0 0x000}]
     return [list ok [pak::mips_sim_run $asm main $budget $preset]]
 }

@@ -66,9 +66,12 @@ proc run_driver {optimize} {
         set asm [exec [info nameofexecutable] tcl/tools/mips_dump.tcl $combined]
     }
     file delete $combined
-    # Model the two registers the runtime spins on: the DP reports idle, and
-    # the VI reports a line past the active region, so vi_wait_vblank returns.
-    set preset [dict create 0xA410000C 0 0xA4400010 {0x1E0 0x000}]
+    # The VI reports a line past the active region, so vi_wait_vblank
+    # returns. DPC_STATUS is NOT preset to "idle": the simulator models it
+    # (busy from power-on until a kick ending in SYNC_FULL), and presetting
+    # it to 0 is what let a runtime that waits before its first kick pass
+    # here while hanging on hardware.
+    set preset [dict create 0xA4400010 {0x1E0 0x000}]
     set r [pak::mips_sim_run $asm main 20000000 $preset]
     return [dict get $r mem_w]
 }

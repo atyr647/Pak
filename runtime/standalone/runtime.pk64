@@ -701,6 +701,7 @@ const DL_SLOT_BYTES: u32 = DL_BYTES / DL_RING_N
 
 static g_dl_off:  u32 = 0        -- write cursor, bytes from the CURRENT slot's base
 static g_dl_slot: u32 = 0        -- which half (0 or 1) the CPU is writing into
+static g_dl_inflight: u32 = 0    -- 1 while a kick may still be draining
 
 fn dl_slot_base(slot: u32) -> u32 {
     if slot == 0 { return DL_BASE }
@@ -812,15 +813,24 @@ fn dl_reset() {
 --
 -- PIPE_BUSY only clears on a SYNC_FULL (see dl_flush's comment on the same
 -- fact), so this only terminates if the most recent kick's command stream
--- ended with one -- true of every path that reaches here, since all three
--- callers put one right before submitting, and dl_submit's own g_dl_off
--- == 0 short-circuit means a bare call with nothing pending just re-checks
--- whatever the last real kick already left behind.
+-- ended with one -- true of every path that sets g_dl_inflight, since all
+-- four submitters put one right before submitting.
+--
+-- It is also SET at power-on, before the RDP has processed anything: ares
+-- reads DPC_STATUS = 0xA8 (PIPE_BUSY among it) ahead of the first kick. So
+-- "wait until the busy bits clear" cannot be the test for "is anything of
+-- ours still running" -- with nothing kicked yet it spins forever, which
+-- is how every program's very first dl_submit hung (a big scene's first
+-- mid-frame flush, a small one's first detach) before a single frame
+-- reached the screen. Only wait when there is a kick of our own
+-- outstanding; once that one drains, nothing else can be.
 fn dl_finish() {
+    if g_dl_inflight == 0 { return }
     loop {
         let st: u32 = vi_read(DPC_STATUS)
         if (st & (DPC_PIPE_BUSY | DPC_CMD_BUSY | DPC_DMA_BUSY)) == 0 { break }
     }
+    g_dl_inflight = 0
 }
 
 -- Hand the current slot's pending commands to the DP and switch the write
@@ -849,6 +859,7 @@ fn dl_submit() {
     vi_write(DPC_START, dl_slot_phys(slot))
     vi_write(DPC_END, dl_slot_phys(slot) + len)
 
+    g_dl_inflight = 1
     g_dl_slot = 1 - slot
 }
 
@@ -942,6 +953,7 @@ fn to_fx142(v: i32) -> u32 {
 -- ── surface + mode state ───────────────────────────────────────────────────
 
 fn rdpq_init() {
+    dl_finish()
     dl_reset()
     vi_write(DPC_STATUS, DPC_CLR_XBUS | DPC_CLR_FREEZE | DPC_CLR_FLUSH)
 }
