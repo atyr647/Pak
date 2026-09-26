@@ -42,16 +42,6 @@ if {![regexp {const DL_BASE:\s+u32 = (0x[0-9A-Fa-f]+)} $_rt -> _dlb]} {
     error "cannot find DL_BASE in runtime.pk64"
 }
 set DL_BASE [expr {$_dlb}]
-# The display list is two alternating slots (see runtime.pk64's dl_submit),
-# so whichever one a given kick lands on depends on how many kicks came
-# before it -- not pinned to slot 0 the way the single-buffer version was.
-if {![regexp {const DL_BYTES:\s+u32 = (\d+)} $_rt -> _dlbytes]} {
-    error "cannot find DL_BYTES in runtime.pk64"
-}
-if {![regexp {const DL_RING_N:\s+u32 = (\d+)} $_rt -> _dlringn]} {
-    error "cannot find DL_RING_N in runtime.pk64"
-}
-set DL_SLOT_BYTES [expr {$_dlbytes / $_dlringn}]
 
 set ::pass 0
 set ::fail 0
@@ -286,12 +276,8 @@ puts "== the DP is actually kicked, and the VI flips =="
 lassign [run_scene 40000000] st2 r2
 if {$st2 eq "ok"} {
     set mw2 [dict get $r2 mem_w]
-    set dpc_start [word_at $mw2 0xA4100000]
-    set slot0_phys [format %08X [expr {$DL_BASE & 0x00FFFFFF}]]
-    set slot1_phys [format %08X [expr {($DL_BASE & 0x00FFFFFF) + $DL_SLOT_BYTES}]]
-    ok_true "DPC_START points at one of the display list's two slots" \
-        [expr {$dpc_start in [list $slot0_phys $slot1_phys]}] \
-        " (got $dpc_start, want $slot0_phys or $slot1_phys)"
+    ok "DPC_START points at the display list" [word_at $mw2 0xA4100000] \
+       [format %08X [expr {$DL_BASE & 0x00FFFFFF}]]
     ok "DPC_STATUS clears xbus/freeze/flush" [word_at $mw2 0xA410000C] 00000015
     ok_true "VI_ORIGIN was set to a framebuffer" \
         [expr {[word_at $mw2 0xA4400004] in {00200000 00225800 0024B000}}] \
