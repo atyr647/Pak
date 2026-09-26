@@ -388,7 +388,7 @@ oo::class create pak::LiteralPool {
             foreach s $inited {
                 lassign $s name size align iv
                 $em align [pak::log2_align $align]
-                $em globl $name
+                if {![string match ".L*" $name]} { $em globl $name }
                 $em label $name
                 if {[llength $iv] == 2 && [lindex $iv 0] eq "bytes"} {
                     pak::emit_bytes $em [lindex $iv 1]
@@ -408,7 +408,7 @@ oo::class create pak::LiteralPool {
             foreach s $uninited {
                 lassign $s name size align iv
                 $em align [pak::log2_align $align]
-                $em globl $name
+                if {![string match ".L*" $name]} { $em globl $name }
                 $em label $name
                 $em space $size
             }
@@ -3679,7 +3679,10 @@ oo::class create pak::MipsCodegen {
             }
         }
         set fmt_lbl [$pool intern_string $fmt_text]
-        set buf_name "__pak_fmtbuf_$fmtstr_counter"
+        # .L-prefixed like .Lstr: every object file numbers its own format
+        # buffers from 0, so a global name collides as soon as two linked
+        # files both use an interpolated string.
+        set buf_name ".Lfmtbuf$fmtstr_counter"
         incr fmtstr_counter
         $pool add_static $buf_name 256 1 ""
         set use_float 0
