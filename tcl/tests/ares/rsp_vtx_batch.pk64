@@ -1,0 +1,55 @@
+-- rsp_vtx_batch.pk64 -- a reusable, batch-of-64 generalization of
+-- rsp_task_vtx.pk64's proven vertex-transform microcode.
+--
+-- rsp_task_vtx.pk64 proved the shape (a struct with array-of-vec8x16
+-- fields, a struct-typed static, a while loop indexing two different array
+-- fields by a loop variable) at a token batch size of 4. This is the same
+-- microcode at docs/rsp-microcode-in-pak.md's own suggested capacity of 64
+-- vertices/dispatch ("A whole microcode" section) -- big enough to be
+-- useful for a real per-frame vertex batch, small enough that
+-- mvp(64B)+count(8B, padded)+vertices(1024B) = 1096 bytes stays
+-- comfortably inside the RSP's 4KB DMEM alongside this microcode's own
+-- ~200 bytes of code in IMEM.
+--
+-- What this offloads, and what it deliberately does not: this is the
+-- LINEAR half of perspective projection -- a 4x4 matrix-vector multiply
+-- (rotate + translate a vertex into view space) via rsp.vacc's
+-- mul/mac/mid chain, entirely in Q1.15 fixed point. The RSP backend
+-- refuses `/` and float (E701 -- no reciprocal instruction is exposed
+-- today), so it cannot do the PERSPECTIVE DIVIDE (1/lz) a full
+-- projection needs; that one scalar divide per vertex stays on the CPU,
+-- fed by this microcode's output. This mirrors how real N64 games split
+-- the work: RSP for the vector-heavy transform, CPU/RDP for the rest.
+--
+-- DMEM layout, in declaration order (the bump allocator, same rule as
+-- every other static): job.mvp[0..3]=0/16/32/48, job.count=64,
+-- job.vertices[0..63]=80..1088 (rounded up from 68 to vertices' vec8x16
+-- alignment). Total 1088 bytes. A driver DMAing into/out of this layout
+-- must agree -- see rsp_vtx_batch_driver.pk64.
+
+use rsp.vacc
+
+@aligned(16)
+struct VtxJob {
+    mvp: [4]vec8x16,
+    count: i32,
+    vertices: [64]vec8x16
+}
+
+@aligned(16)
+static job: VtxJob
+
+entry {
+    let mut i: i32 = 0
+    while i < job.count {
+        let v: vec8x16 = job.vertices[i]
+
+        vacc.mul(job.mvp[0], v.broadcast(0))
+        vacc.mac(job.mvp[1], v.broadcast(1))
+        vacc.mac(job.mvp[2], v.broadcast(2))
+        vacc.mac(job.mvp[3], v.broadcast(3))
+
+        job.vertices[i] = vacc.mid()
+        i = i + 1
+    }
+}

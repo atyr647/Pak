@@ -25,7 +25,14 @@ source [file join $REPO tcl mips_sim.tcl]
 
 set RUNTIME  runtime/standalone/runtime.pk64
 set DRIVER   tcl/tests/rdp/commands.pk64
-set DL_BASE  [expr {0xA0297000}]
+# Read the display list's address out of the HAL rather than pinning it here.
+set _rtf [file join $REPO runtime standalone runtime.pk64]
+set _f [open $_rtf]; set _rt [read $_f]; close $_f
+if {![regexp {const DL_BASE:\s+u32 = (0x[0-9A-Fa-f]+)} $_rt -> _dlb]} {
+    error "cannot find DL_BASE in runtime.pk64"
+}
+set DL_BASE [expr {$_dlb}]
+set DL_PHYS [expr {$DL_BASE & 0x00FFFFFF}]
 
 set ::pass 0
 set ::fail 0
@@ -59,9 +66,12 @@ proc run_driver {optimize} {
         set asm [exec [info nameofexecutable] tcl/tools/mips_dump.tcl $combined]
     }
     file delete $combined
-    # Model the two registers the runtime spins on: the DP reports idle, and
-    # the VI reports a line past the active region, so vi_wait_vblank returns.
-    set preset [dict create 0xA410000C 0 0xA4400010 {0x1E0 0x000}]
+    # The VI reports a line past the active region, so vi_wait_vblank
+    # returns. DPC_STATUS is NOT preset to "idle": the simulator models it
+    # (busy from power-on until a kick ending in SYNC_FULL), and presetting
+    # it to 0 is what let a runtime that waits before its first kick pass
+    # here while hanging on hardware.
+    set preset [dict create 0xA4400010 {0x1E0 0x000}]
     set r [pak::mips_sim_run $asm main 20000000 $preset]
     return [dict get $r mem_w]
 }
@@ -445,8 +455,8 @@ set dpc_start  [expr {0xA4100000}]
 set dpc_end    [expr {0xA4100004}]
 set dpc_status [expr {0xA410000C}]
 set dl_len [expr {4 * [llength $EXPECTED]}]
-ok "DPC_START" [reg_hex $mem_plain $dpc_start] [format %08X 0x00297000]
-ok "DPC_END"   [reg_hex $mem_plain $dpc_end]   [format %08X [expr {0x00297000 + $dl_len}]]
+ok "DPC_START" [reg_hex $mem_plain $dpc_start] [format %08X $DL_PHYS]
+ok "DPC_END"   [reg_hex $mem_plain $dpc_end]   [format %08X [expr {$DL_PHYS + $dl_len}]]
 ok "DPC_STATUS clears xbus/freeze/flush" [reg_hex $mem_plain $dpc_status] 00000015
 
 puts ""

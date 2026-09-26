@@ -27,7 +27,14 @@ source [file join $REPO tcl rdpdis.tcl]
 
 set RUNTIME runtime/standalone/runtime.pk64
 set DRIVER  tcl/tests/rdp/commands.pk64
-set DL_BASE [expr {0xA0297000}]
+# Read the display list's address out of the HAL rather than pinning it here.
+set _rtf [file join $REPO runtime standalone runtime.pk64]
+set _f [open $_rtf]; set _rt [read $_f]; close $_f
+if {![regexp {const DL_BASE:\s+u32 = (0x[0-9A-Fa-f]+)} $_rt -> _dlb]} {
+    error "cannot find DL_BASE in runtime.pk64"
+}
+set DL_BASE [expr {$_dlb}]
+set DL_PHYS [expr {$DL_BASE & 0x00FFFFFF}]
 
 set ::pass 0
 set ::fail 0

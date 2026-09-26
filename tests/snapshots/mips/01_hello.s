@@ -204,20 +204,18 @@
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -144
+    sw $ra, 140($sp)
+    sw $fp, 136($sp)
+    addiu $fp, $sp, 144
     la $a0, .Lstr0
-    sw $t9, 96($sp)
     jal debugf
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
 .Lmain_ret_0:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 136($sp)
+    lw $ra, 140($sp)
+    addiu $sp, $sp, 144
     jr $ra
     nop
 	.size main, . - main
@@ -226,3 +224,9 @@ main:
 	.align 0
 .Lstr0:
 	.asciiz "Hello from Pak!"
+
+	.section .bss
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.space 4

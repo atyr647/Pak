@@ -470,7 +470,7 @@ proc fpv {n} {
 }
 
 proc exec_insn {op args} {
-    upvar 1 R R  HI HI  LO LO  mb mb  mh mh  mw mw  dsyms dsyms  labels labels  mseq mseq  mseqi mseqi  cart cart  dp_kicks dp_kicks  F F  FCC FCC  C0 C0
+    upvar 1 R R  HI HI  LO LO  mb mb  mh mh  mw mw  dsyms dsyms  labels labels  mseq mseq  mseqi mseqi  cart cart  dp_kicks dp_kicks  dp_busy dp_busy  dp_model dp_model  F F  FCC FCC  C0 C0
 
     switch -- $op {
         nop - sync { return "" }
@@ -535,6 +535,15 @@ proc exec_insn {op args} {
             set F([lindex $args 0]) [double_to_fbits [expr {double($w)}]]
         }
         cvt.w.s {
+            # Rounds in the FCSR's mode. Nothing sets it, so it is the reset
+            # value: round to nearest, ties to even -- what the hardware does.
+            set v [fpv [lindex $args 1]]
+            set f [expr {floor($v)}]
+            set d [expr {$v - $f}]
+            if {$d > 0.5 || ($d == 0.5 && fmod($f, 2.0) != 0.0)} { set f [expr {$f + 1.0}] }
+            set F([lindex $args 0]) [expr {int($f) & 0xFFFFFFFF}]
+        }
+        trunc.w.s {
             set v [fpv [lindex $args 1]]
             set F([lindex $args 0]) [expr {int($v) & 0xFFFFFFFF}]
         }
@@ -783,6 +792,10 @@ proc exec_insn {op args} {
                             append _bytes [binary format I [expr {$_wv & 0xFFFFFFFF}]]
                         }
                         lappend dp_kicks $_bytes
+                        # Only a SYNC_FULL (command 0x29) as the kick's last
+                        # command lets PIPE_BUSY clear; see the DPC_STATUS read.
+                        binary scan [string range $_bytes end-7 end-4] I _lw
+                        set dp_busy [expr {(($_lw >> 24) & 0x3F) == 0x29 ? 0 : 1}]
                     }
                 }
             }
@@ -845,6 +858,15 @@ proc exec_insn {op args} {
                 # DMA in the simulator hung until the instruction limit. The
                 # simulated transfer is instantaneous, so nothing is busy.
                 if {$n} { set R($n) 0 }
+            } elseif {$addr == [expr {0xA410000C}] && $dp_model} {
+                # DPC_STATUS is not a latch either. The simulated DP finishes
+                # a kick instantly, but PIPE_BUSY still has to follow the real
+                # rule: set at power-on (ares reads 0xA8 before the first
+                # kick), cleared only by a kick that ends in SYNC_FULL. Reading
+                # back the last written clear-bits (0x15, no busy bit) made
+                # every wait loop exit at once, so a runtime that waited
+                # BEFORE its first kick passed here and hung on hardware.
+                if {$n} { set R($n) [expr {0x88 | ($dp_busy ? 0x20 : 0)}] }
             } elseif {$n} {
                 set R($n) [expr {[dict exists $mw $addr] ? [dict get $mw $addr] : 0}]
             }
@@ -1311,9 +1333,13 @@ proc run {text {start "main"} {limit 20000000} {preset {}} {cart ""} {text_base 
     set mseq  [dict create]
     set mseqi [dict create]
     set dp_kicks {}
+    set dp_busy 1
+    # A test that presets DPC_STATUS itself gets exactly what it asked for.
+    set dp_model 1
     # `cart` is read by the sw handler through upvar, like mw/mh/mb.
     dict for {a v} $preset {
         set addr [expr {$a}]
+        if {$addr == 0xA410000C} { set dp_model 0 }
         if {[llength $v] > 1} {
             set vals {}
             foreach e $v { lappend vals [expr {$e}] }

@@ -204,278 +204,270 @@
 	.globl init_platforms
 	.type init_platforms, @function
 init_platforms:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -304
+    sw $ra, 300($sp)
+    sw $fp, 296($sp)
+    addiu $fp, $sp, 304
     sw $zero, 136($sp)
     sw $zero, 140($sp)
     sw $zero, 144($sp)
     sw $zero, 148($sp)
     sw $zero, 152($sp)
-    li $t7, 0
-    sw $t7, 136($sp)
-    li $t7, 200
-    sw $t7, 140($sp)
-    li $t7, 320
-    sw $t7, 144($sp)
-    li $t7, 40
-    sw $t7, 148($sp)
-    li $t7, 1
-    sb $t7, 152($sp)
-    addiu $t8, $sp, 136
-    la $t6, platforms
-    li $t5, 0
-    li $t4, 20
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    lw $t6, 12($t8)
-    sw $t6, 12($t7)
-    lw $t6, 16($t8)
-    sw $t6, 16($t7)
-    move $t9, $t8
+    li $t8, 0
+    sw $t8, 136($sp)
+    li $t8, 200
+    sw $t8, 140($sp)
+    li $t8, 320
+    sw $t8, 144($sp)
+    li $t8, 40
+    sw $t8, 148($sp)
+    li $t8, 1
+    sb $t8, 152($sp)
+    addiu $t9, $sp, 136
+    la $t7, platforms
+    li $t6, 0
+    li $t5, 20
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
+    lw $t7, 12($t9)
+    sw $t7, 12($t8)
+    lw $t7, 16($t9)
+    sw $t7, 16($t8)
     sw $zero, 156($sp)
     sw $zero, 160($sp)
     sw $zero, 164($sp)
     sw $zero, 168($sp)
     sw $zero, 172($sp)
-    li $t7, 40
-    sw $t7, 156($sp)
-    li $t7, 160
-    sw $t7, 160($sp)
-    li $t7, 80
-    sw $t7, 164($sp)
-    li $t7, 12
-    sw $t7, 168($sp)
-    li $t7, 1
-    sb $t7, 172($sp)
-    addiu $t8, $sp, 156
-    la $t6, platforms
-    li $t5, 1
-    li $t4, 20
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    lw $t6, 12($t8)
-    sw $t6, 12($t7)
-    lw $t6, 16($t8)
-    sw $t6, 16($t7)
-    move $t9, $t8
+    li $t8, 40
+    sw $t8, 156($sp)
+    li $t8, 160
+    sw $t8, 160($sp)
+    li $t8, 80
+    sw $t8, 164($sp)
+    li $t8, 12
+    sw $t8, 168($sp)
+    li $t8, 1
+    sb $t8, 172($sp)
+    addiu $t9, $sp, 156
+    la $t7, platforms
+    li $t6, 1
+    li $t5, 20
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
+    lw $t7, 12($t9)
+    sw $t7, 12($t8)
+    lw $t7, 16($t9)
+    sw $t7, 16($t8)
     sw $zero, 176($sp)
     sw $zero, 180($sp)
     sw $zero, 184($sp)
     sw $zero, 188($sp)
     sw $zero, 192($sp)
-    li $t7, 160
-    sw $t7, 176($sp)
-    li $t7, 130
-    sw $t7, 180($sp)
-    li $t7, 80
-    sw $t7, 184($sp)
-    li $t7, 12
-    sw $t7, 188($sp)
-    li $t7, 1
-    sb $t7, 192($sp)
-    addiu $t8, $sp, 176
-    la $t6, platforms
-    li $t5, 2
-    li $t4, 20
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    lw $t6, 12($t8)
-    sw $t6, 12($t7)
-    lw $t6, 16($t8)
-    sw $t6, 16($t7)
-    move $t9, $t8
+    li $t8, 160
+    sw $t8, 176($sp)
+    li $t8, 130
+    sw $t8, 180($sp)
+    li $t8, 80
+    sw $t8, 184($sp)
+    li $t8, 12
+    sw $t8, 188($sp)
+    li $t8, 1
+    sb $t8, 192($sp)
+    addiu $t9, $sp, 176
+    la $t7, platforms
+    li $t6, 2
+    li $t5, 20
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
+    lw $t7, 12($t9)
+    sw $t7, 12($t8)
+    lw $t7, 16($t9)
+    sw $t7, 16($t8)
     sw $zero, 196($sp)
     sw $zero, 200($sp)
     sw $zero, 204($sp)
     sw $zero, 208($sp)
     sw $zero, 212($sp)
-    li $t7, 60
-    sw $t7, 196($sp)
-    li $t7, 100
-    sw $t7, 200($sp)
-    li $t7, 60
-    sw $t7, 204($sp)
-    li $t7, 12
-    sw $t7, 208($sp)
-    li $t7, 1
-    sb $t7, 212($sp)
-    addiu $t8, $sp, 196
-    la $t6, platforms
-    li $t5, 3
-    li $t4, 20
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    lw $t6, 12($t8)
-    sw $t6, 12($t7)
-    lw $t6, 16($t8)
-    sw $t6, 16($t7)
-    move $t9, $t8
+    li $t8, 60
+    sw $t8, 196($sp)
+    li $t8, 100
+    sw $t8, 200($sp)
+    li $t8, 60
+    sw $t8, 204($sp)
+    li $t8, 12
+    sw $t8, 208($sp)
+    li $t8, 1
+    sb $t8, 212($sp)
+    addiu $t9, $sp, 196
+    la $t7, platforms
+    li $t6, 3
+    li $t5, 20
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
+    lw $t7, 12($t9)
+    sw $t7, 12($t8)
+    lw $t7, 16($t9)
+    sw $t7, 16($t8)
     sw $zero, 216($sp)
     sw $zero, 220($sp)
     sw $zero, 224($sp)
     sw $zero, 228($sp)
     sw $zero, 232($sp)
-    li $t7, 220
-    sw $t7, 216($sp)
-    li $t7, 90
-    sw $t7, 220($sp)
-    li $t7, 70
-    sw $t7, 224($sp)
-    li $t7, 12
-    sw $t7, 228($sp)
-    li $t7, 1
-    sb $t7, 232($sp)
-    addiu $t8, $sp, 216
-    la $t6, platforms
-    li $t5, 4
-    li $t4, 20
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    lw $t6, 12($t8)
-    sw $t6, 12($t7)
-    lw $t6, 16($t8)
-    sw $t6, 16($t7)
-    move $t9, $t8
+    li $t8, 220
+    sw $t8, 216($sp)
+    li $t8, 90
+    sw $t8, 220($sp)
+    li $t8, 70
+    sw $t8, 224($sp)
+    li $t8, 12
+    sw $t8, 228($sp)
+    li $t8, 1
+    sb $t8, 232($sp)
+    addiu $t9, $sp, 216
+    la $t7, platforms
+    li $t6, 4
+    li $t5, 20
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
+    lw $t7, 12($t9)
+    sw $t7, 12($t8)
+    lw $t7, 16($t9)
+    sw $t7, 16($t8)
     sw $zero, 236($sp)
     sw $zero, 240($sp)
     sw $zero, 244($sp)
     sw $zero, 248($sp)
     sw $zero, 252($sp)
-    li $t7, 10
-    sw $t7, 236($sp)
-    li $t7, 60
-    sw $t7, 240($sp)
-    li $t7, 50
-    sw $t7, 244($sp)
-    li $t7, 12
-    sw $t7, 248($sp)
-    li $t7, 1
-    sb $t7, 252($sp)
-    addiu $t8, $sp, 236
-    la $t6, platforms
-    li $t5, 5
-    li $t4, 20
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    lw $t6, 12($t8)
-    sw $t6, 12($t7)
-    lw $t6, 16($t8)
-    sw $t6, 16($t7)
-    move $t9, $t8
+    li $t8, 10
+    sw $t8, 236($sp)
+    li $t8, 60
+    sw $t8, 240($sp)
+    li $t8, 50
+    sw $t8, 244($sp)
+    li $t8, 12
+    sw $t8, 248($sp)
+    li $t8, 1
+    sb $t8, 252($sp)
+    addiu $t9, $sp, 236
+    la $t7, platforms
+    li $t6, 5
+    li $t5, 20
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
+    lw $t7, 12($t9)
+    sw $t7, 12($t8)
+    lw $t7, 16($t9)
+    sw $t7, 16($t8)
     sw $zero, 256($sp)
     sw $zero, 260($sp)
     sw $zero, 264($sp)
     sw $zero, 268($sp)
     sw $zero, 272($sp)
-    li $t7, 130
-    sw $t7, 256($sp)
-    li $t7, 50
-    sw $t7, 260($sp)
-    li $t7, 60
-    sw $t7, 264($sp)
-    li $t7, 12
-    sw $t7, 268($sp)
-    li $t7, 1
-    sb $t7, 272($sp)
-    addiu $t8, $sp, 256
-    la $t6, platforms
-    li $t5, 6
-    li $t4, 20
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    lw $t6, 12($t8)
-    sw $t6, 12($t7)
-    lw $t6, 16($t8)
-    sw $t6, 16($t7)
-    move $t9, $t8
+    li $t8, 130
+    sw $t8, 256($sp)
+    li $t8, 50
+    sw $t8, 260($sp)
+    li $t8, 60
+    sw $t8, 264($sp)
+    li $t8, 12
+    sw $t8, 268($sp)
+    li $t8, 1
+    sb $t8, 272($sp)
+    addiu $t9, $sp, 256
+    la $t7, platforms
+    li $t6, 6
+    li $t5, 20
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
+    lw $t7, 12($t9)
+    sw $t7, 12($t8)
+    lw $t7, 16($t9)
+    sw $t7, 16($t8)
     sw $zero, 276($sp)
     sw $zero, 280($sp)
     sw $zero, 284($sp)
     sw $zero, 288($sp)
     sw $zero, 292($sp)
-    li $t7, 250
-    sw $t7, 276($sp)
-    li $t7, 70
-    sw $t7, 280($sp)
-    li $t7, 60
-    sw $t7, 284($sp)
-    li $t7, 12
-    sw $t7, 288($sp)
-    li $t7, 0
-    sb $t7, 292($sp)
-    addiu $t8, $sp, 276
-    la $t6, platforms
-    li $t5, 7
-    li $t4, 20
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    lw $t6, 12($t8)
-    sw $t6, 12($t7)
-    lw $t6, 16($t8)
-    sw $t6, 16($t7)
-    move $t9, $t8
+    li $t8, 250
+    sw $t8, 276($sp)
+    li $t8, 70
+    sw $t8, 280($sp)
+    li $t8, 60
+    sw $t8, 284($sp)
+    li $t8, 12
+    sw $t8, 288($sp)
+    li $t8, 0
+    sb $t8, 292($sp)
+    addiu $t9, $sp, 276
+    la $t7, platforms
+    li $t6, 7
+    li $t5, 20
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
+    lw $t7, 12($t9)
+    sw $t7, 12($t8)
+    lw $t7, 16($t9)
+    sw $t7, 16($t8)
 .Linit_platforms_ret_0:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 296($sp)
+    lw $ra, 300($sp)
+    addiu $sp, $sp, 304
     jr $ra
     nop
 	.size init_platforms, . - init_platforms
@@ -491,339 +483,323 @@ init_pickups:
     sw $zero, 136($sp)
     sw $zero, 140($sp)
     sw $zero, 144($sp)
-    li $t7, 0
-    sb $t7, 136($sp)
-    li $t7, 60
-    sw $t7, 140($sp)
-    li $t7, 145
-    sw $t7, 144($sp)
-    addiu $t8, $sp, 136
-    la $t6, pickups
-    li $t5, 0
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    li $t8, 0
+    sb $t8, 136($sp)
+    li $t8, 60
+    sw $t8, 140($sp)
+    li $t8, 145
+    sw $t8, 144($sp)
+    addiu $t9, $sp, 136
+    la $t7, pickups
+    li $t6, 0
+    li $t5, 12
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
     sw $zero, 148($sp)
     sw $zero, 152($sp)
     sw $zero, 156($sp)
-    li $t7, 0
-    sb $t7, 148($sp)
-    li $t7, 80
-    sw $t7, 152($sp)
-    li $t7, 145
-    sw $t7, 156($sp)
-    addiu $t8, $sp, 148
-    la $t6, pickups
-    li $t5, 1
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    li $t8, 0
+    sb $t8, 148($sp)
+    li $t8, 80
+    sw $t8, 152($sp)
+    li $t8, 145
+    sw $t8, 156($sp)
+    addiu $t9, $sp, 148
+    la $t7, pickups
+    li $t6, 1
+    li $t5, 12
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
     sw $zero, 160($sp)
     sw $zero, 164($sp)
     sw $zero, 168($sp)
-    li $t7, 0
-    sb $t7, 160($sp)
-    li $t7, 180
-    sw $t7, 164($sp)
-    li $t7, 115
-    sw $t7, 168($sp)
-    addiu $t8, $sp, 160
-    la $t6, pickups
-    li $t5, 2
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    li $t8, 0
+    sb $t8, 160($sp)
+    li $t8, 180
+    sw $t8, 164($sp)
+    li $t8, 115
+    sw $t8, 168($sp)
+    addiu $t9, $sp, 160
+    la $t7, pickups
+    li $t6, 2
+    li $t5, 12
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
     sw $zero, 172($sp)
     sw $zero, 176($sp)
     sw $zero, 180($sp)
-    li $t7, 0
-    sb $t7, 172($sp)
-    li $t7, 200
-    sw $t7, 176($sp)
-    li $t7, 115
-    sw $t7, 180($sp)
-    addiu $t8, $sp, 172
-    la $t6, pickups
-    li $t5, 3
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    li $t8, 0
+    sb $t8, 172($sp)
+    li $t8, 200
+    sw $t8, 176($sp)
+    li $t8, 115
+    sw $t8, 180($sp)
+    addiu $t9, $sp, 172
+    la $t7, pickups
+    li $t6, 3
+    li $t5, 12
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
     sw $zero, 184($sp)
     sw $zero, 188($sp)
     sw $zero, 192($sp)
-    li $t7, 0
-    sb $t7, 184($sp)
-    li $t7, 80
-    sw $t7, 188($sp)
-    li $t7, 85
-    sw $t7, 192($sp)
-    addiu $t8, $sp, 184
-    la $t6, pickups
-    li $t5, 4
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    li $t8, 0
+    sb $t8, 184($sp)
+    li $t8, 80
+    sw $t8, 188($sp)
+    li $t8, 85
+    sw $t8, 192($sp)
+    addiu $t9, $sp, 184
+    la $t7, pickups
+    li $t6, 4
+    li $t5, 12
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
     sw $zero, 196($sp)
     sw $zero, 200($sp)
     sw $zero, 204($sp)
-    li $t7, 0
-    sb $t7, 196($sp)
-    li $t7, 150
-    sw $t7, 200($sp)
-    li $t7, 35
-    sw $t7, 204($sp)
-    addiu $t8, $sp, 196
-    la $t6, pickups
-    li $t5, 5
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    li $t8, 0
+    sb $t8, 196($sp)
+    li $t8, 150
+    sw $t8, 200($sp)
+    li $t8, 35
+    sw $t8, 204($sp)
+    addiu $t9, $sp, 196
+    la $t7, pickups
+    li $t6, 5
+    li $t5, 12
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
     sw $zero, 208($sp)
     sw $zero, 212($sp)
     sw $zero, 216($sp)
-    li $t7, 0
-    sb $t7, 208($sp)
-    li $t7, 165
-    sw $t7, 212($sp)
-    li $t7, 35
-    sw $t7, 216($sp)
-    addiu $t8, $sp, 208
-    la $t6, pickups
-    li $t5, 6
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    li $t8, 0
+    sb $t8, 208($sp)
+    li $t8, 165
+    sw $t8, 212($sp)
+    li $t8, 35
+    sw $t8, 216($sp)
+    addiu $t9, $sp, 208
+    la $t7, pickups
+    li $t6, 6
+    li $t5, 12
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
     sw $zero, 220($sp)
     sw $zero, 224($sp)
     sw $zero, 228($sp)
-    li $t7, 0
-    sb $t7, 220($sp)
-    li $t7, 260
-    sw $t7, 224($sp)
-    li $t7, 55
-    sw $t7, 228($sp)
-    addiu $t8, $sp, 220
-    la $t6, pickups
-    li $t5, 7
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    li $t8, 0
+    sb $t8, 220($sp)
+    li $t8, 260
+    sw $t8, 224($sp)
+    li $t8, 55
+    sw $t8, 228($sp)
+    addiu $t9, $sp, 220
+    la $t7, pickups
+    li $t6, 7
+    li $t5, 12
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
     sw $zero, 232($sp)
     sw $zero, 236($sp)
     sw $zero, 240($sp)
-    li $t7, 1
-    sb $t7, 232($sp)
-    addiu $t8, $sp, 232
-    la $t6, pickups
-    li $t5, 8
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    li $t8, 1
+    sb $t8, 232($sp)
+    addiu $t9, $sp, 232
+    la $t7, pickups
+    li $t6, 8
+    li $t5, 12
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
     sw $zero, 244($sp)
     sw $zero, 248($sp)
     sw $zero, 252($sp)
-    li $t7, 1
-    sb $t7, 244($sp)
-    addiu $t8, $sp, 244
-    la $t6, pickups
-    li $t5, 9
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    li $t8, 1
+    sb $t8, 244($sp)
+    addiu $t9, $sp, 244
+    la $t7, pickups
+    li $t6, 9
+    li $t5, 12
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
     sw $zero, 256($sp)
     sw $zero, 260($sp)
     sw $zero, 264($sp)
-    li $t7, 1
-    sb $t7, 256($sp)
-    addiu $t8, $sp, 256
-    la $t6, pickups
-    li $t5, 10
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    li $t8, 1
+    sb $t8, 256($sp)
+    addiu $t9, $sp, 256
+    la $t7, pickups
+    li $t6, 10
+    li $t5, 12
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
     sw $zero, 268($sp)
     sw $zero, 272($sp)
     sw $zero, 276($sp)
-    li $t7, 1
-    sb $t7, 268($sp)
-    addiu $t8, $sp, 268
-    la $t6, pickups
-    li $t5, 11
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    li $t8, 1
+    sb $t8, 268($sp)
+    addiu $t9, $sp, 268
+    la $t7, pickups
+    li $t6, 11
+    li $t5, 12
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
     sw $zero, 280($sp)
     sw $zero, 284($sp)
     sw $zero, 288($sp)
-    li $t7, 1
-    sb $t7, 280($sp)
-    addiu $t8, $sp, 280
-    la $t6, pickups
+    li $t8, 1
+    sb $t8, 280($sp)
+    addiu $t9, $sp, 280
+    la $t7, pickups
+    li $t6, 12
     li $t5, 12
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
     sw $zero, 292($sp)
     sw $zero, 296($sp)
     sw $zero, 300($sp)
-    li $t7, 1
-    sb $t7, 292($sp)
-    addiu $t8, $sp, 292
-    la $t6, pickups
-    li $t5, 13
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    li $t8, 1
+    sb $t8, 292($sp)
+    addiu $t9, $sp, 292
+    la $t7, pickups
+    li $t6, 13
+    li $t5, 12
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
     sw $zero, 304($sp)
     sw $zero, 308($sp)
     sw $zero, 312($sp)
-    li $t7, 1
-    sb $t7, 304($sp)
-    addiu $t8, $sp, 304
-    la $t6, pickups
-    li $t5, 14
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    li $t8, 1
+    sb $t8, 304($sp)
+    addiu $t9, $sp, 304
+    la $t7, pickups
+    li $t6, 14
+    li $t5, 12
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
     sw $zero, 316($sp)
     sw $zero, 320($sp)
     sw $zero, 324($sp)
-    li $t7, 1
-    sb $t7, 316($sp)
-    addiu $t8, $sp, 316
-    la $t6, pickups
-    li $t5, 15
-    li $t4, 12
-    mul $t5, $t5, $t4
-    addu $t6, $t6, $t5
-    move $t7, $t6
-    lw $t6, 0($t8)
-    sw $t6, 0($t7)
-    lw $t6, 4($t8)
-    sw $t6, 4($t7)
-    lw $t6, 8($t8)
-    sw $t6, 8($t7)
-    move $t9, $t8
+    li $t8, 1
+    sb $t8, 316($sp)
+    addiu $t9, $sp, 316
+    la $t7, pickups
+    li $t6, 15
+    li $t5, 12
+    mul $t6, $t6, $t5
+    addu $t7, $t7, $t6
+    move $t8, $t7
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    lw $t7, 8($t9)
+    sw $t7, 8($t8)
 .Linit_pickups_ret_1:
     lw $fp, 328($sp)
     lw $ra, 332($sp)
@@ -836,61 +812,67 @@ init_pickups:
 	.globl aabb_overlap
 	.type aabb_overlap, @function
 aabb_overlap:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    sw $a1, 140($sp)
-    sw $a2, 144($sp)
-    sw $a3, 148($sp)
+    addiu $sp, $sp, -176
+    sw $ra, 172($sp)
+    sw $fp, 168($sp)
+    addiu $fp, $sp, 176
+    sw $s0, 164($sp)
+    sw $s1, 160($sp)
+    sw $s2, 156($sp)
+    sw $s3, 152($sp)
+    sw $s4, 148($sp)
+    sw $s5, 144($sp)
+    move $s0, $a0
+    move $s1, $a1
+    move $s4, $a2
+    move $s5, $a3
     lw $t9, 16($fp)
-    sw $t9, 152($sp)
+    move $s2, $t9
     lw $t9, 20($fp)
-    sw $t9, 156($sp)
+    move $s3, $t9
     lw $t9, 24($fp)
-    sw $t9, 160($sp)
+    sw $t9, 136($sp)
     lw $t9, 28($fp)
-    sw $t9, 164($sp)
-    lw $t7, 136($sp)
-    lw $t6, 144($sp)
-    addu $t8, $t7, $t6
-    lw $t7, 152($sp)
-    sle $t9, $t8, $t7
-    beqz $t9, .Lif_end_3
+    sw $t9, 140($sp)
+    move $t8, $s0
+    move $t7, $s4
+    addu $t9, $t8, $t7
+    move $t8, $s2
+    slt $t7, $t8, $t9
+    bnez $t7, .Lif_end_3
     nop
     li $v0, 0
     j .Laabb_overlap_ret_2
     nop
 .Lif_end_3:
-    lw $t8, 136($sp)
-    lw $t6, 152($sp)
-    lw $t5, 160($sp)
-    addu $t7, $t6, $t5
-    sge $t9, $t8, $t7
-    beqz $t9, .Lif_end_4
+    move $t9, $s0
+    move $t7, $s2
+    lw $t6, 136($sp)
+    addu $t8, $t7, $t6
+    slt $t7, $t9, $t8
+    bnez $t7, .Lif_end_4
     nop
     li $v0, 0
     j .Laabb_overlap_ret_2
     nop
 .Lif_end_4:
-    lw $t7, 140($sp)
-    lw $t6, 148($sp)
-    addu $t8, $t7, $t6
-    lw $t7, 156($sp)
-    sle $t9, $t8, $t7
-    beqz $t9, .Lif_end_5
+    move $t8, $s1
+    move $t7, $s5
+    addu $t9, $t8, $t7
+    move $t8, $s3
+    slt $t7, $t8, $t9
+    bnez $t7, .Lif_end_5
     nop
     li $v0, 0
     j .Laabb_overlap_ret_2
     nop
 .Lif_end_5:
-    lw $t8, 140($sp)
-    lw $t6, 156($sp)
-    lw $t5, 164($sp)
-    addu $t7, $t6, $t5
-    sge $t9, $t8, $t7
-    beqz $t9, .Lif_end_6
+    move $t9, $s1
+    move $t7, $s3
+    lw $t6, 140($sp)
+    addu $t8, $t7, $t6
+    slt $t7, $t9, $t8
+    bnez $t7, .Lif_end_6
     nop
     li $v0, 0
     j .Laabb_overlap_ret_2
@@ -900,9 +882,15 @@ aabb_overlap:
     j .Laabb_overlap_ret_2
     nop
 .Laabb_overlap_ret_2:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $s5, 144($sp)
+    lw $s4, 148($sp)
+    lw $s3, 152($sp)
+    lw $s2, 156($sp)
+    lw $s1, 160($sp)
+    lw $s0, 164($sp)
+    lw $fp, 168($sp)
+    lw $ra, 172($sp)
+    addiu $sp, $sp, 176
     jr $ra
     nop
 	.size aabb_overlap, . - aabb_overlap
@@ -911,18 +899,20 @@ aabb_overlap:
 	.globl check_platform_landing
 	.type check_platform_landing, @function
 check_platform_landing:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    sw $a1, 140($sp)
-    sw $a2, 144($sp)
-    lw $t8, 144($sp)
-    swc1 $f12, 148($sp)
-    la $t6, .Lf320
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 148($sp)
+    addiu $sp, $sp, -184
+    sw $ra, 180($sp)
+    sw $fp, 176($sp)
+    addiu $fp, $sp, 184
+    sw $s0, 172($sp)
+    sw $s1, 168($sp)
+    sw $s2, 164($sp)
+    move $s1, $a0
+    move $s2, $a1
+    sw $a2, 136($sp)
+    lw $t8, 136($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf320
+    lwc1 $f12, 0($t7)
     c.le.s $f14, $f12
     li $t9, 0
     bc1f .Lfle_9
@@ -937,72 +927,69 @@ check_platform_landing:
     nop
 .Lif_end_8:
     li $t9, 0
-    sw $t9, 152($sp)
+    move $s0, $t9
 .Lwhile_h_10:
-    lw $t8, 152($sp)
-    li $t7, 8
-    slt $t9, $t8, $t7
-    beqz $t9, .Lwhile_x_11
+    move $t9, $s0
+    li $t8, 8
+    slt $t7, $t9, $t8
+    beqz $t7, .Lwhile_x_11
     nop
     la $t8, platforms
-    lw $t7, 152($sp)
+    move $t7, $s0
     li $t6, 20
     mul $t7, $t7, $t6
     addu $t8, $t8, $t7
     move $t9, $t8
-    sw $t9, 156($sp)
-    lw $t8, 156($sp)
+    sw $t9, 140($sp)
+    lw $t8, 140($sp)
     lbu $t9, 16($t8)
     beqz $t9, .Lif_end_12
     nop
-    lw $t8, 140($sp)
+    move $t8, $s2
     li $t7, 16
     addu $t9, $t8, $t7
-    sw $t9, 160($sp)
-    lw $t7, 156($sp)
+    sw $t9, 144($sp)
+    lw $t7, 140($sp)
     lw $t8, 12($t7)
-    sw $t8, 168($sp)
-    lw $t7, 156($sp)
+    sw $t8, 152($sp)
+    lw $t7, 140($sp)
     lw $t8, 8($t7)
-    sw $t8, 172($sp)
-    lw $t7, 156($sp)
+    sw $t8, 156($sp)
+    lw $t7, 140($sp)
     lw $t8, 4($t7)
-    sw $t8, 176($sp)
-    lw $t7, 156($sp)
+    sw $t8, 160($sp)
+    lw $t7, 140($sp)
     lw $t8, 0($t7)
     sw $t8, 16($sp)
     li $a3, 4
     li $a2, 12
-    lw $t8, 160($sp)
+    lw $t8, 144($sp)
     li $t7, 2
     subu $a1, $t8, $t7
-    lw $a0, 136($sp)
-    lw $t8, 176($sp)
+    move $a0, $s1
+    lw $t8, 160($sp)
     sw $t8, 20($sp)
-    lw $t8, 172($sp)
+    lw $t8, 156($sp)
     sw $t8, 24($sp)
-    lw $t8, 168($sp)
+    lw $t8, 152($sp)
     sw $t8, 28($sp)
-    sw $t9, 96($sp)
     jal aabb_overlap
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sb $t9, 164($sp)
-    lbu $t9, 164($sp)
+    sb $t9, 148($sp)
+    lbu $t9, 148($sp)
     beqz $t9, .Lif_end_13
     nop
-    lw $t9, 156($sp)
+    lw $t9, 140($sp)
     lw $v0, 4($t9)
     j .Lcheck_platform_landing_ret_7
     nop
 .Lif_end_13:
 .Lif_end_12:
-    li $t8, 1
-    lw $t7, 152($sp)
-    addu $t8, $t7, $t8
-    sw $t8, 152($sp)
-    move $t9, $t8
+    li $t9, 1
+    move $t8, $s0
+    addu $t9, $t8, $t9
+    move $s0, $t9
     j .Lwhile_h_10
     nop
 .Lwhile_x_11:
@@ -1011,9 +998,12 @@ check_platform_landing:
     j .Lcheck_platform_landing_ret_7
     nop
 .Lcheck_platform_landing_ret_7:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $s2, 164($sp)
+    lw $s1, 168($sp)
+    lw $s0, 172($sp)
+    lw $fp, 176($sp)
+    lw $ra, 180($sp)
+    addiu $sp, $sp, 184
     jr $ra
     nop
 	.size check_platform_landing, . - check_platform_landing
@@ -1022,63 +1012,54 @@ check_platform_landing:
 	.globl Player_init
 	.type Player_init, @function
 Player_init:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    la $t7, .Lf321
-    lwc1 $f12, 0($t7)
-    lw $t7, 136($sp)
-    sw $t8, 0($t7)
-    move $t9, $t8
-    la $t7, .Lf322
-    lwc1 $f12, 0($t7)
-    lw $t7, 136($sp)
-    sw $t8, 4($t7)
-    move $t9, $t8
-    la $t7, .Lf320
-    lwc1 $f12, 0($t7)
-    lw $t7, 136($sp)
-    sw $t8, 8($t7)
-    move $t9, $t8
-    la $t7, .Lf320
-    lwc1 $f12, 0($t7)
-    lw $t7, 136($sp)
-    sw $t8, 12($t7)
-    move $t9, $t8
-    li $t8, 0
-    lw $t7, 136($sp)
-    sb $t8, 16($t7)
-    move $t9, $t8
-    li $t8, 0
-    lw $t7, 136($sp)
-    sb $t8, 17($t7)
-    move $t9, $t8
-    li $t8, 1
-    lw $t7, 136($sp)
-    sb $t8, 18($t7)
-    move $t9, $t8
-    li $t8, 3
-    lw $t7, 136($sp)
-    sw $t8, 20($t7)
-    move $t9, $t8
-    li $t8, 0
-    lw $t7, 136($sp)
-    sw $t8, 24($t7)
-    move $t9, $t8
-    li $t8, 0
-    lw $t7, 136($sp)
-    sw $t8, 28($t7)
-    move $t9, $t8
-    li $t8, 0
-    lw $t7, 136($sp)
-    sw $t8, 32($t7)
-    move $t9, $t8
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
+    sw $s0, 140($sp)
+    move $s0, $a0
+    la $t8, .Lf321
+    lwc1 $f12, 0($t8)
+    move $t8, $s0
+    sw $t9, 0($t8)
+    la $t8, .Lf322
+    lwc1 $f12, 0($t8)
+    move $t8, $s0
+    sw $t9, 4($t8)
+    la $t8, .Lf320
+    lwc1 $f12, 0($t8)
+    move $t8, $s0
+    sw $t9, 8($t8)
+    la $t8, .Lf320
+    lwc1 $f12, 0($t8)
+    move $t8, $s0
+    sw $t9, 12($t8)
+    li $t9, 0
+    move $t8, $s0
+    sb $t9, 16($t8)
+    li $t9, 0
+    move $t8, $s0
+    sb $t9, 17($t8)
+    li $t9, 1
+    move $t8, $s0
+    sb $t9, 18($t8)
+    li $t9, 3
+    move $t8, $s0
+    sw $t9, 20($t8)
+    li $t9, 0
+    move $t8, $s0
+    sw $t9, 24($t8)
+    li $t9, 0
+    move $t8, $s0
+    sw $t9, 28($t8)
+    li $t9, 0
+    move $t8, $s0
+    sw $t9, 32($t8)
 .LPlayer_init_ret_14:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $s0, 140($sp)
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size Player_init, . - Player_init
@@ -1087,67 +1068,60 @@ Player_init:
 	.globl Player_physics
 	.type Player_physics, @function
 Player_physics:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t7, 136($sp)
-    lbu $t8, 17($t7)
-    sltiu $t9, $t8, 1
-    beqz $t9, .Lif_end_16
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t8, $s0
+    lbu $t9, 17($t8)
+    bnez $t9, .Lif_end_16
     nop
-    li $t8, 26214
-    lw $t6, 136($sp)
-    lw $t7, 12($t6)
-    addu $t8, $t7, $t8
-    lw $t7, 136($sp)
-    sw $t8, 12($t7)
-    move $t9, $t8
-    lw $t7, 136($sp)
+    li $t9, 26214
+    move $t7, $s0
     lw $t8, 12($t7)
-    li $t7, 524288
-    sgt $t9, $t8, $t7
-    beqz $t9, .Lif_end_17
-    nop
+    addu $t9, $t8, $t9
+    move $t8, $s0
+    sw $t9, 12($t8)
+    move $t8, $s0
+    lw $t9, 12($t8)
     li $t8, 524288
-    lw $t7, 136($sp)
-    sw $t8, 12($t7)
-    move $t9, $t8
+    slt $t7, $t8, $t9
+    beqz $t7, .Lif_end_17
+    nop
+    li $t9, 524288
+    move $t8, $s0
+    sw $t9, 12($t8)
 .Lif_end_17:
 .Lif_end_16:
-    lw $t7, 136($sp)
-    lw $t8, 12($t7)
-    lw $t6, 136($sp)
-    lw $t7, 4($t6)
-    addu $t8, $t7, $t8
-    lw $t7, 136($sp)
-    sw $t8, 4($t7)
-    move $t9, $t8
-    lw $t7, 136($sp)
-    lw $t8, 8($t7)
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
-    addu $t8, $t7, $t8
-    lw $t7, 136($sp)
-    sw $t8, 0($t7)
-    move $t9, $t8
-    lw $t6, 136($sp)
-    lw $t7, 8($t6)
-    swc1 $f12, 140($sp)
-    la $t5, .Lf323
-    lwc1 $f12, 0($t5)
-    lwc1 $f14, 140($sp)
-    mul.s $f12, $f14, $f12
-    lw $t7, 136($sp)
-    sw $t8, 8($t7)
-    move $t9, $t8
-    lw $t7, 136($sp)
+    move $t8, $s0
+    lw $t9, 12($t8)
+    move $t7, $s0
+    lw $t8, 4($t7)
+    addu $t9, $t8, $t9
+    move $t8, $s0
+    sw $t9, 4($t8)
+    move $t8, $s0
+    lw $t9, 8($t8)
+    move $t7, $s0
     lw $t8, 0($t7)
-    swc1 $f12, 140($sp)
-    la $t6, .Lf320
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 140($sp)
+    addu $t9, $t8, $t9
+    move $t8, $s0
+    sw $t9, 0($t8)
+    move $t7, $s0
+    lw $t8, 8($t7)
+    mov.s $f14, $f12
+    la $t7, .Lf323
+    lwc1 $f12, 0($t7)
+    mul.s $f12, $f14, $f12
+    move $t8, $s0
+    sw $t9, 8($t8)
+    move $t7, $s0
+    lw $t8, 0($t7)
+    mov.s $f14, $f12
+    la $t7, .Lf320
+    lwc1 $f12, 0($t7)
     c.lt.s $f14, $f12
     li $t9, 0
     bc1f .Lflt_19
@@ -1156,18 +1130,16 @@ Player_physics:
 .Lflt_19:
     beqz $t9, .Lif_end_18
     nop
-    la $t7, .Lf320
-    lwc1 $f12, 0($t7)
-    lw $t7, 136($sp)
-    sw $t8, 0($t7)
-    move $t9, $t8
+    la $t8, .Lf320
+    lwc1 $f12, 0($t8)
+    move $t8, $s0
+    sw $t9, 0($t8)
 .Lif_end_18:
-    lw $t7, 136($sp)
+    move $t7, $s0
     lw $t8, 0($t7)
-    swc1 $f12, 140($sp)
-    la $t6, .Lf324
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 140($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf324
+    lwc1 $f12, 0($t7)
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_21
@@ -1176,16 +1148,16 @@ Player_physics:
 .Lfgt_21:
     beqz $t9, .Lif_end_20
     nop
-    la $t7, .Lf324
-    lwc1 $f12, 0($t7)
-    lw $t7, 136($sp)
-    sw $t8, 0($t7)
-    move $t9, $t8
+    la $t8, .Lf324
+    lwc1 $f12, 0($t8)
+    move $t8, $s0
+    sw $t9, 0($t8)
 .Lif_end_20:
 .LPlayer_physics_ret_15:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $s0, 140($sp)
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size Player_physics, . - Player_physics
@@ -1194,100 +1166,86 @@ Player_physics:
 	.globl Player_resolve_collisions
 	.type Player_resolve_collisions, @function
 Player_resolve_collisions:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t7, 136($sp)
+    addiu $sp, $sp, -160
+    sw $ra, 156($sp)
+    sw $fp, 152($sp)
+    addiu $fp, $sp, 160
+    sw $s0, 148($sp)
+    move $s0, $a0
+    move $t7, $s0
     lw $t8, 0($t7)
     sra $t9, $t8, 16
-    sw $t9, 140($sp)
-    lw $t7, 136($sp)
+    sw $t9, 136($sp)
+    move $t7, $s0
     lw $t8, 4($t7)
     sra $t9, $t8, 16
-    sw $t9, 144($sp)
-    lw $t8, 136($sp)
+    sw $t9, 140($sp)
+    move $t8, $s0
     lw $a2, 12($t8)
-    lw $a1, 144($sp)
-    lw $a0, 140($sp)
-    sw $t9, 96($sp)
+    lw $a1, 140($sp)
+    lw $a0, 136($sp)
     jal check_platform_landing
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 148($sp)
-    lw $t8, 148($sp)
-    li $t6, 1
-    subu $t7, $zero, $t6
-    sne $t9, $t8, $t7
-    beqz $t9, .Lif_else_24
+    sw $t9, 144($sp)
+    lw $t9, 144($sp)
+    li $t7, 1
+    subu $t8, $zero, $t7
+    beq $t9, $t8, .Lif_else_24
     nop
-    lw $t6, 148($sp)
-    li $t5, 16
-    subu $t7, $t6, $t5
-    sll $t8, $t7, 16
-    lw $t7, 136($sp)
-    sw $t8, 4($t7)
-    move $t9, $t8
-    la $t7, .Lf320
-    lwc1 $f12, 0($t7)
-    lw $t7, 136($sp)
-    sw $t8, 12($t7)
-    move $t9, $t8
-    lw $t7, 136($sp)
-    lbu $t8, 17($t7)
-    sltiu $t9, $t8, 1
-    beqz $t9, .Lif_end_25
+    lw $t7, 144($sp)
+    li $t6, 16
+    subu $t8, $t7, $t6
+    sll $t9, $t8, 16
+    move $t8, $s0
+    sw $t9, 4($t8)
+    la $t8, .Lf320
+    lwc1 $f12, 0($t8)
+    move $t8, $s0
+    sw $t9, 12($t8)
+    move $t8, $s0
+    lbu $t9, 17($t8)
+    bnez $t9, .Lif_end_25
     nop
-    li $t8, 4
-    lw $t7, 136($sp)
-    sb $t8, 16($t7)
-    move $t9, $t8
-    li $t8, 4
-    lw $t7, 136($sp)
-    sw $t8, 28($t7)
-    move $t9, $t8
+    li $t9, 4
+    move $t8, $s0
+    sb $t9, 16($t8)
+    li $t9, 4
+    move $t8, $s0
+    sw $t9, 28($t8)
 .Lif_end_25:
-    li $t8, 1
-    lw $t7, 136($sp)
-    sb $t8, 17($t7)
-    move $t9, $t8
-    li $t8, 8
-    lw $t7, 136($sp)
-    sw $t8, 32($t7)
-    move $t9, $t8
+    li $t9, 1
+    move $t8, $s0
+    sb $t9, 17($t8)
+    li $t9, 8
+    move $t8, $s0
+    sw $t9, 32($t8)
     j .Lif_end_23
     nop
 .Lif_else_24:
-    lw $t7, 136($sp)
-    lw $t8, 32($t7)
-    li $t7, 0
-    sgt $t9, $t8, $t7
-    beqz $t9, .Lif_else_27
+    move $t8, $s0
+    lw $t9, 32($t8)
+    blez $t9, .Lif_else_27
     nop
-    li $t8, 1
-    lw $t6, 136($sp)
-    lw $t7, 32($t6)
-    subu $t8, $t7, $t8
-    lw $t7, 136($sp)
-    sw $t8, 32($t7)
-    move $t9, $t8
+    li $t9, 1
+    move $t7, $s0
+    lw $t8, 32($t7)
+    subu $t9, $t8, $t9
+    move $t8, $s0
+    sw $t9, 32($t8)
     j .Lif_end_26
     nop
 .Lif_else_27:
-    li $t8, 0
-    lw $t7, 136($sp)
-    sb $t8, 17($t7)
-    move $t9, $t8
+    li $t9, 0
+    move $t8, $s0
+    sb $t9, 17($t8)
 .Lif_end_26:
 .Lif_end_23:
-    lw $t7, 136($sp)
+    move $t7, $s0
     lw $t8, 4($t7)
-    swc1 $f12, 152($sp)
-    la $t6, .Lf325
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 152($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf325
+    lwc1 $f12, 0($t7)
     c.lt.s $f12, $f14
     li $t9, 0
     bc1f .Lfgt_29
@@ -1296,38 +1254,34 @@ Player_resolve_collisions:
 .Lfgt_29:
     beqz $t9, .Lif_end_28
     nop
-    la $t7, .Lf322
-    lwc1 $f12, 0($t7)
-    lw $t7, 136($sp)
-    sw $t8, 4($t7)
-    move $t9, $t8
-    la $t7, .Lf321
-    lwc1 $f12, 0($t7)
-    lw $t7, 136($sp)
-    sw $t8, 0($t7)
-    move $t9, $t8
-    la $t7, .Lf320
-    lwc1 $f12, 0($t7)
-    lw $t7, 136($sp)
-    sw $t8, 12($t7)
-    move $t9, $t8
-    la $t7, .Lf320
-    lwc1 $f12, 0($t7)
-    lw $t7, 136($sp)
-    sw $t8, 8($t7)
-    move $t9, $t8
-    li $t8, 1
-    lw $t6, 136($sp)
-    lw $t7, 20($t6)
-    subu $t8, $t7, $t8
-    lw $t7, 136($sp)
-    sw $t8, 20($t7)
-    move $t9, $t8
+    la $t8, .Lf322
+    lwc1 $f12, 0($t8)
+    move $t8, $s0
+    sw $t9, 4($t8)
+    la $t8, .Lf321
+    lwc1 $f12, 0($t8)
+    move $t8, $s0
+    sw $t9, 0($t8)
+    la $t8, .Lf320
+    lwc1 $f12, 0($t8)
+    move $t8, $s0
+    sw $t9, 12($t8)
+    la $t8, .Lf320
+    lwc1 $f12, 0($t8)
+    move $t8, $s0
+    sw $t9, 8($t8)
+    li $t9, 1
+    move $t7, $s0
+    lw $t8, 20($t7)
+    subu $t9, $t8, $t9
+    move $t8, $s0
+    sw $t9, 20($t8)
 .Lif_end_28:
 .LPlayer_resolve_collisions_ret_22:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $s0, 148($sp)
+    lw $fp, 152($sp)
+    lw $ra, 156($sp)
+    addiu $sp, $sp, 160
     jr $ra
     nop
 	.size Player_resolve_collisions, . - Player_resolve_collisions
@@ -1336,134 +1290,123 @@ Player_resolve_collisions:
 	.globl Player_handle_input
 	.type Player_handle_input, @function
 Player_handle_input:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    addiu $sp, $sp, -160
+    sw $ra, 156($sp)
+    sw $fp, 152($sp)
+    addiu $fp, $sp, 160
+    sw $s0, 148($sp)
+    sw $s1, 144($sp)
+    move $s0, $a0
     move $t9, $a1
-    addiu $t8, $sp, 140
+    addiu $t8, $sp, 136
     lw $t7, 0($t9)
     sw $t7, 0($t8)
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 12($t7)
     move $t9, $t8
-    sw $t9, 144($sp)
+    sw $t9, 140($sp)
     li $t9, 10
-    sw $t9, 148($sp)
-    lw $t8, 144($sp)
-    lw $t7, 148($sp)
-    sgt $t9, $t8, $t7
-    beqz $t9, .Lif_else_32
+    move $s1, $t9
+    lw $t9, 140($sp)
+    move $t8, $s1
+    slt $t7, $t8, $t9
+    beqz $t7, .Lif_else_32
     nop
-    lw $t6, 144($sp)
-    sll $t7, $t6, 16
-    swc1 $f12, 152($sp)
-    la $t5, .Lf326
-    lwc1 $f12, 0($t5)
-    lwc1 $f14, 152($sp)
+    lw $t7, 140($sp)
+    sll $t8, $t7, 16
+    mov.s $f14, $f12
+    la $t7, .Lf326
+    lwc1 $f12, 0($t7)
     mul.s $f12, $f14, $f12
-    lw $t7, 136($sp)
-    sw $t8, 8($t7)
-    move $t9, $t8
-    li $t8, 1
-    lw $t7, 136($sp)
-    sb $t8, 18($t7)
-    move $t9, $t8
+    move $t8, $s0
+    sw $t9, 8($t8)
+    li $t9, 1
+    move $t8, $s0
+    sb $t9, 18($t8)
     j .Lif_end_31
     nop
 .Lif_else_32:
-    lw $t8, 144($sp)
-    lw $t6, 148($sp)
-    subu $t7, $zero, $t6
-    slt $t9, $t8, $t7
-    beqz $t9, .Lelif_else_33
+    lw $t9, 140($sp)
+    move $t7, $s1
+    subu $t8, $zero, $t7
+    slt $t7, $t9, $t8
+    beqz $t7, .Lelif_else_33
     nop
-    lw $t6, 144($sp)
-    sll $t7, $t6, 16
-    swc1 $f12, 152($sp)
-    la $t5, .Lf326
-    lwc1 $f12, 0($t5)
-    lwc1 $f14, 152($sp)
+    lw $t7, 140($sp)
+    sll $t8, $t7, 16
+    mov.s $f14, $f12
+    la $t7, .Lf326
+    lwc1 $f12, 0($t7)
     mul.s $f12, $f14, $f12
-    lw $t7, 136($sp)
-    sw $t8, 8($t7)
-    move $t9, $t8
-    li $t8, 0
-    lw $t7, 136($sp)
-    sb $t8, 18($t7)
-    move $t9, $t8
+    move $t8, $s0
+    sw $t9, 8($t8)
+    li $t9, 0
+    move $t8, $s0
+    sb $t9, 18($t8)
     j .Lif_end_31
     nop
 .Lelif_else_33:
 .Lif_end_31:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 7($t8)
     beqz $t9, .Lif_end_34
     nop
-    li $t8, 163840
-    lw $t7, 136($sp)
-    sw $t8, 8($t7)
-    move $t9, $t8
-    li $t8, 1
-    lw $t7, 136($sp)
-    sb $t8, 18($t7)
-    move $t9, $t8
+    li $t9, 163840
+    move $t8, $s0
+    sw $t9, 8($t8)
+    li $t9, 1
+    move $t8, $s0
+    sb $t9, 18($t8)
 .Lif_end_34:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 6($t8)
     beqz $t9, .Lif_end_35
     nop
-    li $t7, 163840
-    subu $t8, $zero, $t7
-    lw $t7, 136($sp)
-    sw $t8, 8($t7)
-    move $t9, $t8
-    li $t8, 0
-    lw $t7, 136($sp)
-    sb $t8, 18($t7)
-    move $t9, $t8
+    li $t8, 163840
+    subu $t9, $zero, $t8
+    move $t8, $s0
+    sw $t9, 8($t8)
+    li $t9, 0
+    move $t8, $s0
+    sb $t9, 18($t8)
 .Lif_end_35:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 4($t7)
     lb $t9, 0($t8)
     beqz $t9, .Lif_end_36
     nop
-    lw $t7, 136($sp)
-    lbu $t8, 17($t7)
-    lw $t5, 136($sp)
-    lw $t6, 32($t5)
-    li $t5, 0
-    sgt $t7, $t6, $t5
-    or $t6, $t8, $t7
-    sltu $t9, $zero, $t6
-    beqz $t9, .Lif_end_37
+    move $t8, $s0
+    lbu $t9, 17($t8)
+    bnez $t9, .Lsc_38
     nop
-    li $t7, 393216
-    subu $t8, $zero, $t7
-    lw $t7, 136($sp)
-    sw $t8, 12($t7)
-    move $t9, $t8
-    li $t8, 0
-    lw $t7, 136($sp)
-    sb $t8, 17($t7)
-    move $t9, $t8
-    li $t8, 0
-    lw $t7, 136($sp)
-    sw $t8, 32($t7)
-    move $t9, $t8
-    li $t8, 2
-    lw $t7, 136($sp)
-    sb $t8, 16($t7)
-    move $t9, $t8
+    move $t8, $s0
+    lw $t9, 32($t8)
+    blez $t9, .Lif_end_37
+    nop
+.Lsc_38:
+    li $t8, 393216
+    subu $t9, $zero, $t8
+    move $t8, $s0
+    sw $t9, 12($t8)
+    li $t9, 0
+    move $t8, $s0
+    sb $t9, 17($t8)
+    li $t9, 0
+    move $t8, $s0
+    sw $t9, 32($t8)
+    li $t9, 2
+    move $t8, $s0
+    sb $t9, 16($t8)
 .Lif_end_37:
 .Lif_end_36:
 .LPlayer_handle_input_ret_30:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $s1, 144($sp)
+    lw $s0, 148($sp)
+    lw $fp, 152($sp)
+    lw $ra, 156($sp)
+    addiu $sp, $sp, 160
     jr $ra
     nop
 	.size Player_handle_input, . - Player_handle_input
@@ -1472,117 +1415,107 @@ Player_handle_input:
 	.globl Player_update_state
 	.type Player_update_state, @function
 Player_update_state:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t7, 136($sp)
-    lw $t8, 28($t7)
-    li $t7, 0
-    sgt $t9, $t8, $t7
-    beqz $t9, .Lif_end_39
-    nop
-    li $t8, 1
-    lw $t6, 136($sp)
-    lw $t7, 28($t6)
-    subu $t8, $t7, $t8
-    lw $t7, 136($sp)
-    sw $t8, 28($t7)
-    move $t9, $t8
-.Lif_end_39:
-    lw $t7, 136($sp)
-    lbu $t8, 17($t7)
-    sltiu $t9, $t8, 1
-    beqz $t9, .Lif_else_41
-    nop
-    lw $t7, 136($sp)
-    lw $t8, 12($t7)
-    swc1 $f12, 140($sp)
-    la $t6, .Lf320
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 140($sp)
-    c.lt.s $f14, $f12
-    li $t9, 0
-    bc1f .Lflt_44
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $t8, $s0
+    lw $t9, 28($t8)
+    blez $t9, .Lif_end_40
     nop
     li $t9, 1
-.Lflt_44:
-    beqz $t9, .Lif_else_43
-    nop
-    li $t8, 2
-    lw $t7, 136($sp)
-    sb $t8, 16($t7)
-    move $t9, $t8
-    j .Lif_end_42
-    nop
-.Lif_else_43:
-    li $t8, 3
-    lw $t7, 136($sp)
-    sb $t8, 16($t7)
-    move $t9, $t8
-.Lif_end_42:
-    j .Lif_end_40
-    nop
-.Lif_else_41:
-    lw $t7, 136($sp)
+    move $t7, $s0
     lw $t8, 28($t7)
-    li $t7, 0
-    sgt $t9, $t8, $t7
-    beqz $t9, .Lelif_else_45
+    subu $t9, $t8, $t9
+    move $t8, $s0
+    sw $t9, 28($t8)
+.Lif_end_40:
+    move $t8, $s0
+    lbu $t9, 17($t8)
+    bnez $t9, .Lif_else_42
     nop
-    li $t8, 4
-    lw $t7, 136($sp)
-    sb $t8, 16($t7)
-    move $t9, $t8
-    j .Lif_end_40
-    nop
-.Lelif_else_45:
-    lw $t6, 136($sp)
-    lw $t7, 8($t6)
-    swc1 $f12, 140($sp)
-    la $t5, .Lf327
-    lwc1 $f12, 0($t5)
-    lwc1 $f14, 140($sp)
-    c.lt.s $f12, $f14
-    li $t8, 0
-    bc1f .Lfgt_47
-    nop
-    li $t8, 1
-.Lfgt_47:
-    lw $t5, 136($sp)
-    lw $t6, 8($t5)
-    swc1 $f12, 140($sp)
-    la $t3, .Lf327
-    lwc1 $f12, 0($t3)
-    neg.s $f12, $f12
-    lwc1 $f14, 140($sp)
+    move $t7, $s0
+    lw $t8, 12($t7)
+    mov.s $f14, $f12
+    la $t7, .Lf320
+    lwc1 $f12, 0($t7)
     c.lt.s $f14, $f12
-    li $t7, 0
-    bc1f .Lflt_48
+    li $t9, 0
+    bc1f .Lflt_45
     nop
-    li $t7, 1
-.Lflt_48:
-    or $t6, $t8, $t7
-    sltu $t9, $zero, $t6
-    beqz $t9, .Lelif_else_46
+    li $t9, 1
+.Lflt_45:
+    beqz $t9, .Lif_else_44
     nop
-    li $t8, 1
-    lw $t7, 136($sp)
-    sb $t8, 16($t7)
-    move $t9, $t8
-    j .Lif_end_40
+    li $t9, 2
+    move $t8, $s0
+    sb $t9, 16($t8)
+    j .Lif_end_43
+    nop
+.Lif_else_44:
+    li $t9, 3
+    move $t8, $s0
+    sb $t9, 16($t8)
+.Lif_end_43:
+    j .Lif_end_41
+    nop
+.Lif_else_42:
+    move $t8, $s0
+    lw $t9, 28($t8)
+    blez $t9, .Lelif_else_46
+    nop
+    li $t9, 4
+    move $t8, $s0
+    sb $t9, 16($t8)
+    j .Lif_end_41
     nop
 .Lelif_else_46:
-    li $t8, 0
-    lw $t7, 136($sp)
-    sb $t8, 16($t7)
-    move $t9, $t8
-.Lif_end_40:
-.LPlayer_update_state_ret_38:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    move $t7, $s0
+    lw $t8, 8($t7)
+    mov.s $f14, $f12
+    la $t7, .Lf327
+    lwc1 $f12, 0($t7)
+    c.lt.s $f12, $f14
+    li $t9, 0
+    bc1f .Lfgt_49
+    nop
+    li $t9, 1
+.Lfgt_49:
+    bnez $t9, .Lsc_48
+    nop
+    move $t7, $s0
+    lw $t8, 8($t7)
+    swc1 $f12, 136($sp)
+    la $t5, .Lf327
+    lwc1 $f12, 0($t5)
+    neg.s $f12, $f12
+    lwc1 $f14, 136($sp)
+    c.lt.s $f14, $f12
+    li $t9, 0
+    bc1f .Lflt_50
+    nop
+    li $t9, 1
+.Lflt_50:
+    beqz $t9, .Lelif_else_47
+    nop
+.Lsc_48:
+    li $t9, 1
+    move $t8, $s0
+    sb $t9, 16($t8)
+    j .Lif_end_41
+    nop
+.Lelif_else_47:
+    li $t9, 0
+    move $t8, $s0
+    sb $t9, 16($t8)
+.Lif_end_41:
+.LPlayer_update_state_ret_39:
+    lw $s0, 140($sp)
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size Player_update_state, . - Player_update_state
@@ -1591,115 +1524,114 @@ Player_update_state:
 	.globl Player_collect_pickups
 	.type Player_collect_pickups, @function
 Player_collect_pickups:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t7, 136($sp)
+    addiu $sp, $sp, -184
+    sw $ra, 180($sp)
+    sw $fp, 176($sp)
+    addiu $fp, $sp, 184
+    sw $s0, 172($sp)
+    sw $s1, 168($sp)
+    move $s1, $a0
+    move $t7, $s1
     lw $t8, 0($t7)
     sra $t9, $t8, 16
-    sw $t9, 140($sp)
-    lw $t7, 136($sp)
+    sw $t9, 136($sp)
+    move $t7, $s1
     lw $t8, 4($t7)
     sra $t9, $t8, 16
-    sw $t9, 144($sp)
+    sw $t9, 140($sp)
     li $t9, 0
-    sw $t9, 148($sp)
-.Lwhile_h_50:
-    lw $t8, 148($sp)
-    li $t7, 16
-    slt $t9, $t8, $t7
-    beqz $t9, .Lwhile_x_51
+    move $s0, $t9
+.Lwhile_h_52:
+    move $t9, $s0
+    li $t8, 16
+    slt $t7, $t9, $t8
+    beqz $t7, .Lwhile_x_53
     nop
     la $t8, pickups
-    lw $t7, 148($sp)
+    move $t7, $s0
     li $t6, 12
     mul $t7, $t7, $t6
     addu $t8, $t8, $t7
     lw $t9, 0($t8)
     lbu $t8, 0($t9)
     li $t7, 0
-    bne $t8, $t7, .Larm_skip_54
+    bne $t8, $t7, .Larm_skip_56
     nop
     lw $t8, 4($t9)
-    sw $t8, 152($sp)
+    sw $t8, 144($sp)
     lw $t8, 8($t9)
-    sw $t8, 156($sp)
+    sw $t8, 148($sp)
     li $t7, 8
     sw $t7, 28($sp)
     li $t7, 8
     sw $t7, 24($sp)
-    lw $t6, 156($sp)
+    lw $t6, 148($sp)
     li $t5, 4
     subu $t7, $t6, $t5
     sw $t7, 20($sp)
-    lw $t6, 152($sp)
+    lw $t6, 144($sp)
     li $t5, 4
     subu $t7, $t6, $t5
     sw $t7, 16($sp)
     li $a3, 16
     li $a2, 12
-    lw $a1, 144($sp)
-    lw $a0, 140($sp)
+    lw $a1, 140($sp)
+    lw $a0, 136($sp)
     sw $t9, 96($sp)
-    sw $t8, 100($sp)
     jal aabb_overlap
     nop
     lw $t9, 96($sp)
-    lw $t8, 100($sp)
     move $t8, $v0
-    beqz $t8, .Lif_end_55
+    beqz $t8, .Lif_end_57
     nop
-    li $t7, 10
-    lw $t5, 136($sp)
-    lw $t6, 24($t5)
-    addu $t7, $t6, $t7
-    lw $t6, 136($sp)
-    sw $t7, 24($t6)
-    move $t8, $t7
-    sw $zero, 160($sp)
-    sw $zero, 164($sp)
-    sw $zero, 168($sp)
-    li $t6, 1
-    sb $t6, 160($sp)
-    addiu $t7, $sp, 160
-    la $t5, pickups
-    lw $t4, 148($sp)
-    li $t3, 12
-    mul $t4, $t4, $t3
-    addu $t5, $t5, $t4
-    move $t6, $t5
-    lw $t5, 0($t7)
-    sw $t5, 0($t6)
-    lw $t5, 4($t7)
-    sw $t5, 4($t6)
-    lw $t5, 8($t7)
-    sw $t5, 8($t6)
-    move $t8, $t7
-.Lif_end_55:
-    j .Lmatch_end_52
-    nop
-.Larm_skip_54:
-    li $t8, 0
-    bne $t9, $t8, .Larm_skip_57
-    nop
-    j .Lmatch_end_52
-    nop
-.Larm_skip_57:
-.Lmatch_end_52:
-    li $t8, 1
-    lw $t7, 148($sp)
+    li $t8, 10
+    move $t6, $s1
+    lw $t7, 24($t6)
     addu $t8, $t7, $t8
-    sw $t8, 148($sp)
-    move $t9, $t8
-    j .Lwhile_h_50
+    move $t7, $s1
+    sw $t8, 24($t7)
+    sw $zero, 152($sp)
+    sw $zero, 156($sp)
+    sw $zero, 160($sp)
+    li $t7, 1
+    sb $t7, 152($sp)
+    addiu $t8, $sp, 152
+    la $t6, pickups
+    move $t5, $s0
+    li $t4, 12
+    mul $t5, $t5, $t4
+    addu $t6, $t6, $t5
+    move $t7, $t6
+    lw $t6, 0($t8)
+    sw $t6, 0($t7)
+    lw $t6, 4($t8)
+    sw $t6, 4($t7)
+    lw $t6, 8($t8)
+    sw $t6, 8($t7)
+.Lif_end_57:
+    j .Lmatch_end_54
     nop
-.Lwhile_x_51:
-.LPlayer_collect_pickups_ret_49:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+.Larm_skip_56:
+    li $t8, 0
+    bne $t9, $t8, .Larm_skip_59
+    nop
+    j .Lmatch_end_54
+    nop
+.Larm_skip_59:
+.Lmatch_end_54:
+    li $t9, 1
+    move $t8, $s0
+    addu $t9, $t8, $t9
+    move $s0, $t9
+    j .Lwhile_h_52
+    nop
+.Lwhile_x_53:
+.LPlayer_collect_pickups_ret_51:
+    lw $s1, 168($sp)
+    lw $s0, 172($sp)
+    lw $fp, 176($sp)
+    lw $ra, 180($sp)
+    addiu $sp, $sp, 184
     jr $ra
     nop
 	.size Player_collect_pickups, . - Player_collect_pickups
@@ -1708,29 +1640,28 @@ Player_collect_pickups:
 	.globl Camera_init
 	.type Camera_init, @function
 Camera_init:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    la $t7, .Lf320
-    lwc1 $f12, 0($t7)
-    lw $t7, 136($sp)
-    sw $t8, 0($t7)
-    move $t9, $t8
-    la $t7, .Lf320
-    lwc1 $f12, 0($t7)
-    lw $t7, 136($sp)
-    sw $t8, 4($t7)
-    move $t9, $t8
-    li $t8, 0
-    lw $t7, 136($sp)
-    sw $t8, 8($t7)
-    move $t9, $t8
-.LCamera_init_ret_58:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
+    sw $s0, 140($sp)
+    move $s0, $a0
+    la $t8, .Lf320
+    lwc1 $f12, 0($t8)
+    move $t8, $s0
+    sw $t9, 0($t8)
+    la $t8, .Lf320
+    lwc1 $f12, 0($t8)
+    move $t8, $s0
+    sw $t9, 4($t8)
+    li $t9, 0
+    move $t8, $s0
+    sw $t9, 8($t8)
+.LCamera_init_ret_60:
+    lw $s0, 140($sp)
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size Camera_init, . - Camera_init
@@ -1739,66 +1670,62 @@ Camera_init:
 	.globl Camera_follow
 	.type Camera_follow, @function
 Camera_follow:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    sw $a1, 140($sp)
-    lw $t8, 140($sp)
-    swc1 $f12, 148($sp)
-    la $t6, .Lf328
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 148($sp)
+    addiu $sp, $sp, -160
+    sw $ra, 156($sp)
+    sw $fp, 152($sp)
+    addiu $fp, $sp, 160
+    sw $s0, 148($sp)
+    move $s0, $a0
+    sw $a1, 136($sp)
+    lw $t8, 136($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf328
+    lwc1 $f12, 0($t7)
     sub.s $f12, $f14, $f12
-    sw $t9, 144($sp)
-    lw $t8, 144($sp)
-    lw $t6, 136($sp)
+    sw $t9, 140($sp)
+    lw $t8, 140($sp)
+    move $t6, $s0
     lw $t7, 0($t6)
     subu $t9, $t8, $t7
-    sw $t9, 152($sp)
-    lw $t7, 152($sp)
-    swc1 $f12, 148($sp)
-    la $t5, .Lf329
-    lwc1 $f12, 0($t5)
-    lwc1 $f14, 148($sp)
+    sw $t9, 144($sp)
+    lw $t8, 144($sp)
+    mov.s $f14, $f12
+    la $t7, .Lf329
+    lwc1 $f12, 0($t7)
     mul.s $f12, $f14, $f12
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
-    addu $t8, $t7, $t8
-    lw $t7, 136($sp)
-    sw $t8, 0($t7)
-    move $t9, $t8
-    lw $t7, 136($sp)
+    move $t7, $s0
     lw $t8, 0($t7)
-    swc1 $f12, 148($sp)
-    la $t6, .Lf320
-    lwc1 $f12, 0($t6)
-    lwc1 $f14, 148($sp)
-    c.lt.s $f14, $f12
-    li $t9, 0
-    bc1f .Lflt_61
-    nop
-    li $t9, 1
-.Lflt_61:
-    beqz $t9, .Lif_end_60
-    nop
+    addu $t9, $t8, $t9
+    move $t8, $s0
+    sw $t9, 0($t8)
+    move $t7, $s0
+    lw $t8, 0($t7)
+    mov.s $f14, $f12
     la $t7, .Lf320
     lwc1 $f12, 0($t7)
-    lw $t7, 136($sp)
-    sw $t8, 0($t7)
-    move $t9, $t8
-.Lif_end_60:
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
-    sra $t8, $t7, 16
-    lw $t7, 136($sp)
-    sw $t8, 8($t7)
-    move $t9, $t8
-.LCamera_follow_ret_59:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    c.lt.s $f14, $f12
+    li $t9, 0
+    bc1f .Lflt_63
+    nop
+    li $t9, 1
+.Lflt_63:
+    beqz $t9, .Lif_end_62
+    nop
+    la $t8, .Lf320
+    lwc1 $f12, 0($t8)
+    move $t8, $s0
+    sw $t9, 0($t8)
+.Lif_end_62:
+    move $t7, $s0
+    lw $t8, 0($t7)
+    sra $t9, $t8, 16
+    move $t8, $s0
+    sw $t9, 8($t8)
+.LCamera_follow_ret_61:
+    lw $s0, 148($sp)
+    lw $fp, 152($sp)
+    lw $ra, 156($sp)
+    addiu $sp, $sp, 160
     jr $ra
     nop
 	.size Camera_follow, . - Camera_follow
@@ -1807,85 +1734,87 @@ Camera_follow:
 	.globl draw_rect_world
 	.type draw_rect_world, @function
 draw_rect_world:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    sw $a1, 140($sp)
-    sw $a2, 144($sp)
-    sw $a3, 148($sp)
+    addiu $sp, $sp, -184
+    sw $ra, 180($sp)
+    sw $fp, 176($sp)
+    addiu $fp, $sp, 184
+    sw $s0, 172($sp)
+    sw $s1, 168($sp)
+    sw $s2, 164($sp)
+    sw $s3, 160($sp)
+    sw $s4, 156($sp)
+    sw $s5, 152($sp)
+    move $s2, $a0
+    move $s0, $a1
+    move $s1, $a2
+    move $s3, $a3
     lw $t9, 16($fp)
-    sw $t9, 152($sp)
+    move $s4, $t9
     lw $t9, 20($fp)
-    sw $t9, 156($sp)
-    lw $t8, 136($sp)
-    lw $t7, 152($sp)
+    move $s5, $t9
+    move $t8, $s2
+    move $t7, $s4
     subu $t9, $t8, $t7
-    sw $t9, 160($sp)
-    lw $t7, 160($sp)
-    lw $t6, 144($sp)
-    addu $t8, $t7, $t6
-    li $t7, 0
-    slt $t9, $t8, $t7
-    beqz $t9, .Lif_end_63
-    nop
-    j .Ldraw_rect_world_ret_62
-    nop
-.Lif_end_63:
-    lw $t8, 160($sp)
-    li $t7, 320
-    sgt $t9, $t8, $t7
-    beqz $t9, .Lif_end_64
-    nop
-    j .Ldraw_rect_world_ret_62
-    nop
-.Lif_end_64:
-    lw $t9, 160($sp)
-    sw $t9, 164($sp)
-    lw $t8, 160($sp)
-    lw $t7, 144($sp)
+    sw $t9, 136($sp)
+    lw $t8, 136($sp)
+    move $t7, $s1
     addu $t9, $t8, $t7
-    sw $t9, 168($sp)
-    lw $t8, 164($sp)
-    li $t7, 0
-    slt $t9, $t8, $t7
-    beqz $t9, .Lif_end_65
+    bgez $t9, .Lif_end_65
     nop
-    li $t8, 0
-    sw $t8, 164($sp)
-    move $t9, $t8
+    j .Ldraw_rect_world_ret_64
+    nop
 .Lif_end_65:
-    lw $t8, 168($sp)
-    li $t7, 320
-    sgt $t9, $t8, $t7
-    beqz $t9, .Lif_end_66
-    nop
+    lw $t9, 136($sp)
     li $t8, 320
-    sw $t8, 168($sp)
-    move $t9, $t8
+    slt $t7, $t8, $t9
+    beqz $t7, .Lif_end_66
+    nop
+    j .Ldraw_rect_world_ret_64
+    nop
 .Lif_end_66:
-    lw $a0, 156($sp)
-    sw $t9, 96($sp)
+    lw $t9, 136($sp)
+    sw $t9, 140($sp)
+    lw $t8, 136($sp)
+    move $t7, $s1
+    addu $t9, $t8, $t7
+    sw $t9, 144($sp)
+    lw $t9, 140($sp)
+    bgez $t9, .Lif_end_67
+    nop
+    li $t9, 0
+    sw $t9, 140($sp)
+.Lif_end_67:
+    lw $t9, 144($sp)
+    li $t8, 320
+    slt $t7, $t8, $t9
+    beqz $t7, .Lif_end_68
+    nop
+    li $t9, 320
+    sw $t9, 144($sp)
+.Lif_end_68:
+    move $a0, $s5
     jal rdpq_set_fill_color
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    lw $t8, 140($sp)
-    lw $t7, 148($sp)
+    move $t8, $s0
+    move $t7, $s3
     addu $a3, $t8, $t7
-    lw $a2, 168($sp)
-    lw $a1, 140($sp)
-    lw $a0, 164($sp)
-    sw $t9, 96($sp)
+    lw $a2, 144($sp)
+    move $a1, $s0
+    lw $a0, 140($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-.Ldraw_rect_world_ret_62:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+.Ldraw_rect_world_ret_64:
+    lw $s5, 152($sp)
+    lw $s4, 156($sp)
+    lw $s3, 160($sp)
+    lw $s2, 164($sp)
+    lw $s1, 168($sp)
+    lw $s0, 172($sp)
+    lw $fp, 176($sp)
+    lw $ra, 180($sp)
+    addiu $sp, $sp, 184
     jr $ra
     nop
 	.size draw_rect_world, . - draw_rect_world
@@ -1894,70 +1823,71 @@ draw_rect_world:
 	.globl draw_platforms
 	.type draw_platforms, @function
 draw_platforms:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    addiu $sp, $sp, -176
+    sw $ra, 172($sp)
+    sw $fp, 168($sp)
+    addiu $fp, $sp, 176
+    sw $s0, 164($sp)
+    sw $s1, 160($sp)
+    move $s1, $a0
     li $t9, 0
-    sw $t9, 140($sp)
-.Lwhile_h_68:
-    lw $t8, 140($sp)
-    li $t7, 8
-    slt $t9, $t8, $t7
-    beqz $t9, .Lwhile_x_69
+    move $s0, $t9
+.Lwhile_h_70:
+    move $t9, $s0
+    li $t8, 8
+    slt $t7, $t9, $t8
+    beqz $t7, .Lwhile_x_71
     nop
     la $t8, platforms
-    lw $t7, 140($sp)
+    move $t7, $s0
     li $t6, 20
     mul $t7, $t7, $t6
     addu $t8, $t8, $t7
     move $t9, $t8
-    sw $t9, 144($sp)
-    lw $t8, 144($sp)
+    sw $t9, 136($sp)
+    lw $t8, 136($sp)
     lbu $t9, 16($t8)
-    beqz $t9, .Lif_end_70
+    beqz $t9, .Lif_end_72
     nop
     li $t8, 862335999
-    sw $t8, 148($sp)
-    lw $t8, 136($sp)
-    sw $t8, 152($sp)
-    lw $t7, 144($sp)
+    sw $t8, 140($sp)
+    move $t8, $s1
+    sw $t8, 144($sp)
+    lw $t7, 136($sp)
     lw $t8, 12($t7)
-    sw $t8, 156($sp)
-    lw $t7, 144($sp)
+    sw $t8, 148($sp)
+    lw $t7, 136($sp)
     lw $t8, 8($t7)
-    sw $t8, 160($sp)
-    lw $t7, 144($sp)
+    sw $t8, 152($sp)
+    lw $t7, 136($sp)
     lw $t8, 4($t7)
-    sw $t8, 164($sp)
-    lw $t8, 144($sp)
+    sw $t8, 156($sp)
+    lw $t8, 136($sp)
     lw $a0, 0($t8)
-    lw $a1, 164($sp)
-    lw $a2, 160($sp)
-    lw $a3, 156($sp)
-    lw $t8, 152($sp)
+    lw $a1, 156($sp)
+    lw $a2, 152($sp)
+    lw $a3, 148($sp)
+    lw $t8, 144($sp)
     sw $t8, 16($sp)
-    lw $t8, 148($sp)
+    lw $t8, 140($sp)
     sw $t8, 20($sp)
-    sw $t9, 96($sp)
     jal draw_rect_world
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-.Lif_end_70:
-    li $t8, 1
-    lw $t7, 140($sp)
-    addu $t8, $t7, $t8
-    sw $t8, 140($sp)
-    move $t9, $t8
-    j .Lwhile_h_68
+.Lif_end_72:
+    li $t9, 1
+    move $t8, $s0
+    addu $t9, $t8, $t9
+    move $s0, $t9
+    j .Lwhile_h_70
     nop
-.Lwhile_x_69:
-.Ldraw_platforms_ret_67:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+.Lwhile_x_71:
+.Ldraw_platforms_ret_69:
+    lw $s1, 160($sp)
+    lw $s0, 164($sp)
+    lw $fp, 168($sp)
+    lw $ra, 172($sp)
+    addiu $sp, $sp, 176
     jr $ra
     nop
 	.size draw_platforms, . - draw_platforms
@@ -1966,160 +1896,150 @@ draw_platforms:
 	.globl draw_player
 	.type draw_player, @function
 draw_player:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    sw $a1, 140($sp)
-    lw $t7, 136($sp)
+    addiu $sp, $sp, -168
+    sw $ra, 164($sp)
+    sw $fp, 160($sp)
+    addiu $fp, $sp, 168
+    sw $s0, 156($sp)
+    sw $s1, 152($sp)
+    sw $s2, 148($sp)
+    move $s1, $a0
+    move $s2, $a1
+    move $t7, $s1
     lw $t8, 0($t7)
     sra $t9, $t8, 16
-    sw $t9, 144($sp)
-    lw $t7, 136($sp)
+    sw $t9, 136($sp)
+    move $t7, $s1
     lw $t8, 4($t7)
     sra $t9, $t8, 16
-    sw $t9, 148($sp)
-    lw $t8, 144($sp)
-    lw $t7, 140($sp)
-    subu $t9, $t8, $t7
-    sw $t9, 152($sp)
-    lw $t6, 152($sp)
-    li $t5, 12
-    addu $t7, $t6, $t5
-    li $t6, 0
-    slt $t8, $t7, $t6
-    lw $t6, 152($sp)
-    li $t5, 320
-    sgt $t7, $t6, $t5
-    or $t6, $t8, $t7
-    sltu $t9, $zero, $t6
-    beqz $t9, .Lif_end_72
-    nop
-    j .Ldraw_player_ret_71
-    nop
-.Lif_end_72:
-    li $t9, 4282664191
-    sw $t9, 156($sp)
+    sw $t9, 140($sp)
     lw $t8, 136($sp)
+    move $t7, $s2
+    subu $t9, $t8, $t7
+    sw $t9, 144($sp)
+    lw $t8, 144($sp)
+    li $t7, 12
+    addu $t9, $t8, $t7
+    bltz $t9, .Lsc_75
+    nop
+    lw $t9, 144($sp)
+    li $t8, 320
+    slt $t7, $t8, $t9
+    beqz $t7, .Lif_end_74
+    nop
+.Lsc_75:
+    j .Ldraw_player_ret_73
+    nop
+.Lif_end_74:
+    li $t9, 4282664191
+    move $s0, $t9
+    move $t8, $s1
     lbu $t9, 16($t8)
     li $t8, 0
-    bne $t9, $t8, .Larm_skip_75
+    bne $t9, $t8, .Larm_skip_78
     nop
-    li $t7, 4282664191
-    sw $t7, 156($sp)
-    move $t8, $t7
-    j .Lmatch_end_73
+    li $t8, 4282664191
+    move $s0, $t8
+    j .Lmatch_end_76
     nop
-.Larm_skip_75:
+.Larm_skip_78:
     li $t8, 1
-    bne $t9, $t8, .Larm_skip_77
+    bne $t9, $t8, .Larm_skip_80
     nop
-    li $t7, 4284883711
-    sw $t7, 156($sp)
-    move $t8, $t7
-    j .Lmatch_end_73
+    li $t8, 4284883711
+    move $s0, $t8
+    j .Lmatch_end_76
     nop
-.Larm_skip_77:
+.Larm_skip_80:
     li $t8, 2
-    bne $t9, $t8, .Larm_skip_79
+    bne $t9, $t8, .Larm_skip_82
     nop
-    li $t7, 4289331455
-    sw $t7, 156($sp)
-    move $t8, $t7
-    j .Lmatch_end_73
+    li $t8, 4289331455
+    move $s0, $t8
+    j .Lmatch_end_76
     nop
-.Larm_skip_79:
+.Larm_skip_82:
     li $t8, 3
-    bne $t9, $t8, .Larm_skip_81
+    bne $t9, $t8, .Larm_skip_84
     nop
-    li $t7, 4287120639
-    sw $t7, 156($sp)
-    move $t8, $t7
-    j .Lmatch_end_73
+    li $t8, 4287120639
+    move $s0, $t8
+    j .Lmatch_end_76
     nop
-.Larm_skip_81:
+.Larm_skip_84:
     li $t8, 4
-    bne $t9, $t8, .Larm_skip_83
+    bne $t9, $t8, .Larm_skip_86
     nop
-    li $t7, 4294945535
-    sw $t7, 156($sp)
-    move $t8, $t7
-    j .Lmatch_end_73
+    li $t8, 4294945535
+    move $s0, $t8
+    j .Lmatch_end_76
     nop
-.Larm_skip_83:
-.Lmatch_end_73:
-    lw $a0, 156($sp)
-    sw $t9, 96($sp)
+.Larm_skip_86:
+.Lmatch_end_76:
+    move $a0, $s0
     jal rdpq_set_fill_color
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    lw $t8, 148($sp)
+    lw $t8, 140($sp)
     li $t7, 16
     addu $a3, $t8, $t7
-    lw $t8, 152($sp)
+    lw $t8, 144($sp)
     li $t7, 12
     addu $a2, $t8, $t7
-    lw $a1, 148($sp)
-    lw $a0, 152($sp)
-    sw $t9, 96($sp)
+    lw $a1, 140($sp)
+    lw $a0, 144($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a0, 4294967295
-    sw $t9, 96($sp)
     jal rdpq_set_fill_color
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    lw $t8, 136($sp)
+    move $t8, $s1
     lbu $t9, 18($t8)
-    beqz $t9, .Lif_else_85
+    beqz $t9, .Lif_else_88
     nop
-    lw $t8, 148($sp)
+    lw $t8, 140($sp)
     li $t7, 6
     addu $a3, $t8, $t7
-    lw $t8, 152($sp)
+    lw $t8, 144($sp)
     li $t7, 10
     addu $a2, $t8, $t7
-    lw $t8, 148($sp)
+    lw $t8, 140($sp)
     li $t7, 4
     addu $a1, $t8, $t7
-    lw $t8, 152($sp)
+    lw $t8, 144($sp)
     li $t7, 8
     addu $a0, $t8, $t7
-    sw $t9, 96($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    j .Lif_end_84
+    j .Lif_end_87
     nop
-.Lif_else_85:
-    lw $t8, 148($sp)
+.Lif_else_88:
+    lw $t8, 140($sp)
     li $t7, 6
     addu $a3, $t8, $t7
-    lw $t8, 152($sp)
+    lw $t8, 144($sp)
     li $t7, 4
     addu $a2, $t8, $t7
-    lw $t8, 148($sp)
+    lw $t8, 140($sp)
     li $t7, 4
     addu $a1, $t8, $t7
-    lw $t8, 152($sp)
+    lw $t8, 144($sp)
     li $t7, 2
     addu $a0, $t8, $t7
-    sw $t9, 96($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-.Lif_end_84:
-.Ldraw_player_ret_71:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+.Lif_end_87:
+.Ldraw_player_ret_73:
+    lw $s2, 148($sp)
+    lw $s1, 152($sp)
+    lw $s0, 156($sp)
+    lw $fp, 160($sp)
+    lw $ra, 164($sp)
+    addiu $sp, $sp, 168
     jr $ra
     nop
 	.size draw_player, . - draw_player
@@ -2128,10 +2048,11 @@ draw_player:
 	.globl draw_pickup
 	.type draw_pickup, @function
 draw_pickup:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -176
+    sw $ra, 172($sp)
+    sw $fp, 168($sp)
+    addiu $fp, $sp, 176
+    sw $s0, 164($sp)
     move $t9, $a0
     addiu $t8, $sp, 136
     lw $t7, 0($t9)
@@ -2140,75 +2061,73 @@ draw_pickup:
     sw $t7, 4($t8)
     lw $t7, 8($t9)
     sw $t7, 8($t8)
-    sw $a1, 148($sp)
+    move $s0, $a1
     addiu $t9, $sp, 136
     lbu $t8, 0($t9)
     li $t7, 0
-    bne $t8, $t7, .Larm_skip_89
+    bne $t8, $t7, .Larm_skip_92
     nop
     lw $t8, 4($t9)
-    sw $t8, 152($sp)
+    sw $t8, 148($sp)
     lw $t8, 8($t9)
-    sw $t8, 156($sp)
-    lw $t7, 152($sp)
-    lw $t6, 148($sp)
+    sw $t8, 152($sp)
+    lw $t7, 148($sp)
+    move $t6, $s0
     subu $t8, $t7, $t6
-    sw $t8, 160($sp)
-    lw $t6, 160($sp)
-    li $t4, 8
-    subu $t5, $zero, $t4
-    slt $t7, $t6, $t5
-    lw $t5, 160($sp)
-    li $t4, 320
-    sgt $t6, $t5, $t4
-    or $t5, $t7, $t6
-    sltu $t8, $zero, $t5
-    beqz $t8, .Lif_end_90
+    sw $t8, 156($sp)
+    lw $t8, 156($sp)
+    li $t6, 8
+    subu $t7, $zero, $t6
+    slt $t6, $t8, $t7
+    bnez $t6, .Lsc_94
     nop
-    j .Ldraw_pickup_ret_86
+    lw $t8, 156($sp)
+    li $t7, 320
+    slt $t6, $t7, $t8
+    beqz $t6, .Lif_end_93
     nop
-.Lif_end_90:
+.Lsc_94:
+    j .Ldraw_pickup_ret_89
+    nop
+.Lif_end_93:
     li $a0, 4292673791
     sw $t9, 96($sp)
-    sw $t8, 100($sp)
     jal rdpq_set_fill_color
     nop
     lw $t9, 96($sp)
-    lw $t8, 100($sp)
     move $t8, $v0
-    lw $t7, 156($sp)
+    lw $t7, 152($sp)
     li $t6, 4
     addu $a3, $t7, $t6
-    lw $t7, 160($sp)
-    li $t6, 4
-    addu $a2, $t7, $t6
     lw $t7, 156($sp)
     li $t6, 4
+    addu $a2, $t7, $t6
+    lw $t7, 152($sp)
+    li $t6, 4
     subu $a1, $t7, $t6
-    lw $t7, 160($sp)
+    lw $t7, 156($sp)
     li $t6, 4
     subu $a0, $t7, $t6
     sw $t9, 96($sp)
-    sw $t8, 100($sp)
     jal rdpq_fill_rectangle
     nop
     lw $t9, 96($sp)
-    lw $t8, 100($sp)
     move $t8, $v0
-    j .Lmatch_end_87
-    nop
-.Larm_skip_89:
-    li $t8, 0
-    bne $t9, $t8, .Larm_skip_92
-    nop
-    j .Lmatch_end_87
+    j .Lmatch_end_90
     nop
 .Larm_skip_92:
-.Lmatch_end_87:
-.Ldraw_pickup_ret_86:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    li $t8, 0
+    bne $t9, $t8, .Larm_skip_96
+    nop
+    j .Lmatch_end_90
+    nop
+.Larm_skip_96:
+.Lmatch_end_90:
+.Ldraw_pickup_ret_89:
+    lw $s0, 164($sp)
+    lw $fp, 168($sp)
+    lw $ra, 172($sp)
+    addiu $sp, $sp, 176
     jr $ra
     nop
 	.size draw_pickup, . - draw_pickup
@@ -2217,45 +2136,46 @@ draw_pickup:
 	.globl draw_pickups
 	.type draw_pickups, @function
 draw_pickups:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    addiu $sp, $sp, -160
+    sw $ra, 156($sp)
+    sw $fp, 152($sp)
+    addiu $fp, $sp, 160
+    sw $s0, 148($sp)
+    sw $s1, 144($sp)
+    move $s1, $a0
     li $t9, 0
-    sw $t9, 140($sp)
-.Lwhile_h_94:
-    lw $t8, 140($sp)
-    li $t7, 16
-    slt $t9, $t8, $t7
-    beqz $t9, .Lwhile_x_95
+    move $s0, $t9
+.Lwhile_h_98:
+    move $t9, $s0
+    li $t8, 16
+    slt $t7, $t9, $t8
+    beqz $t7, .Lwhile_x_99
     nop
-    lw $t8, 136($sp)
-    sw $t8, 144($sp)
+    move $t8, $s1
+    sw $t8, 136($sp)
     la $t8, pickups
-    lw $t7, 140($sp)
+    move $t7, $s0
     li $t6, 12
     mul $t7, $t7, $t6
     addu $t8, $t8, $t7
     lw $a0, 0($t8)
-    lw $a1, 144($sp)
-    sw $t9, 96($sp)
+    lw $a1, 136($sp)
     jal draw_pickup
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    li $t8, 1
-    lw $t7, 140($sp)
-    addu $t8, $t7, $t8
-    sw $t8, 140($sp)
-    move $t9, $t8
-    j .Lwhile_h_94
+    li $t9, 1
+    move $t8, $s0
+    addu $t9, $t8, $t9
+    move $s0, $t9
+    j .Lwhile_h_98
     nop
-.Lwhile_x_95:
-.Ldraw_pickups_ret_93:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+.Lwhile_x_99:
+.Ldraw_pickups_ret_97:
+    lw $s1, 144($sp)
+    lw $s0, 148($sp)
+    lw $fp, 152($sp)
+    lw $ra, 156($sp)
+    addiu $sp, $sp, 160
     jr $ra
     nop
 	.size draw_pickups, . - draw_pickups
@@ -2264,90 +2184,81 @@ draw_pickups:
 	.globl draw_hud
 	.type draw_hud, @function
 draw_hud:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    addiu $sp, $sp, -160
+    sw $ra, 156($sp)
+    sw $fp, 152($sp)
+    addiu $fp, $sp, 160
+    sw $s0, 148($sp)
+    sw $s1, 144($sp)
+    move $s1, $a0
     li $t9, 0
-    sw $t9, 140($sp)
-.Lwhile_h_97:
-    lw $t8, 140($sp)
-    lw $t6, 136($sp)
-    lw $t7, 20($t6)
-    slt $t9, $t8, $t7
-    beqz $t9, .Lwhile_x_98
+    move $s0, $t9
+.Lwhile_h_101:
+    move $t9, $s0
+    move $t7, $s1
+    lw $t8, 20($t7)
+    slt $t7, $t9, $t8
+    beqz $t7, .Lwhile_x_102
     nop
     li $t8, 8
-    lw $t6, 140($sp)
+    move $t6, $s0
     li $t5, 14
     mul $t7, $t6, $t5
     addu $t9, $t8, $t7
-    sw $t9, 144($sp)
+    sw $t9, 136($sp)
     li $a0, 4280427263
-    sw $t9, 96($sp)
     jal rdpq_set_fill_color
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 16
-    lw $t8, 144($sp)
+    lw $t8, 136($sp)
     li $t7, 10
     addu $a2, $t8, $t7
     li $a1, 8
-    lw $a0, 144($sp)
-    sw $t9, 96($sp)
+    lw $a0, 136($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    li $t8, 1
-    lw $t7, 140($sp)
-    addu $t8, $t7, $t8
-    sw $t8, 140($sp)
-    move $t9, $t8
-    j .Lwhile_h_97
+    li $t9, 1
+    move $t8, $s0
+    addu $t9, $t8, $t9
+    move $s0, $t9
+    j .Lwhile_h_101
     nop
-.Lwhile_x_98:
-    lw $t8, 136($sp)
+.Lwhile_x_102:
+    move $t8, $s1
     lw $t9, 24($t8)
-    sw $t9, 148($sp)
-    lw $t8, 148($sp)
-    li $t7, 200
-    sgt $t9, $t8, $t7
-    beqz $t9, .Lif_end_99
+    sw $t9, 140($sp)
+    lw $t9, 140($sp)
+    slti $t8, $t9, 201
+    bnez $t8, .Lif_end_103
     nop
-    li $t8, 200
-    sw $t8, 148($sp)
-    move $t9, $t8
-.Lif_end_99:
-    lw $t8, 148($sp)
-    li $t7, 0
-    sgt $t9, $t8, $t7
-    beqz $t9, .Lif_end_100
+    li $t9, 200
+    sw $t9, 140($sp)
+.Lif_end_103:
+    lw $t9, 140($sp)
+    blez $t9, .Lif_end_104
     nop
     li $a0, 4292691199
-    sw $t9, 96($sp)
     jal rdpq_set_fill_color
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 26
     li $t8, 8
-    lw $t7, 148($sp)
+    lw $t7, 140($sp)
     addu $a2, $t8, $t7
     li $a1, 20
     li $a0, 8
-    sw $t9, 96($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-.Lif_end_100:
-.Ldraw_hud_ret_96:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+.Lif_end_104:
+.Ldraw_hud_ret_100:
+    lw $s1, 144($sp)
+    lw $s0, 148($sp)
+    lw $fp, 152($sp)
+    lw $ra, 156($sp)
+    addiu $sp, $sp, 160
     jr $ra
     nop
 	.size draw_hud, . - draw_hud
@@ -2356,105 +2267,90 @@ draw_hud:
 	.globl update_playing
 	.type update_playing, @function
 update_playing:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
+    sw $s0, 140($sp)
+    move $s0, $a0
     move $t9, $a1
-    addiu $t8, $sp, 140
+    addiu $t8, $sp, 136
     lw $t7, 0($t9)
     sw $t7, 0($t8)
-    lw $t8, 136($sp)
+    move $t8, $s0
     move $a0, $t8
-    addiu $a1, $sp, 140
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    addiu $a1, $sp, 136
+    sw $t8, 96($sp)
     jal Player_handle_input
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
+    lw $t8, 96($sp)
     move $t9, $v0
-    lw $t8, 136($sp)
+    move $t8, $s0
     move $a0, $t8
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    sw $t8, 96($sp)
     jal Player_physics
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
+    lw $t8, 96($sp)
     move $t9, $v0
-    lw $t8, 136($sp)
+    move $t8, $s0
     move $a0, $t8
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    sw $t8, 96($sp)
     jal Player_resolve_collisions
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
+    lw $t8, 96($sp)
     move $t9, $v0
-    lw $t8, 136($sp)
+    move $t8, $s0
     move $a0, $t8
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    sw $t8, 96($sp)
     jal Player_update_state
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
+    lw $t8, 96($sp)
     move $t9, $v0
-    lw $t8, 136($sp)
+    move $t8, $s0
     move $a0, $t8
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    sw $t8, 96($sp)
     jal Player_collect_pickups
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
+    lw $t8, 96($sp)
     move $t9, $v0
-    lw $t8, 136($sp)
+    move $t8, $s0
     addiu $t8, $t8, 36
     move $a0, $t8
-    lw $t7, 136($sp)
+    move $t7, $s0
     lw $a1, 0($t7)
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    sw $t8, 96($sp)
     jal Camera_follow
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
+    lw $t8, 96($sp)
     move $t9, $v0
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 4($t7)
     lb $t9, 3($t8)
-    beqz $t9, .Lif_end_102
+    beqz $t9, .Lif_end_106
     nop
-    li $t8, 2
-    lw $t7, 136($sp)
-    sb $t8, 48($t7)
-    move $t9, $t8
-.Lif_end_102:
-    lw $t7, 136($sp)
-    lw $t8, 20($t7)
-    li $t7, 0
-    sle $t9, $t8, $t7
-    beqz $t9, .Lif_end_103
+    li $t9, 2
+    move $t8, $s0
+    sb $t9, 48($t8)
+.Lif_end_106:
+    move $t8, $s0
+    lw $t9, 20($t8)
+    bgtz $t9, .Lif_end_107
     nop
-    li $t8, 3
-    lw $t7, 136($sp)
-    sb $t8, 48($t7)
-    move $t9, $t8
-.Lif_end_103:
-    li $t8, 1
-    lw $t6, 136($sp)
-    lw $t7, 52($t6)
-    addu $t8, $t7, $t8
-    lw $t7, 136($sp)
-    sw $t8, 52($t7)
-    move $t9, $t8
-.Lupdate_playing_ret_101:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    li $t9, 3
+    move $t8, $s0
+    sb $t9, 48($t8)
+.Lif_end_107:
+    li $t9, 1
+    move $t7, $s0
+    lw $t8, 52($t7)
+    addu $t9, $t8, $t9
+    move $t8, $s0
+    sw $t9, 52($t8)
+.Lupdate_playing_ret_105:
+    lw $s0, 140($sp)
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size update_playing, . - update_playing
@@ -2463,34 +2359,36 @@ update_playing:
 	.globl update_title
 	.type update_title, @function
 update_title:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
+    sw $s0, 140($sp)
+    move $s0, $a0
     move $t9, $a1
-    addiu $t8, $sp, 140
+    addiu $t8, $sp, 136
     lw $t7, 0($t9)
     sw $t7, 0($t8)
-    addiu $t6, $sp, 140
-    lw $t7, 4($t6)
-    lb $t8, 3($t7)
-    addiu $t5, $sp, 140
-    lw $t6, 4($t5)
-    lb $t7, 0($t6)
-    or $t6, $t8, $t7
-    sltu $t9, $zero, $t6
-    beqz $t9, .Lif_end_105
+    addiu $t7, $sp, 136
+    lw $t8, 4($t7)
+    lb $t9, 3($t8)
+    bnez $t9, .Lsc_110
     nop
-    li $t8, 1
-    lw $t7, 136($sp)
-    sb $t8, 48($t7)
-    move $t9, $t8
-.Lif_end_105:
-.Lupdate_title_ret_104:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    addiu $t7, $sp, 136
+    lw $t8, 4($t7)
+    lb $t9, 0($t8)
+    beqz $t9, .Lif_end_109
+    nop
+.Lsc_110:
+    li $t9, 1
+    move $t8, $s0
+    sb $t9, 48($t8)
+.Lif_end_109:
+.Lupdate_title_ret_108:
+    lw $s0, 140($sp)
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size update_title, . - update_title
@@ -2499,29 +2397,30 @@ update_title:
 	.globl update_paused
 	.type update_paused, @function
 update_paused:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
+    sw $s0, 140($sp)
+    move $s0, $a0
     move $t9, $a1
-    addiu $t8, $sp, 140
+    addiu $t8, $sp, 136
     lw $t7, 0($t9)
     sw $t7, 0($t8)
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 4($t7)
     lb $t9, 3($t8)
-    beqz $t9, .Lif_end_107
+    beqz $t9, .Lif_end_112
     nop
-    li $t8, 1
-    lw $t7, 136($sp)
-    sb $t8, 48($t7)
-    move $t9, $t8
-.Lif_end_107:
-.Lupdate_paused_ret_106:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    li $t9, 1
+    move $t8, $s0
+    sb $t9, 48($t8)
+.Lif_end_112:
+.Lupdate_paused_ret_111:
+    lw $s0, 140($sp)
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size update_paused, . - update_paused
@@ -2530,71 +2429,63 @@ update_paused:
 	.globl update_gameover
 	.type update_gameover, @function
 update_gameover:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
+    sw $s0, 140($sp)
+    move $s0, $a0
     move $t9, $a1
-    addiu $t8, $sp, 140
+    addiu $t8, $sp, 136
     lw $t7, 0($t9)
     sw $t7, 0($t8)
-    addiu $t6, $sp, 140
-    lw $t7, 4($t6)
-    lb $t8, 3($t7)
-    addiu $t5, $sp, 140
-    lw $t6, 4($t5)
-    lb $t7, 0($t6)
-    or $t6, $t8, $t7
-    sltu $t9, $zero, $t6
-    beqz $t9, .Lif_end_109
+    addiu $t7, $sp, 136
+    lw $t8, 4($t7)
+    lb $t9, 3($t8)
+    bnez $t9, .Lsc_115
     nop
-    lw $t8, 136($sp)
+    addiu $t7, $sp, 136
+    lw $t8, 4($t7)
+    lb $t9, 0($t8)
+    beqz $t9, .Lif_end_114
+    nop
+.Lsc_115:
+    move $t8, $s0
     move $a0, $t8
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    sw $t8, 96($sp)
     jal Player_init
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
+    lw $t8, 96($sp)
     move $t9, $v0
-    lw $t8, 136($sp)
+    move $t8, $s0
     addiu $t8, $t8, 36
     move $a0, $t8
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    sw $t8, 96($sp)
     jal Camera_init
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
+    lw $t8, 96($sp)
     move $t9, $v0
-    li $t8, 0
-    lw $t7, 136($sp)
-    sw $t8, 52($t7)
-    move $t9, $t8
-    li $t8, 0
-    lw $t7, 136($sp)
-    sw $t8, 56($t7)
-    move $t9, $t8
-    sw $t9, 96($sp)
+    li $t9, 0
+    move $t8, $s0
+    sw $t9, 52($t8)
+    li $t9, 0
+    move $t8, $s0
+    sw $t9, 56($t8)
     jal init_platforms
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal init_pickups
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    li $t8, 0
-    lw $t7, 136($sp)
-    sb $t8, 48($t7)
-    move $t9, $t8
-.Lif_end_109:
-.Lupdate_gameover_ret_108:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    li $t9, 0
+    move $t8, $s0
+    sb $t9, 48($t8)
+.Lif_end_114:
+.Lupdate_gameover_ret_113:
+    lw $s0, 140($sp)
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size update_gameover, . - update_gameover
@@ -2603,82 +2494,76 @@ update_gameover:
 	.globl update
 	.type update, @function
 update:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
+    sw $s0, 140($sp)
+    move $s0, $a0
     move $t9, $a1
-    addiu $t8, $sp, 140
+    addiu $t8, $sp, 136
     lw $t7, 0($t9)
     sw $t7, 0($t8)
-    lw $t8, 136($sp)
+    move $t8, $s0
     lbu $t9, 48($t8)
     li $t8, 0
-    bne $t9, $t8, .Larm_skip_113
+    bne $t9, $t8, .Larm_skip_119
     nop
-    addiu $a1, $sp, 140
-    lw $a0, 136($sp)
+    addiu $a1, $sp, 136
+    move $a0, $s0
     sw $t9, 96($sp)
-    sw $t8, 100($sp)
     jal update_title
     nop
     lw $t9, 96($sp)
-    lw $t8, 100($sp)
     move $t8, $v0
-    j .Lmatch_end_111
+    j .Lmatch_end_117
     nop
-.Larm_skip_113:
+.Larm_skip_119:
     li $t8, 1
-    bne $t9, $t8, .Larm_skip_115
+    bne $t9, $t8, .Larm_skip_121
     nop
-    addiu $a1, $sp, 140
-    lw $a0, 136($sp)
+    addiu $a1, $sp, 136
+    move $a0, $s0
     sw $t9, 96($sp)
-    sw $t8, 100($sp)
     jal update_playing
     nop
     lw $t9, 96($sp)
-    lw $t8, 100($sp)
     move $t8, $v0
-    j .Lmatch_end_111
+    j .Lmatch_end_117
     nop
-.Larm_skip_115:
+.Larm_skip_121:
     li $t8, 2
-    bne $t9, $t8, .Larm_skip_117
+    bne $t9, $t8, .Larm_skip_123
     nop
-    addiu $a1, $sp, 140
-    lw $a0, 136($sp)
+    addiu $a1, $sp, 136
+    move $a0, $s0
     sw $t9, 96($sp)
-    sw $t8, 100($sp)
     jal update_paused
     nop
     lw $t9, 96($sp)
-    lw $t8, 100($sp)
     move $t8, $v0
-    j .Lmatch_end_111
+    j .Lmatch_end_117
     nop
-.Larm_skip_117:
+.Larm_skip_123:
     li $t8, 3
-    bne $t9, $t8, .Larm_skip_119
+    bne $t9, $t8, .Larm_skip_125
     nop
-    addiu $a1, $sp, 140
-    lw $a0, 136($sp)
+    addiu $a1, $sp, 136
+    move $a0, $s0
     sw $t9, 96($sp)
-    sw $t8, 100($sp)
     jal update_gameover
     nop
     lw $t9, 96($sp)
-    lw $t8, 100($sp)
     move $t8, $v0
-    j .Lmatch_end_111
+    j .Lmatch_end_117
     nop
-.Larm_skip_119:
-.Lmatch_end_111:
-.Lupdate_ret_110:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+.Larm_skip_125:
+.Lmatch_end_117:
+.Lupdate_ret_116:
+    lw $s0, 140($sp)
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size update, . - update
@@ -2687,81 +2572,63 @@ update:
 	.globl render_world
 	.type render_world, @function
 render_world:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $t8, 136($sp)
+    addiu $sp, $sp, -160
+    sw $ra, 156($sp)
+    sw $fp, 152($sp)
+    addiu $fp, $sp, 160
+    sw $s0, 148($sp)
+    move $s0, $a0
+    move $t8, $s0
     addiu $t8, $t8, 36
     lw $t9, 8($t8)
-    sw $t9, 140($sp)
+    sw $t9, 136($sp)
     li $a0, 1435028735
-    sw $t9, 96($sp)
     jal rdpq_set_mode_fill
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 240
     li $a2, 320
     li $a1, 0
     li $a0, 0
-    sw $t9, 96($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_sync_pipe
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    lw $a0, 140($sp)
-    sw $t9, 96($sp)
+    lw $a0, 136($sp)
     jal draw_platforms
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_sync_pipe
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    lw $a0, 140($sp)
-    sw $t9, 96($sp)
+    lw $a0, 136($sp)
     jal draw_pickups
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_sync_pipe
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    lw $t8, 140($sp)
-    sw $t8, 144($sp)
-    lw $a0, 136($sp)
-    lw $a1, 144($sp)
-    sw $t9, 96($sp)
+    lw $t8, 136($sp)
+    sw $t8, 140($sp)
+    move $a0, $s0
+    lw $a1, 140($sp)
     jal draw_player
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_sync_pipe
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    lw $a0, 136($sp)
-    sw $t9, 96($sp)
+    move $a0, $s0
     jal draw_hud
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-.Lrender_world_ret_120:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+.Lrender_world_ret_126:
+    lw $s0, 148($sp)
+    lw $fp, 152($sp)
+    lw $ra, 156($sp)
+    addiu $sp, $sp, 160
     jr $ra
     nop
 	.size render_world, . - render_world
@@ -2770,69 +2637,53 @@ render_world:
 	.globl render_title
 	.type render_title, @function
 render_title:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -144
+    sw $ra, 140($sp)
+    sw $fp, 136($sp)
+    addiu $fp, $sp, 144
     li $a0, 437930751
-    sw $t9, 96($sp)
     jal rdpq_set_mode_fill
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 240
     li $a2, 320
     li $a1, 0
     li $a0, 0
-    sw $t9, 96($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_sync_pipe
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a0, 4282664191
-    sw $t9, 96($sp)
     jal rdpq_set_mode_fill
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 100
     li $a2, 260
     li $a1, 80
     li $a0, 60
-    sw $t9, 96($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_sync_pipe
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a0, 4294967295
-    sw $t9, 96($sp)
     jal rdpq_set_mode_fill
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 160
     li $a2, 220
     li $a1, 150
     li $a0, 100
-    sw $t9, 96($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-.Lrender_title_ret_121:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+.Lrender_title_ret_127:
+    lw $fp, 136($sp)
+    lw $ra, 140($sp)
+    addiu $sp, $sp, 144
     jr $ra
     nop
 	.size render_title, . - render_title
@@ -2841,61 +2692,49 @@ render_title:
 	.globl render_paused
 	.type render_paused, @function
 render_paused:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    lw $a0, 136($sp)
-    sw $t9, 96($sp)
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
+    sw $s0, 140($sp)
+    move $s0, $a0
+    move $a0, $s0
     jal render_world
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_sync_pipe
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a0, 136
-    sw $t9, 96($sp)
     jal rdpq_set_mode_fill
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 140
     li $a2, 240
     li $a1, 100
     li $a0, 80
-    sw $t9, 96($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_sync_pipe
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a0, 4294967295
-    sw $t9, 96($sp)
     jal rdpq_set_mode_fill
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 120
     li $a2, 220
     li $a1, 112
     li $a0, 100
-    sw $t9, 96($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-.Lrender_paused_ret_122:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+.Lrender_paused_ret_128:
+    lw $s0, 140($sp)
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size render_paused, . - render_paused
@@ -2904,69 +2743,53 @@ render_paused:
 	.globl render_gameover
 	.type render_gameover, @function
 render_gameover:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -144
+    sw $ra, 140($sp)
+    sw $fp, 136($sp)
+    addiu $fp, $sp, 144
     li $a0, 570425599
-    sw $t9, 96($sp)
     jal rdpq_set_mode_fill
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 240
     li $a2, 320
     li $a1, 0
     li $a0, 0
-    sw $t9, 96($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_sync_pipe
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a0, 4280427263
-    sw $t9, 96($sp)
     jal rdpq_set_mode_fill
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 130
     li $a2, 260
     li $a1, 100
     li $a0, 60
-    sw $t9, 96($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_sync_pipe
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a0, 4294967295
-    sw $t9, 96($sp)
     jal rdpq_set_mode_fill
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a3, 170
     li $a2, 220
     li $a1, 160
     li $a0, 100
-    sw $t9, 96($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-.Lrender_gameover_ret_123:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+.Lrender_gameover_ret_129:
+    lw $fp, 136($sp)
+    lw $ra, 140($sp)
+    addiu $sp, $sp, 144
     jr $ra
     nop
 	.size render_gameover, . - render_gameover
@@ -2975,90 +2798,78 @@ render_gameover:
 	.globl render
 	.type render, @function
 render:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    sw $t9, 96($sp)
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
+    sw $s0, 140($sp)
+    move $s0, $a0
     jal display_get
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 140($sp)
-    lw $a0, 140($sp)
+    sw $t9, 136($sp)
+    lw $a0, 136($sp)
     move $a1, $zero
-    sw $t9, 96($sp)
     jal rdpq_attach_clear
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    lw $t8, 136($sp)
+    move $t8, $s0
     lbu $t9, 48($t8)
     li $t8, 0
-    bne $t9, $t8, .Larm_skip_127
-    nop
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    jal render_title
-    nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    move $t8, $v0
-    j .Lmatch_end_125
-    nop
-.Larm_skip_127:
-    li $t8, 1
-    bne $t9, $t8, .Larm_skip_129
-    nop
-    lw $a0, 136($sp)
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    jal render_world
-    nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    move $t8, $v0
-    j .Lmatch_end_125
-    nop
-.Larm_skip_129:
-    li $t8, 2
-    bne $t9, $t8, .Larm_skip_131
-    nop
-    lw $a0, 136($sp)
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
-    jal render_paused
-    nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    move $t8, $v0
-    j .Lmatch_end_125
-    nop
-.Larm_skip_131:
-    li $t8, 3
     bne $t9, $t8, .Larm_skip_133
     nop
     sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    jal render_title
+    nop
+    lw $t9, 96($sp)
+    move $t8, $v0
+    j .Lmatch_end_131
+    nop
+.Larm_skip_133:
+    li $t8, 1
+    bne $t9, $t8, .Larm_skip_135
+    nop
+    move $a0, $s0
+    sw $t9, 96($sp)
+    jal render_world
+    nop
+    lw $t9, 96($sp)
+    move $t8, $v0
+    j .Lmatch_end_131
+    nop
+.Larm_skip_135:
+    li $t8, 2
+    bne $t9, $t8, .Larm_skip_137
+    nop
+    move $a0, $s0
+    sw $t9, 96($sp)
+    jal render_paused
+    nop
+    lw $t9, 96($sp)
+    move $t8, $v0
+    j .Lmatch_end_131
+    nop
+.Larm_skip_137:
+    li $t8, 3
+    bne $t9, $t8, .Larm_skip_139
+    nop
+    sw $t9, 96($sp)
     jal render_gameover
     nop
     lw $t9, 96($sp)
-    lw $t8, 100($sp)
     move $t8, $v0
-    j .Lmatch_end_125
+    j .Lmatch_end_131
     nop
-.Larm_skip_133:
-.Lmatch_end_125:
-    sw $t9, 96($sp)
+.Larm_skip_139:
+.Lmatch_end_131:
     jal rdpq_detach_show
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-.Lrender_ret_124:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+.Lrender_ret_130:
+    lw $s0, 140($sp)
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size render, . - render
@@ -3067,35 +2878,27 @@ render:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -216
+    sw $ra, 212($sp)
+    sw $fp, 208($sp)
+    addiu $fp, $sp, 216
     li $t8, 1
     sw $t8, 16($sp)
     li $a3, 0
     li $a2, 3
     li $a1, 2
     li $a0, 0
-    sw $t9, 96($sp)
     jal display_init
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_init
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal joypad_init
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal timer_init
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     move $t9, $zero
     addiu $t8, $sp, 136
@@ -3110,91 +2913,68 @@ main:
     lw $t8, 100($sp)
     addiu $t8, $sp, 136
     move $a0, $t8
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    sw $t8, 96($sp)
     jal Player_init
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
+    lw $t8, 96($sp)
     move $t9, $v0
     addiu $t8, $sp, 136
     addiu $t8, $t8, 36
     move $a0, $t8
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    sw $t8, 96($sp)
     jal Camera_init
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
+    lw $t8, 96($sp)
     move $t9, $v0
-    li $t8, 0
-    addiu $t7, $sp, 136
-    sb $t8, 48($t7)
-    move $t9, $t8
-    li $t8, 0
-    addiu $t7, $sp, 136
-    sw $t8, 52($t7)
-    move $t9, $t8
-    li $t8, 0
-    addiu $t7, $sp, 136
-    sw $t8, 56($t7)
-    move $t9, $t8
-    sw $t9, 96($sp)
+    li $t9, 0
+    addiu $t8, $sp, 136
+    sb $t9, 48($t8)
+    li $t9, 0
+    addiu $t8, $sp, 136
+    sw $t9, 52($t8)
+    li $t9, 0
+    addiu $t8, $sp, 136
+    sw $t9, 56($t8)
     jal init_platforms
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal init_pickups
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-.Lloop_h_135:
-    sw $t9, 96($sp)
+.Lloop_h_141:
     jal joypad_poll
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a0, 0
-    sw $t9, 96($sp)
     jal joypad_get_status
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     sw $t9, 196($sp)
     addiu $t8, $sp, 196
     sw $t8, 200($sp)
     addiu $a0, $sp, 136
     lw $a1, 200($sp)
-    sw $t9, 96($sp)
     jal update
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     addiu $a0, $sp, 136
-    sw $t9, 96($sp)
     jal render
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    j .Lloop_h_135
+    j .Lloop_h_141
     nop
-.Lloop_x_136:
-    sw $t9, 96($sp)
+.Lloop_x_142:
     jal rdpq_close
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     la $a0, .Lstr10
-    sw $t9, 96($sp)
     jal debugf
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-.Lmain_ret_134:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+.Lmain_ret_140:
+    lw $fp, 208($sp)
+    lw $ra, 212($sp)
+    addiu $sp, $sp, 216
     jr $ra
     nop
 	.size main, . - main
@@ -3243,3 +3023,7 @@ platforms:
 	.globl pickups
 pickups:
 	.space 192
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.space 4

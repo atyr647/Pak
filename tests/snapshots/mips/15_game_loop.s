@@ -204,128 +204,113 @@
 	.globl update
 	.type update, @function
 update:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
+    sw $s0, 140($sp)
+    move $s0, $a0
     li $a0, 0
-    sw $t9, 96($sp)
     jal joypad_get_status
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 140($sp)
-    addiu $t7, $sp, 140
+    sw $t9, 136($sp)
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 7($t8)
     beqz $t9, .Lif_end_1
     nop
-    li $t8, 2
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
-    addu $t8, $t7, $t8
-    lw $t7, 136($sp)
-    sw $t8, 0($t7)
-    move $t9, $t8
+    li $t9, 2
+    move $t7, $s0
+    lw $t8, 0($t7)
+    addu $t9, $t8, $t9
+    move $t8, $s0
+    sw $t9, 0($t8)
 .Lif_end_1:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 6($t8)
     beqz $t9, .Lif_end_2
     nop
-    li $t8, 2
-    lw $t6, 136($sp)
-    lw $t7, 0($t6)
-    subu $t8, $t7, $t8
-    lw $t7, 136($sp)
-    sw $t8, 0($t7)
-    move $t9, $t8
+    li $t9, 2
+    move $t7, $s0
+    lw $t8, 0($t7)
+    subu $t9, $t8, $t9
+    move $t8, $s0
+    sw $t9, 0($t8)
 .Lif_end_2:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 5($t8)
     beqz $t9, .Lif_end_3
     nop
-    li $t8, 2
-    lw $t6, 136($sp)
-    lw $t7, 4($t6)
-    addu $t8, $t7, $t8
-    lw $t7, 136($sp)
-    sw $t8, 4($t7)
-    move $t9, $t8
+    li $t9, 2
+    move $t7, $s0
+    lw $t8, 4($t7)
+    addu $t9, $t8, $t9
+    move $t8, $s0
+    sw $t9, 4($t8)
 .Lif_end_3:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 0($t7)
     lb $t9, 4($t8)
     beqz $t9, .Lif_end_4
     nop
-    li $t8, 2
-    lw $t6, 136($sp)
-    lw $t7, 4($t6)
-    subu $t8, $t7, $t8
-    lw $t7, 136($sp)
-    sw $t8, 4($t7)
-    move $t9, $t8
+    li $t9, 2
+    move $t7, $s0
+    lw $t8, 4($t7)
+    subu $t9, $t8, $t9
+    move $t8, $s0
+    sw $t9, 4($t8)
 .Lif_end_4:
-    lw $t7, 136($sp)
-    lw $t8, 0($t7)
-    li $t7, 0
-    slt $t9, $t8, $t7
-    beqz $t9, .Lif_end_5
+    move $t8, $s0
+    lw $t9, 0($t8)
+    bgez $t9, .Lif_end_5
     nop
-    li $t8, 0
-    lw $t7, 136($sp)
-    sw $t8, 0($t7)
-    move $t9, $t8
+    li $t9, 0
+    move $t8, $s0
+    sw $t9, 0($t8)
 .Lif_end_5:
-    lw $t7, 136($sp)
-    lw $t8, 0($t7)
-    li $t7, 320
-    sgt $t9, $t8, $t7
-    beqz $t9, .Lif_end_6
+    move $t8, $s0
+    lw $t9, 0($t8)
+    slti $t8, $t9, 321
+    bnez $t8, .Lif_end_6
     nop
-    li $t8, 320
-    lw $t7, 136($sp)
-    sw $t8, 0($t7)
-    move $t9, $t8
+    li $t9, 320
+    move $t8, $s0
+    sw $t9, 0($t8)
 .Lif_end_6:
-    lw $t7, 136($sp)
-    lw $t8, 4($t7)
-    li $t7, 0
-    slt $t9, $t8, $t7
-    beqz $t9, .Lif_end_7
+    move $t8, $s0
+    lw $t9, 4($t8)
+    bgez $t9, .Lif_end_7
     nop
-    li $t8, 0
-    lw $t7, 136($sp)
-    sw $t8, 4($t7)
-    move $t9, $t8
+    li $t9, 0
+    move $t8, $s0
+    sw $t9, 4($t8)
 .Lif_end_7:
-    lw $t7, 136($sp)
-    lw $t8, 4($t7)
-    li $t7, 240
-    sgt $t9, $t8, $t7
-    beqz $t9, .Lif_end_8
+    move $t8, $s0
+    lw $t9, 4($t8)
+    slti $t8, $t9, 241
+    bnez $t8, .Lif_end_8
     nop
-    li $t8, 240
-    lw $t7, 136($sp)
-    sw $t8, 4($t7)
-    move $t9, $t8
+    li $t9, 240
+    move $t8, $s0
+    sw $t9, 4($t8)
 .Lif_end_8:
-    addiu $t7, $sp, 140
+    addiu $t7, $sp, 136
     lw $t8, 4($t7)
     lb $t9, 3($t8)
     beqz $t9, .Lif_end_9
     nop
-    li $t8, 0
-    lw $t7, 136($sp)
-    sb $t8, 8($t7)
-    move $t9, $t8
+    li $t9, 0
+    move $t8, $s0
+    sb $t9, 8($t8)
 .Lif_end_9:
 .Lupdate_ret_0:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $s0, 140($sp)
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size update, . - update
@@ -334,62 +319,54 @@ update:
 	.globl render
 	.type render, @function
 render:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    sw $a0, 136($sp)
-    sw $t9, 96($sp)
+    addiu $sp, $sp, -168
+    sw $ra, 164($sp)
+    sw $fp, 160($sp)
+    addiu $fp, $sp, 168
+    sw $s0, 156($sp)
+    move $s0, $a0
     jal display_get
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 140($sp)
-    lw $a0, 140($sp)
+    sw $t9, 136($sp)
+    lw $a0, 136($sp)
     move $a1, $zero
-    sw $t9, 96($sp)
     jal rdpq_attach_clear
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $a0, 4278190335
-    sw $t9, 96($sp)
     jal rdpq_set_mode_fill
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    lw $t6, 136($sp)
+    move $t6, $s0
     lw $t7, 4($t6)
     li $t6, 16
     addu $t8, $t7, $t6
-    sw $t8, 144($sp)
-    lw $t6, 136($sp)
+    sw $t8, 140($sp)
+    move $t6, $s0
     lw $t7, 0($t6)
     li $t6, 16
     addu $t8, $t7, $t6
-    sw $t8, 148($sp)
-    lw $t7, 136($sp)
+    sw $t8, 144($sp)
+    move $t7, $s0
     lw $t8, 4($t7)
-    sw $t8, 152($sp)
-    lw $t8, 136($sp)
+    sw $t8, 148($sp)
+    move $t8, $s0
     lw $a0, 0($t8)
-    lw $a1, 152($sp)
-    lw $a2, 148($sp)
-    lw $a3, 144($sp)
-    sw $t9, 96($sp)
+    lw $a1, 148($sp)
+    lw $a2, 144($sp)
+    lw $a3, 140($sp)
     jal rdpq_fill_rectangle
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_detach_show
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
 .Lrender_ret_10:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $s0, 156($sp)
+    lw $fp, 160($sp)
+    lw $ra, 164($sp)
+    addiu $sp, $sp, 168
     jr $ra
     nop
 	.size render, . - render
@@ -398,35 +375,27 @@ render:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -168
+    sw $ra, 164($sp)
+    sw $fp, 160($sp)
+    addiu $fp, $sp, 168
     li $t8, 0
     sw $t8, 16($sp)
     li $a3, 0
     li $a2, 2
     li $a1, 0
     li $a0, 0
-    sw $t9, 96($sp)
     jal display_init
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal joypad_init
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal rdpq_init
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 96($sp)
     jal timer_init
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     sw $zero, 148($sp)
     sw $zero, 152($sp)
@@ -446,49 +415,35 @@ main:
     lw $t7, 8($t9)
     sw $t7, 8($t8)
 .Lloop_h_12:
-    sw $t9, 96($sp)
     jal joypad_poll
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     addiu $a0, $sp, 136
-    sw $t9, 96($sp)
     jal update
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
-    addiu $t7, $sp, 136
-    lbu $t8, 8($t7)
-    sltiu $t9, $t8, 1
-    beqz $t9, .Lif_end_14
+    addiu $t8, $sp, 136
+    lbu $t9, 8($t8)
+    beqz $t9, .Lloop_x_13
     nop
-    j .Lloop_x_13
-    nop
-.Lif_end_14:
     addiu $a0, $sp, 136
-    sw $t9, 96($sp)
     jal render
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     j .Lloop_h_12
     nop
 .Lloop_x_13:
-    sw $t9, 96($sp)
     jal rdpq_close
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     la $a0, .Lstr0
-    sw $t9, 96($sp)
     jal debugf
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
 .Lmain_ret_11:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 160($sp)
+    lw $ra, 164($sp)
+    addiu $sp, $sp, 168
     jr $ra
     nop
 	.size main, . - main
@@ -497,3 +452,9 @@ main:
 	.align 0
 .Lstr0:
 	.asciiz "game over"
+
+	.section .bss
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.space 4

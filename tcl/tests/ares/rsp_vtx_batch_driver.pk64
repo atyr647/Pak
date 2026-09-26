@@ -1,0 +1,152 @@
+-- Runs rsp_vtx_batch.pk64 -- the 64-vertex generalization of the proven
+-- rsp_task_vtx.pk64 microcode -- from a real standalone-backend (MIPS) Pak
+-- PROGRAM, at the batch size docs/rsp-microcode-in-pak.md's own worked
+-- example suggests, and checks all 64 answers.
+--
+-- rsp_task_vtx_driver.pk64 already proved a standalone Pak program can load,
+-- kick and read back Pak-compiled RSP microcode (n64.sp's load_ucode/
+-- load_data/run/wait/read_data) -- that machinery is not new. What this adds:
+-- a batch big enough to be a real per-frame dispatch (64 vertices, not 4),
+-- and 64 independently-chosen test vertices instead of one pattern repeated,
+-- so a bug that mixed up which vertex landed in which DMEM slot would show
+-- up as a wrong answer instead of accidentally matching.
+--
+-- Same identity mvp submitted through the SAME rsp.vacc mul/mac/mid chain as
+-- rsp_task_vtx.pk64's driver (uniform 0.25 in every lane), so the transform
+-- reduces to output_lane = 0.25 * sum(v[0..3]) for every lane -- and this
+-- driver's want[] is computed by that exact formula on the CPU below, not
+-- hand-typed, so extending the batch size later cannot silently drift from
+-- what the RSP actually computes.
+--
+-- DMEM layout matches rsp_vtx_batch.pk64's header comment: mvp@0, count@64,
+-- vertices@80..1088. Green means all 64 slots came back with the RSP's
+-- answer equal to the CPU's independently-computed one. If it never starts,
+-- sp.wait() never returns and the screen stays black.
+
+use n64.sp
+
+const FB_PIXELS: i32 = 76800
+const GREEN: u16 = 0x07C1
+const RED: u16 = 0xF801
+const BATCH: i32 = 64
+
+@aligned(16)
+static ucode: [40]u32 = [
+    0x24080000, 0x01004825, 0x8C0A0040, 0x012A482B, 0x11200021, 0x00000000,
+    0x01005025, 0x000A4900, 0x25290050, 0xC9202000, 0x4A00006A, 0x24090000,
+    0xC9202000, 0x4A0108EA, 0x4B030080, 0x24090010, 0xC9222000, 0x4A0108EA,
+    0x4B231008, 0x24090020, 0xC9202000, 0x4A0108EA, 0x4B430088, 0x24090030,
+    0xC9222000, 0x4A0108EA, 0x4B631008, 0x01005025, 0x000A4900, 0x25290050,
+    0x4B20001D, 0xE9202000, 0x01004825, 0x240A0001, 0x012A4821, 0x01204025,
+    0x1000FFDC, 0x00000000, 0x0000000D, 0x00000000,
+]
+
+-- job.mvp[0..3]: all 4 entries, all 8 lanes, uniform 0.25 (Q1.15, 0x2000) --
+-- an identity-ish transform chosen (as in rsp_task_vtx.pk64) so the answer
+-- is hand-verifiable: every output lane is 0.25 * the sum of the vertex's
+-- own 4 input lanes, independent of which lane.
+@aligned(16)
+static mvp_vec: [32]u16 = [
+    0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000,
+    0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000,
+    0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000,
+    0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000, 0x2000
+]
+
+@aligned(16)
+static count_val: [2]u32 = [64, 0]
+
+-- 64 vertices, each of the 4 relevant lanes set from its own index so no
+-- two vertices are identical (unlike rsp_task_vtx_driver.pk64's single
+-- varying lane) -- a mixed-up DMEM offset shows up as a wrong answer at
+-- that specific slot, not a coincidentally-still-right one. Q1.15 values
+-- stay well inside +-1.0 (max lane value 0x0FC0 here) so mul/mac cannot
+-- saturate the accumulator.
+@aligned(16)
+static vertices_vec: [512]u16 = undefined
+
+@aligned(16)
+static got: [512]u16 = undefined
+
+@aligned(16)
+static want: [512]u16 = undefined
+
+fn fill(fb: u32, px: u16) {
+    let mut i: i32 = 0
+    while i < FB_PIXELS {
+        let p: *volatile u16 = (fb + (i * 2) as u32) as *volatile u16
+        *p = px
+        i = i + 1
+    }
+}
+
+entry {
+    display.init(0, 2, 3, 0, 1)
+
+    -- Fill each vertex's 8 lanes and compute the CPU's own reference
+    -- answer for it (0.25 * sum of the 4 relevant lanes, in the same
+    -- Q1.15 scale the RSP path uses) before ever touching the RSP.
+    let mut vi: i32 = 0
+    loop {
+        if vi >= BATCH { break }
+        let base: i32 = vi * 8
+        let l0: i32 = (vi * 60) + 16
+        let l1: i32 = (vi * 37) + 32
+        let l2: i32 = (vi * 23) + 48
+        let l3: i32 = (vi * 11) + 8
+        vertices_vec[base + 0] = l0 as u16
+        vertices_vec[base + 1] = l1 as u16
+        vertices_vec[base + 2] = l2 as u16
+        vertices_vec[base + 3] = l3 as u16
+        vertices_vec[base + 4] = 0
+        vertices_vec[base + 5] = 0
+        vertices_vec[base + 6] = 0
+        vertices_vec[base + 7] = 0
+        -- (0.25*v) in Q1.15 == v >> 2, matching the RSP's vacc.mid() scale
+        -- for this uniform-0.25 mvp -- see rsp_vtx_batch.pk64's header.
+        let sum: i32 = l0 + l1 + l2 + l3
+        let out: i32 = sum / 4
+        let mut lane: i32 = 0
+        loop {
+            if lane >= 8 { break }
+            want[base + lane] = out as u16
+            lane += 1
+        }
+        vi += 1
+    }
+
+    sp.init()
+    sp.load_ucode(&ucode[0] as u32, 160)
+    sp.load_data(&mvp_vec[0] as u32, 0, 64)
+    sp.load_data(&count_val[0] as u32, 64, 8)
+    sp.load_data(&vertices_vec[0] as u32, 80, 1024)
+    sp.run(0)
+    sp.wait()
+    sp.read_data(&got[0] as u32, 80, 1024)
+
+    let fb: u32 = display.get()
+    let mut all_ok: bool = true
+    let mut i: i32 = 0
+    loop {
+        if i >= 512 { break }
+        -- Q1.15 mac/round can be off by the low bit from the CPU's plain
+        -- integer divide; allow +-1 the same way a fixed-point pipeline
+        -- normally would, rather than demanding bit-exactness the hardware
+        -- was never going to give.
+        let g: i32 = got[i] as i32
+        let w: i32 = want[i] as i32
+        let d: i32 = g - w
+        if d < -1 or d > 1 {
+            all_ok = false
+        }
+        i += 1
+    }
+    if all_ok {
+        fill(fb, GREEN)
+    } else {
+        fill(fb, RED)
+    }
+    loop {
+        display.show(fb)
+    }
+}

@@ -204,55 +204,49 @@
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
-    li $t7, 160
-    li $t6, 120
-    addu $t8, $t7, $t6
-    la $t7, enemy_count
-    sw $t8, 0($t7)
-    move $t9, $t8
+    addiu $sp, $sp, -144
+    sw $ra, 140($sp)
+    sw $fp, 136($sp)
+    addiu $fp, $sp, 144
+    li $t8, 160
+    li $t7, 120
+    addu $t9, $t8, $t7
+    la $t8, enemy_count
+    sw $t9, 0($t8)
+    li $t9, 1
+    la $t8, enemy_count
+    lw $t8, 0($t8)
+    addu $t9, $t8, $t9
+    la $t8, enemy_count
+    sw $t9, 0($t8)
+    li $t9, 100
+    la $t8, score_table
+    li $t7, 0
+    sll $t7, $t7, 2
+    addu $t8, $t8, $t7
+    sw $t9, 0($t8)
     li $t8, 1
-    la $t7, enemy_count
-    lw $t7, 0($t7)
-    addu $t8, $t7, $t8
-    la $t7, enemy_count
-    sw $t8, 0($t7)
-    move $t9, $t8
-    li $t8, 100
-    la $t7, score_table
-    li $t6, 0
-    sll $t6, $t6, 2
-    addu $t7, $t7, $t6
-    sw $t8, 0($t7)
-    move $t9, $t8
+    li $t7, 0
+    sne $t9, $t8, $t7
+    la $t8, game_running
+    sb $t9, 0($t8)
+    la $t7, .Lf320
+    lwc1 $f12, 0($t7)
+    andi $t9, $t8, 255
+    la $t8, dma_buffer
+    li $t7, 0
+    addu $t8, $t8, $t7
+    sb $t9, 0($t8)
+    li $t9, 16
+    la $t8, score_table
     li $t7, 1
-    li $t6, 0
-    sne $t8, $t7, $t6
-    la $t7, game_running
-    sb $t8, 0($t7)
-    move $t9, $t8
-    la $t6, .Lf320
-    lwc1 $f12, 0($t6)
-    andi $t8, $t7, 255
-    la $t7, dma_buffer
-    li $t6, 0
-    addu $t7, $t7, $t6
-    sb $t8, 0($t7)
-    move $t9, $t8
-    li $t8, 16
-    la $t7, score_table
-    li $t6, 1
-    sll $t6, $t6, 2
-    addu $t7, $t7, $t6
-    sw $t8, 0($t7)
-    move $t9, $t8
+    sll $t7, $t7, 2
+    addu $t8, $t8, $t7
+    sw $t9, 0($t8)
 .Lmain_ret_0:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 136($sp)
+    lw $ra, 140($sp)
+    addiu $sp, $sp, 144
     jr $ra
     nop
 	.size main, . - main
@@ -281,3 +275,7 @@ score_table:
 	.globl dma_buffer
 dma_buffer:
 	.space 4096
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.space 4

@@ -617,12 +617,12 @@ puts "== a page DMA'd from the cart is the page that gets drawn =="
 # Everything above hands the RDP texels the program itself wrote into RDRAM.
 # The CHROMA nave does not work that way and neither does any scene too big to
 # embed its art: the texels live on the cartridge and arrive by PI DMA, one
-# page at a time. That path has had no pixel gate at all -- church_test.tcl
+# page at a time. That path has had no pixel gate at all -- pagestream_test.tcl
 # asserts the PI registers and the display list, which is to say it asserts
 # that the program ASKED for the right transfer, not that the right texels
 # arrived. `pak dlist --cart` had the only cart hook in the tree.
 #
-# This is the general case, not a church harness: any scene whose texture comes
+# This is the general case, not a pagestream harness: any scene whose texture comes
 # from `dma.read` can be rendered this way. The page below is built here, in
 # the test, at the cart address the scene reads -- so if the simulator did not
 # honour PI_WR_LEN, or the scene got the cart address wrong, or the cache ops

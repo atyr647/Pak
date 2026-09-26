@@ -204,10 +204,10 @@
 	.globl opposite
 	.type opposite, @function
 opposite:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -152
+    sw $ra, 148($sp)
+    sw $fp, 144($sp)
+    addiu $fp, $sp, 152
     sw $a0, 136($sp)
     lw $t9, 136($sp)
     li $t8, 0
@@ -248,9 +248,9 @@ opposite:
 .Larm_skip_9:
 .Lmatch_end_1:
 .Lopposite_ret_0:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 144($sp)
+    lw $ra, 148($sp)
+    addiu $sp, $sp, 152
     jr $ra
     nop
 	.size opposite, . - opposite
@@ -259,10 +259,10 @@ opposite:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -160
+    sw $ra, 156($sp)
+    sw $fp, 152($sp)
+    addiu $fp, $sp, 160
     li $t9, 0
     sw $t9, 136($sp)
     li $t9, 0
@@ -271,40 +271,36 @@ main:
     li $t8, 0
     bne $t9, $t8, .Larm_skip_13
     nop
-    li $t7, 0
-    la $t6, sink
-    sw $t7, 0($t6)
-    move $t8, $t7
+    li $t8, 0
+    la $t7, sink
+    sw $t8, 0($t7)
     j .Lmatch_end_11
     nop
 .Larm_skip_13:
     li $t8, 1
     bne $t9, $t8, .Larm_skip_15
     nop
-    li $t7, 1
-    la $t6, sink
-    sw $t7, 0($t6)
-    move $t8, $t7
+    li $t8, 1
+    la $t7, sink
+    sw $t8, 0($t7)
     j .Lmatch_end_11
     nop
 .Larm_skip_15:
     li $t8, 2
     bne $t9, $t8, .Larm_skip_17
     nop
-    li $t7, 2
-    la $t6, sink
-    sw $t7, 0($t6)
-    move $t8, $t7
+    li $t8, 2
+    la $t7, sink
+    sw $t8, 0($t7)
     j .Lmatch_end_11
     nop
 .Larm_skip_17:
     li $t8, 3
     bne $t9, $t8, .Larm_skip_19
     nop
-    li $t7, 3
-    la $t6, sink
-    sw $t7, 0($t6)
-    move $t8, $t7
+    li $t8, 3
+    la $t7, sink
+    sw $t8, 0($t7)
     j .Lmatch_end_11
     nop
 .Larm_skip_19:
@@ -313,49 +309,43 @@ main:
     li $t8, 0
     bne $t9, $t8, .Larm_skip_22
     nop
-    li $t7, 10
-    la $t6, sink
-    sw $t7, 0($t6)
-    move $t8, $t7
+    li $t8, 10
+    la $t7, sink
+    sw $t8, 0($t7)
     j .Lmatch_end_20
     nop
 .Larm_skip_22:
-    li $t7, 11
-    la $t6, sink
-    sw $t7, 0($t6)
-    move $t8, $t7
+    li $t8, 11
+    la $t7, sink
+    sw $t8, 0($t7)
     j .Lmatch_end_20
     nop
 .Lmatch_end_20:
     li $a0, 2
-    sw $t9, 96($sp)
     jal opposite
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     sw $t9, 144($sp)
     lw $t9, 144($sp)
     li $t8, 3
     bne $t9, $t8, .Larm_skip_27
     nop
-    li $t7, 20
-    la $t6, sink
-    sw $t7, 0($t6)
-    move $t8, $t7
+    li $t8, 20
+    la $t7, sink
+    sw $t8, 0($t7)
     j .Lmatch_end_25
     nop
 .Larm_skip_27:
-    li $t7, 21
-    la $t6, sink
-    sw $t7, 0($t6)
-    move $t8, $t7
+    li $t8, 21
+    la $t7, sink
+    sw $t8, 0($t7)
     j .Lmatch_end_25
     nop
 .Lmatch_end_25:
 .Lmain_ret_10:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 152($sp)
+    lw $ra, 156($sp)
+    addiu $sp, $sp, 160
     jr $ra
     nop
 	.size main, . - main
@@ -365,3 +355,9 @@ main:
 	.globl sink
 sink:
 	.word 0
+
+	.section .bss
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.space 4

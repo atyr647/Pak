@@ -1,0 +1,149 @@
+-- Codegen benchmark kernels. Each one is shaped like a hot loop from a real
+-- scene (tools/pak/lambert.pk64 in chroma64) and returns a checksum, so a
+-- codegen change that alters results fails the benchmark instead of just
+-- looking faster. tcl/tools/bench_codegen.tcl runs them in the MIPS
+-- simulator (exact instruction counts) and on ares (real cycle timings).
+
+const NV: i32 = 1024
+const NT: i32 = 2000
+const FOV: f32 = 200.0
+const NEAR: f32 = 0.1
+
+static vx: [1024]f32 = undefined
+static vy: [1024]f32 = undefined
+static vz: [1024]f32 = undefined
+static vu: [1024]f32 = undefined
+static vv: [1024]f32 = undefined
+static proj_x: [1024]i32 = undefined
+static proj_y: [1024]i32 = undefined
+static proj_s: [1024]i32 = undefined
+static proj_t: [1024]i32 = undefined
+static proj_iw: [1024]i32 = undefined
+static proj_ok: [1024]i32 = undefined
+static ti0: [2000]i32 = undefined
+static ti1: [2000]i32 = undefined
+static ti2: [2000]i32 = undefined
+static cam_x: f32 = 0.25
+static cam_y: f32 = 1.5
+static cam_z: f32 = 4.0
+static g_seed: u32 = 12345
+
+fn rnd() -> i32 {
+    g_seed = g_seed * 1103515245 + 12345
+    return ((g_seed >> 8) & 0xFFFF) as i32
+}
+
+fn bench_setup() {
+    let mut i: i32 = 0
+    loop {
+        if i >= NV { break }
+        vx[i] = ((rnd() % 2000) - 1000) as f32 / 100.0
+        vy[i] = ((rnd() % 2000) - 1000) as f32 / 100.0
+        vz[i] = ((rnd() % 3000) - 2800) as f32 / 100.0
+        vu[i] = (rnd() % 256) as f32
+        vv[i] = (rnd() % 256) as f32
+        i += 1
+    }
+    i = 0
+    loop {
+        if i >= NT { break }
+        ti0[i] = rnd() % NV
+        ti1[i] = rnd() % NV
+        ti2[i] = rnd() % NV
+        i += 1
+    }
+}
+
+-- Float-heavy: lambert's project_all, verbatim.
+fn k_project() -> i32 {
+    let mut i: i32 = 0
+    loop {
+        if i >= NV { break }
+        let dx: f32 = vx[i] - cam_x
+        let dy: f32 = vy[i] - cam_y
+        let dz: f32 = vz[i] - cam_z
+        let lz: f32 = 0.0 - dz
+        if lz < NEAR {
+            proj_ok[i] = 0
+        } else {
+            let iw: f32 = 1.0 / lz
+            proj_x[i] = ((160.0 + dx * FOV * iw) as i32)
+            proj_y[i] = ((120.0 - dy * FOV * iw) as i32)
+            proj_s[i] = (vu[i] as i32)
+            proj_t[i] = (vv[i] as i32)
+            proj_iw[i] = ((iw * 65536.0) as i32)
+            proj_ok[i] = 1
+        }
+        i += 1
+    }
+    let mut sum: i32 = 0
+    i = 0
+    loop {
+        if i >= NV { break }
+        if proj_ok[i] == 1 {
+            sum = sum + proj_x[i] * 3 + proj_y[i] * 5 + proj_s[i] + proj_t[i] + (proj_iw[i] >> 4)
+        }
+        i += 1
+    }
+    return sum
+}
+
+-- Integer + index-heavy: lambert's draw_nave culling, without the draw.
+fn k_cull() -> i32 {
+    let mut kept: i32 = 0
+    let mut acc: i32 = 0
+    let mut i: i32 = 0
+    loop {
+        if i >= NT { break }
+        let i0: i32 = ti0[i]
+        let i1: i32 = ti1[i]
+        let i2: i32 = ti2[i]
+        if proj_ok[i0] == 1 and proj_ok[i1] == 1 and proj_ok[i2] == 1 {
+            let x0: i32 = proj_x[i0]; let y0: i32 = proj_y[i0]
+            let x1: i32 = proj_x[i1]; let y1: i32 = proj_y[i1]
+            let x2: i32 = proj_x[i2]; let y2: i32 = proj_y[i2]
+            let area: i32 = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
+            if area < 0 {
+                kept += 1
+                acc = acc + (area & 0xFFFF)
+            }
+        }
+        i += 1
+    }
+    return kept * 65536 + (acc & 0xFFFF)
+}
+
+-- Call-heavy: a tiny leaf called in a loop, like dl_cmd/rdp_tex_hi.
+fn leaf3(a: i32, b: i32, c: i32) -> i32 {
+    return (a * 3 + b) ^ (c >> 1)
+}
+
+fn k_calls() -> i32 {
+    let mut acc: i32 = 0
+    let mut i: i32 = 0
+    loop {
+        if i >= 20000 { break }
+        acc = leaf3(i, acc, 7)
+        i += 1
+    }
+    return acc
+}
+
+-- Divide-heavy leaf: the runtime's rdp_muldiv, verbatim.
+fn muldiv(a: i32, m: i32, d: i32) -> i32 {
+    if d == 0 { return 0 }
+    let q: i32 = a / d
+    let r: i32 = a - q * d
+    return q * m + (r * m) / d
+}
+
+fn k_muldiv() -> i32 {
+    let mut acc: i32 = 0
+    let mut i: i32 = 0
+    loop {
+        if i >= 5000 { break }
+        acc = acc + muldiv(i * 37 + 1, 65536, (i & 255) + 1)
+        i += 1
+    }
+    return acc
+}

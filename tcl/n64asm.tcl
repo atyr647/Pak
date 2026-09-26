@@ -117,6 +117,11 @@ proc pak::asm::encode {op operands addr syms} {
             set off [expr {($tgt - ($addr + 4)) >> 2}]
             return [list [$I $opc [$g [lindex $a 0]] [$g [lindex $a 1]] $off]]
         }
+        bltz - bgez {
+            set tgt [pak::asm::sym [lindex $a 1] $syms]
+            set off [expr {($tgt - ($addr + 4)) >> 2}]
+            return [list [$I 0x01 [$g [lindex $a 0]] [expr {$op eq "bgez" ? 1 : 0}] $off]]
+        }
         beqz - bnez {
             set opc [expr {$op eq "beqz" ? 0x04 : 0x05}]
             set tgt [pak::asm::sym [lindex $a 1] $syms]
@@ -132,6 +137,7 @@ proc pak::asm::encode {op operands addr syms} {
         mfc1 { return [list [pak::asm::R 0x11 0x00 [$g [lindex $a 0]] [pak::asm::fpr [lindex $a 1]] 0 0]] }
         cvt.s.w { return [list [pak::asm::R 0x11 0x14 0 [pak::asm::fpr [lindex $a 1]] [pak::asm::fpr [lindex $a 0]] 0x20]] }
         cvt.w.s { return [list [pak::asm::R 0x11 0x10 0 [pak::asm::fpr [lindex $a 1]] [pak::asm::fpr [lindex $a 0]] 0x24]] }
+        trunc.w.s { return [list [pak::asm::R 0x11 0x10 0 [pak::asm::fpr [lindex $a 1]] [pak::asm::fpr [lindex $a 0]] 0x0D]] }
         sync { return [list [pak::asm::R 0 0 0 0 0 0x0f]] }
         bge - bgt - ble - blt {
             return [pak::asm::expand_branch_cmp $op $a $addr $syms]

@@ -1,7 +1,9 @@
 #!/usr/bin/env tclsh
-# tcl/tools/church_test.tcl — the CHROMA nave, end to end, on generated MIPS.
+# tcl/tools/pagestream_test.tcl — CHROMA page streaming, end to end, on
+# generated MIPS. NOT the Lambert nave: a synthetic corridor whose job is to
+# prove pages can be streamed from the cart. See the scene's own header.
 #
-# examples/chroma/church.pk64 is the FZ "Path A": no libdragon, no RSP.
+# examples/chroma/pagestream.pk64 is the FZ "Path A": no libdragon, no RSP.
 # This runs the runtime plus that scene in tcl/mips_sim.tcl and asserts the
 # three things the architecture rests on.
 #
@@ -19,8 +21,9 @@
 # PI_STATUS back. On hardware those are different things: the write clears an
 # interrupt, the read reports busy bits. The simulator used to hand back the
 # 0x02 that was just written, so dma_wait spun on IO_BUSY forever; it now
-# models the read side (see the lw handler in tcl/mips_sim.tcl) and the DP/VI
-# presets below are the only ones a scene still needs.
+# models the read side (see the lw handler in tcl/mips_sim.tcl), as it now
+# does for DPC_STATUS too, and the VI preset below is the only one a scene
+# still needs.
 
 set HERE [file dirname [file normalize [info script]]]
 set REPO [file normalize [file join $HERE .. ..]]
@@ -29,8 +32,16 @@ source [file join $REPO tcl mips_sim.tcl]
 source [file join $REPO tcl n64link.tcl]
 
 set RUNTIME runtime/standalone/runtime.pk64
-set SCENE   examples/chroma/church.pk64
-set DL_BASE [expr {0xA0297000}]
+set SCENE   examples/chroma/pagestream.pk64
+# Read the display list's address out of the HAL instead of pinning it here:
+# it moved once already (8 KiB past the Z buffer -> 64 KiB off the heap) and
+# this test silently read zeros from the old address rather than failing on the
+# move itself.
+set _rt [read [set _f [open [file join $REPO runtime standalone runtime.pk64]]]]; close $_f
+if {![regexp {const DL_BASE:\s+u32 = (0x[0-9A-Fa-f]+)} $_rt -> _dlb]} {
+    error "cannot find DL_BASE in runtime.pk64"
+}
+set DL_BASE [expr {$_dlb}]
 
 set ::pass 0
 set ::fail 0
@@ -54,19 +65,19 @@ proc word_at {mw addr} {
 puts "== HAL contract and memory map =="
 
 set rc [catch {exec [info nameofexecutable] tcl/cli.tcl check $SCENE --backend mips} out]
-ok_true "church.pk64 passes pak check --backend mips" [expr {$rc == 0}] \
+ok_true "pagestream.pk64 passes pak check --backend mips" [expr {$rc == 0}] \
     [expr {$rc == 0 ? "" : "\n        $out"}]
 
-set tmp [file join [expr {[info exists ::env(TMPDIR)] ? $::env(TMPDIR) : "/tmp"}] pak_church_test]
+set tmp [file join [expr {[info exists ::env(TMPDIR)] ? $::env(TMPDIR) : "/tmp"}] pak_pagestream_test]
 file delete -force $tmp
 file mkdir $tmp
 set boot [file join $tmp boot.pakobj]
 set rt   [file join $tmp runtime.pakobj]
-set obj  [file join $tmp church.pakobj]
+set obj  [file join $tmp pagestream.pakobj]
 foreach {args label} [list \
         [list asmobj runtime/standalone/boot.S -o $boot] "boot.S" \
         [list objgen $RUNTIME -o $rt]                    "runtime.pk64" \
-        [list objgen $SCENE -o $obj]                     "church.pk64"] {
+        [list objgen $SCENE -o $obj]                     "pagestream.pk64"] {
     if {[catch {exec [info nameofexecutable] tcl/cli.tcl {*}$args} e]} {
         puts "FAIL  cannot build $label: $e"
         incr ::fail
@@ -76,13 +87,13 @@ foreach {args label} [list \
 }
 
 if {[catch {set link [pak::link_objects [list $boot $rt $obj] _start]} e]} {
-    puts "FAIL  church does not link: $e"
+    puts "FAIL  pagestream does not link: $e"
     incr ::fail
     puts "\nPASS=$::pass  FAIL=$::fail"
     exit 1
 }
 incr ::pass
-puts "ok    church links against boot.S + runtime.pk64"
+puts "ok    pagestream links against boot.S + runtime.pk64"
 
 set syms [dict get $link symbols]
 set end  [dict get $syms _end]
@@ -115,7 +126,7 @@ puts "== embedding the sheets instead is refused =="
 
 set fat_src [file join $tmp fat.pk64]
 set f [open $fat_src w]
-puts $f "-- 18 sheets of 256x256 RGBA16, the thing church.pk64 does not embed."
+puts $f "-- 18 sheets of 256x256 RGBA16, the thing pagestream.pk64 does not embed."
 puts $f "static fat_sheets: \[2359296\]u8 = undefined"
 puts $f "entry {"
 puts $f "    display.init(0, 2, 3, 0, 1)"
@@ -150,16 +161,16 @@ proc run_scene {budget} {
         if {[string match "use *" [string trim $l]]} continue
         lappend keep $l
     }
-    set combined [file join $REPO .church_combined.pk64]
+    set combined [file join $REPO .pagestream_combined.pk64]
     set f [open $combined w]; puts -nonewline $f "$rt\n[join $keep \n]"; close $f
     set asm [exec [info nameofexecutable] tcl/tools/mips_dump.tcl $combined]
     file delete $combined
     if {[string match "UNPORTED*" $asm] || [string match "ERROR*" $asm]} {
         return [list err [lindex [split $asm "\n"] 0]]
     }
-    # DP idle, VI past the active region.
+    # VI past the active region. DPC_STATUS is modeled by the simulator, not
+    # preset idle -- see the same note in rdp_test.tcl.
     set preset [dict create \
-        0xA410000C 0 \
         0xA4400010 {0x1E0 0x000}]
     return [list ok [pak::mips_sim_run $asm main $budget $preset]]
 }
@@ -265,7 +276,8 @@ puts "== the DP is actually kicked, and the VI flips =="
 lassign [run_scene 40000000] st2 r2
 if {$st2 eq "ok"} {
     set mw2 [dict get $r2 mem_w]
-    ok "DPC_START points at the display list" [word_at $mw2 0xA4100000] 00297000
+    ok "DPC_START points at the display list" [word_at $mw2 0xA4100000] \
+       [format %08X [expr {$DL_BASE & 0x00FFFFFF}]]
     ok "DPC_STATUS clears xbus/freeze/flush" [word_at $mw2 0xA410000C] 00000015
     ok_true "VI_ORIGIN was set to a framebuffer" \
         [expr {[word_at $mw2 0xA4400004] in {00200000 00225800 0024B000}}] \

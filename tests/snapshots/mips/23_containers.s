@@ -208,6 +208,7 @@ main:
     sw $ra, 1052($sp)
     sw $fp, 1048($sp)
     addiu $fp, $sp, 1056
+    sw $s0, 1044($sp)
     sw $zero, 136($sp)
     sw $zero, 140($sp)
     sw $zero, 144($sp)
@@ -355,10 +356,9 @@ main:
     sw $t8, 520($sp)
     li $t9, 1
 .Lpush_2:
-    lw $t8, 520($sp)
-    la $t7, sink_i
-    sw $t8, 0($t7)
-    move $t9, $t8
+    lw $t9, 520($sp)
+    la $t8, sink_i
+    sw $t9, 0($t8)
     lw $t8, 520($sp)
     seq $t9, $t8, $zero
     sb $t9, 548($sp)
@@ -377,15 +377,13 @@ main:
     sw $t6, 4($t8)
     lw $t6, 8($t9)
     sw $t6, 8($t8)
-    addiu $t6, $sp, 552
-    lwc1 $f12, 0($t6)
-    la $t6, sink_f
-    swc1 $f12, 0($t6)
-    move $t9, $t8
-    lw $t8, 520($sp)
-    la $t6, sink_i
-    sw $t8, 0($t6)
-    move $t9, $t8
+    addiu $t8, $sp, 552
+    lwc1 $f12, 0($t8)
+    la $t8, sink_f
+    swc1 $f12, 0($t8)
+    lw $t9, 520($sp)
+    la $t8, sink_i
+    sw $t9, 0($t8)
     lw $t8, 520($sp)
     addiu $t8, $t8, -1
     sw $t8, 520($sp)
@@ -401,10 +399,9 @@ main:
     addu $t4, $sp, $t4
     sw $t7, 0($t4)
     move $t9, $t7
-    lw $t4, 520($sp)
-    la $t5, sink_i
-    sw $t4, 0($t5)
-    move $t9, $t4
+    lw $t9, 520($sp)
+    la $t4, sink_i
+    sw $t9, 0($t4)
     sw $zero, 564($sp)
     sw $zero, 568($sp)
     sw $zero, 572($sp)
@@ -473,10 +470,9 @@ main:
     addiu $t8, $t8, 1
     sw $t8, 604($sp)
 .Lrbf_5:
-    lw $t8, 604($sp)
-    la $t6, sink_i
-    sw $t8, 0($t6)
-    move $t9, $t8
+    lw $t9, 604($sp)
+    la $t8, sink_i
+    sw $t9, 0($t8)
     li $t8, 0
     lw $t6, 600($sp)
     li $t7, 8
@@ -491,10 +487,9 @@ main:
     addu $t5, $sp, $t5
     lw $t9, 0($t5)
     sw $t9, 608($sp)
-    lw $t5, 608($sp)
-    la $t7, sink_f
-    swc1 $f12, 0($t7)
-    move $t9, $t5
+    lw $t9, 608($sp)
+    la $t5, sink_f
+    swc1 $f12, 0($t5)
     lw $t5, 596($sp)
     li $t7, 4
     mul $t7, $t5, $t7
@@ -514,15 +509,13 @@ main:
 .Lrbe_6:
     swc1 $f12, 612($sp)
     lwc1 $f12, 612($sp)
-    la $t6, sink_f
-    swc1 $f12, 0($t6)
+    la $t8, sink_f
+    swc1 $f12, 0($t8)
+    lw $t6, 604($sp)
+    seq $t8, $t6, $zero
     move $t9, $t8
-    lw $t7, 604($sp)
-    seq $t6, $t7, $zero
-    move $t8, $t6
-    la $t6, sink_i
-    sw $t8, 0($t6)
-    move $t9, $t8
+    la $t8, sink_i
+    sw $t9, 0($t8)
     sw $zero, 616($sp)
     sw $zero, 620($sp)
     sw $zero, 624($sp)
@@ -620,10 +613,9 @@ main:
     jal pak_map_set_raw
     nop
     lw $t9, 96($sp)
-    lw $t8, 760($sp)
-    la $t6, sink_i
-    sw $t8, 0($t6)
-    move $t9, $t8
+    lw $t9, 760($sp)
+    la $t8, sink_i
+    sw $t9, 0($t8)
     li $t6, 2
     sw $t6, 792($sp)
     addiu $t8, $sp, 792
@@ -641,16 +633,14 @@ main:
     lw $t9, 96($sp)
     move $t9, $v0
     sw $t9, 788($sp)
-    lw $t8, 788($sp)
-    move $t6, $zero
-    sne $t9, $t8, $t6
-    beqz $t9, .Lif_end_14
+    lw $t9, 788($sp)
+    move $t8, $zero
+    beq $t9, $t8, .Lif_end_14
     nop
-    lw $t6, 788($sp)
-    lw $t8, 0($t6)
-    la $t6, sink_i
-    sw $t8, 0($t6)
-    move $t9, $t8
+    lw $t8, 788($sp)
+    lw $t9, 0($t8)
+    la $t8, sink_i
+    sw $t9, 0($t8)
 .Lif_end_14:
     li $t6, 3
     sw $t6, 800($sp)
@@ -684,10 +674,9 @@ main:
     jal pak_map_remove_raw
     nop
     lw $t9, 96($sp)
-    lw $t8, 760($sp)
-    la $t6, sink_i
-    sw $t8, 0($t6)
-    move $t9, $t8
+    lw $t9, 760($sp)
+    la $t8, sink_i
+    sw $t9, 0($t8)
     sw $zero, 808($sp)
     sw $zero, 812($sp)
     sw $zero, 816($sp)
@@ -745,27 +734,23 @@ main:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    sw $t9, 1004($sp)
-    lw $t8, 1004($sp)
-    move $t6, $zero
-    sne $t9, $t8, $t6
-    beqz $t9, .Lif_end_17
+    move $s0, $t9
+    move $t9, $s0
+    move $t8, $zero
+    beq $t9, $t8, .Lif_end_17
     nop
-    la $t6, .Lf327
-    lwc1 $f12, 0($t6)
-    lw $t6, 1004($sp)
-    swc1 $f12, 0($t6)
-    move $t9, $t8
-    li $t8, 1
-    lw $t6, 1004($sp)
-    sw $t8, 8($t6)
-    move $t9, $t8
-    lw $t6, 1004($sp)
-    lwc1 $f12, 0($t6)
-    la $t6, sink_f
-    swc1 $f12, 0($t6)
-    move $t9, $t8
-    lw $t8, 1004($sp)
+    la $t8, .Lf327
+    lwc1 $f12, 0($t8)
+    move $t8, $s0
+    swc1 $f12, 0($t8)
+    li $t9, 1
+    move $t8, $s0
+    sw $t9, 8($t8)
+    move $t8, $s0
+    lwc1 $f12, 0($t8)
+    la $t8, sink_f
+    swc1 $f12, 0($t8)
+    move $t8, $s0
     addiu $a0, $sp, 808
     li $a1, 16
     li $a2, 12
@@ -775,17 +760,16 @@ main:
     nop
     lw $t9, 96($sp)
 .Lif_end_17:
-    lw $t8, 1000($sp)
-    la $t6, sink_i
-    sw $t8, 0($t6)
-    move $t9, $t8
+    lw $t9, 1000($sp)
+    la $t8, sink_i
+    sw $t9, 0($t8)
+    sw $zero, 1004($sp)
     sw $zero, 1008($sp)
     sw $zero, 1012($sp)
-    sw $zero, 1016($sp)
     li $t6, 10
-    sw $t6, 1020($sp)
-    addiu $t8, $sp, 1020
-    addiu $a0, $sp, 1008
+    sw $t6, 1016($sp)
+    addiu $t8, $sp, 1016
+    addiu $a0, $sp, 1004
     li $a1, 4
     move $a2, $t8
     sw $t9, 96($sp)
@@ -794,9 +778,9 @@ main:
     lw $t9, 96($sp)
     move $t9, $v0
     li $t6, 20
-    sw $t6, 1024($sp)
-    addiu $t8, $sp, 1024
-    addiu $a0, $sp, 1008
+    sw $t6, 1020($sp)
+    addiu $t8, $sp, 1020
+    addiu $a0, $sp, 1004
     li $a1, 4
     move $a2, $t8
     sw $t9, 96($sp)
@@ -805,9 +789,9 @@ main:
     lw $t9, 96($sp)
     move $t9, $v0
     li $t6, 30
-    sw $t6, 1028($sp)
-    addiu $t8, $sp, 1028
-    addiu $a0, $sp, 1008
+    sw $t6, 1024($sp)
+    addiu $t8, $sp, 1024
+    addiu $a0, $sp, 1004
     li $a1, 4
     move $a2, $t8
     sw $t9, 96($sp)
@@ -815,33 +799,30 @@ main:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    lw $t8, 1012($sp)
-    la $t6, sink_i
-    sw $t8, 0($t6)
-    move $t9, $t8
+    lw $t9, 1008($sp)
+    la $t8, sink_i
+    sw $t9, 0($t8)
     li $t8, 0
     li $t6, 4
     mul $t6, $t8, $t6
-    lw $t7, 1008($sp)
+    lw $t7, 1004($sp)
     addu $t6, $t7, $t6
     lw $t9, 0($t6)
-    sw $t9, 1032($sp)
-    lw $t6, 1032($sp)
-    la $t8, sink_i
-    sw $t6, 0($t8)
-    move $t9, $t6
-    lw $t6, 1012($sp)
+    sw $t9, 1028($sp)
+    lw $t9, 1028($sp)
+    la $t6, sink_i
+    sw $t9, 0($t6)
+    lw $t6, 1008($sp)
     seq $t9, $t6, $zero
-    sb $t9, 1036($sp)
-    sw $zero, 1012($sp)
-    lw $t6, 1012($sp)
-    la $t8, sink_i
-    sw $t6, 0($t8)
-    move $t9, $t6
+    sb $t9, 1032($sp)
+    sw $zero, 1008($sp)
+    lw $t9, 1008($sp)
+    la $t6, sink_i
+    sw $t9, 0($t6)
     li $t8, 99
-    sw $t8, 1040($sp)
-    addiu $t6, $sp, 1040
-    addiu $a0, $sp, 1008
+    sw $t8, 1036($sp)
+    addiu $t6, $sp, 1036
+    addiu $a0, $sp, 1004
     li $a1, 4
     move $a2, $t6
     sw $t9, 96($sp)
@@ -850,7 +831,7 @@ main:
     lw $t9, 96($sp)
     move $t9, $v0
     li $t6, 64
-    addiu $a0, $sp, 1008
+    addiu $a0, $sp, 1004
     li $a1, 4
     move $a2, $t6
     sw $t9, 96($sp)
@@ -858,16 +839,16 @@ main:
     nop
     lw $t9, 96($sp)
     move $t9, $v0
-    lw $t6, 1012($sp)
-    la $t8, sink_i
-    sw $t6, 0($t8)
-    move $t9, $t6
-    addiu $a0, $sp, 1008
+    lw $t9, 1008($sp)
+    la $t6, sink_i
+    sw $t9, 0($t6)
+    addiu $a0, $sp, 1004
     sw $t9, 96($sp)
     jal pak_vec_free_raw
     nop
     lw $t9, 96($sp)
 .Lmain_ret_0:
+    lw $s0, 1044($sp)
     lw $fp, 1048($sp)
     lw $ra, 1052($sp)
     addiu $sp, $sp, 1056
@@ -910,3 +891,9 @@ sink_i:
 	.globl sink_f
 sink_f:
 	.word 0
+
+	.section .bss
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.space 4

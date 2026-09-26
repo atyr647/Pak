@@ -204,23 +204,23 @@
 	.globl load_level
 	.type load_level, @function
 load_level:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -168
+    sw $ra, 164($sp)
+    sw $fp, 160($sp)
+    addiu $fp, $sp, 168
+    sw $s0, 156($sp)
     sw $a0, 136($sp)
-    sw $a1, 140($sp)
-    lw $t8, 140($sp)
-    move $t7, $zero
-    seq $t9, $t8, $t7
-    beqz $t9, .Lif_end_1
+    move $s0, $a1
+    move $t9, $s0
+    move $t8, $zero
+    bne $t9, $t8, .Lif_end_1
     nop
+    sw $zero, 140($sp)
     sw $zero, 144($sp)
-    sw $zero, 148($sp)
-    sb $zero, 144($sp)
+    sb $zero, 140($sp)
     li $t8, 0
-    sw $t8, 148($sp)
-    addiu $t9, $sp, 144
+    sw $t8, 144($sp)
+    addiu $t9, $sp, 140
     lw $t8, 136($sp)
     lw $t7, 0($t9)
     sw $t7, 0($t8)
@@ -230,13 +230,13 @@ load_level:
     j .Lload_level_ret_0
     nop
 .Lif_end_1:
+    sw $zero, 148($sp)
     sw $zero, 152($sp)
-    sw $zero, 156($sp)
     li $t9, 1
-    sb $t9, 152($sp)
+    sb $t9, 148($sp)
     li $t8, 42
-    sw $t8, 156($sp)
-    addiu $t9, $sp, 152
+    sw $t8, 152($sp)
+    addiu $t9, $sp, 148
     lw $t8, 136($sp)
     lw $t7, 0($t9)
     sw $t7, 0($t8)
@@ -246,9 +246,10 @@ load_level:
     j .Lload_level_ret_0
     nop
 .Lload_level_ret_0:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $s0, 156($sp)
+    lw $fp, 160($sp)
+    lw $ra, 164($sp)
+    addiu $sp, $sp, 168
     jr $ra
     nop
 	.size load_level, . - load_level
@@ -257,22 +258,41 @@ load_level:
 	.globl divide
 	.type divide, @function
 divide:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -176
+    sw $ra, 172($sp)
+    sw $fp, 168($sp)
+    addiu $fp, $sp, 176
+    sw $s0, 164($sp)
+    sw $s1, 160($sp)
     sw $a0, 136($sp)
-    sw $a1, 140($sp)
-    sw $a2, 144($sp)
-    lw $t8, 144($sp)
-    li $t7, 0
-    seq $t9, $t8, $t7
-    beqz $t9, .Lif_end_3
+    move $s1, $a1
+    move $s0, $a2
+    move $t9, $s0
+    bnez $t9, .Lif_end_3
     nop
+    sw $zero, 140($sp)
+    sw $zero, 144($sp)
+    sb $zero, 140($sp)
+    li $t8, 1
+    sw $t8, 144($sp)
+    addiu $t9, $sp, 140
+    lw $t8, 136($sp)
+    lw $t7, 0($t9)
+    sw $t7, 0($t8)
+    lw $t7, 4($t9)
+    sw $t7, 4($t8)
+    move $v0, $t8
+    j .Ldivide_ret_2
+    nop
+.Lif_end_3:
     sw $zero, 148($sp)
     sw $zero, 152($sp)
-    sb $zero, 148($sp)
-    li $t8, 1
+    li $t9, 1
+    sb $t9, 148($sp)
+    move $t7, $s1
+    move $t6, $s0
+    div $zero, $t7, $t6
+    mflo $t8
     sw $t8, 152($sp)
     addiu $t9, $sp, 148
     lw $t8, 136($sp)
@@ -283,29 +303,12 @@ divide:
     move $v0, $t8
     j .Ldivide_ret_2
     nop
-.Lif_end_3:
-    sw $zero, 156($sp)
-    sw $zero, 160($sp)
-    li $t9, 1
-    sb $t9, 156($sp)
-    lw $t7, 140($sp)
-    lw $t6, 144($sp)
-    div $zero, $t7, $t6
-    mflo $t8
-    sw $t8, 160($sp)
-    addiu $t9, $sp, 156
-    lw $t8, 136($sp)
-    lw $t7, 0($t9)
-    sw $t7, 0($t8)
-    lw $t7, 4($t9)
-    sw $t7, 4($t8)
-    move $v0, $t8
-    j .Ldivide_ret_2
-    nop
 .Ldivide_ret_2:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $s1, 160($sp)
+    lw $s0, 164($sp)
+    lw $fp, 168($sp)
+    lw $ra, 172($sp)
+    addiu $sp, $sp, 176
     jr $ra
     nop
 	.size divide, . - divide
@@ -314,18 +317,16 @@ divide:
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -240
+    sw $ra, 236($sp)
+    sw $fp, 232($sp)
+    addiu $fp, $sp, 240
     addiu $a0, $sp, 144
     la $a1, .Lstr0
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    sw $t8, 96($sp)
     jal load_level
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
+    lw $t8, 96($sp)
     addiu $t9, $sp, 144
     addiu $t8, $sp, 136
     lw $t7, 0($t9)
@@ -338,10 +339,9 @@ main:
     nop
     lw $t8, 4($t9)
     sw $t8, 152($sp)
-    lw $t7, 152($sp)
-    la $t6, sink
-    sw $t7, 0($t6)
-    move $t8, $t7
+    lw $t8, 152($sp)
+    la $t7, sink
+    sw $t8, 0($t7)
     j .Lmatch_end_6
     nop
 .Larm_skip_8:
@@ -354,33 +354,30 @@ main:
     li $t7, 0
     bne $t8, $t7, .Larm_skip_13
     nop
-    li $t5, 1
-    subu $t6, $zero, $t5
-    la $t5, sink
-    sw $t6, 0($t5)
-    move $t7, $t6
+    li $t6, 1
+    subu $t7, $zero, $t6
+    la $t6, sink
+    sw $t7, 0($t6)
     j .Lmatch_end_11
     nop
 .Larm_skip_13:
     li $t7, 1
     bne $t8, $t7, .Larm_skip_15
     nop
-    li $t5, 2
-    subu $t6, $zero, $t5
-    la $t5, sink
-    sw $t6, 0($t5)
-    move $t7, $t6
+    li $t6, 2
+    subu $t7, $zero, $t6
+    la $t6, sink
+    sw $t7, 0($t6)
     j .Lmatch_end_11
     nop
 .Larm_skip_15:
     li $t7, 2
     bne $t8, $t7, .Larm_skip_17
     nop
-    li $t5, 3
-    subu $t6, $zero, $t5
-    la $t5, sink
-    sw $t6, 0($t5)
-    move $t7, $t6
+    li $t6, 3
+    subu $t7, $zero, $t6
+    la $t6, sink
+    sw $t7, 0($t6)
     j .Lmatch_end_11
     nop
 .Larm_skip_17:
@@ -392,12 +389,10 @@ main:
     addiu $a0, $sp, 168
     li $a2, 2
     li $a1, 10
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    sw $t8, 96($sp)
     jal divide
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
+    lw $t8, 96($sp)
     addiu $t9, $sp, 168
     addiu $t8, $sp, 160
     lw $t7, 0($t9)
@@ -410,11 +405,10 @@ main:
     nop
     lw $t8, 4($t9)
     sw $t8, 176($sp)
-    li $t6, 10
-    subu $t7, $zero, $t6
-    la $t6, sink
-    sw $t7, 0($t6)
-    move $t8, $t7
+    li $t7, 10
+    subu $t8, $zero, $t7
+    la $t7, sink
+    sw $t8, 0($t7)
     j .Lmatch_end_19
     nop
 .Larm_skip_21:
@@ -423,10 +417,9 @@ main:
     nop
     lw $t8, 4($t9)
     sw $t8, 180($sp)
-    lw $t7, 180($sp)
-    la $t6, sink
-    sw $t7, 0($t6)
-    move $t8, $t7
+    lw $t8, 180($sp)
+    la $t7, sink
+    sw $t8, 0($t7)
     j .Lmatch_end_19
     nop
 .Larm_skip_23:
@@ -460,10 +453,9 @@ main:
     nop
     lw $t8, 4($t9)
     sw $t8, 216($sp)
-    lw $t7, 216($sp)
-    la $t6, sink
-    sw $t7, 0($t6)
-    move $t8, $t7
+    lw $t8, 216($sp)
+    la $t7, sink
+    sw $t8, 0($t7)
     j .Lmatch_end_24
     nop
 .Larm_skip_26:
@@ -490,19 +482,18 @@ main:
     nop
     lw $t8, 4($t9)
     sw $t8, 228($sp)
-    li $t6, 1
-    subu $t7, $zero, $t6
-    la $t6, sink
-    sw $t7, 0($t6)
-    move $t8, $t7
+    li $t7, 1
+    subu $t8, $zero, $t7
+    la $t7, sink
+    sw $t8, 0($t7)
     j .Lmatch_end_29
     nop
 .Larm_skip_33:
 .Lmatch_end_29:
 .Lmain_ret_4:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $fp, 232($sp)
+    lw $ra, 236($sp)
+    addiu $sp, $sp, 240
     jr $ra
     nop
 	.size main, . - main
@@ -517,3 +508,9 @@ main:
 	.globl sink
 sink:
 	.word 0
+
+	.section .bss
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.space 4

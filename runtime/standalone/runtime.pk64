@@ -670,10 +670,13 @@ const DPC_PIPE_BUSY: u32 = 0x0020
 const DPC_CMD_BUSY:  u32 = 0x0040
 const DPC_DMA_BUSY:  u32 = 0x0100
 
--- Display list: 8 KiB of uncached RDRAM just past the Z buffer.
-const DL_BASE:  u32 = 0xA0297000
-const DL_PHYS:  u32 = 0x00297000
-const DL_BYTES: u32 = 8192
+-- Display list: 64 KiB of uncached RDRAM at 0xA02A0000, directly below the
+-- heap (HEAP_BASE, 0x802B0000). A frame that outgrows it is split across DP
+-- kicks by dl_flush. mips_codegen.tcl's inline `alloc` bump and
+-- tcl/n64link.tcl's memory map must agree with both numbers.
+const DL_BASE:  u32 = 0xA02A0000
+const DL_PHYS:  u32 = 0x002A0000
+const DL_BYTES: u32 = 65536
 
 static g_dl_off: u32 = 0        -- write cursor, bytes from DL_BASE
 
@@ -785,10 +788,15 @@ fn dl_submit() {
     }
 }
 
--- Append one 64-bit command. A full buffer is submitted first, which is safe
--- because every command is self-contained once the DP has seen it.
-fn dl_cmd(w0: u32, w1: u32) {
-    if g_dl_off + 8 > DL_BYTES { dl_submit() }
+-- The largest RDP triangle command: 4 edge pairs + 8 shade + 8 texture + 2 Z.
+const DL_TRI_MAX: u32 = 176
+
+-- Usable capacity. The last 8 bytes are held back for the SYNC_FULL that
+-- every kick has to end with -- see dl_flush.
+const DL_LIMIT: u32 = DL_BYTES - 8
+
+-- Write one command with no capacity check. Callers guarantee the room.
+fn dl_put(w0: u32, w1: u32) {
     let p0: *volatile u32 = (DL_BASE + g_dl_off) as *volatile u32
     *p0 = w0
     let p1: *volatile u32 = (DL_BASE + g_dl_off + 4) as *volatile u32
@@ -796,8 +804,39 @@ fn dl_cmd(w0: u32, w1: u32) {
     g_dl_off = g_dl_off + 8
 }
 
+-- Hand off a full buffer mid-frame.
+--
+-- dl_submit waits for PIPE_BUSY to clear, and the DP only clears that on a
+-- SYNC_FULL -- which is why rdpq_detach appends one. An auto-flush that
+-- submitted without it spun in that wait forever, so the frame never reached
+-- detach and the screen stayed black. Any scene whose frame outgrew the
+-- buffer by more than one kick hung on the second one. Append the SYNC_FULL
+-- the wait is waiting for; DP state (modes, tile, TMEM) survives it, so
+-- splitting a frame across kicks only costs a pipeline drain.
+fn dl_flush() {
+    dl_put(RDP_SYNC_FULL << 24, 0)
+    dl_submit()
+}
+
+-- Reserve room for a whole multi-word command before any of it is written.
+-- dl_cmd/dl_word flush when the buffer fills, which is only safe BETWEEN
+-- commands: a triangle is 32-176 bytes of coefficients, and one split across
+-- two DP kicks is not two commands, it is a truncated command followed by a
+-- headless tail. The DP mis-parses both and the rest of the frame is lost.
+fn dl_reserve(bytes: u32) {
+    if g_dl_off + bytes > DL_LIMIT { dl_flush() }
+}
+
+-- Append one 64-bit command. A full buffer is flushed first, which is safe
+-- here because this is one whole command; multi-word commands must call
+-- dl_reserve first.
+fn dl_cmd(w0: u32, w1: u32) {
+    if g_dl_off + 8 > DL_LIMIT { dl_flush() }
+    dl_put(w0, w1)
+}
+
 fn dl_word(w: u32) {
-    if g_dl_off + 4 > DL_BYTES { dl_submit() }
+    if g_dl_off + 4 > DL_LIMIT { dl_flush() }
     let p: *volatile u32 = (DL_BASE + g_dl_off) as *volatile u32
     *p = w
     g_dl_off = g_dl_off + 4
@@ -1250,6 +1289,7 @@ fn rdp_edge_slope(dx: i32, dy: i32) -> i32 {
 }
 
 fn rdpq_triangle(x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
+    dl_reserve(DL_TRI_MAX)
     -- Sort the three vertices by Y (ya <= yb <= yc).
     let mut xa: i32 = x0
     let mut ya: i32 = y0
@@ -1297,6 +1337,7 @@ fn rdpq_triangle(x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
 fn rdpq_triangle_z(x0: i32, y0: i32, z0: i32,
                    x1: i32, y1: i32, z1: i32,
                    x2: i32, y2: i32, z2: i32) {
+    dl_reserve(DL_TRI_MAX)
     let mut xa: i32 = x0
     let mut ya: i32 = y0
     let mut za: i32 = z0
@@ -1348,13 +1389,140 @@ fn rdpq_triangle_z(x0: i32, y0: i32, z0: i32,
     rdp_z_coeffs(zs, dzdx, dzdy + rdp_muldiv(dzdx, hx, hy), dzdy)
 }
 
--- a * m / d, toward-zero, without a 64-bit intermediate. Used for s15.16
--- attribute slopes: rdp_muldiv(num, 65536, den) == (num << 16) / den.
+-- a * m / 65536, toward-zero, exact (via the 64-bit mult/mfhi/mflo product,
+-- no overflow). Split out from rdp_muldiv as the fast path for its most
+-- common denominator (every s15.16 attribute slope goes through this).
+static __md_tmp: i32 = 0
+
+fn muldiv_shr16(a: i32, m: i32) -> i32 {
+    asm {
+        "mult $a0, $a1"
+        "mfhi $t0"
+        "mflo $t1"
+        "srl $t2, $t1, 16"
+        "sll $t3, $t0, 16"
+        "or $t4, $t2, $t3"
+        "andi $t5, $t1, 0xFFFF"
+        "slt $t6, $t0, $zero"
+        "sltu $t7, $zero, $t5"
+        "and $t8, $t6, $t7"
+        "addu $t4, $t4, $t8"
+        "la $t9, __md_tmp"
+        "sw $t4, 0($t9)"
+    }
+    return __md_tmp
+}
+
+-- a * m / d, toward-zero, exact. Used for s15.16 attribute slopes:
+-- rdp_muldiv(num, 65536, den) == (num << 16) / den.
+--
+-- The old version here split a/d into a quotient and remainder to dodge a
+-- 32-bit overflow in a*m, but q*m and r*m can each still overflow on their
+-- own -- confirmed on the real Lambert scene, where every triangle's `nz`
+-- denominator and every w-normalization (`d == 65536`, hit on literally
+-- every triangle) pushed well past the safe range. This version takes the
+-- full 64-bit product via `multu` and does a manual 64-iteration
+-- restoring-division shift-subtract on the 64-bit magnitude, so no
+-- intermediate step can overflow and the result is exact regardless of how
+-- many bits the true quotient needs (only the low 32 survive in the 32-bit
+-- $t6 accumulator, matching ordinary MIPS register truncation) -- real
+-- Lambert-scene geometry never needs more than the low ~20 bits, but an
+-- earlier 32-iteration version that assumed the quotient always fit in 32
+-- bits (valid only when the product's high half is already less than the
+-- divisor) gave silently wrong answers once tcl/tools/rdp_test.tcl's
+-- synthetic worst-case triangle proved that assumption false.
+--
+-- Per iteration: shift the next dividend bit out of {hi:lo} into the
+-- remainder ($t0); if the remainder's *previous* top bit was set, the shift
+-- overflowed 32 bits, so the true (unbounded) remainder is definitely past
+-- the divisor and an unconditional subtract (which wraps correctly in a
+-- 32-bit register) is both necessary and sufficient -- otherwise compare
+-- and subtract as usual.
+static __rdp_muldiv_tmp: i32 = 0
+static __rdp_a: i32 = 0
+static __rdp_m: i32 = 0
+static __rdp_d: i32 = 0
+
+-- The general path below is not the first statement in this function (the
+-- two fast-path `if`s run ahead of it), so $a0-$a2 are no longer guaranteed
+-- to hold the original arguments by the time it runs -- that guarantee only
+-- holds for asm as a function's very first statement (see muldiv_shr16
+-- above, and the asm-block convention in IDIOMS.md). Route a/m/d through
+-- ordinary Pak assignments into statics first, which the compiler tracks
+-- correctly regardless of position, then have the asm block read them back.
 fn rdp_muldiv(a: i32, m: i32, d: i32) -> i32 {
     if d == 0 { return 0 }
-    let q: i32 = a / d
-    let r: i32 = a - q * d
-    return q * m + (r * m) / d
+    if d == 65536 { return muldiv_shr16(a, m) }
+    __rdp_a = a
+    __rdp_m = m
+    __rdp_d = d
+    asm {
+        "la $t8, __rdp_a"
+        "lw $a0, 0($t8)"
+        "la $t8, __rdp_m"
+        "lw $a1, 0($t8)"
+        "la $t8, __rdp_d"
+        "lw $a2, 0($t8)"
+        "slt $t3, $a0, $zero"
+        "move $t0, $a0"
+        "beqz $t3, .Lmd_a_done"
+        "nop"
+        "subu $t0, $zero, $a0"
+        ".Lmd_a_done:"
+        "slt $t8, $a1, $zero"
+        "xor $t3, $t3, $t8"
+        "move $t1, $a1"
+        "beqz $t8, .Lmd_m_done"
+        "nop"
+        "subu $t1, $zero, $a1"
+        ".Lmd_m_done:"
+        "slt $t8, $a2, $zero"
+        "xor $t3, $t3, $t8"
+        "move $t2, $a2"
+        "beqz $t8, .Lmd_d_done"
+        "nop"
+        "subu $t2, $zero, $a2"
+        ".Lmd_d_done:"
+        "multu $t0, $t1"
+        "mfhi $t4"
+        "mflo $t5"
+        "li $t0, 0"
+        "li $t6, 0"
+        "li $t9, 64"
+        ".Lmd_loop:"
+        "srl $t8, $t4, 31"
+        "sll $t4, $t4, 1"
+        "srl $t7, $t5, 31"
+        "or $t4, $t4, $t7"
+        "sll $t5, $t5, 1"
+        "srl $t7, $t0, 31"
+        "sll $t0, $t0, 1"
+        "or $t0, $t0, $t8"
+        "sll $t6, $t6, 1"
+        "beqz $t7, .Lmd_check"
+        "nop"
+        "subu $t0, $t0, $t2"
+        "ori $t6, $t6, 1"
+        "j .Lmd_next"
+        "nop"
+        ".Lmd_check:"
+        "sltu $t7, $t0, $t2"
+        "bnez $t7, .Lmd_next"
+        "nop"
+        "subu $t0, $t0, $t2"
+        "ori $t6, $t6, 1"
+        ".Lmd_next:"
+        "addiu $t9, $t9, -1"
+        "bnez $t9, .Lmd_loop"
+        "nop"
+        "beqz $t3, .Lmd_pos"
+        "nop"
+        "subu $t6, $zero, $t6"
+        ".Lmd_pos:"
+        "la $t7, __rdp_muldiv_tmp"
+        "sw $t6, 0($t7)"
+    }
+    return __rdp_muldiv_tmp
 }
 
 -- Pack one (A,B,C) s15.16 triplet as the RDP wants it: integer halves, then
@@ -1379,6 +1547,7 @@ fn rdpq_triangle_tex(tile: u32,
                      x0: i32, y0: i32, s0: i32, t0: i32,
                      x1: i32, y1: i32, s1: i32, t1: i32,
                      x2: i32, y2: i32, s2: i32, t2: i32) {
+    dl_reserve(DL_TRI_MAX)
     let mut xa: i32 = x0
     let mut ya: i32 = y0
     let mut sa: i32 = s0
@@ -1488,6 +1657,7 @@ fn rdpq_triangle_tex_persp(tile: u32,
                      x0: i32, y0: i32, s0: i32, t0: i32, w0: i32,
                      x1: i32, y1: i32, s1: i32, t1: i32, w1: i32,
                      x2: i32, y2: i32, s2: i32, t2: i32, w2: i32) {
+    dl_reserve(DL_TRI_MAX)
     let mut xa: i32 = x0
     let mut ya: i32 = y0
     let mut sa: i32 = s0
@@ -1748,12 +1918,14 @@ fn rdp_tri_shade(opcode: u32,
 fn rdpq_triangle_shade(x0: i32, y0: i32, c0: u32,
                        x1: i32, y1: i32, c1: u32,
                        x2: i32, y2: i32, c2: u32) {
+    dl_reserve(DL_TRI_MAX)
     rdp_tri_shade(RDP_TRI_SHADE, x0, y0, c0, 0, x1, y1, c1, 0, x2, y2, c2, 0, 0)
 }
 
 fn rdpq_triangle_shade_z(x0: i32, y0: i32, c0: u32, z0: i32,
                          x1: i32, y1: i32, c1: u32, z1: i32,
                          x2: i32, y2: i32, c2: u32, z2: i32) {
+    dl_reserve(DL_TRI_MAX)
     rdp_tri_shade(RDP_TRI_SHADE_Z, x0, y0, c0, z0, x1, y1, c1, z1, x2, y2, c2, z2, 1)
 }
 
@@ -1835,6 +2007,7 @@ fn rdpq_triangle_shade_tex(tile: u32,
                            x0: i32, y0: i32, c0: u32, s0: i32, t0: i32,
                            x1: i32, y1: i32, c1: u32, s1: i32, t1: i32,
                            x2: i32, y2: i32, c2: u32, s2: i32, t2: i32) {
+    dl_reserve(DL_TRI_MAX)
     let mut xa: i32 = x0
     let mut ya: i32 = y0
     let mut ca: u32 = c0
@@ -1888,6 +2061,7 @@ fn rdpq_triangle_shade_tex_z(tile: u32,
                              x0: i32, y0: i32, c0: u32, s0: i32, t0: i32,
                              x1: i32, y1: i32, c1: u32, s1: i32, t1: i32,
                              x2: i32, y2: i32, c2: u32, s2: i32, t2: i32) {
+    dl_reserve(DL_TRI_MAX)
     let mut xa: i32 = x0
     let mut ya: i32 = y0
     let mut ca: u32 = c0
@@ -1952,6 +2126,7 @@ fn rdpq_triangle_tex_z(tile: u32,
                        x0: i32, y0: i32, s0: i32, t0: i32,
                        x1: i32, y1: i32, s1: i32, t1: i32,
                        x2: i32, y2: i32, s2: i32, t2: i32) {
+    dl_reserve(DL_TRI_MAX)
     let mut xa: i32 = x0
     let mut ya: i32 = y0
     let mut sa: i32 = s0
@@ -2540,7 +2715,7 @@ fn audio_set_buffer_num(n: i32) {
 -- ── Heap (bump allocator) ───────────────────────────────────────────────────
 -- Cached RDRAM above the framebuffers, Z, display list and audio PCM, below
 -- the stack. Freeing is a no-op: a game that needs reuse should use an arena.
-const HEAP_BASE:  u32 = 0x802A0000
+const HEAP_BASE:  u32 = 0x802B0000
 const HEAP_LIMIT: u32 = 0x803C0000
 
 -- g_boot_memsize is written by boot.S at reset, straight from the RDRAM size
@@ -2567,25 +2742,12 @@ fn system_has_expansion() -> i32 {
 -- heap keeps.
 const HEAP_LIMIT_EXPANDED: u32 = 0x807F0000
 
-static g_heap_ptr:   u32 = 0
-static g_heap_limit: u32 = 0
-
--- Not what `alloc()` compiles to: mips_codegen.tcl's emit_bump_alloc
--- inlines its own bump at every call site (no jal), reading g_boot_memsize
--- directly, so this bound check is duplicated there rather than shared.
--- Nothing in the codegen currently emits a call to this function -- kept
--- for whatever, now or later, does call it by name.
+-- The same bump `alloc` compiles to (mips_codegen.tcl's emit_bump_alloc,
+-- which seeds at HEAP_BASE and stops at HEAP_LIMIT or, with the Expansion
+-- Pak, HEAP_LIMIT_EXPANDED), so Vec growth and PakFS buffers advance the one
+-- heap cursor every inline `alloc` in the program uses.
 fn __pak_alloc(size: i32) -> *u8 {
-    if g_heap_ptr == 0 {
-        g_heap_ptr = HEAP_BASE
-        g_heap_limit = HEAP_LIMIT
-        if g_boot_memsize > 0x400000 { g_heap_limit = HEAP_LIMIT_EXPANDED }
-    }
-    let aligned: u32 = ((size as u32) + 7) & 0xFFFFFFF8
-    if g_heap_ptr + aligned > g_heap_limit { return 0 as *u8 }
-    let p: u32 = g_heap_ptr
-    g_heap_ptr = g_heap_ptr + aligned
-    return p as *u8
+    return alloc(u8, size)
 }
 
 fn __pak_free(p: *u8) {

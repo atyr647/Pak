@@ -122,9 +122,9 @@ framebuffers and the display list).
 | 64-byte gap | | linker error on overlap |
 | FB0 / FB1 / FB2 | `0x80200000` / `0x80225800` / `0x8024B000` | 320×240×16bpp each (`0x25800`) |
 | Z buffer | `0x80271000` | 320×240×16-bit (`0x25800`) |
-| RDP display list | `0x80297000` | 8 KB |
 | AI PCM ring | `0x80299000` | 28 KB (up to 8 stereo buffers) |
-| bump heap | `0x802A0000`–`0x803C0000` | |
+| RDP display list | `0x802A0000` | 64 KB |
+| bump heap | `0x802B0000`–`0x803C0000` | `0x807F0000` with the Expansion Pak |
 | stack top | `0x80400000` | grows down |
 
 Cart images are padded to 4/8/16/32/64 MiB

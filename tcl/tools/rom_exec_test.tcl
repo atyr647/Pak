@@ -478,11 +478,11 @@ entry {
 
 # ── scenario: RDRAM size reaches Pak code, and the heap actually widens ─────
 #
-# boot.S reads RSP DMEM word 0 -- IPL3's own detected RDRAM size -- before
-# .bss zeroing could matter and stashes it to g_boot_memsize. These run that
-# real boot sequence from _start with DMEM preset to a chosen size (a
-# simulator MMIO override execute() did not have a case for until this
-# feature needed one), the same way the real console leaves it for IPL3.
+# boot.S reads the RDRAM size IPL3 detected from the old-style boot-info
+# word at 0x80000318 (through its KSEG1 alias, 0xA0000318 -- see boot.S for
+# why not RSP DMEM) and stashes it to g_boot_memsize. These run that real
+# boot sequence from _start with that word preset to a chosen size, the
+# same way IPL3 leaves it on the console.
 #
 # Two independent things have to be true, so each gets its own pair of
 # cases: system.memory_size/has_expansion have to report what boot.S found,
@@ -493,21 +493,21 @@ static out: i32 = 0
 entry {
     out = system.memory_size() as i32
 }
-} out 00800000 {0xA4000000 0x800000}
+} out 00800000 {0xA0000318 0x800000}
 
 rom_check "system.has_expansion is true with 8 MB present" {
 static out: i32 = 0
 entry {
     out = system.has_expansion()
 }
-} out 00000001 {0xA4000000 0x800000}
+} out 00000001 {0xA0000318 0x800000}
 
 rom_check "system.has_expansion is false on a stock 4 MB console" {
 static out: i32 = 0
 entry {
     out = system.has_expansion()
 }
-} out 00000000 {0xA4000000 0x400000}
+} out 00000000 {0xA0000318 0x400000}
 
 # 2 MB is well past HEAP_LIMIT's ~1.1 MB (HEAP_BASE..0x803C0000) but well
 # inside HEAP_LIMIT_EXPANDED's ~5.5 MB (HEAP_BASE..0x807F0000) -- the one
@@ -518,7 +518,7 @@ entry {
     let p: *u8 = alloc(u8, 2000000)
     if (p as u32) != 0 { out = 1 } else { out = 0 }
 }
-} out 00000001 {0xA4000000 0x800000}
+} out 00000001 {0xA0000318 0x800000}
 
 rom_check "the same 2 MB alloc still fails on a stock 4 MB console" {
 static out: i32 = 0
@@ -526,7 +526,31 @@ entry {
     let p: *u8 = alloc(u8, 2000000)
     if (p as u32) != 0 { out = 1 } else { out = 0 }
 }
-} out 00000000 {0xA4000000 0x400000}
+} out 00000000 {0xA0000318 0x400000}
+
+# The runtime's 64 KiB display list is physical 0x2A0000-0x2AFFFF. `alloc`
+# used to seed its cursor at 0x802A0000 -- the same RAM -- so any program
+# that allocated and also drew had the RDP reading heap data as commands.
+rom_check "the first alloc lands above the RDP display list" {
+static out: i32 = 0
+entry {
+    let p: *u8 = alloc(u8, 16)
+    out = p as i32
+}
+} out 802B0000
+
+# Vec growth and PakFS buffers come from the runtime's __pak_alloc, not from
+# an inline `alloc`. Each used to keep its own cursor, both starting at the
+# heap base, so the two handed out the same memory. One cursor: the second
+# allocation lands right after the first, whichever path made it.
+rom_check "inline alloc and the runtime's __pak_alloc share one heap" {
+static out: i32 = 0
+entry {
+    let a: *u8 = alloc(u8, 16)
+    let b: *u8 = __pak_alloc(16)
+    out = (b as i32) - (a as i32)
+}
+} out 00000010
 
 # Assigning a >32-byte struct literal to a local lowers to: zero the scratch
 # buffer with a real `jal memset`, store each field, then copy the scratch

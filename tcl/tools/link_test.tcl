@@ -95,6 +95,32 @@ foreach pk [lsort [glob -nocomplain [file join $REPO examples canonical *.pk64]]
     }
 }
 
+# Two objects that each use an interpolated string. Each object numbers its
+# format buffers from 0, so a buffer emitted as a global symbol collides the
+# moment a second file does the same -- every example above links alone
+# against a runtime that has none, which is how this went unnoticed.
+set name "(two objects, interpolated strings)"
+set fa [file join $tmp fmt_a.pk64]
+set fb [file join $tmp fmt_b.pk64]
+set fh [open $fa w]; puts $fh "entry \{\n    let x: i32 = 7\n    debug.log(\"a=\{x\}\")\n\}"; close $fh
+set fh [open $fb w]; puts $fh "fn fmt_helper(y: i32) \{\n    debug.log(\"b=\{y\}\")\n\}"; close $fh
+set oa [file join $tmp fmt_a.pakobj]
+set ob [file join $tmp fmt_b.pakobj]
+lassign [run $PAK objgen $fa -o $oa] rca outa
+lassign [run $PAK objgen $fb -o $ob] rcb outb
+if {$rca || $rcb} {
+    lappend broken $name
+    dict set detail $name "objgen failed: [lindex [split "$outa\n$outb" \n] 0]"
+} else {
+    lassign [run $PAK link $boot $rt $oa $ob -o [file join $tmp out.z64] --name PAKCI] rc out
+    if {$rc} {
+        lappend broken $name
+        dict set detail $name [lindex [split $out \n] 0]
+    } else {
+        lappend linked $name
+    }
+}
+
 if {$mode eq "list"} {
     foreach n $broken { puts [format "%-24s %s" $n [dict get $detail $n]] }
     puts ""

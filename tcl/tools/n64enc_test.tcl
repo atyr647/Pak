@@ -175,6 +175,10 @@ check {i neg.s {$f0} {$f2}}   0x46001007
 check {i abs.s {$f0} {$f2}}   0x46001005
 # sqrt.s $f0,$f2 -> funct 0x04
 check {i sqrt.s {$f0} {$f2}}  0x46001004
+# trunc.w.s $f12,$f12 -> funct 0x0D (GNU as: 4600630d). `f as i32` uses this,
+# not cvt.w.s, which rounds to nearest under the reset FCSR.
+check {i trunc.w.s {$f12} {$f12}}  0x4600630d
+check {i trunc.w.s {$f4} {$f14}}   0x4600710d
 # c.eq.s $f4,$f6 -> fmt=16 ft=6 fs=4 funct=0x30|2
 check {i c.eq.s {$f4} {$f6}}  0x46062032
 # c.lt.s $f4,$f6 -> funct=0x30|12

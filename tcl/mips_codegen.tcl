@@ -17,6 +17,9 @@
 set _mcghere [file dirname [file normalize [info script]]]
 source [file join $_mcghere ast.tcl]
 source [file join $_mcghere mips_tables.tcl]
+# A pure AST-to-AST pass (small leaf-function call sites spliced in before
+# codegen), applied only for this backend -- see opt_inline.tcl's header.
+source [file join $_mcghere opt_inline.tcl]
 # The HAL contract, so the codegen can ask the SAME question the checker asks:
 # `pak check --backend mips` accepts a module call when the standalone HAL
 # defines its symbol, and mips_hal_has is what decides that. Testing MIPS_API
@@ -141,6 +144,12 @@ oo::class create pak::Emitter {
     method bnez {r lbl}   { my instr "bnez" "$r," $lbl }
     method bge {s1 s2 lbl} { my instr "bge" "$s1," "$s2," $lbl }
     method bne {s1 s2 lbl} { my instr "bne" "$s1," "$s2," $lbl }
+    method beq {s1 s2 lbl} { my instr "beq" "$s1," "$s2," $lbl }
+    method bltz {r lbl}   { my instr "bltz" "$r," $lbl }
+    method bgez {r lbl}   { my instr "bgez" "$r," $lbl }
+    method blez {r lbl}   { my instr "blez" "$r," $lbl }
+    method bgtz {r lbl}   { my instr "bgtz" "$r," $lbl }
+    method slti {d s imm} { my instr "slti" "$d," "$s," $imm }
     # typed loads / stores
     method lh {d off base}  { my instr "lh" "$d," "${off}($base)" }
     method lhu {d off base} { my instr "lhu" "$d," "${off}($base)" }
@@ -157,6 +166,7 @@ oo::class create pak::Emitter {
     method mfc1 {gpr fpr} { my instr "mfc1" "$gpr," $fpr }
     method cvt_s_w {fd fs} { my instr "cvt.s.w" "$fd," $fs }
     method cvt_w_s {fd fs} { my instr "cvt.w.s" "$fd," $fs }
+    method trunc_w_s {fd fs} { my instr "trunc.w.s" "$fd," $fs }
     method cvt_d_w {fd fs} { my instr "cvt.d.w" "$fd," $fs }
     method cvt_w_d {fd fs} { my instr "cvt.w.d" "$fd," $fs }
     method add_s {fd fs ft} { my instr "add.s" "$fd," "$fs," $ft }
@@ -275,6 +285,20 @@ oo::class create pak::RegAlloc {
 
     method alloc_order {} { return $alloc_order }
 
+    # A register-promoted local (see compute_promotable) reserves one of
+    # $s0-$s5 for its whole function scope, outside the normal alloc_temp/
+    # free_temp dance. Two things have to happen for that to be safe: the
+    # register must never again be handed out as scratch (or a nested
+    # expression's spill would clobber the local's live value), and it must
+    # still be saved/restored in the prologue/epilogue like any other
+    # callee-saved register this function touches -- exactly what
+    # used_callee_gprs (read by patch_prologue/emit_epilogue) is for.
+    method mark_saved_used {reg} {
+        set idx [lsearch -exact $free_saved $reg]
+        if {$idx >= 0} { set free_saved [lreplace $free_saved $idx $idx] }
+        if {$reg ni $used_saved} { lappend used_saved $reg }
+    }
+
     method used_callee_gprs {} {
         return [lsort -command pak::gpr_cmp $used_saved]
     }
@@ -364,7 +388,7 @@ oo::class create pak::LiteralPool {
             foreach s $inited {
                 lassign $s name size align iv
                 $em align [pak::log2_align $align]
-                $em globl $name
+                if {![string match ".L*" $name]} { $em globl $name }
                 $em label $name
                 if {[llength $iv] == 2 && [lindex $iv 0] eq "bytes"} {
                     pak::emit_bytes $em [lindex $iv 1]
@@ -384,7 +408,7 @@ oo::class create pak::LiteralPool {
             foreach s $uninited {
                 lassign $s name size align iv
                 $em align [pak::log2_align $align]
-                $em globl $name
+                if {![string match ".L*" $name]} { $em globl $name }
                 $em label $name
                 $em space $size
             }
@@ -525,7 +549,10 @@ oo::class create pak::MipsCodegen {
              tenv_layouts tenv_enum_values tenv_variant_decls fn_decls \
              generic_fns generic_structs generic_impls mono_emitted mono_queue type_nodes \
              closure_envs closure_captures last_closure_env heap_inited \
-             trait_decls trait_vtables assets asset_lens use_aliases
+             trait_decls trait_vtables assets asset_lens use_aliases \
+             promo_decl_count promo_decl_type promo_decl_order promo_addr_taken \
+             promo_closure_names promoted_regs promo_use_count promoted_freg used_freg \
+             call_max_args call_save_base
 
     constructor {} {
         set em [pak::Emitter new]
@@ -566,6 +593,9 @@ oo::class create pak::MipsCodegen {
         set assets [dict create]
         set asset_lens [dict create]
         set use_aliases [dict create]
+        set promoted_regs [dict create]
+        set promoted_freg [dict create]
+        set used_freg {}
     }
     destructor {
         $em destroy
@@ -967,8 +997,15 @@ oo::class create pak::MipsCodegen {
             }
             TypeArray {
                 set inner [my mips_layout [pak::nfield $type_tv inner]]
+                # The size expression is usually an IntLit ([32]u8), but a
+                # named const ([VERT_COUNT]i32) is just as legal -- and falling
+                # back to 0 for anything else silently emitted `.space 0` for
+                # the whole array, aliasing it with whatever symbol came next.
+                # eval_const_expr already folds Ident-to-const (and +-*/ over
+                # those), so it resolves both cases the same way.
                 set sz [pak::nfield $type_tv size]
-                if {[pak::kindof $sz] eq "IntLit"} { set n [pak::fval $sz value] } else { set n 0 }
+                set n [my eval_const_expr $sz]
+                if {$n eq ""} { set n 0 }
                 return [dict create size [expr {[dict get $inner size] * $n}] \
                     align [dict get $inner align] is_float 0 is_signed 1 is_ptr 0 fields {} \
                     frac_bits 0 is_array 1]
@@ -1016,7 +1053,7 @@ oo::class create pak::MipsCodegen {
                     set esz [dict get $elem_layout size]
                     set eal [dict get $elem_layout align]
                     set cap_arg [lindex $gargs 1]
-                    set cap [expr {[pak::kindof $cap_arg] eq "IntLit" ? [pak::fval $cap_arg value] : 0}]
+                    set cap [my eval_const_expr $cap_arg]; if {$cap eq ""} { set cap 0 }
                     set data_sz [expr {$esz * $cap}]
                     set len_off [expr {($data_sz + 3) & ~3}]
                     set total [expr {$len_off + 4}]
@@ -1055,7 +1092,7 @@ oo::class create pak::MipsCodegen {
                     set esz [dict get $elem_layout size]
                     set eal [dict get $elem_layout align]
                     set cap_arg [lindex $gargs 1]
-                    set cap [expr {[pak::kindof $cap_arg] eq "IntLit" ? [pak::fval $cap_arg value] : 0}]
+                    set cap [my eval_const_expr $cap_arg]; if {$cap eq ""} { set cap 0 }
                     set data_sz [expr {$esz * $cap}]
                     set ctrl_off [expr {($data_sz + 3) & ~3}]
                     set total [expr {$ctrl_off + 12}]
@@ -1075,7 +1112,7 @@ oo::class create pak::MipsCodegen {
                     set kl [my mips_layout [lindex $gargs 0]]
                     set vl [my mips_layout [lindex $gargs 1]]
                     set cap_arg [lindex $gargs 2]
-                    set cap [expr {[pak::kindof $cap_arg] eq "IntLit" ? [pak::fval $cap_arg value] : 0}]
+                    set cap [my eval_const_expr $cap_arg]; if {$cap eq ""} { set cap 0 }
                     set ksz [dict get $kl size]; set kal [dict get $kl align]
                     set vsz [dict get $vl size]; set val_al [dict get $vl align]
                     set keys_sz [expr {$ksz * $cap}]
@@ -1379,11 +1416,256 @@ oo::class create pak::MipsCodegen {
             }
         }
     }
+    # ── register-resident locals ────────────────────────────────────────────
+    # A `let`/`let mut` local or parameter that is scalar (i32/u32, or a
+    # pointer -- see the DotAccess/IndexAccess/SliceExpr note in
+    # scan_promo_node below for how a pointer stays eligible even when
+    # dotted/indexed), declared exactly once in the function, never has its
+    # address taken (`&x`), and is never referenced inside a nested closure
+    # (which captures by address, so it would need a real stack slot) can
+    # live in a dedicated $s0-$s5 register for its whole function scope
+    # instead of a stack slot reloaded on every read. Measured on
+    # tools/pak/lambert.pk64's draw_nave(): most locals in a hot function
+    # like rdpq_triangle_tex_persp are read 2-4 times each, every one of
+    # them a real `lw` before this, since the previous "register allocator"
+    # only ever used $t0-$t9/$s0-$s7 as scratch for one expression at a
+    # time (see the class comment above pak::RegAlloc) -- a local's value
+    # never stayed in a register across statements. $s6/$s7 are left out of
+    # the promotion pool so RegAlloc still has its own overflow tier for
+    # deeply nested expressions. A parameter is homed here on entry with
+    # one `move` from its incoming $aN instead of the usual store-then-
+    # reload-on-every-use, which matters most for a pointer receiver
+    # (`self: *Foo`) read repeatedly across a method body -- previously the
+    # one type of promotable-shaped value never actually promoted, since
+    # dotting it (`self.x`) looked, to this scan alone, indistinguishable
+    # from a value-type struct field write that genuinely needs a real
+    # stack address.
+    #
+    # Correctness hinges on three exclusions, all computed once per function
+    # by scan_promo_node before any codegen for its body runs:
+    #  - declared-once-only: a name reused for two sibling/nested `let`s (Pak
+    #    allows shadowing) must keep getting a FRESH stack slot each time, as
+    #    today, or the second declaration's register would silently clobber
+    #    a still-in-scope outer binding of the same name.
+    #  - never `&name`: a promoted local has no address at all.
+    #  - never referenced inside a Closure: closures capture their free
+    #    variables by address (see emit_closure / __cenv_*), which likewise
+    #    requires a real stack slot.
+    # A promoted local is still entered into `scopes` under a sentinel offset
+    # string ("REG:$sN") rather than a number, found by the ordinary
+    # lookup_local exactly like a stack local. load_from_sp/store_to_sp (the
+    # only two functions every read/write of a local's value funnels
+    # through -- emit_ident_load and emit_assign_target both already call
+    # them rather than emitting `lw`/`sw` directly) recognise the sentinel
+    # and emit a `move` instead. Every other consumer of lookup_local's
+    # result (address-of, closures, container/string methods, as_slice) only
+    # ever reaches a name this scan already excluded from promotion, so they
+    # need no changes -- and if that ever turned out wrong for some case
+    # this scan missed, the sentinel string fed into an `addiu`/`lw`
+    # immediate is not valid MIPS syntax, so it is a build-time asm failure,
+    # never a silently wrong program.
+    method scan_promo_node {tv in_closure} {
+        if {[pak::kindof $tv] eq ""} {
+            if {[lindex $tv 0] eq "seq"} {
+                foreach item [lindex $tv 1] { my scan_promo_node $item $in_closure }
+            }
+            return
+        }
+        set kind [pak::kindof $tv]
+        if {$kind eq "Closure"} { set in_closure 1 }
+        if {$kind eq "LetDecl"} {
+            set nm [pak::fval $tv name]
+            dict incr promo_decl_count $nm
+            if {![dict exists $promo_decl_type $nm]} {
+                dict set promo_decl_type $nm [pak::nfield $tv type]
+                lappend promo_decl_order $nm
+            }
+        }
+        if {$kind eq "Ident"} {
+            dict incr promo_use_count [pak::fval $tv name]
+            if {$in_closure} {
+                dict set promo_closure_names [pak::fval $tv name] 1
+            }
+        }
+        if {$kind eq "AddrOf"} {
+            set operand [pak::nfield $tv expr]
+            if {[pak::kindof $operand] eq "Ident"} {
+                dict set promo_addr_taken [pak::fval $operand name] 1
+            }
+        }
+        # DotAccess/IndexAccess/SliceExpr on a bare Ident can reach
+        # emit_place_addr too (method-call self, field/index addressing),
+        # the same implicit address-of AddrOf makes explicit -- EXCEPT when
+        # the ident's own declared type is a pointer. emit_place_addr's
+        # DotAccess case already knows this distinction (it checks
+        # type_is_ptr and, for a pointer base, evaluates the pointer's
+        # *value* via emit_expr rather than taking the variable's own
+        # address -- see the method below), so `self.x`/`ptr.field` on a
+        # promoted pointer local only ever needs a register read, exactly
+        # what promotion gives for free. A value-type struct/array local
+        # still needs a real stack address for the same syntax, so it stays
+        # excluded. promo_decl_type is populated for params up front and
+        # for `let`s in the same left-to-right order this scan runs in, so
+        # the type is already known by the time a use is seen -- an
+        # unannotated `let` (no declared type recorded here) falls back to
+        # the conservative exclusion, same as before this pointer carve-out
+        # existed.
+        if {$kind in {DotAccess IndexAccess SliceExpr}} {
+            set operand [pak::nfield $tv obj]
+            if {[pak::kindof $operand] eq "Ident"} {
+                set onm [pak::fval $operand name]
+                set base_is_ptr 0
+                if {[dict exists $promo_decl_type $onm]} {
+                    set ot [dict get $promo_decl_type $onm]
+                    if {![pak::isnil $ot] && [pak::kindof $ot] eq "TypePointer"} {
+                        set base_is_ptr 1
+                    }
+                }
+                if {!$base_is_ptr} {
+                    dict set promo_addr_taken $onm 1
+                }
+            }
+        }
+        foreach f [dict get $::pak::SCHEMA $kind] {
+            my scan_promo_node [pak::nfield $tv $f] $in_closure
+        }
+    }
+    # Find the widest argument list of any call reachable from this
+    # function's body, +2 to cover the worst case of an implicit self
+    # receiver and a hidden struct-return pointer both occupying argument
+    # slots ahead of the syntactic ones (see emit_direct_call/
+    # emit_method_call) -- cheaper to over-reserve a few bytes than to
+    # duplicate every call shape's own slot-counting logic here.
+    method scan_max_call_args {tv} {
+        if {[pak::kindof $tv] eq ""} {
+            if {[lindex $tv 0] eq "seq"} {
+                foreach item [lindex $tv 1] { my scan_max_call_args $item }
+            }
+            return
+        }
+        set kind [pak::kindof $tv]
+        if {$kind eq "Call"} {
+            set n [llength [pak::items [pak::nfield $tv args]]]
+            set slots [expr {$n + 2}]
+            if {$slots > $call_max_args} { set call_max_args $slots }
+        }
+        foreach f [dict get $::pak::SCHEMA $kind] {
+            my scan_max_call_args [pak::nfield $tv $f]
+        }
+    }
+
+    method compute_promotable {body {params {}}} {
+        set promo_decl_count [dict create]
+        set promo_decl_type [dict create]
+        set promo_decl_order {}
+        set promo_addr_taken [dict create]
+        set promo_closure_names [dict create]
+        set promo_use_count [dict create]
+        # A parameter is declared once, on entry; homing it into its register
+        # is then one `move` from $aN instead of a store and a load per read.
+        # A `let` of the same name in the body counts as a second declaration
+        # and keeps both on the stack.
+        foreach p [pak::items $params] {
+            set nm [pak::fval $p name]
+            dict incr promo_decl_count $nm
+            if {![dict exists $promo_decl_type $nm]} {
+                dict set promo_decl_type $nm [pak::nfield $p type]
+                lappend promo_decl_order $nm
+            }
+        }
+        my scan_promo_node $body 0
+        set promoted_regs [dict create]
+        set promoted_freg [dict create]
+        set used_freg {}
+        # A function with more eligible locals than registers (rdpq_triangle_
+        # tex_persp has ~50) has to pick which ones are worth a register --
+        # the ones read most often, not just the first ones declared. A
+        # straight-line function's swap-into-a/b/c temps (read once or
+        # twice each) would otherwise crowd out the values actually reused
+        # 3-4 times (edge/texture coefficient terms), for close to zero win.
+        set eligible {}
+        foreach nm $promo_decl_order {
+            if {[dict get $promo_decl_count $nm] != 1} continue
+            if {[dict exists $promo_addr_taken $nm]} continue
+            if {[dict exists $promo_closure_names $nm]} continue
+            set t [dict get $promo_decl_type $nm]
+            if {[pak::isnil $t]} continue
+            set tk [pak::kindof $t]
+            if {$tk eq "TypeName"} {
+                if {[pak::fval $t name] ni {i32 u32}} continue
+            } elseif {$tk ne "TypePointer"} {
+                continue
+            }
+            set uses 0
+            if {[dict exists $promo_use_count $nm]} { set uses [dict get $promo_use_count $nm] }
+            lappend eligible [list $uses $nm]
+        }
+        set eligible [lsort -integer -decreasing -index 0 $eligible]
+        set avail {{$s0} {$s1} {$s2} {$s3} {$s4} {$s5}}
+        foreach pair $eligible {
+            if {[llength $avail] == 0} break
+            set nm [lindex $pair 1]
+            set r [lindex $avail 0]
+            set avail [lrange $avail 1 end]
+            dict set promoted_regs $nm $r
+            $ra mark_saved_used $r
+        }
+        # f32 locals/params get the same treatment, in a disjoint register
+        # pool: every scalar float currently round-trips through a stack
+        # slot on every read/write (see the "Float convention" comment
+        # above emit_typed_load) because $f12/$f14 are the only two FP
+        # registers this backend ever names. $f20-$f26 are otherwise
+        # unused anywhere in Pak's own codegen or runtime, so they are free
+        # to be this function's own callee-saved float locals -- callee-
+        # saved in the same sense $s0-$s5 are: any function that uses one
+        # saves and restores it in its own prologue/epilogue (below), so a
+        # value living there survives a call into any other Pak-compiled
+        # function regardless of what that function does with $f20-$f26
+        # for its own promoted locals.
+        set eligible_f {}
+        foreach nm $promo_decl_order {
+            if {[dict get $promo_decl_count $nm] != 1} continue
+            if {[dict exists $promo_addr_taken $nm]} continue
+            if {[dict exists $promo_closure_names $nm]} continue
+            set t [dict get $promo_decl_type $nm]
+            if {[pak::isnil $t] || [pak::kindof $t] ne "TypeName"} continue
+            if {[pak::fval $t name] ne "f32"} continue
+            set uses 0
+            if {[dict exists $promo_use_count $nm]} { set uses [dict get $promo_use_count $nm] }
+            lappend eligible_f [list $uses $nm]
+        }
+        set eligible_f [lsort -integer -decreasing -index 0 $eligible_f]
+        set avail_f {{$f20} {$f22} {$f24} {$f26}}
+        foreach pair $eligible_f {
+            if {[llength $avail_f] == 0} break
+            set nm [lindex $pair 1]
+            set r [lindex $avail_f 0]
+            set avail_f [lrange $avail_f 1 end]
+            dict set promoted_freg $nm $r
+            lappend used_freg $r
+        }
+    }
     # `anns` is the declaration's annotation list, if it has one. Without it a
     # @aligned(16) local got only its element type's alignment -- 1 for a byte
     # array -- so a stack DMA buffer the checker had passed under E202 landed
     # on an odd offset and the PI rejected it.
     method declare_local {name layout {type_node ""} {anns {}}} {
+        if {[dict exists $promoted_regs $name]} {
+            set r [dict get $promoted_regs $name]
+            if {[llength $scopes] > 0} {
+                set f [lindex $scopes end]; dict set f $name [list "REG:$r" $layout]; lset scopes end $f
+            }
+            if {$type_node ne ""} { dict set type_nodes $name $type_node }
+            return "REG:$r"
+        }
+        if {[dict exists $promoted_freg $name]} {
+            set r [dict get $promoted_freg $name]
+            if {[llength $scopes] > 0} {
+                set f [lindex $scopes end]; dict set f $name [list "FREG:$r" $layout]; lset scopes end $f
+            }
+            if {$type_node ne ""} { dict set type_nodes $name $type_node }
+            return "FREG:$r"
+        }
         set align [pak::mips_ann_align $anns [dict get $layout align]]
         if {$align > $frame_align} { set frame_align $align }
         set next_local [expr {($next_local + $align - 1) & ~($align - 1)}]
@@ -1417,6 +1699,14 @@ oo::class create pak::MipsCodegen {
         $em blank
         foreach decl [pak::items [pak::nfield $program decls]] { my emit_top_decl $decl }
         my flush_mono
+        foreach decl [pak::items [pak::nfield $program decls]] {
+            if {[pak::kindof $decl] eq "EntryBlock"} {
+                # .bss (zeroed at boot), so it sorts after the program's own
+                # statics instead of shifting every one of them by a word.
+                $pool add_static __pak_heap_ptr 4 4 ""
+                break
+            }
+        }
         $pool emit_rodata $em
         $pool emit_data $em
         return [$em getvalue]
@@ -1792,17 +2082,32 @@ oo::class create pak::MipsCodegen {
         $em type_func $name
         $em label $name
         if {$ra ne ""} { catch {$ra destroy} }
-        # Frame layout: $sp+0..15 = O32 home area; $sp+16..63 = outgoing stack args
-        # (up to 12 extra args beyond the 4 register args); $sp+64..95 = 8 spill
-        # slots; $sp+96..135 = 10 call-save slots, one per caller-saved temp;
-        # $sp+136+ = local variables.  Keeping the spill and call-save areas
-        # above the O32 outgoing-arg area prevents marshal_args from clobbering
-        # either.  $fp/$ra (and used callee-saved GPRs) sit at the top of the
-        # frame.  The default size is 320 bytes so existing functions keep their
-        # instruction stream; if locals would overlap that save area the frame
-        # grows (8-byte aligned) and the prologue immediates are patched.
-        set spill_base 64
+        # Frame layout: $sp+0..15 = O32 home area; $sp+16.. = outgoing stack
+        # args (normally up to 12 extra args beyond the 4 register args, i.e.
+        # ending at 63 -- wider only when this function's own calls need
+        # more, see scan_max_call_args below); then 8 spill slots, then 10
+        # call-save slots (one per caller-saved temp), then local variables.
+        # Keeping the spill and call-save areas above the O32 outgoing-arg
+        # area prevents marshal_args from clobbering either. $fp/$ra (and
+        # used callee-saved GPRs) sit at the top of the frame. The default
+        # size is 320 bytes so existing functions keep their instruction
+        # stream; if locals would overlap that save area the frame grows
+        # (8-byte aligned) and the prologue immediates are patched.
+        #
+        # marshal_args spills an argument beyond the 4th straight to
+        # $sp+16, $sp+20, ... -- the O32 outgoing-argument area. A call with
+        # more than 12 such extra arguments (16 total, counting a possible
+        # hidden self receiver and struct-return pointer) would walk off the
+        # end of that area and into whatever this function put right above
+        # it. Size that area -- and everything stacked on it -- to what this
+        # function's own calls actually need, instead of assuming 16 is
+        # always enough.
+        set call_max_args 0
+        my scan_max_call_args $body
+        set spill_base [expr {max(64, 16 + max(0, $call_max_args - 4) * 4)}]
+        set call_save_base [expr {$spill_base + 8 * 4}]
         set ra [pak::RegAlloc new [self] $spill_base]
+        my compute_promotable $body $params
         set scopes {}
         set defers {}
         set loop_header {}
@@ -1811,7 +2116,7 @@ oo::class create pak::MipsCodegen {
         set loop_result {}
         set sret_off ""
         set sret_size 0
-        set next_local [expr {$::pak::CALL_SAVE_BASE + 10 * 4}]
+        set next_local [expr {$call_save_base + 10 * 4}]
         set frame_align 8
         set float_slots [dict create]
         set float_depth 0
@@ -1921,11 +2226,18 @@ oo::class create pak::MipsCodegen {
         return $live
     }
 
-    method emit_call_saves {} {
-        set live [my live_caller_saved]
+    # `dead` names registers whose value the call does not need to survive:
+    # the destination the result is about to be written into, or a function
+    # pointer that is never read again. Saving them was a sw/lw pair around
+    # every call in the program.
+    method emit_call_saves {{dead {}}} {
+        set live {}
+        foreach r [my live_caller_saved] {
+            if {$r ni $dead} { lappend live $r }
+        }
         set i 0
         foreach r $live {
-            $em sw $r [expr {$::pak::CALL_SAVE_BASE + $i * 4}] {$sp}
+            $em sw $r [expr {$call_save_base + $i * 4}] {$sp}
             incr i
         }
         return $live
@@ -1934,42 +2246,42 @@ oo::class create pak::MipsCodegen {
     method emit_call_restores {live} {
         set i 0
         foreach r $live {
-            $em lw $r [expr {$::pak::CALL_SAVE_BASE + $i * 4}] {$sp}
+            $em lw $r [expr {$call_save_base + $i * 4}] {$sp}
             incr i
         }
     }
 
-    method emit_jal {target} {
-        set live [my emit_call_saves]
+    method emit_jal {target {dead {}}} {
+        set live [my emit_call_saves $dead]
         $em jal $target
         $em nop
         my emit_call_restores $live
     }
 
-    method emit_jalr_reg {reg} {
-        set live [my emit_call_saves]
+    method emit_jalr_reg {reg {dead {}}} {
+        set live [my emit_call_saves [concat $dead [list $reg]]]
         $em jalr $reg
         $em nop
         my emit_call_restores $live
     }
 
-    # Default frame is 320 bytes. Grow (8-byte aligned) when locals would
-    # overlap $fp/$ra and any callee-saved GPRs parked at the top.
+    # The frame is exactly what the function needs: the fixed low area
+    # (outgoing args, spill slots, call saves), its locals, then $fp/$ra and
+    # any callee-saved GPRs parked at the top. It used to be a flat 320 bytes
+    # minimum, which spread every call's stack traffic over more D-cache lines
+    # than it touched.
     # A slot offset is only as aligned as $sp is, and $sp moves by the frame
     # size, so a frame holding a 16-byte-aligned local has to be a multiple of
     # 16 itself -- otherwise the alignment survives in this function and is
     # lost in everything it calls.
     method frame_size_for_locals {local_top callee} {
-        set save_bytes [expr {8 + 4 * [llength $callee]}]
+        set save_bytes [expr {8 + 4 * [llength $callee] + 4 * [llength $used_freg]}]
         set a [expr {$frame_align < 8 ? 8 : $frame_align}]
-        set need [expr {($local_top + $save_bytes + $a - 1) & ~($a - 1)}]
-        if {$need < 320} { return 320 }
-        return $need
+        return [expr {($local_top + $save_bytes + $a - 1) & ~($a - 1)}]
     }
 
-    # Prologue is emitted before the body, so a grown frame has to rewrite the
-    # addiu/sw immediates. Functions that fit in 320 bytes are left untouched
-    # so their instruction stream (and the mips goldens) stay identical.
+    # Prologue is emitted before the body with a placeholder 320-byte frame,
+    # so the real size has to rewrite the addiu/sw immediates.
     method patch_frame_size {frame_size pstart pend rstart rend} {
         if {$frame_size == 320} return
         set ra_off [expr {$frame_size - 4}]
@@ -2029,6 +2341,14 @@ oo::class create pak::MipsCodegen {
             lappend rlines [list i sw $reg "${off}(\$sp)"]
             incr i
         }
+        # Callee-saved float locals (see compute_promotable), same slots,
+        # continuing past the GPR ones.
+        foreach reg $used_freg {
+            set off [expr {$frame_size - 12 - $i * 4}]
+            lappend lines "    swc1 $reg, ${off}(\$sp)"
+            lappend rlines [list i swc1 $reg "${off}(\$sp)"]
+            incr i
+        }
         # Patch the text buffer: replace the placeholder comment within the
         # current function's prologue region [pstart, pend).
         set buf [$em buf]
@@ -2053,12 +2373,13 @@ oo::class create pak::MipsCodegen {
     }
 
     method emit_epilogue {frame_size} {
-        set callee [$ra used_callee_gprs]
+        set callee [concat [$ra used_callee_gprs] $used_freg]
         set n [llength $callee]
         for {set i 0} {$i < $n} {incr i} {
             set ri [expr {$n - 1 - $i}]
             set reg [lindex $callee $ri]
-            $em lw $reg [expr {$frame_size - 12 - $ri * 4}] {$sp}
+            set off [expr {$frame_size - 12 - $ri * 4}]
+            if {[lsearch -exact $used_freg $reg] >= 0} { $em lwc1 $reg $off {$sp} } else { $em lw $reg $off {$sp} }
         }
         $em lw {$fp} [expr {$frame_size - 8}] {$sp}
         $em lw {$ra} [expr {$frame_size - 4}] {$sp}
@@ -2123,8 +2444,39 @@ oo::class create pak::MipsCodegen {
         }
         return [list [dict create size 4 align 4 is_float 0 is_signed 1 is_ptr 0 fields {}] 0]
     }
-    method load_from_sp {off dst layout}  { my emit_typed_load $dst $off {$sp} $layout }
-    method store_to_sp {off src layout}   { my emit_typed_store $src $off {$sp} $layout }
+    # A register-promoted local's "offset" is the sentinel string "REG:$sN"
+    # (see declare_local/compute_promotable) rather than a stack byte
+    # offset -- every read or write of a local's value funnels through
+    # these two functions, so this is the one place that needs to know
+    # about promotion at all.
+    method load_from_sp {off dst layout} {
+        if {[string match "REG:*" $off]} {
+            set r [string range $off 4 end]
+            if {$dst ne $r} { $em move $dst $r }
+            return
+        }
+        if {[string match "FREG:*" $off]} {
+            set r [string range $off 5 end]
+            # Float convention: every read has to leave the value in $f12.
+            if {$r ne {$f12}} { $em mov_s {$f12} $r }
+            return
+        }
+        my emit_typed_load $dst $off {$sp} $layout
+    }
+    method store_to_sp {off src layout} {
+        if {[string match "REG:*" $off]} {
+            set r [string range $off 4 end]
+            if {$src ne $r} { $em move $r $src }
+            return
+        }
+        if {[string match "FREG:*" $off]} {
+            set r [string range $off 5 end]
+            # Float convention: every write's value arrives in $f12.
+            if {$r ne {$f12}} { $em mov_s $r {$f12} }
+            return
+        }
+        my emit_typed_store $src $off {$sp} $layout
+    }
 
     method emit_block {block} {
         my push_scope
@@ -2372,8 +2724,15 @@ oo::class create pak::MipsCodegen {
                 my add_defer [pak::nfield $stmt body]
             }
             ExprStmt {
+                set e [pak::nfield $stmt expr]
+                # `x = v` as a statement: its value is discarded, so take the
+                # statement form, which does not hold a register for it.
+                if {[pak::kindof $e] eq "Assign"} {
+                    my emit_stmt $e
+                    return
+                }
                 set tmp [$ra alloc_temp]
-                my emit_expr [pak::nfield $stmt expr] $tmp
+                my emit_expr $e $tmp
                 $ra free_temp $tmp
             }
             Block      { my emit_block $stmt }
@@ -2423,11 +2782,14 @@ oo::class create pak::MipsCodegen {
         set has_else [expr {![pak::isnil [pak::nfield $stmt else_branch]]}]
         set elifs [pak::items [pak::nfield $stmt elif_branches]]
         if {$has_else || [llength $elifs] > 0} { set else_label [my fresh_label ".Lif_else"] } else { set else_label $end_label }
-        set cond [$ra alloc_temp]
-        my emit_expr [pak::nfield $stmt condition] $cond
-        $em beqz $cond $else_label
-        $em nop
-        $ra free_temp $cond
+        if {!$has_else && [llength $elifs] == 0} {
+            set jump [my loop_jump_target [pak::nfield $stmt then]]
+            if {$jump ne ""} {
+                my emit_cond_branch [pak::nfield $stmt condition] $jump 1
+                return
+            }
+        }
+        my emit_cond_branch [pak::nfield $stmt condition] $else_label 0
         my emit_block [pak::nfield $stmt then]
         if {[llength $elifs] > 0 || $has_else} { $em j $end_label; $em nop }
         set current_else $else_label
@@ -2435,11 +2797,7 @@ oo::class create pak::MipsCodegen {
             set p [pak::items $pair]
             $em label $current_else
             set next_else [my fresh_label ".Lelif_else"]
-            set cond [$ra alloc_temp]
-            my emit_expr [lindex $p 0] $cond
-            $em beqz $cond $next_else
-            $em nop
-            $ra free_temp $cond
+            my emit_cond_branch [lindex $p 0] $next_else 0
             my emit_block [lindex $p 1]
             $em j $end_label
             $em nop
@@ -2455,17 +2813,31 @@ oo::class create pak::MipsCodegen {
         $em label $end_label
     }
 
+    # `if c { break }` / `if c { continue }` is one conditional branch to the
+    # loop's exit or header -- when leaving the block runs nothing: no defer
+    # registered since the loop began, and no break value to store.
+    method loop_jump_target {then} {
+        if {[llength $loop_exit] == 0} { return "" }
+        set stmts [pak::items [pak::nfield $then stmts]]
+        if {[llength $stmts] != 1} { return "" }
+        set st [lindex $stmts 0]
+        set kind [pak::kindof $st]
+        if {$kind ni {Break Continue}} { return "" }
+        if {$kind eq "Break" && ![pak::isnil [pak::nfield $st value]]} { return "" }
+        for {set i [lindex $loop_defer_depth end]} {$i < [llength $defers]} {incr i} {
+            if {[llength [lindex $defers $i]] > 0} { return "" }
+        }
+        if {$kind eq "Break"} { return [lindex $loop_exit end] }
+        return [lindex $loop_header end]
+    }
+
     method emit_while {stmt} {
         set header [my fresh_label ".Lwhile_h"]
         set exit_l [my fresh_label ".Lwhile_x"]
         lappend loop_header $header; lappend loop_exit $exit_l
         lappend loop_defer_depth [llength $defers]
         $em label $header
-        set cond [$ra alloc_temp]
-        my emit_expr [pak::nfield $stmt condition] $cond
-        $em beqz $cond $exit_l
-        $em nop
-        $ra free_temp $cond
+        my emit_cond_branch [pak::nfield $stmt condition] $exit_l 0
         my emit_block [pak::nfield $stmt body]
         $em j $header
         $em nop
@@ -2481,11 +2853,7 @@ oo::class create pak::MipsCodegen {
         lappend loop_defer_depth [llength $defers]
         $em label $header
         my emit_block [pak::nfield $stmt body]
-        set cond [$ra alloc_temp]
-        my emit_expr [pak::nfield $stmt condition] $cond
-        $em bnez $cond $header
-        $em nop
-        $ra free_temp $cond
+        my emit_cond_branch [pak::nfield $stmt condition] $header 1
         $em label $exit_l
         set loop_header [lrange $loop_header 0 end-1]; set loop_exit [lrange $loop_exit 0 end-1]
         set loop_defer_depth [lrange $loop_defer_depth 0 end-1]
@@ -3311,7 +3679,10 @@ oo::class create pak::MipsCodegen {
             }
         }
         set fmt_lbl [$pool intern_string $fmt_text]
-        set buf_name "__pak_fmtbuf_$fmtstr_counter"
+        # .L-prefixed like .Lstr: every object file numbers its own format
+        # buffers from 0, so a global name collides as soon as two linked
+        # files both use an interpolated string.
+        set buf_name ".Lfmtbuf$fmtstr_counter"
         incr fmtstr_counter
         $pool add_static $buf_name 256 1 ""
         set use_float 0
@@ -3395,7 +3766,14 @@ oo::class create pak::MipsCodegen {
                 set n [pak::fval $expr name]
                 set local [my lookup_local $n]
                 if {$local ne ""} {
-                    $em lw $dst [lindex $local 0] {$sp}
+                    set off [lindex $local 0]
+                    if {[string match "FREG:*" $off]} {
+                        # A promoted float local has no stack slot to read the
+                        # bits from -- mfc1 straight out of its register.
+                        $em mfc1 $dst [string range $off 5 end]
+                    } else {
+                        $em lw $dst $off {$sp}
+                    }
                 } elseif {[dict exists $globals $n]} {
                     set addr [$ra alloc_temp]
                     $em la $addr $n
@@ -4069,7 +4447,12 @@ oo::class create pak::MipsCodegen {
             set env [my lookup_local __env]
             if {$env ne ""} {
                 set ep [$ra alloc_temp]
-                $em lw $ep [lindex $env 0] {$sp}
+                # __env is a plain TypePointer parameter, itself eligible for
+                # the same register promotion as any other pointer param (see
+                # compute_promotable) -- go through load_from_sp rather than
+                # assuming its local is a numeric $sp offset, exactly as any
+                # other read of a local's value has to.
+                my load_from_sp [lindex $env 0] $ep [lindex $env 1]
                 $em lw $ep [expr {$idx * 4}] $ep
                 $em lw $dst 0 $ep
                 $ra free_temp $ep
@@ -4395,7 +4778,7 @@ oo::class create pak::MipsCodegen {
             my emit_place_addr [pak::N Ident name $var_name type_args [pak::Seq {}]] $ptr
             $em sw $ptr $off {$sp}
             set sz [pak::nfield $type_node size]
-            set n [expr {[pak::kindof $sz] eq "IntLit" ? [pak::fval $sz value] : 0}]
+            set n [my eval_const_expr $sz]; if {$n eq ""} { set n 0 }
             $em li $ptr $n
             $em sw $ptr [expr {$off + 4}] {$sp}
         }
@@ -4445,7 +4828,9 @@ oo::class create pak::MipsCodegen {
             # source register: `f as i32` compiled to a `move` from an
             # unrelated temporary. Truncation toward zero, and no scaling for a
             # fixed-point target, matches what the C backend emits ((int32_t)f).
-            $em cvt_w_s {$f12} {$f12}
+            # trunc.w.s, not cvt.w.s: cvt rounds in the FCSR's mode, which is
+            # round-to-nearest at reset, so on hardware `2.7 as i32` was 3.
+            $em trunc_w_s {$f12} {$f12}
             $em mfc1 $dst {$f12}
             if {[dict get $to size] < 4} {
                 pak::emit_int_cast $em $dst $dst [dict get $to size] [dict get $to is_signed]
@@ -4721,24 +5106,61 @@ oo::class create pak::MipsCodegen {
         }
     }
 
+    # True only for a float-valued expression whose OWN evaluation provably
+    # never writes $f14: a plain leaf load (constant, variable, one field or
+    # one array element off a bare local), never a nested arithmetic
+    # expression or anything that might reach a call. Whitelist, not a
+    # blacklist -- anything not recognized here is treated as unsafe, same
+    # as expr_may_call's own stated policy.
+    method float_operand_simple {expr} {
+        switch -- [pak::kindof $expr] {
+            FloatLit { return 1 }
+            Ident    { return 1 }
+            IndexAccess {
+                set base_ok [expr {[pak::kindof [pak::nfield $expr obj]] eq "Ident"}]
+                set idx_ok [expr {[pak::kindof [pak::nfield $expr index]] in {Ident IntLit}}]
+                return [expr {$base_ok && $idx_ok}]
+            }
+            DotAccess {
+                return [expr {[pak::kindof [pak::nfield $expr obj]] eq "Ident"}]
+            }
+            default { return 0 }
+        }
+    }
+
     method emit_float_binop {expr dst op} {
         # The left side goes to a stack slot, not to $f14: evaluating the right
         # side is free to use both FP registers, and did. `0.5 * (y + m / y)`
         # came out as `m * (m + m/y)` because every nested operand overwrote
         # $f14 on its way past, and a call on the right side clobbered it too.
-        set d $float_depth
-        set off [my float_slot $d]
-        set float_depth [expr {$d + 1}]
-        set tmp_lhs [$ra alloc_temp]
-        my emit_expr [pak::nfield $expr left] $tmp_lhs
-        $em swc1 {$f12} $off {$sp}
-        set tmp_rhs [$ra alloc_temp]
-        my emit_expr [pak::nfield $expr right] $tmp_rhs
-        set float_depth $d
-        $em lwc1 {$f14} $off {$sp}
-        # $f12 holds the right side, $f14 the left.
-        $ra free_temp $tmp_rhs
-        $ra free_temp $tmp_lhs
+        #
+        # Skip the stack round trip when the right side is a leaf that cannot
+        # possibly write $f14 on its own: park the left side (whatever it took
+        # to compute) straight into $f14 with one mov.s, since nothing between
+        # here and the right side's own single load can disturb it.
+        set left_expr [pak::nfield $expr left]
+        set right_expr [pak::nfield $expr right]
+        if {[my float_operand_simple $right_expr]} {
+            set tmp [$ra alloc_temp]
+            my emit_expr $left_expr $tmp
+            $em mov_s {$f14} {$f12}
+            my emit_expr $right_expr $tmp
+            $ra free_temp $tmp
+        } else {
+            set d $float_depth
+            set off [my float_slot $d]
+            set float_depth [expr {$d + 1}]
+            set tmp_lhs [$ra alloc_temp]
+            my emit_expr $left_expr $tmp_lhs
+            $em swc1 {$f12} $off {$sp}
+            set tmp_rhs [$ra alloc_temp]
+            my emit_expr $right_expr $tmp_rhs
+            set float_depth $d
+            $em lwc1 {$f14} $off {$sp}
+            # $f12 holds the right side, $f14 the left.
+            $ra free_temp $tmp_rhs
+            $ra free_temp $tmp_lhs
+        }
         switch -- $op {
             + { $em add_s {$f12} {$f14} {$f12} }
             - { $em sub_s {$f12} {$f14} {$f12} }
@@ -4863,16 +5285,18 @@ oo::class create pak::MipsCodegen {
         $ra free_temp $d
     }
 
-    method ensure_heap {} {
-        if {$heap_inited} return
-        set heap_inited 1
-        $pool add_static __pak_heap_ptr 4 4 0
-    }
+    # The heap cursor is one symbol for the whole program, defined by the
+    # object that holds `entry` (generate does that) and referenced by every
+    # other: the runtime's __pak_alloc, which Vec growth and PakFS buffers
+    # use, bumps the same cursor as every inline `alloc`. Two cursors each
+    # starting at the heap base handed out the same memory twice.
+    method ensure_heap {} {}
 
     # Inline bump: no jal, so the sim (and a ROM without the HAL linked)
     # actually returns a pointer. 8-byte aligned, free is a no-op.
-    # First allocation seeds the cursor at the standalone HAL heap base so
-    # we don't need a 64 KiB .bss reservation in the object.
+    # First allocation seeds the cursor at the standalone HAL heap base
+    # (runtime.pk64's HEAP_BASE) so we don't need a .bss reservation in the
+    # object. 0x802A0000-0x802AFFFF below it is the RDP display list.
     #
     # Bounded against g_boot_memsize (runtime/standalone/runtime.pk64,
     # written by boot.S at reset from IPL3's own detected RDRAM size):
@@ -4897,7 +5321,7 @@ oo::class create pak::MipsCodegen {
         $em lw $base 0 $hp
         $em bnez $base $inited
         $em nop
-        $em li $base 0x802A0000
+        $em li $base 0x802B0000
         $em label $inited
         $em addiu $aln $size_reg 7
         $em li $hp 0xFFFFFFF8
@@ -4978,6 +5402,18 @@ oo::class create pak::MipsCodegen {
 
     method emit_binop {expr dst} {
         set op [pak::fval $expr op]
+        if {$op in {&& ||}} {
+            set f [my fresh_label .Lsc_f]
+            set e [my fresh_label .Lsc_e]
+            my emit_cond_branch $expr $f 0
+            $em li $dst 1
+            $em j $e
+            $em nop
+            $em label $f
+            $em move $dst {$zero}
+            $em label $e
+            return
+        }
         # Float path: dispatch to FPU arithmetic / comparisons
         if {[my infer_is_float [pak::nfield $expr left]] || \
             [my infer_is_float [pak::nfield $expr right]]} {
@@ -5057,6 +5493,159 @@ oo::class create pak::MipsCodegen {
         }
         $ra free_temp $rhs
         $ra free_temp $lhs
+    }
+
+    # ── conditions as branches ──────────────────────────────────────────────
+    # Jump to $label when $expr is true ($sense 1) or false ($sense 0), and
+    # fall through otherwise. A comparison becomes the branch itself instead of
+    # a 0/1 value tested by a second branch, and `and`/`or` short-circuit: the
+    # right side is not evaluated once the left decides the result, which is
+    # what makes `p? and p.x > 0` safe.
+    method emit_cond_branch {expr label sense} {
+        set k [pak::kindof $expr]
+        if {$k eq "UnaryOp" && [pak::fval $expr op] eq "!"} {
+            my emit_cond_branch [pak::nfield $expr operand] $label [expr {!$sense}]
+            return
+        }
+        if {$k eq "BoolLit"} {
+            if {([pak::fval $expr value] ? 1 : 0) == $sense} { $em j $label; $em nop }
+            return
+        }
+        if {$k eq "BinaryOp"} {
+            set op [pak::fval $expr op]
+            set l [pak::nfield $expr left]
+            set r [pak::nfield $expr right]
+            if {$op in {&& ||}} {
+                # `a && b` is decided false by either side, `a || b` true.
+                set decides [expr {$op eq "&&" ? 0 : 1}]
+                if {$sense == $decides} {
+                    my emit_cond_branch $l $label $sense
+                    my emit_cond_branch $r $label $sense
+                } else {
+                    set skip [my fresh_label .Lsc]
+                    my emit_cond_branch $l $skip $decides
+                    my emit_cond_branch $r $label $sense
+                    $em label $skip
+                }
+                return
+            }
+            if {$op in {== != < <= > >=} \
+                    && ![my infer_is_float $l] && ![my infer_is_float $r]} {
+                my emit_cmp_branch $op $l $r $label $sense
+                return
+            }
+        }
+        set c [$ra alloc_temp]
+        my emit_expr $expr $c
+        if {$sense} { $em bnez $c $label } else { $em beqz $c $label }
+        $em nop
+        $ra free_temp $c
+    }
+
+    # A plain integer literal usable as an I-type immediate, or "".
+    method cmp_imm {e} {
+        if {[pak::kindof $e] ne "IntLit"} { return "" }
+        set v [pak::fval $e value]
+        if {![string is entier -strict $v]} { return "" }
+        if {$v < -32768 || $v > 32767} { return "" }
+        return [expr {$v}]
+    }
+
+    method emit_cmp_branch {op l r label sense} {
+        if {!$sense} {
+            set op [dict get {== != != == < >= >= < > <= <= >} $op]
+        }
+        set uns [expr {[my infer_is_unsigned $l] || [my infer_is_unsigned $r]}]
+        # Same operand evaluation as emit_binop: an immediate is only used where
+        # emit_binop would have loaded the same literal unscaled.
+        set k ""
+        if {[my infer_frac_bits $l] == 0 && [my infer_frac_bits $r] == 0} {
+            set k [my cmp_imm $r]
+        }
+        if {$uns && $k ne "" && $k < 0} { set k "" }
+        if {$k ne ""} {
+            set lhs [$ra alloc_temp]
+            my emit_expr $l $lhs
+            my emit_cmp_imm_branch $op $lhs $k $uns $label
+            $ra free_temp $lhs
+            return
+        }
+        if {[my expr_has_call $r] && ![my expr_has_call $l]} {
+            set rhs [$ra alloc_temp]
+            my emit_expr $r $rhs
+            set lhs [$ra alloc_temp]
+            my emit_expr $l $lhs
+        } else {
+            set lhs [$ra alloc_temp]
+            my emit_expr $l $lhs
+            set rhs [$ra alloc_temp]
+            my emit_expr $r $rhs
+        }
+        set slt [expr {$uns ? "sltu" : "slt"}]
+        set t [$ra alloc_temp]
+        switch -- $op {
+            == { $em beq $lhs $rhs $label }
+            != { $em bne $lhs $rhs $label }
+            <  { $em $slt $t $lhs $rhs; $em bnez $t $label }
+            >= { $em $slt $t $lhs $rhs; $em beqz $t $label }
+            >  { $em $slt $t $rhs $lhs; $em bnez $t $label }
+            <= { $em $slt $t $rhs $lhs; $em beqz $t $label }
+        }
+        $em nop
+        $ra free_temp $t
+        $ra free_temp $rhs
+        $ra free_temp $lhs
+    }
+
+    # Branch to $label when `lhs op k` holds, k a 16-bit literal.
+    method emit_cmp_imm_branch {op lhs k uns label} {
+        if {$k == 0} {
+            switch -- $op {
+                == { $em beqz $lhs $label; $em nop; return }
+                != { $em bnez $lhs $label; $em nop; return }
+            }
+            if {!$uns} {
+                switch -- $op {
+                    <  { $em bltz $lhs $label }
+                    >= { $em bgez $lhs $label }
+                    >  { $em bgtz $lhs $label }
+                    <= { $em blez $lhs $label }
+                }
+                $em nop
+                return
+            }
+            # Unsigned against 0: `< 0` never holds, `>= 0` always does.
+            switch -- $op {
+                <  { return }
+                >= { $em j $label; $em nop; return }
+                >  { $em bnez $lhs $label; $em nop; return }
+                <= { $em beqz $lhs $label; $em nop; return }
+            }
+        }
+        set t [$ra alloc_temp]
+        set slti [expr {$uns ? "sltiu" : "slti"}]
+        switch -- $op {
+            == - != {
+                $em li $t $k
+                if {$op eq "=="} { $em beq $lhs $t $label } else { $em bne $lhs $t $label }
+            }
+            <  { $em $slti $t $lhs $k; $em bnez $t $label }
+            >= { $em $slti $t $lhs $k; $em beqz $t $label }
+            >  - <= {
+                # x > k is !(x < k+1); x <= k is x < k+1. k+1 must still fit.
+                if {$k < 32767} {
+                    $em $slti $t $lhs [expr {$k + 1}]
+                    if {$op eq ">"} { $em beqz $t $label } else { $em bnez $t $label }
+                } else {
+                    $em li $t $k
+                    set slt [expr {$uns ? "sltu" : "slt"}]
+                    $em $slt $t $t $lhs
+                    if {$op eq ">"} { $em bnez $t $label } else { $em beqz $t $label }
+                }
+            }
+        }
+        $em nop
+        $ra free_temp $t
     }
 
     method emit_unop {expr dst} {
@@ -5181,7 +5770,9 @@ oo::class create pak::MipsCodegen {
                     set idx [dict get $closure_captures $name]
                     set env [my lookup_local __env]
                     set ep [$ra alloc_temp]
-                    $em lw $ep [lindex $env 0] {$sp}
+                    # See the matching read path (emit_ident_load) for why
+                    # this can't assume __env's local is a numeric $sp offset.
+                    my load_from_sp [lindex $env 0] $ep [lindex $env 1]
                     $em lw $ep [expr {$idx * 4}] $ep
                     $em sw $val_reg 0 $ep
                     $ra free_temp $ep
@@ -5441,7 +6032,7 @@ oo::class create pak::MipsCodegen {
                     if {$fn eq "len"} {
                         if {[pak::kindof $receiver_type_node] eq "TypeArray"} {
                             set sz [pak::nfield $receiver_type_node size]
-                            set n [expr {[pak::kindof $sz] eq "IntLit" ? [pak::fval $sz value] : 0}]
+                            set n [my eval_const_expr $sz]; if {$n eq ""} { set n 0 }
                             $em li $dst $n
                         } else {
                             set local [my lookup_local $obj_name]
@@ -5508,7 +6099,7 @@ oo::class create pak::MipsCodegen {
                 }
                 set fptr [$ra alloc_temp]
                 my emit_ident_load $fname $fptr
-                my emit_jalr_reg $fptr
+                my emit_jalr_reg $fptr [list $dst]
                 $ra free_temp $fptr
                 if {$dst ne {$v0}} { $em move $dst {$v0} }
                 return
@@ -5539,7 +6130,7 @@ oo::class create pak::MipsCodegen {
         my marshal_args [pak::nfield $expr args]
         set fptr [$ra alloc_temp]
         my emit_expr $func $fptr
-        my emit_jalr_reg $fptr
+        my emit_jalr_reg $fptr [list $dst]
         $ra free_temp $fptr
         if {$dst ne {$v0}} { $em move $dst {$v0} }
     }
@@ -5767,7 +6358,8 @@ oo::class create pak::MipsCodegen {
             float_slots $float_slots float_depth $float_depth \
             loop_header $loop_header loop_exit $loop_exit \
             loop_defer_depth $loop_defer_depth loop_result $loop_result \
-            sret_off $sret_off sret_size $sret_size]
+            sret_off $sret_off sret_size $sret_size promoted_regs $promoted_regs \
+            promoted_freg $promoted_freg used_freg $used_freg call_save_base $call_save_base]
         set ra ""
         set loop_header {}
         set loop_exit {}
@@ -5791,6 +6383,10 @@ oo::class create pak::MipsCodegen {
         set loop_result [dict get $s loop_result]
         set sret_off [dict get $s sret_off]
         set sret_size [dict get $s sret_size]
+        set promoted_regs [dict get $s promoted_regs]
+        set promoted_freg [dict get $s promoted_freg]
+        set used_freg [dict get $s used_freg]
+        set call_save_base [dict get $s call_save_base]
     }
 
     method type_name_of {expr} {
@@ -5863,7 +6459,7 @@ oo::class create pak::MipsCodegen {
                 set start 2
             }
             my marshal_args $args_seq $start
-            my emit_jal $fname
+            my emit_jal $fname [list $dst]
             $em addiu $dst {$sp} $off
             return
         }
@@ -5873,7 +6469,7 @@ oo::class create pak::MipsCodegen {
         } else {
             my marshal_args $args_seq
         }
-        my emit_jal $fname
+        my emit_jal $fname [list $dst]
         if {$dst ne {$v0}} { $em move $dst {$v0} }
     }
 
@@ -5949,12 +6545,12 @@ oo::class create pak::MipsCodegen {
             $em addiu {$a0} {$sp} $off
             $em move {$a1} $selfp
             my marshal_args $args_seq 2
-            my emit_jalr_reg $fptr
+            my emit_jalr_reg $fptr [list $dst]
             $em addiu $dst {$sp} $off
         } else {
             $em move {$a0} $selfp
             my marshal_args $args_seq 1
-            my emit_jalr_reg $fptr
+            my emit_jalr_reg $fptr [list $dst]
             if {$dst ne {$v0}} { $em move $dst {$v0} }
         }
         $ra free_temp $selfp
@@ -5981,7 +6577,7 @@ oo::class create pak::MipsCodegen {
             set sym "${mod}_${fn}"
         }
         if {$sym eq ""} { set sym "${mod}_${fn}" }
-        my emit_jal $sym
+        my emit_jal $sym [list $dst]
         if {$dst ne {$v0}} { $em move $dst {$v0} }
     }
 
@@ -7090,6 +7686,7 @@ proc pak::mips_generate {program} {
 # Generate the structured record stream (for the binary encoder). Returns the
 # same instruction/directive records that back the text output.
 proc pak::mips_generate_records {program} {
+    set program [pak::inline_program $program]
     set cg [pak::MipsCodegen new]
     $cg generate $program
     set recs [$cg getrecords]

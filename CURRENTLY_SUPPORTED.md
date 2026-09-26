@@ -238,7 +238,7 @@ Key: **✅ Full** | **⚠️ Partial** | **🔲 Planned** | **❌ Known bug** <!
 | 4-byte / generic struct field load | ✅ Full | `Box { val: 9 }` and `Box<i32> { val: 9 }` memcpy the literal; `.val` is 9, not the stack address |
 | Named-field variant match (`.Rect { w: ww }`) | ✅ Full | Parsed as named bindings; loads the named payload field |
 | Trait `fn add(self, …)` / `n.add(5)` | ✅ Full | Untyped `self` is `*Self`; impl subst; 4-byte structs passed by address |
-| `alloc(T)` / `free` | ✅ Full | Inline 8-byte-aligned bump at `0x802A0000`; `free` is a no-op |
+| `alloc(T)` / `free` | ✅ Full | Inline 8-byte-aligned bump at `0x802B0000`; `free` is a no-op |
 | `if p?` postfix null-check | ✅ Full | Boolean is-not-none; `if p -> q` still binds |
 | `fix16.16 as i32` | ✅ Full | Arithmetic right-shift by frac bits; sim `mult` fills HI:LO for `*` |
 | `defer` | ✅ Full | |

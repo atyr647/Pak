@@ -204,10 +204,11 @@
 	.globl main
 	.type main, @function
 main:
-    addiu $sp, $sp, -320
-    sw $ra, 316($sp)
-    sw $fp, 312($sp)
-    addiu $fp, $sp, 320
+    addiu $sp, $sp, -168
+    sw $ra, 164($sp)
+    sw $fp, 160($sp)
+    addiu $fp, $sp, 168
+    sw $s0, 156($sp)
     li $t8, 64
     sw $t8, 136($sp)
     li $t8, 0
@@ -218,10 +219,8 @@ main:
     move $a0, $t8
     lw $a1, 140($sp)
     lw $a2, 136($sp)
-    sw $t9, 96($sp)
     jal memset
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     move $t9, $zero
     addiu $t8, $sp, 144
@@ -239,10 +238,8 @@ main:
     move $a0, $t8
     lw $a1, 140($sp)
     lw $a2, 136($sp)
-    sw $t9, 96($sp)
     jal memset
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     li $t8, 8
     sw $t8, 136($sp)
@@ -257,41 +254,33 @@ main:
     move $a0, $t8
     lw $a1, 140($sp)
     lw $a2, 136($sp)
-    sw $t9, 96($sp)
     jal memcpy
     nop
-    lw $t9, 96($sp)
     move $t9, $v0
     la $t9, .Lstr0
-    sw $t9, 152($sp)
-    lw $a0, 152($sp)
-    sw $t9, 96($sp)
-    sw $t8, 100($sp)
+    move $s0, $t9
+    move $a0, $s0
     jal strlen
     nop
-    lw $t9, 96($sp)
-    lw $t8, 100($sp)
-    move $t8, $v0
-    la $t7, sink
-    sw $t8, 0($t7)
-    move $t9, $t8
-    la $t8, TICKS_PER_SECOND
+    move $t9, $v0
+    la $t8, sink
+    sw $t9, 0($t8)
+    la $t9, TICKS_PER_SECOND
+    lw $t9, 0($t9)
+    la $t8, sink
+    sw $t9, 0($t8)
+    la $t8, RDPQ_COMBINER_FLAT
     lw $t8, 0($t8)
-    la $t7, sink
-    sw $t8, 0($t7)
-    move $t9, $t8
-    la $t7, RDPQ_COMBINER_FLAT
-    lw $t7, 0($t7)
-    andi $t8, $t7, 255
-    la $t7, buf
-    li $t6, 0
-    addu $t7, $t7, $t6
-    sb $t8, 0($t7)
-    move $t9, $t8
+    andi $t9, $t8, 255
+    la $t8, buf
+    li $t7, 0
+    addu $t8, $t8, $t7
+    sb $t9, 0($t8)
 .Lmain_ret_0:
-    lw $fp, 312($sp)
-    lw $ra, 316($sp)
-    addiu $sp, $sp, 320
+    lw $s0, 156($sp)
+    lw $fp, 160($sp)
+    lw $ra, 164($sp)
+    addiu $sp, $sp, 168
     jr $ra
     nop
 	.size main, . - main
@@ -312,3 +301,7 @@ sink:
 	.globl buf
 buf:
 	.space 64
+	.align 2
+	.globl __pak_heap_ptr
+__pak_heap_ptr:
+	.space 4

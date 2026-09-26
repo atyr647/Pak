@@ -701,7 +701,7 @@ alloc(Type, n)        -- allocate n T's on heap, returns *T
 free(ptr)             -- free heap pointer
 ```
 
-On the MIPS backend `alloc` is an inline bump from `0x802A0000` (same base as
+On the MIPS backend `alloc` is an inline bump from `0x802B0000` (same base as
 the standalone HAL); `free` is a no-op. The C backend maps to `malloc`/`free`.
 
 ### Sizeof / Offsetof / Alignof [IMPLEMENTED]
@@ -777,6 +777,10 @@ Listed from **lowest** to **highest** precedence:
 | 12    | `.` `[]` `()`          | Field, index, call        | left          |
 
 **Logical operators use words:** `and`, `or`, `not` — NOT `&&`, `||`, `!`
+
+`and` and `or` short-circuit: the right operand is evaluated only when the left
+one does not already decide the result, so `p? and p.x > 0` never reads
+through a null `p`.
 
 ### Assignment Operators [IMPLEMENTED]
 

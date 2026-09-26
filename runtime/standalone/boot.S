@@ -28,10 +28,6 @@ _start:
     and     $8, $8, $9
     mtc0    $8, $12
 
-    /* ── Stack: top of first 4 MB RDRAM ── */
-    lui     $29, 0x8040         /* $sp = 0x80400000 */
-    addiu   $29, $29, -8
-
     /* ── Zero .bss ── */
     la      $8, __bss_start
     la      $9, __bss_end
@@ -45,20 +41,66 @@ _start:
 .Ldone_bss:
 
     /* ── Detect RDRAM size ──
-     * IPL3 leaves it as the first word of RSP DMEM (0xA4000000, uncached):
-     * 0x400000 (4 MB) on a stock console, 0x800000 (8 MB) with the
-     * Expansion Pak. libdragon's own entrypoint.S reads the same word at
-     * the same point in boot for the same reason -- nothing between here
-     * and IPL3's handoff touches DMEM, so it is still what IPL3 wrote.
+     * Pak's runtime/standalone/ipl3_compat.bin is libdragon's *COMPAT*
+     * boot/bin/ipl3_compat.z64 verbatim (see ipl3_compat.README.md). Its
+     * stage1() (boot/ipl3.c) has two branches: the non-COMPAT/ELF-loader
+     * build fills a bootinfo_t at 0xA4000000 (RSP DMEM) -- that is what
+     * libdragon's own entrypoint.S reads, and what the comment here used
+     * to assume applied to us too. The COMPAT branch we actually ship
+     * never touches DMEM at all; it writes memsize (already probed by
+     * COMPAT's own real RDRAM chip-detect loop earlier in stage1) to
+     * cached RDRAM at 0x80000318, alongside the rest of an old-style boot
+     * info block, with an explicit cache writeback so it is live in
+     * physical RAM by the time we get here. Reading 0xA4000000 under
+     * COMPAT reads whatever garbage RSP DMEM happens to power on with --
+     * never actually 0x800000, so system.has_expansion() always came back
+     * false even when ares had Expansion Pak: true and COMPAT's own probe
+     * found the real 8 MB. n64.ld reserves 0x80000000-0x800003FF for
+     * IPL3 (our own .text/.bss start at 0x80000400), so 0x80000318 is
+     * memory IPL3 owns that nothing in a linked Pak image touches before
+     * this read. Read it through its KSEG1 alias (0xA0000318) to bypass
+     * D-cache rather than trust that a cached KSEG0 load this soon after
+     * the CIC/IPL3 handoff sees IPL3's writeback.
      * Stashed to a Pak global (g_boot_memsize, zeroed by the .bss loop
      * just above, so this has to run after it) so alloc() can widen the
      * heap into the extra 4 MB when it is actually there, and
      * system.has_expansion() can tell a game the same thing -- never a
      * guess, and never disturbing the stock 4 MB layout when it is not. */
-    lui     $8, 0xA400
+    lui     $8, 0xA000
+    ori     $8, $8, 0x0318
     lw      $9, 0($8)
     la      $8, g_boot_memsize
     sw      $9, 0($8)
+
+    /* ── Stack: top of RDRAM, sized to what was actually just detected ──
+     * This used to be a plain "top of first 4 MB" set unconditionally
+     * before RDRAM size was even known (and before the heap-widening logic
+     * below existed). alloc()'s bump allocator (mips_codegen.tcl's
+     * emit_bump_alloc) widens its own ceiling to 0x807F0000 when
+     * g_boot_memsize shows the Expansion Pak, but a stack still parked at
+     * 0x80400000 -- "top of first 4 MB" -- gives the heap no reason to stop
+     * there: nothing stopped it growing straight past 0x80400000 and into
+     * memory the stack was actively using. Heap growth doesn't fault or
+     * warn when it does that -- it silently overwrites whatever the stack
+     * holds at that address, so the corruption doesn't surface as a bad
+     * pointer at the allocation site; it surfaces later, as a jump to
+     * garbage, whenever the corrupted frame's saved $ra gets used. Found by
+     * writing a plain byte-fill loop into the 11th of twelve straight
+     * 128 KiB allocations (nothing to do with CH64 or texture decoding)
+     * and printing $sp at the same time: $sp read back inside the range
+     * that same loop was about to write to. Moving the stack to the top of
+     * however much RDRAM is actually present removes the collision instead
+     * of just moving where the two ranges meet. */
+    /* $9 still holds the memsize the read above fetched -- nothing since
+     * then has touched it. */
+    li      $8, 0x400000
+    sltu    $8, $8, $9           /* $8 = (memsize > 0x400000) */
+    lui     $29, 0x8040          /* default: $sp = 0x80400000 (stock 4 MB) */
+    beqz    $8, .Lstack_set
+    addiu   $29, $29, -8         /* delay slot: applies either way */
+    lui     $29, 0x8080          /* expanded: overwrite with top of 8 MB */
+    addiu   $29, $29, -8
+.Lstack_set:
 
     /* ── Install exception vectors ──
      * Copy the 8-byte stub (j exception_entry; nop) to the four VR4300

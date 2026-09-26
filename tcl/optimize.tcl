@@ -3,8 +3,9 @@
 # {d kind ...} / {placeholder tag} / {verbatim line}). Assembly text is a debug
 # dump: pak::optimize_asm is a thin wrapper around the record passes.
 #
-# Four passes, in order: const-fold, peephole, VR4300 scheduling, delay-slot
-# filling, dead-label elimination.
+# Passes, in order: dataflow (tcl/opt_dataflow.tcl: copy/constant
+# propagation, dead-instruction removal, frame trimming), const-fold,
+# peephole, VR4300 scheduling, delay-slot filling, dead-label elimination.
 
 namespace eval pak::opt {}
 if {[info exists ::pak::_optimize_loaded]} { return }
@@ -14,6 +15,7 @@ set ::pak::_optimize_loaded 1
 # that expand to more than one machine word, and tcl/n64enc.tcl is where that
 # is decided. Asking it directly is the only way the two stay in agreement.
 source [file join [file dirname [file normalize [info script]]] n64enc.tcl]
+source [file join [file dirname [file normalize [info script]]] opt_dataflow.tcl]
 
 # ── Instruction pattern tables ───────────────────────────────────────────────
 set ::pak::opt::BRANCH_OPS {beq bne beqz bnez bgez bgtz blez bltz bge bgt ble blt bc1t bc1f}
@@ -29,7 +31,7 @@ set ::pak::opt::DST_FIRST {li la lui move addiu addi addu subu mul and or xor no
 set ::pak::opt::FPU_DST_FIRST {
     add.s sub.s mul.s div.s mov.s neg.s abs.s sqrt.s
     add.d sub.d mul.d div.d mov.d neg.d abs.d sqrt.d
-    cvt.s.w cvt.w.s cvt.d.w cvt.w.d cvt.s.d cvt.d.s
+    cvt.s.w cvt.w.s cvt.d.w cvt.w.d cvt.s.d cvt.d.s trunc.w.s
     mfc1
 }
 set ::pak::opt::LOADW_OPS {lw lh lb lhu lbu lwc1 ldc1 ld}
@@ -267,7 +269,19 @@ proc pak::opt::fill_delay_slots {recs} {
                         && ![string match ".*" $prev_op]} {
                     set prev_writes [regs_written $prev_op [ops $prev]]
                     set branch_reads [regs_read [mnem $br] [ops $br]]
-                    if {![sets_overlap $prev_writes $branch_reads]} {
+                    # jal/jalr write the link register BEFORE the delay slot
+                    # runs, so `sw $ra, K($sp)` moved behind the first call of
+                    # a function saved the call's own return address -- the
+                    # function then returned into itself.
+                    set link {}
+                    if {[mnem $br] eq "jal"} { set link {{$ra}} }
+                    if {[mnem $br] eq "jalr"} {
+                        set link {{$ra}}
+                        if {[llength [ops $br]] >= 2} { set link [list [lindex [ops $br] 0]] }
+                    }
+                    set prev_regs [regs_in [ops $prev]]
+                    if {![sets_overlap $prev_writes $branch_reads] \
+                            && ![sets_overlap $prev_regs $link]} {
                         lappend result $br
                         lappend result $prev
                         incr i 3
@@ -543,7 +557,8 @@ proc pak::records_to_asm {recs} {
 }
 
 # ── Public API ───────────────────────────────────────────────────────────────
-proc pak::optimize_records {recs {peephole 1} {schedule 1} {fill_slots 1} {dead_labels 1} {const_fold 1}} {
+proc pak::optimize_records {recs {peephole 1} {schedule 1} {fill_slots 1} {dead_labels 1} {const_fold 1} {dataflow 1}} {
+    if {$dataflow && ![info exists ::env(PAK_NO_DATAFLOW)]} { set recs [pak::opt::df::run $recs] }
     if {$const_fold}  { set recs [pak::opt::const_fold $recs] }
     if {$peephole}    { set recs [pak::opt::peephole $recs] }
     if {$schedule}    { set recs [pak::opt::schedule_vr4300 $recs] }
